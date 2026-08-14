@@ -30,17 +30,18 @@ Reference: https://github.com/oasis-open/cti-stix-common-objects
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from types import MappingProxyType
-from typing import Any, Final, Mapping
+from typing import Any, Final
 
 from aivs_schemas.enums import TLP
 
 __all__ = [
+    "LEGACY_TLP10_MARKING_IDS",
     "TLP20_EXTENSION_DEFINITION_ID",
     "TLP_MARKING_IDS",
     "TLP_MARKING_OBJECTS",
     "TLP_NAMES",
-    "LEGACY_TLP10_MARKING_IDS",
     "marking_definition_for",
     "marking_id_for",
     "tlp_for_marking_id",

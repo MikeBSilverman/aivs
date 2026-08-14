@@ -27,9 +27,10 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+from collections.abc import Mapping, Sequence
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Final, Mapping, Sequence
+from typing import Any, Final
 
 import jsonschema
 from stix2 import CustomExtension
@@ -154,7 +155,7 @@ def extension_definition_sdo() -> Mapping[str, Any]:
     extension for the first time can resolve what it means without an
     out-of-band lookup.
     """
-    raw = json.loads((_SCHEMA_DIR / "definition.json").read_text(encoding="utf-8"))
+    raw: dict[str, Any] = json.loads((_SCHEMA_DIR / "definition.json").read_text(encoding="utf-8"))
     if raw["id"] != AIVS_EXTENSION_ID:
         msg = (
             f"definition.json declares id {raw['id']!r} but the code expects "
@@ -167,7 +168,10 @@ def extension_definition_sdo() -> Mapping[str, Any]:
 @lru_cache(maxsize=1)
 def extension_json_schema() -> Mapping[str, Any]:
     """Return the JSON Schema for the extension body."""
-    return json.loads((_SCHEMA_DIR / "schema-1.0.json").read_text(encoding="utf-8"))
+    schema: dict[str, Any] = json.loads(
+        (_SCHEMA_DIR / "schema-1.0.json").read_text(encoding="utf-8")
+    )
+    return schema
 
 
 @lru_cache(maxsize=1)
@@ -177,8 +181,10 @@ def _schema_validator() -> jsonschema.protocols.Validator:
     Compiled once because schema compilation is the expensive part and every
     inbound object pays it otherwise.
     """
-    schema = extension_json_schema()
+    schema = dict(extension_json_schema())
     validator_cls = jsonschema.validators.validator_for(schema)
+    # Fail at import time on a malformed schema rather than on the first
+    # inbound object, when the failure would look like a member's fault.
     validator_cls.check_schema(schema)
     return validator_cls(schema)
 
@@ -307,4 +313,5 @@ def format_stix_timestamp(value: dt.datetime) -> str:
     if value.tzinfo is None:
         msg = "refusing to format a naive datetime as a STIX timestamp"
         raise ValueError(msg)
-    return value.astimezone(dt.UTC).strftime("%Y-%m-%dT%H:%M:%S.") + f"{value.microsecond // 1000:03d}Z"
+    milliseconds = value.microsecond // 1000
+    return value.astimezone(dt.UTC).strftime("%Y-%m-%dT%H:%M:%S.") + f"{milliseconds:03d}Z"

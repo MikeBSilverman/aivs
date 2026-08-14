@@ -28,6 +28,8 @@ import datetime as dt
 import uuid
 from typing import TYPE_CHECKING, Final
 
+from sqlalchemy import ColumnElement, and_, or_
+
 from aivs_schemas.enums import (
     VISIBLE_SUBMISSION_STATES,
     CircleRole,
@@ -37,8 +39,6 @@ from aivs_schemas.enums import (
     SubmissionState,
     is_transition_allowed,
 )
-from sqlalchemy import ColumnElement, and_, or_
-
 from aivs_server.auth.context import AuthContext, AuthMethod
 from aivs_server.db.models import Distribution, Submission
 
@@ -46,7 +46,7 @@ if TYPE_CHECKING:  # pragma: no cover
     pass
 
 __all__ = [
-    "PolicyDenied",
+    "PolicyDeniedError",
     "can_administer_circle",
     "can_manage_org",
     "can_read_circle",
@@ -64,7 +64,7 @@ __all__ = [
 ]
 
 
-class PolicyDenied(Exception):
+class PolicyDeniedError(Exception):
     """A caller was refused an action.
 
     ``reason`` is a short stable token recorded in the audit log. It is not
@@ -85,14 +85,14 @@ _WRITING_CIRCLE_ROLES: Final[frozenset[CircleRole]] = frozenset(
 )
 
 
-def require(allowed: bool, reason: str) -> None:  # noqa: FBT001 - predicate result, not a flag
-    """Raise :class:`PolicyDenied` unless ``allowed``.
+def require(allowed: bool, reason: str) -> None:
+    """Raise :class:`PolicyDeniedError` unless ``allowed``.
 
     Lets a router read as ``require(can_read_circle(ctx, cid), "circle_read")``
     rather than growing its own if/raise ladder.
     """
     if not allowed:
-        raise PolicyDenied(reason)
+        raise PolicyDeniedError(reason)
 
 
 # ---------------------------------------------------------------------------
@@ -266,9 +266,7 @@ def can_manage_org(ctx: AuthContext, target_org_id: uuid.UUID) -> bool:
 # ---------------------------------------------------------------------------
 # The visibility clause
 # ---------------------------------------------------------------------------
-def distribution_visibility_clause(
-    ctx: AuthContext, now: dt.datetime
-) -> ColumnElement[bool]:
+def distribution_visibility_clause(ctx: AuthContext, now: dt.datetime) -> ColumnElement[bool]:
     """Return the SQL predicate selecting content the caller may read.
 
     This single expression is the read-side enforcement point for TAXII, and the

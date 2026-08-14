@@ -22,20 +22,6 @@ import datetime as dt
 import uuid
 from typing import TYPE_CHECKING, Any
 
-from aivs_schemas.enums import (
-    AckType,
-    AckVia,
-    CertStatus,
-    CircleRole,
-    DiscoveryScope,
-    EmbargoPolicy,
-    EmbargoStatus,
-    OperatorRole,
-    OrgStatus,
-    OrgType,
-    SubmissionState,
-    TLP,
-)
 from sqlalchemy import (
     BigInteger,
     Boolean,
@@ -53,6 +39,20 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import ARRAY, INET, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from aivs_schemas.enums import (
+    TLP,
+    AckType,
+    AckVia,
+    CertStatus,
+    CircleRole,
+    DiscoveryScope,
+    EmbargoPolicy,
+    EmbargoStatus,
+    OperatorRole,
+    OrgStatus,
+    OrgType,
+    SubmissionState,
+)
 from aivs_server.db.base import Base, TimestampMixin, pg_enum
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -145,9 +145,7 @@ class Operator(TimestampMixin, Base):
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     #: Throttling state for online password guessing.
     failed_login_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    locked_until: Mapped[dt.datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    locked_until: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_login_at: Mapped[dt.datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -184,9 +182,7 @@ class ClientCertificate(TimestampMixin, Base):
     revoked_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     revoked_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     label: Mapped[str | None] = mapped_column(String(120), nullable=True)
-    last_seen_at: Mapped[dt.datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    last_seen_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (
         CheckConstraint(f"fingerprint_sha256 ~ '{_SHA256_HEX}'", name="fingerprint_format"),
@@ -217,9 +213,7 @@ class Circle(TimestampMixin, Base):
     #: A submission may not be distributed into this circle under a marking
     #: looser than its floor. Lets an operator declare "Section 9 content is
     #: AMBER+STRICT or tighter" once, structurally, instead of per submission.
-    minimum_tlp: Mapped[TLP] = mapped_column(
-        pg_enum(TLP, "tlp"), nullable=False, default=TLP.AMBER
-    )
+    minimum_tlp: Mapped[TLP] = mapped_column(pg_enum(TLP, "tlp"), nullable=False, default=TLP.AMBER)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
     __table_args__ = (
@@ -309,9 +303,7 @@ class Submission(TimestampMixin, Base):
     #: outbound objects to the hosting ISAC's identity and withholds the
     #: submitter from every consumer-facing view. Receipts still resolve
     #: internally, so the ISAC can answer questions the members cannot.
-    distribute_anonymously: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=False
-    )
+    distribute_anonymously: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     title: Mapped[str] = mapped_column(String(300), nullable=False)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     superseded_by_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -332,9 +324,7 @@ class Submission(TimestampMixin, Base):
         Index("ix_submissions_org_state", "submitter_org_id", "state"),
     )
 
-    embargo: Mapped[Embargo | None] = relationship(
-        back_populates="submission", uselist=False
-    )
+    embargo: Mapped[Embargo | None] = relationship(back_populates="submission", uselist=False)
     stix_objects: Mapped[list[StixObject]] = relationship(back_populates="submission")
 
 
@@ -474,9 +464,7 @@ class Embargo(TimestampMixin, Base):
     release_at: Mapped[dt.datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True, index=True
     )
-    released_at: Mapped[dt.datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    released_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     coordination_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     __table_args__ = (
@@ -562,9 +550,7 @@ class TaxiiStatus(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
-    __table_args__ = (
-        CheckConstraint("status IN ('pending', 'complete')", name="status_valid"),
-    )
+    __table_args__ = (CheckConstraint("status IN ('pending', 'complete')", name="status_valid"),)
 
 
 class Webhook(TimestampMixin, Base):
@@ -602,9 +588,7 @@ class WebhookDelivery(Base):
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     response_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
-    delivered_at: Mapped[dt.datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    delivered_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -645,13 +629,9 @@ class PortalSession(Base):
     expires_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, index=True
     )
-    revoked_at: Mapped[dt.datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    revoked_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    __table_args__ = (
-        CheckConstraint(f"token_hash ~ '{_SHA256_HEX}'", name="token_hash_format"),
-    )
+    __table_args__ = (CheckConstraint(f"token_hash ~ '{_SHA256_HEX}'", name="token_hash_format"),)
 
 
 class AuditLog(Base):

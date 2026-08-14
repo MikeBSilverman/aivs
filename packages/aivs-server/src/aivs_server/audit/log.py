@@ -26,7 +26,8 @@ from __future__ import annotations
 
 import logging
 import uuid
-from typing import Any, Final, Mapping
+from collections.abc import Mapping
+from typing import Any, Final
 
 from sqlalchemy import insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -154,7 +155,9 @@ def redact(value: Any, _depth: int = 0) -> Any:
     if isinstance(value, (list, tuple)):
         return [redact(item, _depth + 1) for item in value[:100]]
     if isinstance(value, str):
-        return value if len(value) <= _MAX_STRING_LEN else value[:_MAX_STRING_LEN] + "...[truncated]"
+        if len(value) <= _MAX_STRING_LEN:
+            return value
+        return value[:_MAX_STRING_LEN] + "...[truncated]"
     if isinstance(value, (int, float, bool)) or value is None:
         return value
     if isinstance(value, uuid.UUID):
@@ -286,7 +289,7 @@ async def record_denial(
 ) -> None:
     """Record an authorization denial.
 
-    ``reason`` is the stable token from :class:`~aivs_server.auth.policy.PolicyDenied`.
+    ``reason`` is the stable token from :class:`~aivs_server.auth.policy.PolicyDeniedError`.
     It is written here and never returned to the caller.
     """
     await record_independently(

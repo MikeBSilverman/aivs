@@ -8,6 +8,7 @@ treat additions as cheap and changes as expensive.
 from __future__ import annotations
 
 from aivs_schemas.enums import (
+    TLP,
     AckType,
     AckVia,
     AIDiscoveryMethod,
@@ -21,7 +22,6 @@ from aivs_schemas.enums import (
     OrgStatus,
     OrgType,
     SubmissionState,
-    TLP,
     is_transition_allowed,
     tlp_at_least_as_restrictive,
 )
@@ -34,9 +34,10 @@ AIVS_EXTENSION_VERSION = "1.0"
 
 __all__ = [
     "AIVS_EXTENSION_VERSION",
+    "TLP",
+    "AIDiscoveryMethod",
     "AckType",
     "AckVia",
-    "AIDiscoveryMethod",
     "CVEStatus",
     "CertStatus",
     "CircleRole",
@@ -47,7 +48,6 @@ __all__ = [
     "OrgStatus",
     "OrgType",
     "SubmissionState",
-    "TLP",
     "__version__",
     "is_transition_allowed",
     "tlp_at_least_as_restrictive",

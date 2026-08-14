@@ -13,7 +13,8 @@ import uuid
 from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import DateTime, Enum as SAEnum, MetaData, func
+from sqlalchemy import DateTime, MetaData, func
+from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 __all__ = ["Base", "TimestampMixin", "pg_enum", "utc_now", "uuid_pk"]

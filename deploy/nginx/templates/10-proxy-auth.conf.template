@@ -1,0 +1,36 @@
+# =============================================================================
+# Proxy shared secret injection.
+#
+# This is a TEMPLATE, not a config file. The stock nginx entrypoint script
+# /docker-entrypoint.d/20-envsubst-on-templates.sh runs before nginx starts,
+# reads every file matching /etc/nginx/templates/*.template, substitutes
+# environment variables into it with envsubst(1), and writes the result to
+# $NGINX_ENVSUBST_OUTPUT_DIR -- which docker-compose.yml sets to
+# /etc/nginx/rendered, a tmpfs. nginx.conf includes that directory.
+#
+# Consequences a reviewer should confirm:
+#   * The secret is never written to a committed file and never baked into an
+#     image layer. It exists in the container environment and in one file on a
+#     RAM-backed filesystem that is destroyed with the container.
+#   * docker-compose.yml passes AIVS_PROXY_SHARED_SECRET with the
+#     ${VAR:?message} form, so `docker compose up` aborts if it is unset rather
+#     than starting a proxy that authenticates to nothing.
+#   * If it were somehow empty, nginx would send an empty X-Proxy-Auth, the
+#     application's constant-time comparison would fail, and every request
+#     would be refused. The failure mode is closed.
+#   * docker-compose.yml sets NGINX_ENVSUBST_FILTER=^AIVS_ so envsubst
+#     rewrites only AIVS_-prefixed variables. Without that filter it would also
+#     substitute nginx's own $host, $remote_addr and $ssl_* variables in any
+#     template, replacing them with empty strings.
+#
+# The value is exposed to nginx.conf as $proxy_shared_secret. A map with a
+# single `default` entry is the standard way to define a constant variable in
+# the http{} context; `set` is only available inside server/location.
+#
+# $host is the map's input purely because a map needs one; the result does not
+# depend on it. Do not "simplify" this by keying on something request-derived.
+# =============================================================================
+
+map $host $proxy_shared_secret {
+    default  "${AIVS_PROXY_SHARED_SECRET}";
+}

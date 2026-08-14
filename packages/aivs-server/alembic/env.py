@@ -39,10 +39,7 @@ def _database_url() -> str:
     """
     url = os.environ.get("AIVS_MIGRATION_DATABASE_URL") or os.environ.get("AIVS_DATABASE_URL")
     if not url:
-        msg = (
-            "set AIVS_DATABASE_URL (or AIVS_MIGRATION_DATABASE_URL) before "
-            "running migrations"
-        )
+        msg = "set AIVS_DATABASE_URL (or AIVS_MIGRATION_DATABASE_URL) before running migrations"
         raise RuntimeError(msg)
     return url
 

@@ -21,7 +21,7 @@ from __future__ import annotations
 import ipaddress
 import sys
 from functools import lru_cache
-from typing import Annotated, Final, Literal, Self
+from typing import Final, Literal, Self
 
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -113,6 +113,19 @@ class Settings(BaseSettings):
     # -- Embargo sweeper ----------------------------------------------------
     embargo_sweep_interval_seconds: int = Field(default=30, ge=5, le=3600)
 
+    # -- Bind address -------------------------------------------------------
+    #: Interface the application listens on. The default binds all interfaces
+    #: because the container's network namespace is the security boundary --
+    #: compose publishes no host port for this service, so the only route in is
+    #: the reverse proxy. Operators running outside a container should set this
+    #: to the specific interface the proxy reaches them on.
+    #
+    # nosec B104 / noqa S104: binding all interfaces is correct here and the
+    # suppression is narrow and deliberate. Obscuring the literal to quiet the
+    # scanner would hide a real deployment decision from the next reviewer.
+    bind_host: str = "0.0.0.0"  # nosec B104  # noqa: S104
+    bind_port: int = Field(default=8000, ge=1, le=65535)
+
     # -- Logging ------------------------------------------------------------
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
 
@@ -164,9 +177,8 @@ class Settings(BaseSettings):
             violations.append("log_level (DEBUG may record request bodies)")
 
         if violations:
-            msg = (
-                "refusing to start in production with unsafe settings: "
-                + ", ".join(sorted(violations))
+            msg = "refusing to start in production with unsafe settings: " + ", ".join(
+                sorted(violations)
             )
             raise ValueError(msg)
         return self
@@ -206,7 +218,7 @@ def get_settings() -> Settings:
     Cached because ``Settings`` is frozen and reading the environment repeatedly
     would let a mid-flight environment change alter security behaviour.
     """
-    return Settings()  # type: ignore[call-arg]  # values come from the environment
+    return Settings()
 
 
 def _main() -> int:  # pragma: no cover - operational helper

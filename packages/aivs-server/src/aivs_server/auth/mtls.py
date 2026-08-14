@@ -40,7 +40,7 @@ from cryptography.x509.oid import NameOID
 from aivs_server.config import Settings
 
 __all__ = [
-    "CertificateRejection",
+    "CertificateRejectedError",
     "ClientCertificateIdentity",
     "MtlsError",
     "extract_client_certificate",
@@ -67,7 +67,7 @@ class MtlsError(Exception):
 
 
 @dataclass(frozen=True, slots=True)
-class CertificateRejection(MtlsError):
+class CertificateRejectedError(MtlsError):
     """A request did not present a usable client certificate.
 
     ``reason`` is a short stable token for audit logs and metrics. It is
@@ -134,19 +134,19 @@ def _require_trusted_proxy(
         return
 
     if not peer_ok:
-        raise CertificateRejection("untrusted_proxy_peer")
+        raise CertificateRejectedError("untrusted_proxy_peer")
     if not secret_ok:
-        raise CertificateRejection("proxy_auth_mismatch")
+        raise CertificateRejectedError("proxy_auth_mismatch")
 
 
 def _parse_certificate(raw_header: str) -> x509.Certificate:
     """Decode and parse the proxy-forwarded PEM certificate."""
     if len(raw_header) > MAX_CERT_HEADER_BYTES:
-        raise CertificateRejection("certificate_header_too_large")
+        raise CertificateRejectedError("certificate_header_too_large")
 
     pem = unquote(raw_header)
     if "BEGIN CERTIFICATE" not in pem:
-        raise CertificateRejection("certificate_malformed")
+        raise CertificateRejectedError("certificate_malformed")
 
     try:
         return x509.load_pem_x509_certificate(pem.encode("utf-8"))
@@ -154,7 +154,7 @@ def _parse_certificate(raw_header: str) -> x509.Certificate:
         # Deliberately broad on the parse: any failure to decode attacker-
         # influenced ASN.1 is a rejection, never a traceback to the client.
         logger.warning("client certificate failed to parse", extra={"error": str(exc)})
-        raise CertificateRejection("certificate_unparseable") from exc
+        raise CertificateRejectedError("certificate_unparseable") from exc
 
 
 def _check_validity_window(certificate: x509.Certificate, now: dt.datetime) -> None:
@@ -169,9 +169,9 @@ def _check_validity_window(certificate: x509.Certificate, now: dt.datetime) -> N
     not_after = certificate.not_valid_after_utc
 
     if now + CLOCK_SKEW_TOLERANCE < not_before:
-        raise CertificateRejection("certificate_not_yet_valid")
+        raise CertificateRejectedError("certificate_not_yet_valid")
     if now - CLOCK_SKEW_TOLERANCE > not_after:
-        raise CertificateRejection("certificate_expired")
+        raise CertificateRejectedError("certificate_expired")
 
 
 def extract_client_certificate(
@@ -183,25 +183,23 @@ def extract_client_certificate(
     """Return the verified client certificate identity for a request.
 
     ``headers`` must be lowercase-keyed, as Starlette provides. Raises
-    :class:`CertificateRejection` for every failure mode; callers translate that
+    :class:`CertificateRejectedError` for every failure mode; callers translate that
     into a 401 without echoing the reason.
     """
     now = now or dt.datetime.now(dt.UTC)
 
-    _require_trusted_proxy(
-        settings, peer_ip, headers.get(settings.header_proxy_auth)
-    )
+    _require_trusted_proxy(settings, peer_ip, headers.get(settings.header_proxy_auth))
 
     verify = headers.get(settings.header_client_verify, "").strip().upper()
     if verify != _VERIFY_SUCCESS:
         # nginx reports NONE when no certificate was presented and
         # "FAILED:<reason>" when the chain did not validate. Neither is a state
         # we can proceed from, and the distinction is not the client's business.
-        raise CertificateRejection("client_verify_not_success")
+        raise CertificateRejectedError("client_verify_not_success")
 
     raw_certificate = headers.get(settings.header_client_cert)
     if not raw_certificate:
-        raise CertificateRejection("certificate_header_missing")
+        raise CertificateRejectedError("certificate_header_missing")
 
     certificate = _parse_certificate(raw_certificate)
     _check_validity_window(certificate, now)

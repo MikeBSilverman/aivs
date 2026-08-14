@@ -12,14 +12,20 @@ where mismatches between the database, the API, and the tests creep in.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from enum import StrEnum
 from types import MappingProxyType
-from typing import Final, Mapping
+from typing import Final
 
 __all__ = [
+    "SUBMISSION_TRANSITIONS",
+    "TERMINAL_SUBMISSION_STATES",
+    "TLP",
+    "TLP_RESTRICTIVENESS",
+    "VISIBLE_SUBMISSION_STATES",
+    "AIDiscoveryMethod",
     "AckType",
     "AckVia",
-    "AIDiscoveryMethod",
     "CVEStatus",
     "CertStatus",
     "CircleRole",
@@ -30,11 +36,6 @@ __all__ = [
     "OrgStatus",
     "OrgType",
     "SubmissionState",
-    "TLP",
-    "SUBMISSION_TRANSITIONS",
-    "TERMINAL_SUBMISSION_STATES",
-    "VISIBLE_SUBMISSION_STATES",
-    "TLP_RESTRICTIVENESS",
     "is_transition_allowed",
     "tlp_at_least_as_restrictive",
 ]

@@ -1,0 +1,176 @@
+"""FastAPI dependencies that resolve the caller's identity.
+
+The chain is deliberately short and has no branches that end in "allow":
+
+    proxy headers -> verified certificate -> registered org -> circles -> AuthContext
+
+Every failure raises 401 with a generic body. The specific reason goes to the
+audit log and never to the caller: telling an unauthenticated client whether it
+failed because the certificate was unknown, revoked, or belonged to a suspended
+organisation is free reconnaissance.
+"""
+
+from __future__ import annotations
+
+import datetime as dt
+import uuid
+from typing import Annotated, Final
+
+from fastapi import Depends, HTTPException, Request, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from aivs_schemas.enums import CertStatus, CircleRole, OrgStatus
+from aivs_server.audit.log import AuditAction, record_independently
+from aivs_server.auth.context import AuthContext, AuthMethod
+from aivs_server.auth.mtls import CertificateRejectedError, extract_client_certificate
+from aivs_server.config import Settings, get_settings
+from aivs_server.db.engine import get_session
+from aivs_server.db.models import Circle, CircleMembership, ClientCertificate, Organization
+
+__all__ = [
+    "AuthenticatedContext",
+    "SessionDep",
+    "SettingsDep",
+    "get_auth_context",
+]
+
+#: Returned for every authentication failure, regardless of cause.
+_GENERIC_UNAUTHORIZED: Final[str] = "Client certificate authentication required"
+
+
+def _settings_dependency(request: Request) -> Settings:
+    """Return the settings this application instance was built with.
+
+    Read from application state rather than the process-wide cache so that the
+    running app is governed by exactly the configuration it was constructed
+    with. Falling back to the environment here would let a test -- or a second
+    app in the same process -- silently authenticate against different settings
+    than the ones it was handed.
+    """
+    settings: Settings | None = getattr(request.app.state, "settings", None)
+    return settings if settings is not None else get_settings()
+
+
+SettingsDep = Annotated[Settings, Depends(_settings_dependency)]
+SessionDep = Annotated[AsyncSession, Depends(get_session)]
+
+
+def _client_ip(request: Request) -> str | None:
+    """Return the peer address of the TCP connection.
+
+    This is the *proxy's* address, not the member's -- which is exactly what the
+    trusted-proxy allowlist needs to check. The member's own address, where it
+    matters, comes from the proxy's forwarded headers and is treated as
+    informational only.
+    """
+    return request.client.host if request.client else None
+
+
+async def _reject(
+    reason: str,
+    request: Request,
+    source_ip: str | None,
+) -> HTTPException:
+    """Audit an authentication failure and build the response to raise."""
+    await record_independently(
+        action=AuditAction.AUTH_FAILURE,
+        actor_type="anonymous",
+        outcome="failure",
+        request_id=request.scope.get("aivs_request_id"),
+        source_ip=source_ip,
+        details={"reason": reason, "path": request.url.path, "method": request.method},
+    )
+    return HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail=_GENERIC_UNAUTHORIZED,
+    )
+
+
+async def get_auth_context(
+    request: Request,
+    settings: SettingsDep,
+    session: SessionDep,
+) -> AuthContext:
+    """Resolve the calling organisation from its client certificate.
+
+    Raises 401 unless every one of the following holds: the request arrived via
+    the trusted proxy with the correct shared secret, the proxy reports a
+    successful chain verification, the presented certificate parses and is
+    within its validity window, that certificate is registered and not revoked,
+    and its organisation is active.
+    """
+    source_ip = _client_ip(request)
+    headers = {key.lower(): value for key, value in request.headers.items()}
+
+    try:
+        certificate = extract_client_certificate(settings, headers, source_ip)
+    except CertificateRejectedError as rejection:
+        raise await _reject(rejection.reason, request, source_ip) from rejection
+
+    row = (
+        await session.execute(
+            select(ClientCertificate, Organization)
+            .join(Organization, ClientCertificate.org_id == Organization.id)
+            .where(ClientCertificate.fingerprint_sha256 == certificate.fingerprint_sha256)
+        )
+    ).first()
+
+    if row is None:
+        raise await _reject("certificate_not_registered", request, source_ip)
+
+    registration, organization = row
+
+    if registration.status is not CertStatus.ACTIVE:
+        # Revocation is authoritative here rather than in a CRL: one indexed
+        # lookup, effective on the member's very next request.
+        raise await _reject("certificate_revoked", request, source_ip)
+
+    now = dt.datetime.now(dt.UTC)
+    if registration.not_after <= now:
+        # The registration's own recorded expiry, distinct from the validity
+        # window already checked on the presented certificate. They should
+        # agree; if they do not, the database is the authority.
+        raise await _reject("certificate_registration_expired", request, source_ip)
+
+    if organization.status is not OrgStatus.ACTIVE:
+        raise await _reject(f"org_{organization.status.value}", request, source_ip)
+
+    membership_rows = await session.execute(
+        select(CircleMembership.circle_id, CircleMembership.role)
+        .join(Circle, Circle.id == CircleMembership.circle_id)
+        .where(
+            CircleMembership.org_id == organization.id,
+            # A deactivated circle grants nothing. Deactivating one is how an
+            # operator suspends a whole sharing community without unpicking its
+            # membership records.
+            Circle.is_active.is_(True),
+        )
+    )
+    circles: dict[uuid.UUID, CircleRole] = {
+        row.circle_id: row.role for row in membership_rows.all()
+    }
+
+    return AuthContext(
+        org_id=organization.id,
+        org_slug=organization.slug,
+        org_type=organization.org_type,
+        org_status=organization.status,
+        auth_method=AuthMethod.MTLS,
+        circles=circles,
+        cert_fingerprint=certificate.fingerprint_sha256,
+        request_id=request.scope.get("aivs_request_id", ""),
+        source_ip=source_ip,
+    )
+
+
+#: The dependency every authenticated route declares. There is no route-level
+#: opt-out; endpoints that are genuinely public (``/healthz``) simply do not
+#: declare it, and the authorization matrix test asserts that the set of such
+#: endpoints is exactly the intended one.
+AuthenticatedContext = Annotated[AuthContext, Depends(get_auth_context)]
+
+
+def _role_rank(role: CircleRole) -> int:
+    """Order circle roles by privilege, for comparisons in routers."""
+    return {CircleRole.MEMBER: 0, CircleRole.CONTRIBUTOR: 1, CircleRole.CIRCLE_ADMIN: 2}[role]

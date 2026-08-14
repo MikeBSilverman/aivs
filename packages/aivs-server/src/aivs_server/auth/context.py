@@ -12,10 +12,10 @@ mutating it, accidentally or otherwise.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 from types import MappingProxyType
-from typing import Mapping
 
 from aivs_schemas.enums import CircleRole, OperatorRole, OrgStatus, OrgType
 
@@ -44,9 +44,7 @@ class AuthContext:
 
     #: Circle membership with the role held in each. Empty is normal: a newly
     #: enrolled org belongs to no circle and must therefore see nothing.
-    circles: Mapping[uuid.UUID, CircleRole] = field(
-        default_factory=lambda: MappingProxyType({})
-    )
+    circles: Mapping[uuid.UUID, CircleRole] = field(default_factory=lambda: MappingProxyType({}))
 
     #: Present for MTLS callers; also present for portal sessions, which are
     #: bound to the certificate that established the network path.

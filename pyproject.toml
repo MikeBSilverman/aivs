@@ -47,6 +47,7 @@ dev = [
     "bandit>=1.8",
     "pip-audit>=2.7",
     "types-python-dateutil",
+    "types-jsonschema",
 ]
 
 # ---------------------------------------------------------------------------
@@ -107,7 +108,16 @@ ignore = [
     "SIM108",  # ternary-vs-if is a readability judgement call
 ]
 
+[tool.ruff.lint.pylint]
+# Type-dispatch and state-machine functions legitimately return from more than
+# six branches; forcing them through a single exit point would obscure them.
+max-returns = 8
+
 [tool.ruff.lint.per-file-ignores]
+# EM101 exists to keep long messages out of `raise`. CertificateRejectedError
+# takes a short stable *reason token* rather than a message -- those tokens are
+# the audit vocabulary and belong at the raise site where they are read.
+"**/auth/mtls.py" = ["EM101"]
 # Tests: assert is the point; hardcoded test credentials are not secrets;
 # private-member access is sometimes needed to assert on internals.
 "**/tests/**" = ["S101", "S105", "S106", "S107", "SLF001", "ANN201", "ANN001", "PLR2004", "ARG001"]
@@ -141,6 +151,11 @@ enable_error_code = [
     "unused-awaitable",
 ]
 plugins = ["pydantic.mypy"]
+# Each package has its own src root on mypy_path, so a file must be resolved
+# relative to that root rather than to the directory it is invoked from --
+# otherwise mypy sees aivs_server/auth/deps.py under two module names.
+explicit_package_bases = true
+namespace_packages = true
 mypy_path = [
     "packages/aivs-schemas/src",
     "packages/aivs-server/src",
@@ -165,7 +180,9 @@ disallow_untyped_defs = false
 minversion = "8.0"
 testpaths = ["packages/aivs-server/tests", "packages/aivs-schemas/tests", "packages/aivs-client/tests"]
 asyncio_mode = "auto"
-asyncio_default_fixture_loop_scope = "function"
+# Session scope, because the engine and schema fixtures are session-scoped and
+# must share one loop with the tests that use them.
+asyncio_default_fixture_loop_scope = "session"
 addopts = [
     "--strict-markers",
     "--strict-config",

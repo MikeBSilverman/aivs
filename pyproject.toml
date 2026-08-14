@@ -1,0 +1,206 @@
+# AIVS monorepo workspace root.
+#
+# This file is NOT a distributable package -- it exists to (a) declare the uv
+# workspace and (b) hold the single source of truth for lint/type/test config
+# shared by every package. Exact dependency versions live in uv.lock, which is
+# committed; constraints here stay deliberately loose so the lockfile is the
+# only thing a reviewer needs to audit for supply-chain changes.
+
+[project]
+name = "aivs-workspace"
+version = "0.1.0"
+description = "AIVS -- pre-CVE AI vulnerability sharing system (workspace root)"
+requires-python = ">=3.12"
+dependencies = []
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = [
+    "packages/aivs-schemas",
+    "packages/aivs-server",
+    "packages/aivs-client",
+]
+
+[tool.uv.sources]
+aivs-schemas = { workspace = true }
+aivs-server = { workspace = true }
+aivs-client = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "aivs-schemas",
+    "aivs-server",
+    "aivs-client",
+    # Test
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=6.0",
+    "pytest-randomly>=3.16",     # shuffles test order: catches inter-test state leaks
+    "hypothesis>=6.120",         # property-based tests for parsers/validators
+    "httpx>=0.28",
+    "freezegun>=1.5",            # deterministic embargo/expiry tests
+    # Lint / type / security
+    "ruff>=0.8",
+    "mypy>=1.13",
+    "bandit>=1.8",
+    "pip-audit>=2.7",
+    "types-python-dateutil",
+]
+
+# ---------------------------------------------------------------------------
+# Ruff -- linting + formatting. Security rules (S) are on by default for all
+# non-test code; see per-file-ignores for the narrow test exemptions.
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = [
+    "packages/aivs-schemas/src",
+    "packages/aivs-server/src",
+    "packages/aivs-client/src",
+]
+extend-exclude = ["packages/aivs-server/alembic/versions"]
+
+[tool.ruff.lint]
+select = [
+    "F",      # pyflakes
+    "E", "W", # pycodestyle
+    "I",      # isort
+    "N",      # pep8-naming
+    "UP",     # pyupgrade
+    "ANN",    # flake8-annotations (every function typed)
+    "ASYNC",  # flake8-async (blocking calls in async code)
+    "S",      # flake8-bandit (security)
+    "BLE",    # blind except
+    "B",      # bugbear
+    "A",      # builtin shadowing
+    "C4",     # comprehensions
+    "DTZ",    # flake8-datetimez -- naive datetimes are embargo bugs
+    "T10",    # no leftover pdb
+    "T20",    # no print() in library code
+    "EM",     # exception messages (no f-string-in-raise noise)
+    "G",      # logging-format (no f-strings in log calls)
+    "LOG",    # logging correctness
+    "PIE",
+    "PT",     # pytest style
+    "Q",
+    "RSE",
+    "RET",
+    "SLF",    # private member access
+    "SIM",
+    "TID",    # tidy imports (no relative-parent imports)
+    "ARG",    # unused arguments
+    "PTH",    # use pathlib
+    "ERA",    # commented-out code
+    "PL",     # pylint subset
+    "TRY",    # tryceratops (exception antipatterns)
+    "FLY",
+    "PERF",
+    "RUF",
+]
+ignore = [
+    "ANN401",  # allow typing.Any where genuinely needed (documented at use site)
+    "PLR0913", # argument count -- FastAPI dependency injection legitimately exceeds it
+    "TRY003",  # long messages in raise; our EM rules already cover the real issue
+    "SIM108",  # ternary-vs-if is a readability judgement call
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests: assert is the point; hardcoded test credentials are not secrets;
+# private-member access is sometimes needed to assert on internals.
+"**/tests/**" = ["S101", "S105", "S106", "S107", "SLF001", "ANN201", "ANN001", "PLR2004", "ARG001"]
+"**/conftest.py" = ["ANN201", "ANN001", "ARG001"]
+# Alembic scaffolding is generated and follows its own conventions.
+"**/alembic/env.py" = ["ANN", "ERA"]
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "parents"
+
+[tool.ruff.lint.isort]
+known-first-party = ["aivs_schemas", "aivs_server", "aivs_client"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+# ---------------------------------------------------------------------------
+# mypy -- strict. Untyped code is a review blind spot; we do not ship it.
+# ---------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unreachable = true
+warn_no_return = true
+disallow_any_unimported = true
+enable_error_code = [
+    "redundant-expr",
+    "possibly-undefined",
+    "truthy-bool",
+    "ignore-without-code",
+    "unused-awaitable",
+]
+plugins = ["pydantic.mypy"]
+mypy_path = [
+    "packages/aivs-schemas/src",
+    "packages/aivs-server/src",
+    "packages/aivs-client/src",
+]
+exclude = ["packages/aivs-server/alembic/versions/"]
+
+[[tool.mypy.overrides]]
+# stix2 ships no type stubs; we isolate that untyped surface behind our own
+# typed wrappers in aivs_schemas.extension.builders.
+module = ["stix2.*", "stix2patterns.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["tests.*", "*.tests.*"]
+disallow_untyped_defs = false
+
+# ---------------------------------------------------------------------------
+# pytest
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["packages/aivs-server/tests", "packages/aivs-schemas/tests", "packages/aivs-client/tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "-ra",
+    "--import-mode=importlib",
+]
+markers = [
+    "db: test requires a live PostgreSQL database",
+    "e2e: end-to-end test requiring the full compose stack (nginx + mTLS)",
+    "slow: deselect with '-m \"not slow\"'",
+    "authz: authorization matrix test -- the deny-by-default proof",
+    "conformance: TAXII 2.1 / STIX 2.1 specification conformance test",
+]
+filterwarnings = [
+    "error",                     # warnings are failures; we do not accumulate debt
+    "ignore::DeprecationWarning:stix2.*",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["aivs_schemas", "aivs_server", "aivs_client"]
+omit = ["*/alembic/*", "*/tests/*"]
+
+[tool.coverage.report]
+skip_covered = false
+show_missing = true
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "@overload",
+    "if __name__ == .__main__.:",
+]
+# Security-critical modules are held to a higher bar in CI via a separate
+# invocation; this is the floor for the codebase as a whole.
+fail_under = 85
+
+[tool.bandit]
+exclude_dirs = ["packages/aivs-server/tests", "packages/aivs-schemas/tests", "packages/aivs-client/tests"]

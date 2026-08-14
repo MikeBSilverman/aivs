@@ -1,0 +1,24 @@
+[project]
+name = "aivs-client"
+version = "0.1.0"
+description = "AIVS reference client: Python SDK and CLI for member firms"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "Apache-2.0" }
+dependencies = [
+    "aivs-schemas",
+    "httpx>=0.28",
+    "typer>=0.15",
+    "pydantic>=2.10",
+    "cryptography>=44.0",  # local key + CSR generation during enrolment
+]
+
+[project.scripts]
+aivs = "aivs_client.cli:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/aivs_client"]

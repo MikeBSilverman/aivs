@@ -1,0 +1,15 @@
+{
+  "type": "extension-definition",
+  "spec_version": "2.1",
+  "id": "extension-definition--530ad906-a948-4467-8fd2-7fd13639ded6",
+  "created_by_ref": "identity--e50b8964-5a9a-4d4b-a016-16ea043c2c56",
+  "created": "2026-01-01T00:00:00.000Z",
+  "modified": "2026-01-01T00:00:00.000Z",
+  "name": "AIVS Pre-CVE AI Vulnerability Extension",
+  "description": "Adds pre-disclosure properties to the STIX vulnerability SDO for vulnerabilities discovered by AI systems and shared ahead of CVE publication: how the finding was discovered and by which model or harness, the affected products, a CVSS v4.0 assessment, embargo state, remediation guidance, and the finding's position relative to public CVE issuance.",
+  "schema": "https://schemas.aivs.example/aivs-pre-cve/1.0/schema.json",
+  "version": "1.0.0",
+  "extension_types": [
+    "property-extension"
+  ]
+}

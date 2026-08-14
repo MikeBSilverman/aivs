@@ -1,0 +1,26 @@
+[project]
+name = "aivs-schemas"
+version = "0.1.0"
+description = "AIVS shared contract: enums, API models, and the STIX 2.1 pre-CVE extension"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "Apache-2.0" }
+dependencies = [
+    "pydantic>=2.10",
+    "stix2>=3.0.2",
+    # Inbound extension bodies are validated against a strict JSON Schema.
+    # This is not redundant with stix2: stix2 does not reject unknown
+    # extension-definition property-extensions. See extension/builders.py.
+    "jsonschema>=4.23",
+]
+
+# Deliberately minimal. This package is imported by the server, the CLI client,
+# and by member firms integrating against AIVS -- every dependency added here is
+# a dependency we impose on a GSIB's software bill of materials.
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/aivs_schemas"]

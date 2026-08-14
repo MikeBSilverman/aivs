@@ -1,0 +1,35 @@
+[project]
+name = "aivs-server"
+version = "0.1.0"
+description = "AIVS sharing server: TAXII 2.1 endpoints, native API, and analyst portal"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "Apache-2.0" }
+dependencies = [
+    "aivs-schemas",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic>=2.10",
+    "pydantic-settings>=2.6",
+    "sqlalchemy[asyncio]>=2.0.36",
+    "psycopg[binary,pool]>=3.2",
+    "alembic>=1.14",
+    "cryptography>=44.0",        # client-certificate parsing and fingerprinting
+    "argon2-cffi>=23.1",         # operator password hashing
+    "pyotp>=2.9",                # operator TOTP second factor
+    "jinja2>=3.1",               # portal templates
+    "python-multipart>=0.0.20",  # portal form parsing
+    "itsdangerous>=2.2",         # signed pagination cursors and CSRF tokens
+    "httpx>=0.28",               # SSRF-guarded webhook delivery
+    "apscheduler>=3.11",         # embargo release sweeper
+]
+
+[project.scripts]
+aivs-server = "aivs_server.__main__:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/aivs_server"]

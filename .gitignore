@@ -1,0 +1,88 @@
+# ---------------------------------------------------------------------------
+# Secrets and key material -- DENY BY DEFAULT.
+#
+# This repository must never contain a private key, certificate, PAT, or .env.
+# Test certificates are GENERATED at test time (see tests/conftest.py) rather
+# than committed, precisely so that no pattern here has to be relaxed.
+# If you find yourself wanting to add a negation (!) for one of these, stop and
+# reconsider -- that is how key material gets published.
+# ---------------------------------------------------------------------------
+*.pem
+*.key
+*.crt
+*.cer
+*.der
+*.csr
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.gpg
+*.asc
+.env
+.env.*
+!.env.example
+secrets/
+deploy/ca/out/
+deploy/ca/private/
+deploy/ca/newcerts/
+deploy/ca/*.srl
+deploy/ca/index.txt*
+deploy/ca/serial*
+deploy/wireguard/*.conf
+!deploy/wireguard/*.conf.example
+*.pat
+.azure-pat
+
+# ---------------------------------------------------------------------------
+# Python
+# ---------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+.venv/
+venv/
+env/
+
+# ---------------------------------------------------------------------------
+# Tooling caches and reports
+# ---------------------------------------------------------------------------
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+junit*.xml
+bandit-report.json
+pip-audit-report.json
+semgrep-report.json
+
+# ---------------------------------------------------------------------------
+# Local dev state
+# ---------------------------------------------------------------------------
+.local/
+*.log
+!deploy/**/*.log.example
+pgdata/
+.aivs-dev/
+
+# ---------------------------------------------------------------------------
+# Editors / OS
+# ---------------------------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Claude Code session state
+.claude/

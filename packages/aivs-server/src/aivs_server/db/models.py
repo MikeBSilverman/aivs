@@ -196,7 +196,8 @@ class ClientCertificate(TimestampMixin, Base):
             "OR (status = 'revoked' AND revoked_at IS NOT NULL)",
             name="revocation_consistent",
         ),
-        Index("ix_client_certificates_active", "fingerprint_sha256", postgresql_where=None),
+        # No separate index on fingerprint_sha256: the unique constraint above
+        # already provides one, and the authentication lookup uses it.
     )
 
     organization: Mapped[Organization] = relationship(back_populates="certificates")

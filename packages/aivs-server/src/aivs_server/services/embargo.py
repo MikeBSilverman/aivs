@@ -1,0 +1,266 @@
+"""Embargo records, early release, and the release sweeper.
+
+Two things carry an embargo, and keeping them straight is the whole design:
+
+**Visibility is the timestamp.** ``distributions.date_added`` in the future is
+what actually makes content unreadable, and it is checked on every read. Nothing
+here is required for the embargo to hold.
+
+**The ``embargoes`` row is the record.** Policy, status, coordination notes, and
+when it was released — the operator's view, and the audit trail's. If the
+sweeper never runs, the embargo still holds; the row just says ``pending``
+longer than it should.
+
+That split is why the sweeper is safe to be down, and it is the reason to resist
+"simplifying" this into a single flag that the reader consults.
+
+On moving ``date_added`` around, which looks symmetric and is not:
+
+* **Releasing early is safe.** An embargoed row's timestamp is in the future, so
+  no member's polling cursor can have passed it. Moving it to now leaves it at
+  or ahead of every cursor in existence, and the monotonic ``seq`` tiebreaker
+  handles the same-instant case.
+* **Backdating at distribution time is not**, which is why
+  ``distribute_submission`` refuses it: there the timestamp can land below
+  cursors members are already past, and ``added_after`` never looks backwards.
+* **Extending after release is not**, because members already hold the content.
+  Retracting visibility would be a false promise, exactly as withdrawal is after
+  distribution.
+"""
+
+from __future__ import annotations
+
+import datetime as dt
+import logging
+import uuid
+
+from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from aivs_schemas.enums import EmbargoPolicy, EmbargoStatus
+from aivs_server.audit.log import AuditAction, record
+from aivs_server.auth.context import AuthContext
+from aivs_server.db.models import Distribution, Embargo
+from aivs_server.taxii.resources import truncate_to_taxii_precision
+
+__all__ = [
+    "EmbargoError",
+    "extend_embargo",
+    "record_embargo",
+    "release_embargo_now",
+    "sweep_due_embargoes",
+]
+
+logger = logging.getLogger(__name__)
+
+
+class EmbargoError(ValueError):
+    """An embargo operation was refused for a reason the operator can act on."""
+
+
+async def record_embargo(
+    session: AsyncSession,
+    *,
+    submission_id: uuid.UUID,
+    release_at: dt.datetime,
+    policy: EmbargoPolicy = EmbargoPolicy.TIMER,
+    coordination_notes: str | None = None,
+) -> Embargo:
+    """Create or replace the embargo record for a submission.
+
+    Called by the distribution service when a future release time is given.
+    Writes into the caller's transaction so the record lands with the
+    distribution rows it describes.
+    """
+    existing = (
+        await session.execute(select(Embargo).where(Embargo.submission_id == submission_id))
+    ).scalar_one_or_none()
+
+    if existing is not None:
+        existing.policy = policy
+        existing.release_at = release_at
+        existing.status = EmbargoStatus.PENDING
+        existing.coordination_notes = coordination_notes
+        return existing
+
+    embargo = Embargo(
+        submission_id=submission_id,
+        policy=policy,
+        status=EmbargoStatus.PENDING,
+        release_at=release_at,
+        coordination_notes=coordination_notes,
+    )
+    session.add(embargo)
+    return embargo
+
+
+async def release_embargo_now(
+    session: AsyncSession,
+    ctx: AuthContext,
+    *,
+    submission_id: uuid.UUID,
+    reason: str | None = None,
+    now: dt.datetime | None = None,
+) -> Embargo:
+    """Release an embargoed submission immediately.
+
+    The operational escape hatch: when a finding starts being exploited in the
+    wild, an ISAC must be able to push it without waiting for a timer it set
+    days ago.
+
+    Safe in the direction it moves. See the module docstring.
+    """
+    now = now or dt.datetime.now(dt.UTC)
+    released_at = truncate_to_taxii_precision(now)
+
+    embargo = (
+        await session.execute(select(Embargo).where(Embargo.submission_id == submission_id))
+    ).scalar_one_or_none()
+    if embargo is None:
+        msg = "this submission is not under embargo"
+        raise EmbargoError(msg)
+    if embargo.status in (EmbargoStatus.RELEASED, EmbargoStatus.LIFTED_EARLY):
+        msg = "this embargo has already been released"
+        raise EmbargoError(msg)
+
+    # Only rows still in the future move; anything already visible keeps the
+    # timestamp members have been polling against.
+    await session.execute(
+        update(Distribution)
+        .where(
+            Distribution.submission_id == submission_id,
+            Distribution.date_added > released_at,
+        )
+        .values(date_added=released_at)
+    )
+
+    embargo.status = EmbargoStatus.LIFTED_EARLY
+    embargo.released_at = released_at
+
+    await record(
+        session,
+        action=AuditAction.EMBARGO_RELEASED,
+        ctx=ctx,
+        resource_type="submission",
+        resource_id=str(submission_id),
+        details={
+            "released_at": released_at.isoformat(),
+            "originally_due": embargo.release_at.isoformat() if embargo.release_at else None,
+            "early": True,
+            "reason": reason,
+        },
+    )
+    return embargo
+
+
+async def extend_embargo(
+    session: AsyncSession,
+    ctx: AuthContext,
+    *,
+    submission_id: uuid.UUID,
+    release_at: dt.datetime,
+    reason: str | None = None,
+    now: dt.datetime | None = None,
+) -> Embargo:
+    """Push an embargo's release time further out.
+
+    Refused once released, and refused if it would move the time backwards --
+    members poll forwards only, so a retraction is not something the system can
+    honestly offer.
+    """
+    now = now or dt.datetime.now(dt.UTC)
+    if release_at.tzinfo is None:
+        msg = "release_at must be timezone-aware"
+        raise EmbargoError(msg)
+
+    target = truncate_to_taxii_precision(release_at)
+    if target <= now:
+        msg = "an extension must be in the future"
+        raise EmbargoError(msg)
+
+    embargo = (
+        await session.execute(select(Embargo).where(Embargo.submission_id == submission_id))
+    ).scalar_one_or_none()
+    if embargo is None:
+        msg = "this submission is not under embargo"
+        raise EmbargoError(msg)
+    if embargo.status in (EmbargoStatus.RELEASED, EmbargoStatus.LIFTED_EARLY):
+        # Members already hold it. Pretending otherwise would be a false
+        # promise, exactly as withdrawal is after distribution.
+        msg = "this embargo has already been released and cannot be reinstated"
+        raise EmbargoError(msg)
+    if embargo.release_at is not None and target < embargo.release_at:
+        msg = "an embargo can be extended but not shortened; release it early instead"
+        raise EmbargoError(msg)
+
+    await session.execute(
+        update(Distribution)
+        .where(Distribution.submission_id == submission_id)
+        .values(date_added=target)
+    )
+
+    previous = embargo.release_at
+    embargo.release_at = target
+    embargo.status = EmbargoStatus.EXTENDED
+
+    await record(
+        session,
+        action=AuditAction.EMBARGO_EXTENDED,
+        ctx=ctx,
+        resource_type="submission",
+        resource_id=str(submission_id),
+        details={
+            "from": previous.isoformat() if previous else None,
+            "to": target.isoformat(),
+            "reason": reason,
+        },
+    )
+    return embargo
+
+
+async def sweep_due_embargoes(session: AsyncSession, *, now: dt.datetime | None = None) -> int:
+    """Mark embargoes whose time has arrived as released. Returns the count.
+
+    Bookkeeping only. The content became visible the instant its ``date_added``
+    passed, whether or not this ever runs — so a sweeper that has been down for
+    a week leaks nothing, and catches up in one pass when it returns.
+
+    It exists so the operator console and the audit trail say ``released``
+    rather than ``pending`` for content members can already read.
+    """
+    now = now or dt.datetime.now(dt.UTC)
+
+    due = (
+        (
+            await session.execute(
+                select(Embargo).where(
+                    Embargo.status.in_((EmbargoStatus.PENDING, EmbargoStatus.EXTENDED)),
+                    Embargo.release_at.is_not(None),
+                    Embargo.release_at <= now,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    for embargo in due:
+        embargo.status = EmbargoStatus.RELEASED
+        embargo.released_at = embargo.release_at
+        await record(
+            session,
+            action=AuditAction.EMBARGO_RELEASED,
+            actor_type="system",
+            resource_type="submission",
+            resource_id=str(embargo.submission_id),
+            details={
+                "released_at": embargo.release_at.isoformat() if embargo.release_at else None,
+                "early": False,
+            },
+        )
+
+    if due:
+        await session.commit()
+        logger.info("embargo sweep released %d submission(s)", len(due))
+
+    return len(due)

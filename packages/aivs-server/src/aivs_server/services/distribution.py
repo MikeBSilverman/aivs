@@ -46,6 +46,7 @@ from aivs_server.db.models import (
     StixObject,
     Submission,
 )
+from aivs_server.services.embargo import record_embargo
 from aivs_server.taxii.resources import truncate_to_taxii_precision
 
 __all__ = ["DistributionError", "DistributionResult", "distribute_submission"]
@@ -254,6 +255,12 @@ async def distribute_submission(
                 )
             )
             rows_written += 1
+
+    if date_added > now:
+        # A future visibility timestamp is an embargo; record it so the operator
+        # console and the audit trail can say so. The record is bookkeeping --
+        # the timestamp above is what actually holds the content back.
+        await record_embargo(session, submission_id=submission.id, release_at=date_added)
 
     if rows_written == 0:
         # Every object was already live in every target circle. Reporting

@@ -13,6 +13,7 @@ needs no authentication beyond a valid client certificate.
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Final
 
 from sqlalchemy.ext.asyncio import (
@@ -114,8 +115,13 @@ async def get_session() -> AsyncIterator[AsyncSession]:
             await session.close()
 
 
+@asynccontextmanager
 async def session_scope() -> AsyncIterator[AsyncSession]:
     """Session context manager for background tasks, which have no request.
+
+    Decorated, unlike ``get_session``: that one is a FastAPI dependency, which
+    consumes a bare async generator, whereas this is used with ``async with``.
+    The distinction is easy to miss because the bodies look identical.
 
     Commits on clean exit, rolls back on exception. The embargo sweeper and the
     webhook worker use this rather than ``get_session`` because they are not

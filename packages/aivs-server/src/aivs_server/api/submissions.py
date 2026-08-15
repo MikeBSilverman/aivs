@@ -26,6 +26,7 @@ from aivs_schemas.extension.builders import (
 )
 from aivs_schemas.models import (
     DistributeRequest,
+    EmbargoOut,
     SubmissionCreate,
     SubmissionDetail,
     SubmissionOut,
@@ -39,8 +40,15 @@ from aivs_server.auth.policy import (
     is_system_admin,
     require,
 )
-from aivs_server.db.models import Distribution, StixObject, Submission, SubmissionTransition
+from aivs_server.db.models import (
+    Distribution,
+    Embargo,
+    StixObject,
+    Submission,
+    SubmissionTransition,
+)
 from aivs_server.services.distribution import DistributionError, distribute_submission
+from aivs_server.services.embargo import EmbargoError, extend_embargo, release_embargo_now
 from aivs_server.services.submissions import (
     SubmissionError,
     apply_transition,
@@ -59,6 +67,7 @@ router = APIRouter(prefix="/api/v1/submissions", tags=["submissions"])
 _CLIENT_ERRORS = (
     SubmissionError,
     DistributionError,
+    EmbargoError,
     BundleValidationError,
     ExtensionValidationError,
     UnknownExtensionError,
@@ -173,6 +182,10 @@ async def get_submission(
         .scalars()
         .all()
     )
+    embargo = (
+        await session.execute(select(Embargo).where(Embargo.submission_id == submission.id))
+    ).scalar_one_or_none()
+
     transitions = list(
         (
             await session.execute(
@@ -191,7 +204,7 @@ async def get_submission(
         stix_ids=stix_ids,
         circle_ids=circle_ids,
         transitions=[TransitionOut.model_validate(t) for t in transitions],
-        embargo=None,
+        embargo=EmbargoOut.model_validate(embargo) if embargo else None,
     )
 
 
@@ -316,5 +329,68 @@ async def distribute(
 
     # One commit for the visibility rows, the state change, and the audit trail.
     await session.commit()
+    await session.refresh(submission)
+    return submission
+
+
+@router.post("/{submission_id}/embargo/release", response_model=SubmissionOut)
+async def release_embargo(
+    submission_id: uuid.UUID,
+    payload: TransitionRequest,
+    ctx: AuthenticatedContext,
+    session: SessionDep,
+) -> Submission:
+    """Release an embargoed submission immediately. Hosting ISAC only.
+
+    The operational escape hatch: when a finding starts being exploited in the
+    wild, waiting for a timer set days ago is the wrong answer.
+    """
+    submission = await _require_visible_submission(session, ctx, submission_id, for_update=True)
+    require(is_system_admin(ctx), "embargo_release_requires_system_admin")
+
+    try:
+        await release_embargo_now(session, ctx, submission_id=submission.id, reason=payload.reason)
+        await session.commit()
+    except _CLIENT_ERRORS as exc:
+        await session.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+    await session.refresh(submission)
+    return submission
+
+
+@router.post("/{submission_id}/embargo/extend", response_model=SubmissionOut)
+async def extend_embargo_endpoint(
+    submission_id: uuid.UUID,
+    payload: DistributeRequest,
+    ctx: AuthenticatedContext,
+    session: SessionDep,
+) -> Submission:
+    """Push an embargo further out. Hosting ISAC only.
+
+    Reuses ``DistributeRequest`` for its ``release_at`` validation; the circle
+    list it carries is ignored, since extension does not change who receives.
+    """
+    submission = await _require_visible_submission(session, ctx, submission_id, for_update=True)
+    require(is_system_admin(ctx), "embargo_extend_requires_system_admin")
+
+    if payload.release_at is None:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, detail="release_at is required to extend an embargo"
+        )
+
+    try:
+        await extend_embargo(
+            session,
+            ctx,
+            submission_id=submission.id,
+            release_at=payload.release_at,
+            reason=payload.reason,
+        )
+        await session.commit()
+    except _CLIENT_ERRORS as exc:
+        await session.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
     await session.refresh(submission)
     return submission

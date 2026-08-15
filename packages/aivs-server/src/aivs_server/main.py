@@ -16,9 +16,10 @@ that quotes a database constraint or a file path is a free schema disclosure.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from typing import Any, Final
 
@@ -31,7 +32,7 @@ from aivs_server.api import acknowledgments, admin, meta, submissions
 from aivs_server.audit.log import AuditAction, record_denial
 from aivs_server.auth.policy import PolicyDeniedError
 from aivs_server.config import Settings, get_settings
-from aivs_server.db.engine import dispose_engine, get_engine
+from aivs_server.db.engine import dispose_engine, get_engine, session_scope
 from aivs_server.logging_config import configure_logging
 from aivs_server.middleware import (
     BodySizeLimitMiddleware,
@@ -39,6 +40,7 @@ from aivs_server.middleware import (
     SecurityHeadersMiddleware,
 )
 from aivs_server.portal import routes as portal_routes
+from aivs_server.services.embargo import sweep_due_embargoes
 from aivs_server.taxii import router as taxii_router
 
 __all__ = ["create_app"]
@@ -74,11 +76,38 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Construct the engine eagerly so a bad database URL fails at startup rather
     # than on a member's first request.
     get_engine()
+
+    sweeper = asyncio.create_task(_embargo_sweeper(settings))
     try:
         yield
     finally:
+        sweeper.cancel()
+        with suppress(asyncio.CancelledError):
+            await sweeper
         await dispose_engine()
         logger.info("stopped AIVS")
+
+
+async def _embargo_sweeper(settings: Settings) -> None:
+    """Mark embargoes as released once their time has passed.
+
+    Bookkeeping only, and deliberately so: content becomes visible the instant
+    its ``date_added`` passes, whether or not this loop is running. A sweeper
+    that has been down for a week leaks nothing and catches up in one pass.
+
+    Failures are logged and the loop continues. An instance that stopped serving
+    members because a background bookkeeping task hit a transient database error
+    would be a far worse outcome than a stale status column.
+    """
+    while True:
+        await asyncio.sleep(settings.embargo_sweep_interval_seconds)
+        try:
+            async with session_scope() as session:
+                await sweep_due_embargoes(session)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("embargo sweep failed; will retry on the next interval")
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:

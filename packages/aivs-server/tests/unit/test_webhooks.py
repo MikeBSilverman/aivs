@@ -19,6 +19,7 @@ import ipaddress
 
 import pytest
 
+from aivs_schemas.enums import OrgType
 from aivs_server.notify.webhooks import (
     SIGNATURE_VERSION,
     WebhookRejectedError,
@@ -26,6 +27,7 @@ from aivs_server.notify.webhooks import (
     resolve_delivery_target,
     sign_payload,
 )
+from tests.conftest import proxy_headers
 
 
 # ---------------------------------------------------------------------------
@@ -160,3 +162,101 @@ def test_a_different_body_produces_a_different_signature():
 def test_the_signature_is_versioned():
     """So the scheme can change without receivers guessing which one they hold."""
     assert sign_payload(b"s", b"b", "t").startswith(f"{SIGNATURE_VERSION}=")
+
+
+# ---------------------------------------------------------------------------
+# Registration
+# ---------------------------------------------------------------------------
+@pytest.mark.db
+class TestWebhookRegistration:
+    """The endpoints a member uses to register an endpoint of their own.
+
+    Registration resolves the URL but does not connect to it, so these use a
+    hostname that resolves publicly rather than a live server.
+    """
+
+    API = "/api/v1/webhooks"
+    PUBLIC_TARGET = "https://example.com/aivs-hook"
+
+    @pytest.fixture
+    async def member(self, make_org, make_cert):
+        org = await make_org("meridian-global", org_type=OrgType.GSIB)
+        pem, _ = await make_cert(org)
+        return org, pem
+
+    async def test_an_unreachable_target_is_refused_at_registration(self, client, member):
+        """Found out now, rather than from a silent absence of notifications."""
+        _org, pem = member
+        response = await client.post(
+            self.API,
+            json={"url": "https://169.254.169.254/hook"},
+            headers=proxy_headers(pem),
+        )
+        assert response.status_code == 400
+        assert "address_not_routable" in response.text
+
+    async def test_a_plaintext_target_is_refused(self, client, member):
+        _org, pem = member
+        response = await client.post(
+            self.API, json={"url": "http://example.com/hook"}, headers=proxy_headers(pem)
+        )
+        assert response.status_code == 400
+        assert "scheme_not_https" in response.text
+
+    async def test_the_signing_secret_is_returned_once(self, client, member):
+        """Stored encoded, so a member who loses it registers a new webhook.
+
+        The secret is what authenticates our notifications to them, so handing
+        it back on a later read would widen who can forge one.
+        """
+        _org, pem = member
+        created = await client.post(
+            self.API,
+            json={"url": self.PUBLIC_TARGET, "events": ["submission.distributed"]},
+            headers=proxy_headers(pem),
+        )
+        assert created.status_code == 201, created.text
+        assert created.json()["signing_secret"]
+
+        listed = await client.get(self.API, headers=proxy_headers(pem))
+        assert listed.status_code == 200
+        assert "signing_secret" not in listed.json()[0]
+
+    async def test_a_member_sees_only_their_own_webhooks(self, client, member, make_org, make_cert):
+        _org, pem = member
+        await client.post(self.API, json={"url": self.PUBLIC_TARGET}, headers=proxy_headers(pem))
+
+        other = await make_org("atlantic-clearing")
+        other_pem, _ = await make_cert(other)
+
+        mine = await client.get(self.API, headers=proxy_headers(pem))
+        theirs = await client.get(self.API, headers=proxy_headers(other_pem))
+        assert len(mine.json()) == 1
+        assert theirs.json() == [], "another firm's webhooks are not visible"
+
+    async def test_a_member_can_delete_their_own_webhook(self, client, member):
+        _org, pem = member
+        created = await client.post(
+            self.API, json={"url": self.PUBLIC_TARGET}, headers=proxy_headers(pem)
+        )
+        webhook_id = created.json()["id"]
+
+        removed = await client.delete(f"{self.API}/{webhook_id}", headers=proxy_headers(pem))
+        assert removed.status_code == 204
+        assert (await client.get(self.API, headers=proxy_headers(pem))).json() == []
+
+    async def test_deleting_another_orgs_webhook_is_not_found(
+        self, client, member, make_org, make_cert
+    ):
+        """Absent rather than forbidden, so ids cannot be probed."""
+        _org, pem = member
+        other = await make_org("atlantic-clearing")
+        other_pem, _ = await make_cert(other)
+        created = await client.post(
+            self.API, json={"url": self.PUBLIC_TARGET}, headers=proxy_headers(other_pem)
+        )
+
+        response = await client.delete(
+            f"{self.API}/{created.json()['id']}", headers=proxy_headers(pem)
+        )
+        assert response.status_code == 404

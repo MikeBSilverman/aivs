@@ -13,6 +13,7 @@ material because it never receives any.
 from __future__ import annotations
 
 import datetime as dt
+import secrets
 import uuid
 
 from cryptography import x509
@@ -32,6 +33,7 @@ from aivs_schemas.models import (
 )
 from aivs_server.audit.log import AuditAction, record
 from aivs_server.auth.deps import AuthenticatedContext, SessionDep, SettingsDep
+from aivs_server.auth.passwords import encode_secret
 from aivs_server.auth.policy import (
     can_administer_circle,
     can_manage_org,
@@ -45,7 +47,9 @@ from aivs_server.db.models import (
     ClientCertificate,
     Organization,
     TaxiiCollection,
+    Webhook,
 )
+from aivs_server.notify.webhooks import WebhookRejectedError, resolve_delivery_target
 
 __all__ = ["router"]
 
@@ -444,5 +448,125 @@ async def remove_circle_member(
         resource_type="circle",
         resource_id=str(circle_id),
         details={"org_id": str(org_id)},
+    )
+    await session.commit()
+
+
+# ---------------------------------------------------------------------------
+# Webhooks
+# ---------------------------------------------------------------------------
+class WebhookRegister(BaseModel):
+    """Register a notification endpoint for the caller's own organisation."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    url: str = Field(min_length=1, max_length=2000)
+    #: Events to receive. Empty means all of them.
+    events: list[str] = Field(default_factory=list, max_length=32)
+
+
+class WebhookOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    org_id: uuid.UUID
+    url: str
+    events: list[str]
+    is_active: bool
+    consecutive_failures: int
+
+
+class WebhookCreated(WebhookOut):
+    """The registration response, carrying the signing secret.
+
+    Returned **once**, at creation. It is stored only in encoded form, so a
+    member who loses it registers a new webhook rather than recovering this one
+    -- which is the correct trade for a value that authenticates our
+    notifications to them.
+    """
+
+    signing_secret: str
+
+
+@router.post("/webhooks", status_code=status.HTTP_201_CREATED, response_model=WebhookCreated)
+async def register_webhook(
+    payload: WebhookRegister,
+    ctx: AuthenticatedContext,
+    session: SessionDep,
+    settings: SettingsDep,
+) -> WebhookCreated:
+    """Register a webhook for the caller's organisation.
+
+    The URL is resolved and checked here, not only at delivery time, so a member
+    finds out immediately that they have pointed it somewhere unreachable rather
+    than discovering it from a silent absence of notifications.
+    """
+    try:
+        resolve_delivery_target(
+            payload.url, allow_private=settings.dev_allow_private_webhook_targets
+        )
+    except WebhookRejectedError as exc:
+        # Safe to return: it describes the caller's own configuration.
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail=f"That URL cannot be used as a webhook target ({exc.reason}).",
+        ) from exc
+
+    secret = secrets.token_urlsafe(32)
+    webhook = Webhook(
+        org_id=ctx.org_id,
+        url=payload.url,
+        hmac_secret_encrypted=encode_secret(secret),
+        events=payload.events,
+        is_active=True,
+    )
+    session.add(webhook)
+    await record(
+        session,
+        action=AuditAction.WEBHOOK_CREATED,
+        ctx=ctx,
+        resource_type="webhook",
+        details={"events": payload.events or ["*"]},
+    )
+    await session.commit()
+    await session.refresh(webhook)
+
+    return WebhookCreated(**WebhookOut.model_validate(webhook).model_dump(), signing_secret=secret)
+
+
+@router.get("/webhooks", response_model=list[WebhookOut])
+async def list_webhooks(ctx: AuthenticatedContext, session: SessionDep) -> list[Webhook]:
+    """List the caller's own webhooks. Never another organisation's."""
+    return list(
+        (
+            await session.execute(
+                select(Webhook).where(Webhook.org_id == ctx.org_id).order_by(Webhook.created_at)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+
+@router.delete("/webhooks/{webhook_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_webhook(
+    webhook_id: uuid.UUID, ctx: AuthenticatedContext, session: SessionDep
+) -> None:
+    """Remove a webhook.
+
+    Reported as absent when it belongs to another organisation, so identifiers
+    cannot be probed to learn that someone else registered one.
+    """
+    webhook = await session.get(Webhook, webhook_id)
+    if webhook is None or webhook.org_id != ctx.org_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Webhook not found")
+
+    await session.delete(webhook)
+    await record(
+        session,
+        action=AuditAction.WEBHOOK_DELETED,
+        ctx=ctx,
+        resource_type="webhook",
+        resource_id=str(webhook_id),
     )
     await session.commit()

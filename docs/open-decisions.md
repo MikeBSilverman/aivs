@@ -2,187 +2,71 @@
 
 Design notes for choices that are **not yet made**. Each states the current
 behaviour, the options with their real costs, and a recommendation. When one is
-settled, move the reasoning into the code or into `docs/architecture.md` and
-delete the entry — a decision note that outlives its decision reads as though the
-question is still open.
-
-Two of these came out of the sharded security review; the third is a product
-question that turned out to depend on the same underlying gap.
+settled, the reasoning moves into the code and the entry is replaced by a line
+in the record at the bottom — a decision note that outlives its decision reads
+as though the question is still open.
 
 ---
 
 ## 1. Who may change a sharing circle's membership?
 
+**Still open.** The *technical* half of this was closed: content visibility is
+now bounded by `circle_memberships.joined_at`, so adding an organisation to a
+circle grants participation from that moment rather than the circle's entire
+back catalogue. That was a defect whoever performed the change, and it is fixed.
+
+What remains is the governance question.
+
 **Current behaviour.** `auth/policy.can_administer_circle` permits the hosting
 ISAC (`is_system_admin`) **or** any member organisation holding
 `CircleRole.CIRCLE_ADMIN` in that circle. Circle roles attach to the
-organisation's certificate, not to a named human.
-
-**The amplifier.** `visible_content_clause` bounds visibility by circle and by
-`date_added <= now`. There is no membership-start term. So adding an
-organisation to a circle grants it **every object ever distributed into that
-circle**, back to the beginning — including other firms' embargoed content at
-that circle's TLP floor. A delegated circle admin can therefore hand a peer the
-entire history without the ISAC being involved or, beyond one audit row,
-informed.
+organisation's certificate, not to a named human. So a member firm can admit
+another firm to a circle it administers, and the ISAC learns of it from an audit
+row.
 
 ### Option A — restrict to the hosting ISAC
 
 | | |
 |---|---|
 | **For** | Membership of a sharing circle *is* the trust boundary. In an ISAC it is a governance act, usually backed by a membership agreement, sector eligibility, and an NDA — not an operational one. Delegating it delegates the ISAC's own admission control, which is the thing members are paying for. One party grants access, which makes "who could see this, and when?" answerable from one place. |
-| **Against** | Every membership change becomes an ISAC ticket. For a large circle with real churn that is a standing operational load on exactly the party whose time is scarcest — and adoption friction is a first-order concern for this product. A sector-led working group that wants to self-manage cannot. |
+| **Against** | Every membership change becomes an ISAC ticket. A sector-led working group that wants to self-manage cannot. This is a smaller cost than it was: rule-based membership now handles the bulk of routine changes without anyone filing anything, and the admin UI makes the remainder a form rather than a support request. |
 
-### Option B — keep delegation, bound the blast radius
-
-Add `Distribution.date_added >= <membership start>` to the visibility clause, so
-a newly added organisation receives content distributed **from the moment it
-joined**, not before.
+### Option B — keep delegation as it stands
 
 | | |
 |---|---|
-| **For** | Restores what "adding someone to a group" intuitively means: they participate from now on, they do not inherit the archive. Costs no migration — `circle_memberships.created_at` already exists. Fixes a real correctness problem *independently of the governance question*: today **any** membership addition, by the ISAC or by anyone else, retroactively exposes the back catalogue. |
-| **Against** | A legitimately re-added organisation — certificate rotation handled clumsily, an admin error reversed, a re-enrolment — silently loses its history, because deleting and re-adding a membership resets the clock. Needs an explicit "restore with original join date" path for operators. Adds a term to the hot read path (cheap: the join is already there and indexed). Does not answer the governance question at all — a member firm can still admit another firm. |
+| **For** | A delegated circle admin can now only grant *future* delivery, not the archive, so the blast radius is bounded in the way that matters. Sector-led circles stay self-service. |
+| **Against** | A member firm can still admit another firm to a circle carrying other members' embargoed content, without the ISAC being involved. For a product whose proposition is the ISAC's control over who is in the room, that is a claim with an exception in it. |
 
 ### Option C — member proposes, ISAC approves
 
 | | |
 |---|---|
 | **For** | Keeps governance with the ISAC and the operational load with the people who want the change. |
-| **Against** | A workflow, a notification path, and a queue to build and secure, for a problem neither A nor B leaves unsolved. Not MVP-shaped. |
+| **Against** | A workflow, a notification path and a queue to build and secure, for a problem A does not leave unsolved now that the routine cases are automated. |
 
 ### Recommendation
 
-**Do B regardless, then adopt A.**
+**A.** The argument for delegation was mostly operational load, and rule-based
+membership plus the admin UI have absorbed most of it. What is left is the
+governance question, and for an ISAC-in-a-box the ISAC's control over admission
+is the trust story being sold. Delegation is worth re-introducing when a
+deploying ISAC asks for it — with the `joined_at` bound already in place to
+limit what a delegated admin can hand over.
 
-B is not really a policy choice — retroactive exposure of the archive on every
-membership change is a defect whichever party performs the change, and it is
-cheap to fix. Do it first.
-
-Then default to A for v1. For an ISAC-in-a-box, the ISAC's control over
-admission *is* the trust story being sold; delegation is a capability to
-re-introduce when a deploying ISAC asks for it, with B already in place to bound
-it. Note that the operational load A creates is much smaller once §3 below
-lands — most membership changes stop being manual at all.
+This is a one-line change (`can_administer_circle` returns
+`is_system_admin(ctx)`), plus updating the authorization matrix. It has not been
+made because it is a product decision rather than a defect.
 
 ---
 
-## 2. Webhooks: wire them up, or remove them?
+## Decided
 
-**Current behaviour.** A member can register an https endpoint and is handed a
-signing secret "shown exactly once". `notify/webhooks.deliver_event` and
-`active_webhooks_for` have **no caller anywhere**. `webhook_deliveries` stays
-empty, `consecutive_failures` stays zero, and the member has no signal that they
-are not subscribed to anything. This is the failure mode `CLAUDE.md` §5 names:
-a schema describing a feature nobody implemented reads as done.
-
-### Option A — wire it up
-
-| | |
+| Decision | Where the reasoning now lives |
 |---|---|
-| **For** | Latency *is* the product. Pre-CVE early warning where the member finds out on their next 15-minute poll is a materially weaker proposition than one that pushes. The hard parts are already built and have now been reviewed: the SSRF guard resolves once, judges every returned address, pins the connection to the judged address and keeps SNI, with redirects disabled; payloads are HMAC-signed over timestamp and body; delivery attempts are recorded. It is also a genuine differentiator against a plain TAXII feed. |
-| **Against** | Needs a durable worker with retry and backoff. A background task in the app process — which is what the embargo sweeper is — loses in-flight attempts when the process restarts. Delivery must run **after** the distribution transaction commits and must never run inside it, or a slow member endpoint holds a database transaction open. Egress from the ISAC's network to arbitrary member endpoints is a security-review conversation at *every* deployment, and the instance is deliberately behind network gating. And the notification itself carries metadata: "a new TLP:RED item landed in the Section 9 circle" is informative to anyone who learns it. |
-
-### Option B — remove the endpoint and the models
-
-| | |
-|---|---|
-| **For** | An honest surface. Less to secure, less to run, nothing to explain. TAXII polling with `added_after` is the ISAC-native pattern and every member firm already runs a client for it. |
-| **Against** | Discards the latency advantage that is arguably the point of pre-CVE sharing, and throws away working, reviewed SSRF-safe code that would have to be written again. |
-
-### Recommendation
-
-**A, scoped to contentless notifications** — and make the surface honest in the
-meantime.
-
-Fire on the transition that makes content *visible* (distribution, and embargo
-release — not distribution alone, or members are notified about content they
-cannot yet read), from the post-commit path, carrying only "submission `{id}`
-became visible to you in circle `{slug}` — poll to collect". Contentless
-sidesteps the metadata-leak and TLP-handling questions completely, keeps the
-regulatory story clean because the retrieval receipt still comes from a real
-TAXII collect, and reduces the worker's job to "deliver a pointer, eventually".
-
-Until that ships, do not leave the registration endpoint issuing signing secrets
-for notifications that never arrive. Either disable the route or have it respond
-with a clear "not yet available on this instance".
-
----
-
-## 3. Selecting a known group instead of enumerating members
-
-**The question.** It is easier for an ISAC to pick a known group than to
-enumerate participants every time. Is that possible?
-
-**Short answer: yes, and most of it already exists — but the ergonomics are
-missing in a specific place, and one level of it depends on §1B.**
-
-**What is already true.** *Distribution* is already group-based:
-`POST /submissions/{id}/distribute` takes `circle_ids`, and a circle is a named
-group of organisations. An operator releasing to "Section 9" selects one circle,
-not thirty firms.
-
-**Where the friction actually is.** Two places:
-
-1. **Building and maintaining a circle.** `POST /circles/{id}/members` takes a
-   single `org_id`. Onboarding thirty GSIBs is thirty calls.
-2. **There is no admin UI at all.** The portal ships five templates — login,
-   dashboard, submissions, submission detail, submit. Every organisation,
-   circle, membership and certificate operation is `curl`. For an ISAC-in-a-box
-   this is probably the largest real-world adoption obstacle in the product, and
-   it is larger than the API-shape question.
-
-**The unused asset.** Every organisation already carries an `org_type`
-(`gsib`, `section9`, `crit_infra`, `admin`), curated at enrolment. Nothing uses
-it for targeting — its only consumers are the `ADMIN` checks in `policy.py` and
-`distribution.py`. It is a "known group" that already exists and is already
-maintained.
-
-### Level 1 — bulk membership
-
-Accept a list of `org_id`s, and accept slugs as well as UUIDs so an operator can
-paste a roster rather than look up thirty identifiers.
-
-| | |
-|---|---|
-| **For** | Pure ergonomics. No model change, no authorization change, one membership row and one audit row per organisation exactly as today. An hour's work. |
-| **Against** | Does not remove the maintenance burden — it makes the same manual act faster. A firm enrolled next month still has to be remembered. |
-
-### Level 2 — standing groups defined by a rule
-
-Let a circle declare a membership rule over organisation attributes — "every
-active organisation of type `section9`" — and materialise it into real
-`circle_memberships` rows whenever it is evaluated (at enrolment, and on demand).
-
-| | |
-|---|---|
-| **For** | This is the actual answer to the question. Enrolling a new Section 9 firm puts them in the Section 9 circle automatically: no second step, no forgotten member, no firm that quietly receives nothing for a month because someone missed a checkbox. For an ISAC that is the difference between a member being covered on day one and being covered whenever someone remembers. Materialising rather than computing at read time keeps the audit trail exactly as strong as it is today — one row per organisation, with a join time — so "who could see this on 3 March?" stays a query against stored rows rather than a reconstruction of historical attributes. |
-| **Against** | **Organisation creation becomes an access grant.** Setting `org_type: section9` at enrolment silently admits that firm to every `section9` circle — and, without §1B, to the entire back catalogue of each. That is a much sharper edge than today's explicit membership call, and it means the enrolment endpoint inherits the sensitivity of the membership endpoint. It also makes `org_type` load-bearing: changing a firm's classification becomes an access change and needs the same audit and the same care as a membership change. Rules that overlap need defined precedence, and a rule-managed membership must not be silently removable by hand. |
-
-### Level 3 — composite circles (a circle containing circles)
-
-| | |
-|---|---|
-| **For** | Expresses "all critical infrastructure" as the union of several sector circles without duplicating rosters. |
-| **Against** | Every additional layer of indirection is another way for an operator to be wrong about who is actually in scope when they release embargoed intelligence. The blast radius of a mistake here is the product's core promise. Not worth it for v1. |
-
-### Recommendation
-
-**Level 1 now. Level 2 as materialised rules, gated on §1B. Skip Level 3.**
-
-Level 1 is trivial and helps immediately. Level 2 is the real answer and is
-worth building — but it must not land before the membership-start term from §1B,
-because dynamic membership without it means enrolling an organisation
-retroactively hands it years of other firms' embargoed content.
-
-Two things worth adding alongside:
-
-- **Roster import.** ISACs maintain these lists somewhere already — a regulator's
-  Section 9 list, an existing community-of-interest roster. Accepting a pasted
-  list of slugs is a cheap "Level 1.5" that matches how the work is really done.
-- **Show the operator who is in scope, by name, before they release.** Whatever
-  the targeting mechanism, the distribute screen should resolve the selection to
-  the actual list of organisations that will receive the content. A group is
-  easier to select and correspondingly easier to be wrong about; the moment
-  before releasing embargoed intelligence is the moment to make the membership
-  concrete.
+| **Bound visibility by membership start.** Joining a circle grants participation, never the back catalogue. `joined_at` is its own column and is settable, so a membership restored after an administrative mistake keeps the history it legitimately had. | `auth/policy.visible_content_clause`, `CLAUDE.md` §5, migration `d3f18a7c5b02` |
+| **Bulk membership.** `POST /circles/{id}/members` takes identifiers and/or slugs; unknown names fail the whole batch, already-members are skipped so re-applying a roster is idempotent. | `services/circles.py` |
+| **Rule-based groups.** `Circle.auto_member_org_types` materialises into ordinary membership rows, marked `managed_by_rule` so reconciliation only ever touches what it owns. Reconciled on circle creation, activation and suspension. | `services/circles.py`, migration `e5a92c11f7d4` |
+| **Webhooks: contentless, and wired up.** The payload names the submission and collection and says "poll to collect". Fires when content becomes *visible* — distribution without an embargo, and embargo release — never at distribution under embargo. Queued inside the transaction that made the content visible, drained by a separate dispatcher with bounded retries. | `notify/events.py`, `notify/dispatcher.py`, migration `f7b3d40e9a15` |
+| **Admin UI.** Organisations and circles are administered from the portal, through the same policy predicates and service functions as the API. | `portal/admin_routes.py` |
+| **SBOM.** Reproducible CycloneDX 1.6 from the locked runtime environment, plus a syft scan of the image for the OS layer. | `scripts/generate-sbom.sh`, `CLAUDE.md` §2 |

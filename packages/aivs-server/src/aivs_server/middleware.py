@@ -19,9 +19,11 @@ from aivs_server.config import Settings
 from aivs_server.logging_config import set_request_id
 
 __all__ = [
+    "PORTAL_PATH_PREFIX",
     "BodySizeLimitMiddleware",
     "RequestContextMiddleware",
     "SecurityHeadersMiddleware",
+    "security_headers_for",
 ]
 
 Scope = MutableMapping[str, Any]
@@ -178,6 +180,32 @@ class BodySizeLimitMiddleware:
                 await _send_json_error(send, 413, "Request body too large")
 
 
+#: Where the portal is mounted. Shared so that anything reproducing this
+#: middleware's header set outside the ASGI stack picks the same policy.
+PORTAL_PATH_PREFIX: Final[str] = "/portal"
+
+
+def security_headers_for(path: str) -> list[tuple[bytes, bytes]]:
+    """The complete security header set a response on ``path`` must carry.
+
+    Exists because one response class never reaches
+    :class:`SecurityHeadersMiddleware`: Starlette installs the ``Exception``
+    handler in ``ServerErrorMiddleware``, which sits *outside* the user
+    middleware stack and writes to the server's own ``send``. So an unhandled
+    exception -- a pool timeout, a driver error -- produced the one response a
+    member is most likely to report, carrying none of these headers.
+
+    Handlers that do traverse the middleware may apply these too: the middleware
+    only fills in names that are absent, so doing both is idempotent.
+    """
+    csp = _PORTAL_CSP if path.startswith(PORTAL_PATH_PREFIX) else _API_CSP
+    return [
+        *_BASE_SECURITY_HEADERS,
+        (b"content-security-policy", csp),
+        (b"cache-control", b"no-store, max-age=0"),
+    ]
+
+
 class SecurityHeadersMiddleware:
     """Attach security headers to every response.
 
@@ -187,7 +215,7 @@ class SecurityHeadersMiddleware:
     weaken the machine-facing endpoints for no benefit.
     """
 
-    def __init__(self, app: ASGIApp, portal_path_prefix: str = "/portal") -> None:
+    def __init__(self, app: ASGIApp, portal_path_prefix: str = PORTAL_PATH_PREFIX) -> None:
         self.app = app
         self.portal_path_prefix = portal_path_prefix
 

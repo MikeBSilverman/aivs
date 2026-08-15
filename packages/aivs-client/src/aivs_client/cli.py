@@ -14,9 +14,10 @@ ingest pipeline.
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
-from typing import Annotated, Any, NoReturn
+from typing import Annotated, Any, Final, NoReturn
 
 import typer
 from cryptography import x509
@@ -39,6 +40,25 @@ BaseUrl = Annotated[str | None, typer.Option("--url", help="Instance base URL.")
 CertOpt = Annotated[str | None, typer.Option("--cert", help="Client certificate (PEM).")]
 KeyOpt = Annotated[str | None, typer.Option("--key", help="Private key (PEM).")]
 CaOpt = Annotated[str | None, typer.Option("--ca", help="CA bundle verifying the server.")]
+
+#: Organisation slugs, matching ``aivs_schemas.models.Slug``. Kept in step with
+#: the server's definition so a name the CLI accepts is one the instance will.
+#: Also what keeps a slug safe to interpolate into a filename.
+_SLUG_PATTERN: Final[re.Pattern[str]] = re.compile(r"^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$")
+
+#: Characters that must never reach a terminal from server-supplied text.
+_CONTROL_CHARACTERS: Final[re.Pattern[str]] = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def _safe(value: object) -> str:
+    """Render a server-supplied string for a line-oriented terminal listing.
+
+    Titles and names come from other member organisations. Printed raw into a
+    one-record-per-line listing, an embedded newline forges a row for a
+    submission that does not exist, a carriage return overwrites a real one, and
+    an escape sequence reaches the terminal directly whenever stdout is a tty.
+    """
+    return _CONTROL_CHARACTERS.sub("?", str(value))
 
 
 def _err(message: str) -> None:
@@ -99,6 +119,18 @@ def enroll(
     environment, generate it on the host that will use it rather than copying it
     around afterwards.
     """
+    # Validated before it is used to build a path. The argument is documented as
+    # a slug, but nothing enforced that, so `../../shared/foo` wrote the private
+    # key outside --out and `a/b` failed with an unhandled FileNotFoundError from
+    # a directory mkdir never created.
+    if not _SLUG_PATTERN.match(common_name):
+        _err(
+            f"{common_name!r} is not a valid organisation slug. Use lowercase "
+            "letters, digits and hyphens, starting and ending with a letter or "
+            "digit (3-64 characters)."
+        )
+        raise typer.Exit(code=2)
+
     out_dir.mkdir(parents=True, exist_ok=True)
     key_path = out_dir / f"{common_name}.key"
     csr_path = out_dir / f"{common_name}.csr"
@@ -172,7 +204,7 @@ def collections(
         return
     for entry in found:
         writable = " (contributor)" if entry.get("can_write") else ""
-        typer.echo(f"{entry['id']}  {entry['title']}{writable}")
+        typer.echo(f"{entry['id']}  {_safe(entry['title'])}{writable}")
 
 
 # ---------------------------------------------------------------------------
@@ -375,7 +407,7 @@ def list_submissions(
         _err("no submissions")
         return
     for row in rows:
-        typer.echo(f"{row['id']}  {row['state']:12} {row['tlp']:12} {row['title']}")
+        typer.echo(f"{row['id']}  {row['state']:12} {row['tlp']:12} {_safe(row['title'])}")
 
 
 def main() -> None:  # pragma: no cover - console entry point

@@ -650,3 +650,124 @@ async def test_identity_objects_are_fine_when_not_anonymous(client, member):
         headers=proxy_headers(pem),
     )
     assert response.status_code == 201
+
+
+def identity_bundle(name: str = "Meridian Global Bank") -> dict:
+    """A bundle carrying the submitter's own identity SDO alongside the finding."""
+    payload = bundle()
+    payload["objects"].append(
+        {
+            "type": "identity",
+            "spec_version": "2.1",
+            "id": f"identity--{uuid.uuid4()}",
+            "created": "2026-08-01T00:00:00.000Z",
+            "modified": "2026-08-01T00:00:00.000Z",
+            "name": name,
+        }
+    )
+    return payload
+
+
+async def test_turning_on_anonymity_later_rechecks_the_stored_objects(client, member):
+    """The check is a property of the submission, not of the write that carried a bundle.
+
+    Storing an identity SDO is legal while the submission is attributed, so a
+    draft can hold one before anyone asks for anonymity. Amending only the flag
+    used to skip the check entirely, because it ran solely inside the
+    store-a-bundle path -- and the name then rode out to every circle member in
+    the same envelope as a finding the submitter was told was anonymous.
+    """
+    _org, pem = await member()
+    created = await create_draft(client, pem, bundle=identity_bundle())
+
+    response = await client.patch(
+        f"{API}/{created['id']}",
+        json={"distribute_anonymously": True},
+        headers=proxy_headers(pem),
+    )
+
+    assert response.status_code == 400, response.text
+    assert "identity" in response.text
+
+
+async def test_turning_on_anonymity_is_allowed_when_nothing_identifies_the_submitter(
+    client, member, session
+):
+    """The re-check must not refuse the ordinary case."""
+    _org, pem = await member()
+    created = await create_draft(client, pem)
+
+    response = await client.patch(
+        f"{API}/{created['id']}",
+        json={"distribute_anonymously": True},
+        headers=proxy_headers(pem),
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["distribute_anonymously"] is True
+
+
+async def test_amending_the_flag_and_the_bundle_together_still_checks(client, member):
+    """The path that always worked keeps working: the flag is applied before the check."""
+    _org, pem = await member()
+    created = await create_draft(client, pem)
+
+    response = await client.patch(
+        f"{API}/{created['id']}",
+        json={"distribute_anonymously": True, "bundle": identity_bundle()},
+        headers=proxy_headers(pem),
+    )
+
+    assert response.status_code == 400, response.text
+    assert "identity" in response.text
+
+
+async def test_distribution_refuses_an_anonymous_submission_that_names_its_submitter(
+    client, member, isac, circle, session
+):
+    """The last gate. Distribution is where the promise is finally kept or broken.
+
+    Reached by writing the flag straight to the row, bypassing the API guards
+    above on purpose: the point of this gate is that it holds regardless of how
+    the flag came to be set.
+    """
+    from aivs_server.db.models import Submission  # noqa: PLC0415 - local to this test
+
+    _org, pem = await member()
+    _isac_org, isac_pem = isac
+    circle_row, _collection = await circle()
+
+    created = await create_draft(client, pem, bundle=identity_bundle())
+    submission_id = uuid.UUID(created["id"])
+
+    submitted = await client.post(
+        f"{API}/{created['id']}/submit", json={}, headers=proxy_headers(pem)
+    )
+    assert submitted.status_code == 200, submitted.text
+    validated = await client.post(
+        f"{API}/{created['id']}/validate", json={}, headers=proxy_headers(isac_pem)
+    )
+    assert validated.status_code == 200, validated.text
+
+    row = await session.get(Submission, submission_id)
+    assert row is not None
+    row.distribute_anonymously = True
+    await session.commit()
+
+    response = await client.post(
+        f"{API}/{created['id']}/distribute",
+        json={"circle_ids": [str(circle_row.id)]},
+        headers=proxy_headers(isac_pem),
+    )
+
+    # 409, like every other refusal to distribute: the submission is in a state
+    # that forbids the verb, rather than the request being malformed.
+    assert response.status_code == 409, response.text
+    assert "identity" in response.text
+
+    delivered = await session.scalar(
+        select(func.count())
+        .select_from(Distribution)
+        .where(Distribution.submission_id == submission_id)
+    )
+    assert delivered == 0, "nothing may be delivered when the gate refuses"

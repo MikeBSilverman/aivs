@@ -38,6 +38,7 @@ from aivs_server.middleware import (
     BodySizeLimitMiddleware,
     RequestContextMiddleware,
     SecurityHeadersMiddleware,
+    security_headers_for,
 )
 from aivs_server.portal import routes as portal_routes
 from aivs_server.services.embargo import sweep_due_embargoes
@@ -62,6 +63,28 @@ def _error_response(status_code: int, title: str, **extra: Any) -> JSONResponse:
     body: dict[str, Any] = {"title": title, "http_status": str(status_code)}
     body.update(extra)
     return JSONResponse(status_code=status_code, content=body, media_type=TAXII_MEDIA_TYPE)
+
+
+def _unwrapped_error_response(
+    request: Request, status_code: int, title: str, **extra: Any
+) -> JSONResponse:
+    """An error response for a handler that does not traverse the middleware.
+
+    Starlette routes the ``Exception`` handler to ``ServerErrorMiddleware``,
+    which sits outside the user middleware stack, so neither
+    ``SecurityHeadersMiddleware`` nor ``RequestContextMiddleware`` sees what it
+    returns. Both are reapplied here rather than left to a layer that will not
+    run.
+    """
+    response = _error_response(status_code, title, **extra)
+    for name, value in security_headers_for(request.url.path):
+        response.headers[name.decode("ascii")] = value.decode("ascii")
+
+    request_id = request.scope.get("aivs_request_id")
+    if isinstance(request_id, str):
+        response.headers[request.app.state.settings.header_request_id] = request_id
+
+    return response
 
 
 @asynccontextmanager
@@ -117,7 +140,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     mutating process environment variables.
     """
     settings = settings or get_settings()
-    show_docs = not settings.is_production
+    # Permit only dev, never "deny only production" -- the same allow-list shape
+    # validate_production_posture uses, and for the same reason. A staging
+    # instance for a financial-sector ISAC mirrors production and holds real
+    # embargoed intelligence; serving it an unauthenticated /openapi.json
+    # publishes the entire admin surface and every response model.
+    show_docs = settings.environment == "dev"
 
     app = FastAPI(
         title="AIVS",
@@ -226,12 +254,15 @@ def _register_exception_handlers(app: FastAPI, settings: Settings) -> None:
         )
         if settings.dev_expose_error_detail:
             # Gated to non-production by Settings.validate_production_posture.
-            return _error_response(
+            return _unwrapped_error_response(
+                request,
                 status.HTTP_500_INTERNAL_SERVER_ERROR,
                 "Internal server error",
                 details={"exception": type(exc).__name__, "message": str(exc)},
             )
-        return _error_response(status.HTTP_500_INTERNAL_SERVER_ERROR, "Internal server error")
+        return _unwrapped_error_response(
+            request, status.HTTP_500_INTERNAL_SERVER_ERROR, "Internal server error"
+        )
 
 
 def main() -> None:  # pragma: no cover - process entry point
@@ -256,4 +287,14 @@ def main() -> None:  # pragma: no cover - process entry point
         access_log=False,  # RequestContextMiddleware emits structured access logs
         server_header=False,
         date_header=True,
+        # Uvicorn defaults this to True, with FORWARDED_ALLOW_IPS defaulting to
+        # 127.0.0.1, which lets ProxyHeadersMiddleware rewrite scope["client"]
+        # from X-Forwarded-For. That address is the sole input to
+        # peer_is_trusted_proxy and the source_ip on every audit row, and this
+        # application derives the member's address from headers deliberately and
+        # separately. Nothing here ever wants the server rewriting the TCP peer
+        # underneath it: with nginx on loopback it would swap in the member's
+        # address and 401 every request; with FORWARDED_ALLOW_IPS=* it would let
+        # a client-supplied header satisfy the peer allowlist.
+        proxy_headers=False,
     )

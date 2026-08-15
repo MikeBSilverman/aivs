@@ -47,8 +47,9 @@ class ClientConfig:
     private_key: Path
     #: CA bundle used to verify the server. Pinning to the ISAC's CA rather than
     #: the system trust store means a publicly-trusted certificate for the same
-    #: hostname is not sufficient to impersonate the instance.
-    ca_bundle: Path | None = None
+    #: hostname is not sufficient to impersonate the instance. Required, so that
+    #: there is no configuration in which verification quietly widens.
+    ca_bundle: Path
     #: Where to keep polling cursors.
     state_dir: Path = DEFAULT_STATE_DIR
     timeout_seconds: float = 30.0
@@ -56,10 +57,10 @@ class ClientConfig:
     def require_files(self) -> None:
         """Fail early and clearly if the credential files are not present."""
         missing = [
-            str(path) for path in (self.certificate, self.private_key) if not Path(path).is_file()
+            str(path)
+            for path in (self.certificate, self.private_key, self.ca_bundle)
+            if not Path(path).is_file()
         ]
-        if self.ca_bundle is not None and not Path(self.ca_bundle).is_file():
-            missing.append(str(self.ca_bundle))
         if missing:
             msg = "credential file(s) not found: " + ", ".join(missing)
             raise ConfigError(msg)
@@ -105,6 +106,12 @@ def load_config(
             ("base_url", resolved_url),
             ("certificate", resolved_cert),
             ("private_key", resolved_key),
+            # Required, not optional. Falling back to the system trust store
+            # means any publicly-trusted certificate for the instance hostname
+            # satisfies verification, which is the entire thing a private CA
+            # exists to prevent. An unset pin used to be a silently accepted
+            # configuration; now it is a startup error.
+            ("ca_bundle", resolved_ca),
         )
         if not value
     ]
@@ -117,7 +124,7 @@ def load_config(
         raise ConfigError(msg)
 
     # Narrowed by the `missing` check above; restated for the type checker.
-    if not (resolved_url and resolved_cert and resolved_key):  # pragma: no cover
+    if not (resolved_url and resolved_cert and resolved_key and resolved_ca):  # pragma: no cover
         msg = "configuration incomplete"
         raise ConfigError(msg)
 
@@ -129,6 +136,6 @@ def load_config(
         base_url=resolved_url.rstrip("/"),
         certificate=Path(resolved_cert).expanduser(),
         private_key=Path(resolved_key).expanduser(),
-        ca_bundle=Path(resolved_ca).expanduser() if resolved_ca else None,
+        ca_bundle=Path(resolved_ca).expanduser(),
         state_dir=DEFAULT_STATE_DIR,
     )

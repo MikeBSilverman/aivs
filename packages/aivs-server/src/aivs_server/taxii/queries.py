@@ -90,10 +90,22 @@ def _apply_version_filter(
 
     conditions = []
 
+    # Both correlations are scoped to the same submission as well as the same
+    # stix_id. Uniqueness of stix_objects is deliberately per submission -- two
+    # organisations may legitimately hold the same stix_id, which is why the
+    # write path keys its dedupe on the concrete object id rather than on
+    # (circle, stix_id, modified). Resolving max(modified) across every
+    # submission in the circle undoes that on the read side: since `last` is the
+    # default when match[version] is absent, a member who re-submitted a peer's
+    # stix_id with a later modified timestamp would take over the default feed
+    # and the peer's warning would stop being delivered.
     if VersionSelector.LAST in filters.version_selectors:
         latest = (
             select(func.max(peers.c.modified))
-            .where(peers.c.stix_id == visible.c.stix_id)
+            .where(
+                peers.c.stix_id == visible.c.stix_id,
+                peers.c.submission_id == visible.c.submission_id,
+            )
             .scalar_subquery()
         )
         conditions.append(visible.c.modified == latest)
@@ -101,7 +113,10 @@ def _apply_version_filter(
     if VersionSelector.FIRST in filters.version_selectors:
         earliest = (
             select(func.min(peers.c.modified))
-            .where(peers.c.stix_id == visible.c.stix_id)
+            .where(
+                peers.c.stix_id == visible.c.stix_id,
+                peers.c.submission_id == visible.c.submission_id,
+            )
             .scalar_subquery()
         )
         conditions.append(visible.c.modified == earliest)
@@ -181,19 +196,30 @@ def build_object_listing_query(
 
 
 def build_version_listing_query(
-    *, circle_id: uuid.UUID, stix_id: str, now: dt.datetime, limit: int
+    *,
+    circle_id: uuid.UUID,
+    stix_id: str,
+    now: dt.datetime,
+    limit: int,
+    added_after: dt.datetime | None = None,
 ) -> Select[Any]:
     """Build the query behind the object-versions endpoint.
 
     Returns the ``modified`` timestamps of every visible version of one object,
     ascending. Only versions the caller may see are listed, for the same reason
     the version filter is scoped that way.
+
+    ``DISTINCT`` because two submissions may legitimately carry the same
+    ``stix_id`` at the same ``modified``; without it the same version string
+    appeared once per distribution row.
     """
     visible = _visible_rows(circle_id, now).subquery("visible")
-    return (
+    query = (
         select(visible.c.modified, visible.c.date_added)
+        .distinct()
         .select_from(visible)
         .where(visible.c.stix_id == stix_id)
-        .order_by(visible.c.modified.asc())
-        .limit(limit + 1)
     )
+    if added_after is not None:
+        query = query.where(visible.c.date_added > added_after)
+    return query.order_by(visible.c.modified.asc()).limit(limit + 1)

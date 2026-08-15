@@ -187,7 +187,15 @@
           "maxLength": 8192
         },
         "unprotected": {
-          "type": "object"
+          "$comment": "Constrained like every other object here. Left open, it was a hole in the additionalProperties:false rule stated above -- an arbitrary nested document riding inside an object every circle member receives.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kid": {
+              "type": "string",
+              "maxLength": 256
+            }
+          }
         },
         "recipients": {
           "type": "array",
@@ -219,7 +227,31 @@
                     ]
                   },
                   "epk": {
-                    "type": "object"
+                    "$comment": "An ephemeral public JWK. Members enumerated so the shape is validated rather than accepted wholesale.",
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "kty": {
+                        "type": "string",
+                        "enum": ["EC"]
+                      },
+                      "crv": {
+                        "type": "string",
+                        "enum": ["P-256", "P-384", "P-521"]
+                      },
+                      "x": {
+                        "type": "string",
+                        "maxLength": 256
+                      },
+                      "y": {
+                        "type": "string",
+                        "maxLength": 256
+                      },
+                      "kid": {
+                        "type": "string",
+                        "maxLength": 256
+                      }
+                    }
                   },
                   "apu": {
                     "type": "string",

@@ -268,6 +268,65 @@ the other branch owes.
 (an `identity` SDO) is refused at ingest rather than stripped, and the residual
 limit is documented rather than papered over.
 
+**Check the property against the state, not against the request that changed it.**
+`distribute_anonymously` was validated only inside the code path that stored a
+bundle, so a PATCH that set the flag and carried no bundle skipped the check
+entirely. If a rule is "this submission must never look like X", it belongs
+wherever the submission is read or acted on — not only where the field was
+written. The same check now runs at ingest *and* at distribution.
+
+**Attribution is the server's to assign, on every path.** Ingest never looked at
+`created_by_ref`, and distribution rewrote it only for anonymous submissions — so
+a member could file content under a peer's STIX identity, and the named firm
+could neither see nor contest it. Whenever one branch of a conditional sanitises
+a field, ask what the other branch does with it.
+
+**A flag that is stored and displayed must be enforced, or deleted.**
+`TaxiiCollection.can_read` was written at creation, returned in the collection
+resource, and consulted by nothing. `can_write` was advertised as true with no
+TAXII write endpoint behind it. A security control that only appears in a
+response body is worse than its absence, because it reads as enforced.
+
+**Placeholders must be too short, too malformed, or too obviously fake to pass
+validation.** `deploy/env.example` shipped secrets long enough to clear the
+32-character minimum, and compose's `${VAR:?}` only fires on unset or empty — so
+a half-edited `.env` produced a production stack running on secrets published in
+this repository, with every healthcheck green. Placeholders now fail closed twice:
+below the length floor, and refused by name (`REPLACE_ME`).
+
+**Third-party convenience arguments can cancel each other out silently.**
+`httpx.Client(cert=..., verify="<path>")` drops `cert` entirely — the string
+branch of `create_ssl_context` returns before `load_cert_chain` is reached. The
+client pinned the CA and then connected anonymously, and the only configuration
+that worked was the one that dropped the pin. When two security-relevant options
+interact, build the object explicitly and assert the result.
+
+**Compose multi-value options concatenate across files; they do not replace.**
+`ports:` in `docker-compose.dev.yml` *added* to the base file's mapping rather
+than overriding it, so the dev stack published a privileged port on every
+interface. Use `!override`, and verify with `docker compose config`.
+
+**"Permit only dev", never "deny only production" — and that includes the docs.**
+`show_docs = not settings.is_production` meant a staging instance, which for an
+ISAC mirrors production and holds real embargoed intelligence, served an
+unauthenticated `/openapi.json` enumerating the whole admin surface. The rule
+already governed the `dev_*` flags; it governs every environment branch.
+
+**Responses that skip the middleware stack still need its headers.** Starlette
+routes the `Exception` handler to `ServerErrorMiddleware`, *outside* the user
+middleware — so 500s carried no CSP, no `no-store`, and no correlation id. If a
+handler is registered for `Exception`, it is responsible for its own headers.
+
+**Store at the precision you advertise.** `date_added` was truncated to
+milliseconds and `modified` was not, so the manifest advertised a version string
+that `match[version]` — which compares for exact equality — then matched nothing.
+Two descriptions of one timestamp will drift; make them one.
+
+**Tell the operator when the thing they clicked did not happen.** Every portal
+workflow failure redirected to the same page as a success, with no message. An
+operator whose distribution was refused by a circle's TLP floor had no way to
+know the members were never warned. Failure paths need their own outcome.
+
 ---
 
 ## 6. Secrets and key material

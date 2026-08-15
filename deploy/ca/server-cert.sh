@@ -208,18 +208,23 @@ openssl verify -CAfile "./out/ca-chain.pem" -purpose sslserver "${CERT_OUT}" >/d
 # -----------------------------------------------------------------------------
 # Private key permissions for the container
 # -----------------------------------------------------------------------------
-chmod 0640 "${KEY_OUT}"
-if chgrp "${NGINX_GID}" "${KEY_OUT}" 2>/dev/null; then
-    KEY_MODE_NOTE="0640, group ${NGINX_GID}"
-    aivs_ok "server.key is 0640, group ${NGINX_GID} (readable by nginx in the container)"
+# Owned by the container's uid, mode 0400. chgrp alone left the key readable by
+# whatever host group happens to hold gid ${NGINX_GID} -- bind mounts share the
+# host's numeric id space with no translation, and on Debian and Ubuntu the low
+# 100s are already occupied by unrelated system groups. The container only ever
+# reads this file as uid ${NGINX_GID}, so group access bought nothing.
+chmod 0400 "${KEY_OUT}"
+if chown "${NGINX_GID}:${NGINX_GID}" "${KEY_OUT}" 2>/dev/null; then
+    KEY_MODE_NOTE="0400, owner ${NGINX_GID}"
+    aivs_ok "server.key is 0400, owned by uid/gid ${NGINX_GID} (readable by nginx only)"
 else
-    KEY_MODE_NOTE="0640, group NOT SET -- see the warning above"
-    aivs_warn "could not chgrp ${NGINX_GID} ${KEY_OUT} (needs root, or a matching group).
+    KEY_MODE_NOTE="0400, owner NOT SET -- see the warning above"
+    aivs_warn "could not chown ${NGINX_GID}:${NGINX_GID} ${KEY_OUT} (needs root).
          nginx runs as uid/gid ${NGINX_GID} and will fail to start with
          'cannot load certificate key ... Permission denied' until this is fixed:
 
-             sudo chgrp ${NGINX_GID} ${SCRIPT_DIR}/out/nginx/server.key
-             sudo chmod 0640        ${SCRIPT_DIR}/out/nginx/server.key"
+             sudo chown ${NGINX_GID}:${NGINX_GID} ${SCRIPT_DIR}/out/nginx/server.key
+             sudo chmod 0400              ${SCRIPT_DIR}/out/nginx/server.key"
 fi
 
 SAN_LINE="$(openssl x509 -in "${CERT_OUT}" -noout -ext subjectAltName \

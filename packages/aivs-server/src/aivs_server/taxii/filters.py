@@ -245,10 +245,15 @@ def parse_filters(
         if limit < 1:
             msg = "parameter 'limit' must be a positive integer"
             raise FilterError(msg)
-        # Capped silently rather than rejected: the specification allows a
-        # server to return fewer objects than asked for, and the envelope's
-        # `more` flag tells the client to keep paging.
-        limit = min(limit, max_limit)
+    # Capped unconditionally, outside the branch above. Applying the cap only to
+    # a client-supplied limit meant a default larger than the maximum produced
+    # bigger pages for clients that asked for nothing than for clients that
+    # asked -- the opposite of what the two settings say.
+    #
+    # Capped silently rather than rejected: the specification allows a server to
+    # return fewer objects than asked for, and the envelope's `more` flag tells
+    # the client to keep paging.
+    limit = min(limit, max_limit)
 
     next_cursor: str | None = None
     if "next" in query_params:

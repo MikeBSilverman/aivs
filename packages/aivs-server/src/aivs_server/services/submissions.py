@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import datetime as dt
 import uuid
+from collections.abc import Iterable
 from typing import Any, Final
 
 from sqlalchemy import delete, select
@@ -31,6 +32,7 @@ from aivs_server.audit.log import AuditAction, record
 from aivs_server.auth.context import AuthContext
 from aivs_server.auth.policy import PolicyDeniedError, can_transition_submission, require
 from aivs_server.db.models import StixObject, Submission, SubmissionTransition
+from aivs_server.taxii.resources import truncate_to_taxii_precision
 
 __all__ = [
     "SubmissionError",
@@ -64,6 +66,14 @@ def _parse_stix_timestamp(value: Any, field: str, stix_id: str) -> dt.datetime:
     STIX timestamps are UTC with a literal ``Z``. Anything unparseable is a
     rejection rather than a fallback to "now": inventing a timestamp for a
     versioned object silently corrupts its ordering for every consumer.
+
+    Truncated to the millisecond TAXII renders at, for the same reason
+    ``date_added`` is. ``modified`` is what a client sends back as
+    ``match[version]``, and that filter compares for exact equality -- so an
+    object stored with microseconds was advertised in the manifest as
+    ``…123Z`` and then matched nothing when the client asked for exactly the
+    version it had just been told about. Storing what can be advertised keeps
+    the two descriptions the same one.
     """
     if not isinstance(value, str):
         msg = f"object {stix_id} has a non-string '{field}'"
@@ -76,7 +86,7 @@ def _parse_stix_timestamp(value: Any, field: str, stix_id: str) -> dt.datetime:
     if parsed.tzinfo is None:
         msg = f"object {stix_id} has a '{field}' without a timezone"
         raise SubmissionError(msg)
-    return parsed.astimezone(dt.UTC)
+    return truncate_to_taxii_precision(parsed.astimezone(dt.UTC))
 
 
 def _extract_indexed_fields(obj: dict[str, Any]) -> dict[str, Any]:
@@ -119,8 +129,17 @@ def _extract_indexed_fields(obj: dict[str, Any]) -> dict[str, Any]:
     return extracted
 
 
-def _reject_self_identifying_content(bundle: dict[str, Any]) -> None:
-    """Refuse a bundle that would identify an anonymous submitter anyway.
+def identity_object_ids(objects: Iterable[Any]) -> list[str]:
+    """Ids of every ``identity`` SDO in a sequence of raw STIX objects."""
+    return [
+        obj.get("id", "<no id>")
+        for obj in objects
+        if isinstance(obj, dict) and obj.get("type") == "identity"
+    ]
+
+
+def reject_self_identifying_content(objects: Iterable[Any]) -> None:
+    """Refuse content that would identify an anonymous submitter anyway.
 
     ``distribute_anonymously`` is a promise the *server* makes -- "the ISAC still
     knows; consumers do not" -- and the distribution pipeline can only keep the
@@ -137,12 +156,13 @@ def _reject_self_identifying_content(bundle: dict[str, Any]) -> None:
     This closes the structural leak. It cannot cover free text -- a description
     naming the firm is still the submitter's responsibility, and the validating
     operator's to catch. That limit is documented rather than papered over.
+
+    Takes objects rather than a bundle because the check has to run against
+    whatever the submission currently holds, which is a bundle only on the path
+    that stores one. The flag can be turned on later, against objects already
+    stored, and it is checked again at distribution -- see the callers.
     """
-    identities = [
-        obj.get("id", "<no id>")
-        for obj in bundle.get("objects") or []
-        if isinstance(obj, dict) and obj.get("type") == "identity"
-    ]
+    identities = identity_object_ids(objects)
     if identities:
         msg = (
             "an anonymous submission must not carry identity objects, which are "
@@ -150,6 +170,26 @@ def _reject_self_identifying_content(bundle: dict[str, Any]) -> None:
             "Remove them, or submit without distribute_anonymously."
         )
         raise SubmissionError(msg)
+
+
+async def _reject_stored_self_identifying_content(
+    session: AsyncSession, submission: Submission
+) -> None:
+    """Run the anonymity check against the objects already stored.
+
+    Used where no bundle accompanies the change, so there is nothing to inspect
+    but what is in the database.
+    """
+    raws = (
+        (
+            await session.execute(
+                select(StixObject.raw).where(StixObject.submission_id == submission.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    reject_self_identifying_content(raws)
 
 
 async def replace_submission_objects(
@@ -170,7 +210,7 @@ async def replace_submission_objects(
     validate_bundle(bundle)
 
     if submission.distribute_anonymously:
-        _reject_self_identifying_content(bundle)
+        reject_self_identifying_content(bundle.get("objects") or [])
 
     await session.execute(delete(StixObject).where(StixObject.submission_id == submission.id))
 
@@ -261,8 +301,13 @@ async def create_submission(
     discovery_scope: Any,
     distribute_anonymously: bool,
     bundle: dict[str, Any],
+    via: str = "api",
 ) -> Submission:
     """Create a draft submission owned by the caller's organisation.
+
+    ``via`` records which surface filed it. It is a detail on the single audit
+    record this function writes, rather than a second record written by the
+    caller: one event belongs in one row of a table that cannot be corrected.
 
     The submitter is taken from the authenticated context, never from the
     request body: a member must not be able to file content in another firm's
@@ -305,6 +350,7 @@ async def create_submission(
             "discovery_scope": str(discovery_scope),
             "object_count": object_count,
             "anonymous": distribute_anonymously,
+            "via": via,
         },
     )
     return submission
@@ -336,6 +382,15 @@ async def update_submission(
 
     if bundle is not None:
         await replace_submission_objects(session, submission, bundle)
+    elif submission.distribute_anonymously:
+        # Anonymity is a property of the submission as it stands, not of the
+        # write that happened to carry a bundle. PATCH {"distribute_anonymously":
+        # true} with no bundle turns the flag on over objects that were stored
+        # while it was off -- and those may legitimately include the submitter's
+        # own identity SDO, which is allowed for an attributed submission. Left
+        # unchecked, that name is redistributed verbatim to every circle member
+        # alongside a finding the submitter was told was anonymous.
+        await _reject_stored_self_identifying_content(session, submission)
 
     await record(
         session,

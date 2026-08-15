@@ -38,7 +38,16 @@ services:
     # 8443 rather than 443, so a dev stack does not need a privileged port and
     # cannot collide with a real deployment on the same machine. Reach it at
     # https://localhost:8443 with a client certificate issued by your local CA.
-    ports:
+    #
+    # `!override` is load-bearing. `ports` is a multi-value option and Compose
+    # CONCATENATES it across files, de-duplicating on a key that includes the
+    # published port -- so without the tag this ADDS 127.0.0.1:8443 to the base
+    # file's ${AIVS_BIND_ADDRESS:-0.0.0.0}:443 rather than replacing it, and the
+    # dev stack publishes a privileged port on every interface: exactly the
+    # coffee-shop-wifi exposure the note on `app` below says this file avoids.
+    # Verify with:
+    #   docker compose -f docker-compose.yml -f docker-compose.dev.yml config
+    ports: !override
       - "127.0.0.1:8443:8443"
 
   app:

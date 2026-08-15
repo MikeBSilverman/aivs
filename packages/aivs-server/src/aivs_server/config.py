@@ -32,6 +32,11 @@ __all__ = ["Settings", "get_settings"]
 #: we require enough that a brute-force against the header is hopeless.
 MIN_SHARED_SECRET_LEN: Final[int] = 32
 
+#: Marker embedded in every placeholder secret in ``deploy/env.example``. Its
+#: presence in a configured secret means the operator did not replace it, and
+#: the value is one published in the repository.
+_PLACEHOLDER_MARKER: Final[str] = "REPLACE_ME"
+
 Environment = Literal["dev", "test", "staging", "production"]
 
 
@@ -153,6 +158,28 @@ class Settings(BaseSettings):
             raise ValueError(msg)
         return value
 
+    @field_validator("proxy_shared_secret", "session_secret", "database_url")
+    @classmethod
+    def _secret_is_not_a_placeholder(cls, value: SecretStr) -> SecretStr:
+        """Refuse a secret that is still the value shipped in deploy/env.example.
+
+        Length alone did not catch this. The placeholders were long enough to
+        clear the minimum, and compose's ``${VAR:?}`` guard only fires when a
+        variable is unset or empty -- so an operator who edited the values they
+        had to change to make the stack come up, and missed the secrets, got a
+        running production instance whose proxy-authentication secret and
+        cursor-signing key were published in a public repository, with every
+        healthcheck green and nothing anywhere saying so.
+        """
+        if _PLACEHOLDER_MARKER in value.get_secret_value():
+            msg = (
+                f"secret still contains {_PLACEHOLDER_MARKER!r} -- it is the "
+                "deploy/env.example placeholder, which is public. Generate a "
+                "real one with: openssl rand -base64 48"
+            )
+            raise ValueError(msg)
+        return value
+
     @field_validator("trusted_proxy_cidrs")
     @classmethod
     def _cidrs_parse(cls, value: list[str]) -> list[str]:
@@ -162,11 +189,19 @@ class Settings(BaseSettings):
             ipaddress.ip_network(entry, strict=False)
         return value
 
-    @field_validator("header_client_verify", "header_client_cert", "header_proxy_auth")
+    @field_validator(
+        "header_client_verify", "header_client_cert", "header_proxy_auth", "header_request_id"
+    )
     @classmethod
     def _header_names_lowercase(cls, value: str) -> str:
         # Starlette exposes headers lowercased; normalising here means a
         # misconfigured mixed-case name cannot silently never match.
+        #
+        # header_request_id belongs here for the same reason and was missed: set
+        # to the natural "X-Request-Id" spelling, the comparison in
+        # RequestContextMiddleware never matched, so every request was given a
+        # fresh id and the proxy access log could no longer be joined to the
+        # application log -- silently, with nothing logged to say so.
         return value.strip().lower()
 
     @model_validator(mode="after")
@@ -194,10 +229,28 @@ class Settings(BaseSettings):
             violations.append("dev_allow_private_webhook_targets")
         if not self.trusted_proxy_cidrs:
             violations.append("trusted_proxy_cidrs (must not be empty)")
+        if any(network.prefixlen == 0 for network in self.trusted_proxy_networks):
+            # A non-empty allowlist that matches every address is not an
+            # allowlist. "0.0.0.0/0" passes the emptiness check above, and
+            # strict=False means a typo'd prefix length such as "10.0.0.1/0"
+            # normalises to exactly that rather than erroring.
+            violations.append("trusted_proxy_cidrs (must not contain a /0 network)")
         if not self.public_base_url.startswith("https://"):
             violations.append("public_base_url (must be https)")
         if self.log_level == "DEBUG":
             violations.append("log_level (DEBUG may record request bodies)")
+        if self.taxii_default_page_size > self.taxii_max_page_size:
+            # Both are bounded independently, so this pair passes field
+            # validation while meaning the opposite of what the names say: a
+            # client that sends no `limit` gets the larger page and one that asks
+            # for a limit gets capped at the smaller.
+            violations.append("taxii_default_page_size (must not exceed taxii_max_page_size)")
+        if not self.expected_certificate_issuer_dn:
+            # Certificate registration is the one place the application would
+            # otherwise trust the proxy's verdict alone. Every other identity
+            # decision re-derives from the certificate, so leaving this empty
+            # outside dev contradicts the model the rest of the code is built on.
+            violations.append("expected_certificate_issuer_dn (must pin the issuing CA)")
 
         if violations:
             msg = (

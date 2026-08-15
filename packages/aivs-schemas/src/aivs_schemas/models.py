@@ -72,10 +72,25 @@ class _Out(BaseModel):
 
 # Bounded so a title cannot be used to push an unbounded string into the audit
 # log, the portal, and every member's TIP.
-Title = Annotated[str, Field(min_length=3, max_length=300)]
+#
+# `_NO_CONTROL_CHARACTERS` on the single-line fields: these are redistributed to
+# other organisations and printed by the reference CLI one record per line, so an
+# embedded newline forges a row for a submission that does not exist and a
+# carriage return overwrites a real one. The CLI escapes on output as well --
+# this is the half that keeps the data clean rather than the display -- and
+# `Summary` is deliberately exempt because it is genuinely multi-line prose.
+_NO_CONTROL_CHARACTERS = r"^[^\x00-\x1f\x7f]+$"
+
+Title = Annotated[str, Field(min_length=3, max_length=300, pattern=_NO_CONTROL_CHARACTERS)]
 Summary = Annotated[str, Field(max_length=5000)]
-Reason = Annotated[str, Field(max_length=2000)]
+Reason = Annotated[str, Field(max_length=2000, pattern=_NO_CONTROL_CHARACTERS)]
 Slug = Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$")]
+DisplayName = Annotated[str, Field(min_length=1, max_length=200, pattern=_NO_CONTROL_CHARACTERS)]
+
+#: Deliberately permissive about what an address may contain and strict about
+#: the shape: one @, no whitespace, no control characters. Full RFC 5322 is not
+#: the goal -- rejecting things that are plainly not addresses is.
+_EMAIL_SHAPE = r"^[^\s@\x00-\x1f\x7f]+@[^\s@\x00-\x1f\x7f]+\.[^\s@\x00-\x1f\x7f]+$"
 
 
 # ---------------------------------------------------------------------------
@@ -287,7 +302,7 @@ class ReceiptOut(_Out):
 # ---------------------------------------------------------------------------
 class CircleCreate(_In):
     slug: Slug
-    name: Annotated[str, Field(min_length=1, max_length=200)]
+    name: DisplayName
     description: Annotated[str, Field(max_length=2000)] | None = None
     minimum_tlp: TLP = TLP.AMBER
 
@@ -308,9 +323,12 @@ class CircleMemberAdd(_In):
 
 class OrganizationCreate(_In):
     slug: Slug
-    name: Annotated[str, Field(min_length=1, max_length=200)]
+    name: DisplayName
     org_type: OrgType
-    contact_email: Annotated[str, Field(max_length=320)] | None = None
+    #: Validated as an address rather than as a bounded string. The bound still
+    #: matches the column; the pattern is what stops a 320-character blob with a
+    #: newline in it from being stored under a field named for an email.
+    contact_email: Annotated[str, Field(max_length=320, pattern=_EMAIL_SHAPE)] | None = None
 
 
 class OrganizationOut(_Out):

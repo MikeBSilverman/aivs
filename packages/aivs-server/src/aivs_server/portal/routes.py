@@ -19,16 +19,17 @@ import hashlib
 import json
 import uuid
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Final
 
 from fastapi import APIRouter, Form, HTTPException, Request, Response, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from itsdangerous import BadSignature, URLSafeTimedSerializer
 from sqlalchemy import func, select
 
-from aivs_schemas.enums import TLP, DiscoveryScope, SubmissionState
+from aivs_schemas.enums import TLP, CertStatus, DiscoveryScope, OrgStatus, SubmissionState
 from aivs_schemas.tlp import TLP_NAMES
-from aivs_server.audit.log import AuditAction, record, record_independently
+from aivs_server.audit.log import AuditAction, record_independently
 from aivs_server.auth.context import AuthContext
 from aivs_server.auth.deps import SessionDep, SettingsDep
 from aivs_server.auth.mtls import CertificateRejectedError, extract_client_certificate
@@ -39,6 +40,8 @@ from aivs_server.auth.policy import (
     can_view_submission_receipts,
     is_system_admin,
     readable_circle_ids,
+    require,
+    visible_content_clause,
 )
 from aivs_server.auth.sessions import (
     SessionRejectedError,
@@ -151,8 +154,80 @@ def _base_context(
         "operator_name": operator_name,
         "is_admin": is_system_admin(ctx),
         "active": active,
-        "notices": [],
+        "notices": _take_notices(request),
+        # Every authenticated page carries the sign-out form, so the token
+        # belongs in the shared context rather than being threaded through each
+        # route. Pages that mint their own still override it.
+        "csrf_token": request.cookies.get("aivs_csrf", ""),
     }
+
+
+#: Cookie carrying a one-shot notice across the redirect that follows a POST.
+#: Signed so the message rendered back to the operator is one this server wrote,
+#: and cleared as soon as it is read.
+_NOTICE_COOKIE: Final[str] = "aivs_notice"
+_NOTICE_SALT: Final[str] = "aivs.portal.notice.v1"
+_NOTICE_MAX_AGE: Final[int] = 60
+
+
+def _set_notice(response: Response, settings: Settings, level: str, message: str) -> None:
+    """Attach a one-shot notice to a redirect response."""
+    serializer = URLSafeTimedSerializer(
+        settings.session_secret.get_secret_value(), salt=_NOTICE_SALT
+    )
+    response.set_cookie(
+        _NOTICE_COOKIE,
+        serializer.dumps({"level": level, "message": message}),
+        max_age=_NOTICE_MAX_AGE,
+        httponly=True,
+        secure=True,
+        samesite="strict",
+        path="/portal",
+    )
+
+
+def _take_notices(request: Request) -> list[dict[str, str]]:
+    """Read and consume any pending notice.
+
+    Without this, a workflow verb that failed redirected to the same page as one
+    that succeeded, with nothing to distinguish them -- so an operator who tried
+    to distribute to a circle whose TLP floor refused the submission was shown
+    the detail page and no message, and would reasonably conclude the members had
+    been warned.
+    """
+    raw = request.cookies.get(_NOTICE_COOKIE)
+    if not raw:
+        return []
+
+    settings: Settings = request.app.state.settings
+    serializer = URLSafeTimedSerializer(
+        settings.session_secret.get_secret_value(), salt=_NOTICE_SALT
+    )
+    try:
+        payload = serializer.loads(raw, max_age=_NOTICE_MAX_AGE)
+    except BadSignature:
+        return []
+
+    if not isinstance(payload, dict):
+        return []
+    level = str(payload.get("level", "error"))
+    message = str(payload.get("message", ""))
+    if not message:
+        return []
+
+    # Consumed, so _render clears it. A notice that survived the page it was
+    # written for would reappear on the next reload and describe a failure that
+    # had already been reported.
+    request.state.aivs_notice_consumed = True
+    return [{"level": level, "message": message}]
+
+
+def _render(request: Request, template: str, context: dict[str, Any]) -> Response:
+    """Render a portal template, clearing any notice this page just displayed."""
+    response = _TEMPLATES.TemplateResponse(request, template, context)
+    if getattr(request.state, "aivs_notice_consumed", False):
+        response.delete_cookie(_NOTICE_COOKIE, path="/portal")
+    return response
 
 
 async def _operator_name(session: SessionDep, ctx: AuthContext) -> str:
@@ -223,15 +298,30 @@ async def login(
     _require_csrf(csrf_token, expected)
 
     fingerprint = _client_fingerprint(request, settings)
-    org = None
-    if fingerprint is not None:
-        org = (
-            await session.execute(
-                select(Organization)
-                .join(ClientCertificate, ClientCertificate.org_id == Organization.id)
-                .where(ClientCertificate.fingerprint_sha256 == fingerprint)
+    if fingerprint is None:
+        # No certificate, no session: the binding established below is what makes
+        # the password and the transport two independent factors.
+        return await _login_failure(request, settings, email, "no_client_certificate")
+
+    # Status is checked here, not only in resolve_session on the next request.
+    # nginx has no CRL -- revocation is authoritative in this database -- so the
+    # holder of a revoked certificate still completes the handshake. Without
+    # these two predicates they reached the full credential check, which made
+    # login a working password/TOTP oracle for exactly the compromised-certificate
+    # case revocation exists for, reset the operator's lockout counter on
+    # success, and wrote a LOGIN_SUCCESS audit row for an access that policy
+    # grants nothing.
+    org = (
+        await session.execute(
+            select(Organization)
+            .join(ClientCertificate, ClientCertificate.org_id == Organization.id)
+            .where(
+                ClientCertificate.fingerprint_sha256 == fingerprint,
+                ClientCertificate.status == CertStatus.ACTIVE,
+                Organization.status == OrgStatus.ACTIVE,
             )
-        ).scalar_one_or_none()
+        )
+    ).scalar_one_or_none()
 
     if org is None:
         return await _login_failure(request, settings, email, "no_client_certificate")
@@ -324,9 +414,26 @@ async def _login_failure(request: Request, settings: Settings, email: str, reaso
     return response
 
 
-@router.get("/logout")
-async def logout(request: Request, settings: SettingsDep, session: SessionDep) -> Response:
-    """End the session and clear its cookies."""
+@router.post("/logout")
+async def logout(
+    request: Request,
+    settings: SettingsDep,
+    session: SessionDep,
+    csrf_token: Annotated[str, Form()],
+) -> Response:
+    """End the session and clear its cookies.
+
+    POST with a CSRF token, like every other state change here. Revoking a
+    session is a write, and it was the one route that did it on a GET. The
+    SameSite=Strict cookie meant a cross-site request carried no session and hit
+    the no-op branch, so this was never exploitable -- but that made the
+    protection incidental, resting on a cookie attribute rather than on the check
+    every sibling route performs.
+    """
+    ctx, csrf_hash = await _current_session(request, settings, session)
+    _require_csrf(csrf_token, csrf_hash)
+    del ctx
+
     token = request.cookies.get(settings.session_cookie_name)
     if token:
         await revoke_session(session, token=token)
@@ -360,10 +467,12 @@ async def dashboard(request: Request, settings: SettingsDep, session: SessionDep
                 select(Distribution.date_added, StixObject.name, Submission.tlp)
                 .join(StixObject, StixObject.id == Distribution.stix_object_id)
                 .join(Submission, Submission.id == Distribution.submission_id)
-                .where(
-                    Distribution.circle_id.in_(tuple(circle_ids)),
-                    Distribution.date_added <= now,
-                )
+                # The shared predicate, not a restatement of it. Written out by
+                # hand, this had two of its three conditions and was missing the
+                # submission-state term -- the portal and the TAXII feed would
+                # have disagreed about what a member can see the moment a state
+                # outside VISIBLE_SUBMISSION_STATES became reachable.
+                .where(visible_content_clause(circle_ids, now))
                 .order_by(Distribution.date_added.desc())
                 .limit(10)
             )
@@ -379,10 +488,9 @@ async def dashboard(request: Request, settings: SettingsDep, session: SessionDep
         ]
         available = (
             await session.scalar(
-                select(func.count(func.distinct(Distribution.submission_id))).where(
-                    Distribution.circle_id.in_(tuple(circle_ids)),
-                    Distribution.date_added <= now,
-                )
+                select(func.count(func.distinct(Distribution.submission_id)))
+                .join(Submission, Submission.id == Distribution.submission_id)
+                .where(visible_content_clause(circle_ids, now))
             )
         ) or 0
 
@@ -418,7 +526,7 @@ async def dashboard(request: Request, settings: SettingsDep, session: SessionDep
             "recent": recent,
         }
     )
-    return _TEMPLATES.TemplateResponse(request, "dashboard.html", context)
+    return _render(request, "dashboard.html", context)
 
 
 # ---------------------------------------------------------------------------
@@ -466,7 +574,7 @@ async def list_submissions(
             "empty_message": "Your firm has not filed anything yet.",
         }
     )
-    return _TEMPLATES.TemplateResponse(request, "submissions.html", context)
+    return _render(request, "submissions.html", context)
 
 
 @router.get("/review", response_class=HTMLResponse)
@@ -503,7 +611,7 @@ async def review_queue(request: Request, settings: SettingsDep, session: Session
             "empty_message": "Nothing is waiting for review.",
         }
     )
-    return _TEMPLATES.TemplateResponse(request, "submissions.html", context)
+    return _render(request, "submissions.html", context)
 
 
 @router.get("/submissions/{submission_id}", response_class=HTMLResponse)
@@ -597,7 +705,7 @@ async def submission_detail(
         }
     )
     del csrf_hash
-    return _TEMPLATES.TemplateResponse(request, "submission_detail.html", context)
+    return _render(request, "submission_detail.html", context)
 
 
 async def _available_actions(
@@ -700,24 +808,39 @@ async def perform_action(
         "validate": SubmissionState.VALIDATED,
         "withdraw": SubmissionState.WITHDRAWN,
     }
+    if verb != "distribute" and verb not in targets:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Not found")
 
-    # Parsed before the try so the block below contains only the operations
-    # whose failures are being handled, not the parsing of their arguments.
-    distribute_args: tuple[list[uuid.UUID], dt.datetime | None] | None = None
     if verb == "distribute":
-        distribute_args = _parse_distribute_form(await request.form())
+        # Refuse before acting, exactly as the native API does. distribute_submission
+        # performs no authorization of its own -- its contract puts that on the
+        # caller -- and the only check made so far is can_view_submission, which
+        # passes for the submitter. Relying on apply_transition to raise afterwards
+        # meant the visibility rows, the attribution rewrite and the audit record
+        # were all written first and then rolled back: correct only for as long as
+        # nothing catches that exception.
+        require(
+            can_transition_submission(ctx, submission, SubmissionState.DISTRIBUTED),
+            "portal_distribute",
+        )
+
+    response = RedirectResponse(
+        f"/portal/submissions/{submission_id}", status_code=status.HTTP_303_SEE_OTHER
+    )
 
     try:
-        if distribute_args is not None:
-            circle_ids, release_at = distribute_args
+        # Form parsing lives inside the try: its failures ("select at least one
+        # circle", "the hold-until time could not be read") are ordinary operator
+        # mistakes raised as SubmissionError, and outside the block they reached
+        # the catch-all handler and became a 500.
+        if verb == "distribute":
+            circle_ids, release_at = _parse_distribute_form(await request.form())
             await distribute_submission(
                 session, ctx, submission, circle_ids=circle_ids, release_at=release_at
             )
             await apply_transition(session, ctx, submission, SubmissionState.DISTRIBUTED)
-        elif verb in targets:
-            await apply_transition(session, ctx, submission, targets[verb])
         else:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Not found")
+            await apply_transition(session, ctx, submission, targets[verb])
         await session.commit()
     except (SubmissionError, DistributionError, ValueError) as exc:
         await session.rollback()
@@ -729,10 +852,9 @@ async def perform_action(
             resource_id=str(submission_id),
             details={"verb": verb, "error": str(exc)},
         )
+        _set_notice(response, settings, "error", str(exc))
 
-    return RedirectResponse(
-        f"/portal/submissions/{submission_id}", status_code=status.HTTP_303_SEE_OTHER
-    )
+    return response
 
 
 # ---------------------------------------------------------------------------
@@ -743,7 +865,7 @@ async def submit_form(request: Request, settings: SettingsDep, session: SessionD
     ctx, _csrf_hash = await _current_session(request, settings, session)
     context = _base_context(request, settings, ctx, await _operator_name(session, ctx), "submit")
     context.update({"form": {}, "error": None, "csrf_token": request.cookies.get("aivs_csrf", "")})
-    return _TEMPLATES.TemplateResponse(request, "submit.html", context)
+    return _render(request, "submit.html", context)
 
 
 @router.post("/submit", response_class=HTMLResponse)
@@ -797,21 +919,16 @@ async def submit_finding(
             discovery_scope=DiscoveryScope(discovery_scope),
             distribute_anonymously=bool(distribute_anonymously),
             bundle=parsed,
+            via="portal",
         )
+        # One commit, so the submission and the record of it land together. A
+        # second SUBMISSION_CREATED row used to be written here after the first
+        # commit: two rows for one event in a table that cannot be corrected,
+        # and a failure between them left the submission recorded only once.
         await session.commit()
     except (SubmissionError, ValueError) as exc:
         await session.rollback()
         return failure(str(exc))
-
-    await record(
-        session,
-        action=AuditAction.SUBMISSION_CREATED,
-        ctx=ctx,
-        resource_type="submission",
-        resource_id=str(submission.id),
-        details={"via": "portal"},
-    )
-    await session.commit()
 
     return RedirectResponse(
         f"/portal/submissions/{submission.id}", status_code=status.HTTP_303_SEE_OTHER

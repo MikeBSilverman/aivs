@@ -16,10 +16,13 @@ That split is why the sweeper is safe to be down, and it is the reason to resist
 
 On moving ``date_added`` around, which looks symmetric and is not:
 
-* **Releasing early is safe.** An embargoed row's timestamp is in the future, so
-  no member's polling cursor can have passed it. Moving it to now leaves it at
-  or ahead of every cursor in existence, and the monotonic ``seq`` tiebreaker
-  handles the same-instant case.
+* **Releasing early is safe, provided it moves strictly ahead.** An embargoed
+  row's timestamp is in the future, so no member's polling cursor can have
+  passed it. The ``seq`` tiebreaker does *not* rescue the same-instant case, as
+  this docstring once claimed: a released row keeps the ``seq`` it was given at
+  distribution time, which is lower than anything distributed since, so at an
+  equal ``date_added`` it sorts *below* a current cursor. ``release_embargo_now``
+  therefore stamps the millisecond after ``now`` rather than ``now`` itself.
 * **Backdating at distribution time is not**, which is why
   ``distribute_submission`` refuses it: there the timestamp can land below
   cursors members are already past, and ``added_after`` never looks backwards.
@@ -33,6 +36,7 @@ from __future__ import annotations
 import datetime as dt
 import logging
 import uuid
+from typing import Final
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -52,6 +56,10 @@ __all__ = [
 ]
 
 logger = logging.getLogger(__name__)
+
+#: One tick of the precision TAXII timestamps carry. Used to place an
+#: early-released row strictly ahead of every cursor that can already exist.
+_ONE_MILLISECOND: Final[dt.timedelta] = dt.timedelta(milliseconds=1)
 
 
 class EmbargoError(ValueError):
@@ -111,7 +119,17 @@ async def release_embargo_now(
     Safe in the direction it moves. See the module docstring.
     """
     now = now or dt.datetime.now(dt.UTC)
-    released_at = truncate_to_taxii_precision(now)
+    # The next millisecond, not this one. A released row keeps the `seq` it was
+    # given when it was *distributed*, which is necessarily lower than that of
+    # anything distributed since -- so the monotonic tiebreaker does not help
+    # here, contrary to what this module used to claim. Stamping the current
+    # millisecond meant that releasing early in the same millisecond as an
+    # unrelated distribution ("this is being exploited, push everything now" is
+    # exactly that shape) put the released rows at (T, low_seq) below a member's
+    # cursor at (T, high_seq), and they were never delivered. One millisecond
+    # ahead is strictly greater than every cursor that can already exist, because
+    # a cursor is only ever issued for a row that is already visible.
+    released_at = truncate_to_taxii_precision(now) + _ONE_MILLISECOND
 
     embargo = (
         await session.execute(select(Embargo).where(Embargo.submission_id == submission_id))
@@ -192,10 +210,28 @@ async def extend_embargo(
     if embargo.release_at is not None and target < embargo.release_at:
         msg = "an embargo can be extended but not shortened; release it early instead"
         raise EmbargoError(msg)
+    if embargo.release_at is not None and embargo.release_at <= now:
+        # Status is bookkeeping the sweeper writes; visibility is
+        # `date_added <= now`, evaluated per read. Between the release moment
+        # passing and the sweeper's next pass -- up to
+        # embargo_sweep_interval_seconds, or indefinitely if the sweeper is
+        # erroring -- an elapsed embargo is still PENDING while its content is
+        # already being served. Testing only the status let an extension in that
+        # window move content members had already retrieved back into the
+        # future, which is the retraction this module says it will not offer.
+        msg = (
+            "this embargo's release time has already passed; members can "
+            "already read the content and it cannot be reinstated"
+        )
+        raise EmbargoError(msg)
 
     await session.execute(
         update(Distribution)
-        .where(Distribution.submission_id == submission_id)
+        .where(
+            Distribution.submission_id == submission_id,
+            # Never move a row that is already visible, whatever the status says.
+            Distribution.date_added > now,
+        )
         .values(date_added=target)
     )
 

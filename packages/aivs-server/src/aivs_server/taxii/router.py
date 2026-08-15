@@ -106,6 +106,12 @@ async def _load_readable_collection(
             .where(
                 TaxiiCollection.id == collection_id,
                 TaxiiCollection.is_active.is_(True),
+                # Enforced, not merely advertised. _collection_payload reports
+                # can_read to the client and can_write is intersected with a
+                # policy predicate one line below it; this flag was stored and
+                # displayed but never consulted, so a collection marked
+                # unreadable served its circle's full content anyway.
+                TaxiiCollection.can_read.is_(True),
                 Circle.is_active.is_(True),
             )
         )
@@ -267,8 +273,15 @@ def _date_added_headers(response: Response, rows: list[Any]) -> None:
     """
     if not rows:
         return
-    response.headers["X-TAXII-Date-Added-First"] = resources.to_taxii_timestamp(rows[0].date_added)
-    response.headers["X-TAXII-Date-Added-Last"] = resources.to_taxii_timestamp(rows[-1].date_added)
+    # min/max rather than first/last. The objects and manifest endpoints order by
+    # (date_added, seq), where the two coincide -- but the versions endpoint
+    # orders by `modified`, and nothing forces modification order to match
+    # distribution order. A correction distributed before a backfilled earlier
+    # version produced First > Last, and a client bounding its next poll on Last
+    # re-received content it already held on every poll.
+    stamps = [row.date_added for row in rows]
+    response.headers["X-TAXII-Date-Added-First"] = resources.to_taxii_timestamp(min(stamps))
+    response.headers["X-TAXII-Date-Added-Last"] = resources.to_taxii_timestamp(max(stamps))
 
 
 @router.get(f"/{API_ROOT}/collections/{{collection_id}}/objects/")
@@ -364,6 +377,12 @@ async def get_object(
     """
     _collection, circle = await _load_readable_collection(session, ctx, collection_id)
     filters = _parse_request_filters(request, settings)
+    # The cursor was parsed and then discarded here, so an object with more
+    # visible versions than one page was reported as `more: true` with no `next`
+    # to follow -- and a token the client supplied anyway was silently ignored,
+    # while the same token on /objects/ and /manifest/ is a 400. Same handling on
+    # all three.
+    cursor = _resolve_cursor(settings, filters.next_cursor, collection_id)
     limit = filters.limit or settings.taxii_default_page_size
     now = dt.datetime.now(dt.UTC)
 
@@ -374,7 +393,7 @@ async def get_object(
                     circle_id=circle.id,
                     filters=filters,
                     now=now,
-                    cursor=None,
+                    cursor=cursor,
                     limit=limit,
                     stix_id=object_id,
                 )
@@ -385,7 +404,20 @@ async def get_object(
     if not rows:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Object not found")
 
+    has_more = len(rows) > limit
     page = rows[:limit]
+
+    next_cursor = None
+    if has_more and page:
+        next_cursor = encode_cursor(
+            settings.session_secret.get_secret_value(),
+            Cursor(
+                date_added=page[-1].date_added,
+                seq=page[-1].seq,
+                collection_id=collection_id,
+            ),
+        )
+
     await record_retrievals(
         session,
         org_id=ctx.org_id,
@@ -397,7 +429,9 @@ async def get_object(
     await session.commit()
 
     response = _taxii_response(
-        resources.envelope_resource([row.raw for row in page], more=len(rows) > limit)
+        resources.envelope_resource(
+            [row.raw for row in page], more=has_more, next_cursor=next_cursor
+        )
     )
     _date_added_headers(response, page)
     return response
@@ -407,21 +441,33 @@ async def get_object(
 async def get_object_versions(
     collection_id: uuid.UUID,
     object_id: str,
+    request: Request,
     _: TaxiiAccept,
     ctx: AuthenticatedContext,
     session: SessionDep,
     settings: SettingsDep,
 ) -> Response:
-    """List the visible versions of one object (section 5.8)."""
+    """List the visible versions of one object (section 5.8).
+
+    ``limit`` and ``added_after`` are honoured here. The handler previously took
+    no request at all, so both were silently dropped: a client asking for 500
+    versions received exactly one default page, with no ``next`` to follow and
+    nothing to indicate the list had been truncated.
+    """
     _collection, circle = await _load_readable_collection(session, ctx, collection_id)
-    limit = settings.taxii_default_page_size
+    filters = _parse_request_filters(request, settings)
+    limit = filters.limit or settings.taxii_default_page_size
     now = dt.datetime.now(dt.UTC)
 
     rows = list(
         (
             await session.execute(
                 build_version_listing_query(
-                    circle_id=circle.id, stix_id=object_id, now=now, limit=limit
+                    circle_id=circle.id,
+                    stix_id=object_id,
+                    now=now,
+                    limit=limit,
+                    added_after=filters.added_after,
                 )
             )
         ).all()

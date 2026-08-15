@@ -25,6 +25,7 @@ object; neither is optional.
 
 from __future__ import annotations
 
+import copy
 import datetime as dt
 import json
 from collections.abc import Mapping, Sequence
@@ -45,7 +46,11 @@ from stix2.properties import (
 )
 
 from aivs_schemas.enums import AIDiscoveryMethod, CVEStatus, DiscoveryScope
-from aivs_schemas.tlp import TLP20_EXTENSION_DEFINITION_ID
+from aivs_schemas.tlp import (
+    LEGACY_TLP10_MARKING_IDS,
+    TLP20_EXTENSION_DEFINITION_ID,
+    TLP_MARKING_IDS,
+)
 
 __all__ = [
     "AIVS_EXTENSION_ID",
@@ -98,6 +103,17 @@ _CURRENT_SCHEMA_VERSION: Final[str] = "1.0"
 #: that validation cost stays proportional to something a reviewer can reason
 #: about, rather than to whatever a client chose to send.
 MAX_BUNDLE_OBJECTS: Final[int] = 5000
+
+#: How deep the extension allowlist walks into nested objects before refusing.
+#: STIX nests a handful of levels at most; anything deeper is not a real document.
+_MAX_NESTING_DEPTH: Final[int] = 12
+
+#: Marking-definition identifiers fixed by specification. Both TLP 2.0 and the
+#: legacy TLP 1.0 set are included: a consumer that still recognises a 1.0
+#: identifier would be misled by a redefinition of it just as readily.
+_RESERVED_MARKING_IDS: Final[frozenset[str]] = frozenset(
+    set(TLP_MARKING_IDS.values()) | set(LEGACY_TLP10_MARKING_IDS.values())
+)
 
 
 class ExtensionValidationError(ValueError):
@@ -210,7 +226,11 @@ def _schema_validator() -> jsonschema.protocols.Validator:
     Compiled once because schema compilation is the expensive part and every
     inbound object pays it otherwise.
     """
-    schema = dict(extension_json_schema())
+    # Deep copy, not dict(). A shallow copy shares `properties`, `allOf` and
+    # every subschema with the lru_cached mapping, so anything that reached into
+    # extension_json_schema() and mutated a nested value would silently change
+    # the compiled validator for every subsequent inbound object.
+    schema = copy.deepcopy(dict(extension_json_schema()))
     validator_cls = jsonschema.validators.validator_for(schema)
     # Fail at import time on a malformed schema rather than on the first
     # inbound object, when the failure would look like a member's fault.
@@ -225,16 +245,94 @@ def assert_extensions_allowed(obj: Mapping[str, Any]) -> None:
     keys. See the module docstring.
     """
     extensions = obj.get("extensions")
-    if not extensions:
-        return
-    if not isinstance(extensions, Mapping):
-        msg = f"'extensions' must be an object, got {type(extensions).__name__}"
+    if extensions:
+        if not isinstance(extensions, Mapping):
+            msg = f"'extensions' must be an object, got {type(extensions).__name__}"
+            raise UnknownExtensionError(msg)
+        unknown = sorted(set(extensions) - ALLOWED_EXTENSION_IDS)
+        if unknown:
+            msg = (
+                f"object {obj.get('id', '<no id>')} carries unsupported extension(s): "
+                f"{', '.join(unknown)}"
+            )
+            raise UnknownExtensionError(msg)
+
+    # Nested objects carry their own extensions, and the allowlist has to reach
+    # them. An observed-data SDO's deprecated-but-valid `objects` property holds
+    # embedded SCOs, each of which may declare `extensions` of its own. Checking
+    # only the top level meant a bundle whose top-level `extensions` was absent
+    # passed untouched and was then stored and served verbatim -- which is the
+    # delivery mechanism this allowlist exists to prevent, reached one level down.
+    for value in obj.values():
+        if isinstance(value, Mapping):
+            _assert_nested_extensions_allowed(value)
+        elif isinstance(value, list):
+            for item in value:
+                if isinstance(item, Mapping):
+                    _assert_nested_extensions_allowed(item)
+
+
+def _assert_nested_extensions_allowed(obj: Mapping[str, Any], depth: int = 0) -> None:
+    """Apply the extension allowlist to a nested object.
+
+    Depth-bounded: the recursion walks attacker-supplied JSON, and a deeply
+    nested document should be refused rather than exhaust the stack.
+    """
+    if depth > _MAX_NESTING_DEPTH:
+        msg = f"object nesting exceeds {_MAX_NESTING_DEPTH} levels"
         raise UnknownExtensionError(msg)
-    unknown = sorted(set(extensions) - ALLOWED_EXTENSION_IDS)
-    if unknown:
+
+    extensions = obj.get("extensions")
+    if isinstance(extensions, Mapping):
+        unknown = sorted(set(extensions) - ALLOWED_EXTENSION_IDS)
+        if unknown:
+            msg = (
+                f"nested object {obj.get('id', '<no id>')} carries unsupported "
+                f"extension(s): {', '.join(unknown)}"
+            )
+            raise UnknownExtensionError(msg)
+
+    for value in obj.values():
+        if isinstance(value, Mapping):
+            _assert_nested_extensions_allowed(value, depth + 1)
+        elif isinstance(value, list):
+            for item in value:
+                if isinstance(item, Mapping):
+                    _assert_nested_extensions_allowed(item, depth + 1)
+
+
+def _reject_authoritative_object_forgery(obj: Mapping[str, Any]) -> None:
+    """Refuse inbound objects that would redefine what other objects *mean*.
+
+    Two STIX object types are not ordinary content: they are the definitions
+    consumers use to interpret everything else. AIVS publishes both itself, so a
+    submitter has no legitimate reason to send either, and both are redistributed
+    verbatim to every member of the target circles.
+
+    * ``extension-definition`` -- a submitter re-declaring
+      :data:`AIVS_EXTENSION_ID` with a ``schema`` URL of their choosing puts a
+      definition of the AIVS extension pointing at an address they control into
+      every consuming platform in the circle.
+    * ``marking-definition`` bearing a spec-fixed TLP identifier -- the whole
+      basis of TLP interoperability is that those identifiers mean one thing
+      everywhere. An object claiming the TLP:RED id with a TLP:CLEAR body turns
+      the most restrictive handling instruction into the least restrictive one,
+      on content already distributed under it.
+    """
+    obj_type = obj.get("type")
+
+    if obj_type == "extension-definition":
         msg = (
-            f"object {obj.get('id', '<no id>')} carries unsupported extension(s): "
-            f"{', '.join(unknown)}"
+            f"bundles may not carry extension-definition objects "
+            f"({obj.get('id', '<no id>')}). AIVS publishes its own definition; "
+            "a submitted one would redefine how members interpret every object."
+        )
+        raise UnknownExtensionError(msg)
+
+    if obj_type == "marking-definition" and obj.get("id") in _RESERVED_MARKING_IDS:
+        msg = (
+            f"marking-definition {obj.get('id')} uses a specification-fixed TLP "
+            "identifier. Reference it with object_marking_refs; do not redefine it."
         )
         raise UnknownExtensionError(msg)
 
@@ -252,6 +350,7 @@ def validate_stix_object(obj: Mapping[str, Any]) -> None:
     intend to read.
     """
     assert_extensions_allowed(obj)
+    _reject_authoritative_object_forgery(obj)
 
     extensions = obj.get("extensions") or {}
     body = extensions.get(AIVS_EXTENSION_ID)

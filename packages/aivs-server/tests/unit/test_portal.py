@@ -194,12 +194,42 @@ async def test_signing_out_ends_the_session(client, analyst):
     _org, operator, secret, pem = analyst
     await sign_in(client, operator, secret, pem)
 
-    out = await client.get("/portal/logout", headers=proxy_headers(pem))
-    assert out.status_code == 303
+    out = await client.post(
+        "/portal/logout",
+        data={"csrf_token": client.cookies.get("aivs_csrf", "")},
+        headers=proxy_headers(pem),
+    )
+    assert out.status_code == 303, out.text
 
     after = await client.get("/portal/", headers=proxy_headers(pem))
     assert after.status_code == 303
     assert after.headers["location"] == "/portal/login"
+
+
+async def test_signing_out_is_not_reachable_by_a_get(client, analyst):
+    """Revoking a session is a write, so it takes a POST with a token.
+
+    Previously a GET, which meant the only thing standing between a cross-site
+    request and an analyst's session was the SameSite attribute on the cookie --
+    a protection that happened to hold rather than one this route performed.
+    """
+    _org, operator, secret, pem = analyst
+    await sign_in(client, operator, secret, pem)
+
+    assert (await client.get("/portal/logout", headers=proxy_headers(pem))).status_code == 405
+    still_in = await client.get("/portal/", headers=proxy_headers(pem))
+    assert still_in.status_code == 200, "the session must survive a refused logout"
+
+
+async def test_signing_out_requires_a_valid_csrf_token(client, analyst):
+    _org, operator, secret, pem = analyst
+    await sign_in(client, operator, secret, pem)
+
+    refused = await client.post(
+        "/portal/logout", data={"csrf_token": "forged"}, headers=proxy_headers(pem)
+    )
+    assert refused.status_code == 403
+    assert (await client.get("/portal/", headers=proxy_headers(pem))).status_code == 200
 
 
 # ---------------------------------------------------------------------------

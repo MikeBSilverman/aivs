@@ -182,6 +182,12 @@ async def test_revocation_locks_the_holder_out_immediately(client, isac, member,
 
 
 async def test_a_member_cannot_revoke_another_firms_certificate(client, isac, member, session):
+    """Absent and forbidden answer alike, so certificate ids cannot be probed.
+
+    404 rather than 403 deliberately: a 403 would confirm that the id names a
+    real certificate, which is the existence oracle every other id-addressable
+    endpoint here takes care to avoid.
+    """
     victim, _victim_pem = await member("victim-firm")
     _attacker, attacker_pem = await member("attacker-firm")
 
@@ -194,7 +200,13 @@ async def test_a_member_cannot_revoke_another_firms_certificate(client, isac, me
     response = await client.post(
         f"{API}/certificates/{certificate.id}/revoke", headers=proxy_headers(attacker_pem)
     )
-    assert response.status_code == 403
+    assert response.status_code == 404
+
+    unknown = await client.post(
+        f"{API}/certificates/{uuid.uuid4()}/revoke", headers=proxy_headers(attacker_pem)
+    )
+    assert unknown.status_code == response.status_code, "the two must be indistinguishable"
+    assert unknown.text == response.text
 
 
 # ---------------------------------------------------------------------------

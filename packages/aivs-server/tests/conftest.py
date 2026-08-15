@@ -67,6 +67,12 @@ TEST_DATABASE_URL = os.environ.get(
 TEST_PROXY_SECRET = "test-proxy-shared-secret-not-a-real-secret-0123456789"
 TEST_SESSION_SECRET = "test-session-signing-secret-not-a-real-secret-0123456789"
 
+#: Subject DN of :class:`TestCertificateAuthority`, in the RFC 4514 form the
+#: application compares against. Set on ``Settings`` so the suite runs with the
+#: issuer pin *on*, exercising the same registration path a real deployment
+#: takes rather than the disabled-check path.
+TEST_CA_ISSUER_DN = "CN=AIVS Test Root,O=AIVS Test CA,C=US"
+
 
 @pytest.fixture(scope="session")
 def settings() -> Settings:
@@ -84,6 +90,7 @@ def settings() -> Settings:
         proxy_shared_secret=TEST_PROXY_SECRET,  # type: ignore[arg-type]
         session_secret=TEST_SESSION_SECRET,  # type: ignore[arg-type]
         trusted_proxy_cidrs=["127.0.0.1/32"],
+        expected_certificate_issuer_dn=TEST_CA_ISSUER_DN,
         log_level="WARNING",
     )
 

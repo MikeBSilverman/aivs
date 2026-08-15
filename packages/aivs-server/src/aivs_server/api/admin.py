@@ -281,10 +281,13 @@ async def revoke_certificate(
     authentication path.
     """
     row = await session.get(ClientCertificate, certificate_id)
-    if row is None:
+    # Absent and forbidden collapse to the same answer, as everywhere else that
+    # is addressable by id. Answering 404 for an unknown certificate and 403 for
+    # another organisation's turned this endpoint into an existence oracle over
+    # the certificate namespace -- the one exception that would undo the pattern
+    # the rest of the API keeps.
+    if row is None or not can_manage_org(ctx, row.org_id):
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Certificate not found")
-
-    require(can_manage_org(ctx, row.org_id), "certificate_revoke")
 
     if row.status is CertStatus.REVOKED:
         return row
@@ -353,7 +356,14 @@ async def create_circle(
             description=payload.description,
             alias=payload.slug,
             can_read=True,
-            can_write=True,
+            # False until a TAXII write endpoint exists. There is no POST route
+            # under the api root -- submissions go through /api/v1/submissions --
+            # so advertising can_write led off-the-shelf TAXII clients to enable
+            # their add-objects path and POST bundles that returned 405. The
+            # member concludes the instance is broken; the ISAC concludes the
+            # member never submitted. Better to advertise nothing than a door
+            # that is not there.
+            can_write=False,
         )
     )
     await record(

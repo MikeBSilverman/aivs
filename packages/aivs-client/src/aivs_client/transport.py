@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import ssl
 from collections.abc import Iterator
 from typing import Any
 
@@ -21,7 +22,7 @@ import httpx
 
 from aivs_client.config import ClientConfig
 
-__all__ = ["AivsError", "NativeClient", "TaxiiClient", "build_http_client"]
+__all__ = ["AivsError", "NativeClient", "TaxiiClient", "build_http_client", "build_ssl_context"]
 
 TAXII_MEDIA_TYPE = "application/taxii+json;version=2.1"
 
@@ -46,13 +47,30 @@ class AivsError(RuntimeError):
         self.message = message
 
 
+def build_ssl_context(config: ClientConfig) -> ssl.SSLContext:
+    """Build the TLS context: pinned CA to verify them, our certificate to prove us.
+
+    Constructed explicitly rather than through httpx's ``verify=``/``cert=``
+    convenience arguments, both of which are deprecated in httpx 0.28 and one of
+    which is actively wrong for this combination: ``create_ssl_context`` returns
+    early from the ``isinstance(verify, str)`` branch, *before* the block that
+    calls ``load_cert_chain``. Passing a CA bundle path therefore silently
+    discarded the client certificate, so every request went out unauthenticated
+    and came back 401 -- and the only configuration that worked was the one that
+    dropped the CA pin and fell back to the system trust store. Building the
+    context here means the two settings cannot cancel each other out.
+    """
+    context = ssl.create_default_context(cafile=str(config.ca_bundle))
+    context.load_cert_chain(str(config.certificate), str(config.private_key))
+    return context
+
+
 def build_http_client(config: ClientConfig) -> httpx.Client:
     """Construct the mutually-authenticated HTTP client."""
     config.require_files()
     return httpx.Client(
         base_url=config.base_url,
-        cert=(str(config.certificate), str(config.private_key)),
-        verify=str(config.ca_bundle) if config.ca_bundle else True,
+        verify=build_ssl_context(config),
         timeout=config.timeout_seconds,
         follow_redirects=False,
         headers={"user-agent": "aivs-client/0.1"},
@@ -78,6 +96,10 @@ class TaxiiClient:
 
     def __init__(self, http: httpx.Client) -> None:
         self._http = http
+        #: Cursor from the most recent :meth:`objects` call, or ``None`` when
+        #: that call returned nothing new. Declared here rather than springing
+        #: into existence on first use, so a caller can read it unconditionally.
+        self.last_date_added: str | None = None
 
     def _get(self, path: str, params: dict[str, Any] | None = None) -> httpx.Response:
         response = self._http.get(path, params=params, headers={"accept": TAXII_MEDIA_TYPE})
@@ -111,6 +133,13 @@ class TaxiiClient:
         stable sort key, resuming with the returned cursor neither skips nor
         repeats an object.
         """
+        # Cleared on entry. This attribute is read after the call to learn the
+        # cursor to persist, and a collection that returns nothing new emits no
+        # date-added header -- so a caller looping over collections would
+        # otherwise persist the *previous* collection's cursor against this one
+        # and permanently skip everything in between.
+        self.last_date_added = None
+
         params: dict[str, Any] = {"limit": limit}
         if added_after:
             params["added_after"] = added_after
@@ -134,7 +163,16 @@ class TaxiiClient:
                 # `more` without `next` is legal in TAXII but leaves a client
                 # unable to continue; stop rather than loop forever.
                 return
+
+            # Filters carry forward. The server's cursor encodes only the sort
+            # position and the collection -- it re-parses match[] from the query
+            # string on every request -- so rebuilding params from scratch made
+            # page two onwards unfiltered, and the caller received objects it had
+            # explicitly filtered out. added_after is dropped deliberately: the
+            # keyset condition is already strictly ahead of it.
             params = {"limit": limit, "next": next_cursor}
+            if match_type:
+                params["match[type]"] = match_type
 
     def manifest(self, collection_id: str) -> list[dict[str, Any]]:
         """Metadata for a collection's objects, without collecting them.

@@ -144,6 +144,22 @@ a:hover { color: var(--brand-deep); }
   color: var(--accent);
 }
 
+/* Sign-out is a POST form so it carries a CSRF token, but it should read as
+   the link it replaced rather than as a button. */
+.whoami .signout {
+  display: inline;
+}
+
+.whoami .signout button {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 main {
   max-width: var(--maxw);
   margin: 0 auto;

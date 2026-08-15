@@ -112,8 +112,10 @@ deploy/ca/server-cert.sh --hostname aivs.example-isac.org
 #      deploy/ca/server-cert.sh --hostname aivs.example-isac.org --san-ip 10.88.0.1
 
 # 5. Let the container read the server key (nginx runs as uid/gid 101).
-sudo chgrp 101 deploy/ca/out/nginx/server.key
-sudo chmod 0640 deploy/ca/out/nginx/server.key
+#    Owner rather than group: a bind mount shares the host's numeric id space,
+#    so gid 101 on the host is whatever that host already assigns it.
+sudo chown 101:101 deploy/ca/out/nginx/server.key
+sudo chmod 0400 deploy/ca/out/nginx/server.key
 
 # 6. Network allowlist. The shipped default permits private and overlay ranges
 #    only; a publicly reachable deployment must replace it. See §5.

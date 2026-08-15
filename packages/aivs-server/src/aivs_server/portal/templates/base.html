@@ -33,7 +33,13 @@
       </nav>
       <span class="whoami">
         {{ operator_name }} &middot; {{ org_slug }}
-        &middot; <a href="/portal/logout">Sign out</a>
+        &middot;
+        {# Signing out is a state change, so it is a POST with a CSRF token
+           rather than a link. #}
+        <form class="signout" method="post" action="/portal/logout">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button type="submit">Sign out</button>
+        </form>
       </span>
     </div>
   </header>

@@ -17,7 +17,12 @@ from sqlalchemy.exc import IntegrityError
 
 from aivs_server.config import Settings
 from aivs_server.db.models import Distribution, TaxiiCollection
-from tests.conftest import TEST_PROXY_SECRET, TEST_SESSION_SECRET, proxy_headers
+from tests.conftest import (
+    TEST_CA_ISSUER_DN,
+    TEST_PROXY_SECRET,
+    TEST_SESSION_SECRET,
+    proxy_headers,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -30,6 +35,7 @@ def _settings(**overrides: object) -> dict[str, object]:
         "database_url": "postgresql+psycopg://aivs@127.0.0.1:55432/aivs_test",
         "proxy_shared_secret": TEST_PROXY_SECRET,
         "session_secret": TEST_SESSION_SECRET,
+        "expected_certificate_issuer_dn": TEST_CA_ISSUER_DN,
     }
     return {**base, **overrides}
 

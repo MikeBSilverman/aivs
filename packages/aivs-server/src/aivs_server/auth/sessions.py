@@ -174,7 +174,7 @@ async def establish_session(
     settings: Settings,
     *,
     operator: Operator,
-    cert_fingerprint: str | None,
+    cert_fingerprint: str,
     source_ip: str | None = None,
     user_agent: str | None = None,
     now: dt.datetime | None = None,
@@ -183,6 +183,11 @@ async def establish_session(
 
     A fresh token is minted here rather than reusing anything the browser
     supplied, so a session fixed before login cannot survive it.
+
+    ``cert_fingerprint`` is required rather than optional: the binding to the
+    organisation's certificate is what makes the password and the transport two
+    independent factors, and a session created without one would be a cookie
+    that authenticates on its own.
     """
     now = now or dt.datetime.now(dt.UTC)
     token = generate_session_token()
@@ -253,23 +258,35 @@ async def resolve_session(
     # The binding. A cookie replayed from outside this organisation's
     # certificate-bearing path fails here, which is what makes the password and
     # the certificate two independent factors rather than one.
-    if row.cert_fingerprint is not None:
-        if cert_fingerprint is None or not constant_time_equals(
-            row.cert_fingerprint, cert_fingerprint
-        ):
-            raise SessionRejectedError("session_certificate_mismatch")
+    #
+    # Unconditional. These checks used to sit inside `if row.cert_fingerprint is
+    # not None`, so a session row with a null fingerprint resolved to a full
+    # context with no certificate requirement at all -- the cookie alone would
+    # have been sufficient, from any network path that could reach the app. No
+    # caller could produce such a row, but "permit only this" is the shape that
+    # stays correct when the next caller arrives.
+    if row.cert_fingerprint is None:
+        raise SessionRejectedError("session_unbound")
+    if cert_fingerprint is None or not constant_time_equals(row.cert_fingerprint, cert_fingerprint):
+        raise SessionRejectedError("session_certificate_mismatch")
 
-        certificate = (
-            await session.execute(
-                select(ClientCertificate).where(
-                    ClientCertificate.fingerprint_sha256 == row.cert_fingerprint
-                )
+    certificate = (
+        await session.execute(
+            select(ClientCertificate).where(
+                ClientCertificate.fingerprint_sha256 == row.cert_fingerprint
             )
-        ).scalar_one_or_none()
-        if certificate is None or certificate.status is not CertStatus.ACTIVE:
-            # Revoking a certificate locks out the humans using it, not only the
-            # machines, and takes effect on the next request.
-            raise SessionRejectedError("session_certificate_revoked")
+        )
+    ).scalar_one_or_none()
+    if certificate is None or certificate.status is not CertStatus.ACTIVE:
+        # Revoking a certificate locks out the humans using it, not only the
+        # machines, and takes effect on the next request.
+        raise SessionRejectedError("session_certificate_revoked")
+    if certificate.not_after <= now:
+        # The same check get_auth_context makes on the machine path: where the
+        # recorded registration and the certificate itself disagree, the database
+        # is the authority. Without it a registration whose expiry was shortened
+        # kept working for portal sessions while machine calls were refused.
+        raise SessionRejectedError("session_certificate_expired")
 
     operator = await session.get(Operator, row.operator_id)
     if operator is None or not operator.is_active:

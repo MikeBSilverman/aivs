@@ -62,7 +62,11 @@ stages:
 
           - script: |
               set -euo pipefail
-              curl -LsSf https://astral.sh/uv/install.sh | sh
+              # Pinned to the same uv the Dockerfile uses (UV_IMAGE in
+              # packages/aivs-server/Dockerfile). Bump both together, so the
+              # toolchain that builds the release image cannot drift from the
+              # one CI validated against.
+              curl -LsSf https://astral.sh/uv/0.11.16/install.sh | sh
               echo "##vso[task.prependpath]$HOME/.local/bin"
             displayName: Install uv
 
@@ -105,9 +109,13 @@ stages:
               for script in deploy/ca/*.sh; do
                 bash -n "$script"
               done
-              if command -v shellcheck >/dev/null; then
-                shellcheck -S warning deploy/ca/*.sh
-              fi
+              # No `if command -v`: a missing shellcheck must fail the build
+              # rather than silently stop linting the scripts that mint key
+              # material. bash -n alone catches syntax, not an unquoted
+              # expansion or a swallowed exit status.
+              command -v shellcheck >/dev/null \
+                || sudo apt-get install -y --no-install-recommends shellcheck
+              shellcheck -S warning deploy/ca/*.sh
             displayName: Shell script checks
 
           # -- Database-backed --------------------------------------------

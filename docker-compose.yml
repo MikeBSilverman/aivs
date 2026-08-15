@@ -232,6 +232,16 @@ services:
       # from an accepted address.
       AIVS_TRUSTED_PROXY_CIDRS: '["172.29.10.2/32"]'
 
+      # RFC 4514 subject DN of the issuing CA. Certificate registration refuses
+      # anything not chaining from it. Without this the proxy's handshake verdict
+      # is the only thing between a self-signed certificate and a registered AIVS
+      # identity -- and the application deliberately does not treat the proxy as
+      # the sole authority on identity anywhere else. Read it with:
+      #
+      #   openssl x509 -in deploy/ca/out/intermediate/intermediate.crt \
+      #     -noout -subject -nameopt rfc2253
+      AIVS_EXPECTED_CERTIFICATE_ISSUER_DN: ${AIVS_EXPECTED_CERTIFICATE_ISSUER_DN:?set AIVS_EXPECTED_CERTIFICATE_ISSUER_DN in deploy/.env to the issuing CA subject DN}
+
       # -- Sessions ---------------------------------------------------------
       AIVS_SESSION_SECRET: ${AIVS_SESSION_SECRET:?set AIVS_SESSION_SECRET in deploy/.env (>= 32 chars)}
 

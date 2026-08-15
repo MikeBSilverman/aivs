@@ -64,13 +64,16 @@ def walk_routes(routes: list[Any]) -> list[tuple[str, str]]:
 #: Adding to this set is a security decision. The test below fails if a route
 #: becomes reachable without credentials and is not listed here, so the set
 #: cannot grow by accident.
+#: The interactive docs are deliberately absent here. They are mounted only when
+#: ``environment == "dev"``; the suite runs as ``test``, which is held to the
+#: production posture, so ``/docs`` and ``/openapi.json`` are not routes at all.
+#: Listing them as expected-public would assert the opposite of the rule --
+#: a staging instance mirrors production and holds real embargoed intelligence,
+#: and its schema enumerates the entire admin surface.
 EXPECTED_PUBLIC: frozenset[tuple[str, str]] = frozenset(
     {
         ("/healthz", "GET"),
         ("/readyz", "GET"),
-        ("/docs", "GET"),
-        ("/docs/oauth2-redirect", "GET"),
-        ("/openapi.json", "GET"),
     }
 )
 

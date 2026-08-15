@@ -47,6 +47,7 @@ from aivs_server.db.models import (
     Submission,
 )
 from aivs_server.services.embargo import record_embargo
+from aivs_server.services.submissions import identity_object_ids
 from aivs_server.taxii.resources import truncate_to_taxii_precision
 
 __all__ = ["DistributionError", "DistributionResult", "distribute_submission"]
@@ -89,6 +90,79 @@ async def _isac_identity(session: AsyncSession) -> str | None:
             .limit(1)
         )
     ).scalar_one_or_none()
+
+
+async def _submitter_identity(session: AsyncSession, submission: Submission) -> str:
+    """Return the submitting organisation's STIX identity.
+
+    Every enrolled organisation is given one at enrolment, so this is expected to
+    resolve; a submission whose submitter has no identity cannot be attributed
+    honestly and is refused rather than distributed unattributed.
+    """
+    identity = (
+        await session.execute(
+            select(Organization.stix_identity_id).where(
+                Organization.id == submission.submitter_org_id
+            )
+        )
+    ).scalar_one_or_none()
+
+    if not identity:
+        msg = (
+            "the submitting organisation has no STIX identity to attribute "
+            "content to; re-enrol it before distributing"
+        )
+        raise DistributionError(msg)
+    return identity
+
+
+async def _apply_attribution(
+    session: AsyncSession, submission: Submission, objects: list[StixObject]
+) -> None:
+    """Set ``created_by_ref`` on every object to what the server knows to be true.
+
+    Attribution is the server's to assign on both paths, and for mirror-image
+    reasons. Anonymously, it becomes the hosting ISAC's identity so the submitter
+    is not named. Attributed, it becomes the submitter's own identity -- ingest
+    never inspected the field, so a member could otherwise name any identity they
+    liked, including a peer's, which is readable from any object that peer has
+    shared into a common circle. Every member of the target circles would then
+    receive the finding attributed to a firm that never filed it, and because no
+    consumer-facing surface exposes ``submitter_org_id``, the named firm could
+    neither see nor contest it.
+
+    Reassigned rather than deleted: an object with no attribution at all is more
+    suspicious to a consumer than one attributed to whoever vouched for it.
+    """
+    if submission.distribute_anonymously:
+        # Checked again here, not only at ingest. Distribution is the last point
+        # at which the anonymity promise can still be kept, and the flag can be
+        # set by a write that carried no bundle to inspect. Rewriting
+        # created_by_ref over a bundle that still contains the submitter's own
+        # identity SDO would deliver their name to every circle member while the
+        # envelope claims the ISAC authored it.
+        self_identifying = identity_object_ids(stored.raw for stored in objects)
+        if self_identifying:
+            msg = (
+                "an anonymous submission must not carry identity objects, which are "
+                f"redistributed verbatim and would name the submitter: "
+                f"{', '.join(self_identifying)}"
+            )
+            raise DistributionError(msg)
+
+        identity = await _isac_identity(session)
+        if identity is None:
+            msg = (
+                "anonymous distribution requires an administrative organisation "
+                "to attribute content to; none is enrolled"
+            )
+            raise DistributionError(msg)
+    else:
+        identity = await _submitter_identity(session, submission)
+
+    for stored in objects:
+        if stored.raw.get("created_by_ref") != identity:
+            stored.raw = {**stored.raw, "created_by_ref": identity}
 
 
 def _validate_release_time(release_at: dt.datetime | None, now: dt.datetime) -> None:
@@ -200,20 +274,7 @@ async def distribute_submission(
         msg = "submission carries no STIX objects to distribute"
         raise DistributionError(msg)
 
-    if submission.distribute_anonymously:
-        identity = await _isac_identity(session)
-        if identity is None:
-            msg = (
-                "anonymous distribution requires an administrative organisation "
-                "to attribute content to; none is enrolled"
-            )
-            raise DistributionError(msg)
-        for stored in objects:
-            if stored.raw.get("created_by_ref") != identity:
-                # Reassign rather than delete the property: an object with no
-                # attribution at all is more suspicious to a consumer than one
-                # attributed to the ISAC that vouched for it.
-                stored.raw = {**stored.raw, "created_by_ref": identity}
+    await _apply_attribution(session, submission, objects)
 
     # Rows for *these* objects that are already live in a target circle, so a
     # re-distribution of the same submission does not deliver it twice.

@@ -84,6 +84,15 @@ uv run pytest -q
 `azure-pipelines.yml` runs the same set in the same order. Fast checks first, so
 a formatting mistake fails in a minute rather than after the full suite.
 
+**Coverage is instrumented for greenlet.** `[tool.coverage.run]` sets
+`concurrency = ["greenlet", "thread"]`. Without it coverage.py loses its trace
+function across SQLAlchemy's greenlet switches and records only statements
+containing an `await` — understating the total by about 8 points and claiming
+whole loops never ran in tests that demonstrably exercise them. It put CI below
+its own `fail_under` gate for a reason nobody would have guessed from the
+report, and the natural response to a gate that is red for an invisible reason
+is to lower the gate. Do not remove it.
+
 **Suppressions are arguments, not annotations.** A `noqa`, `nosec`, or
 `type: ignore` needs a comment saying why the rule does not apply here. If the
 honest answer is "the rule is right but fixing it is work", fix it. The one
@@ -204,10 +213,25 @@ forbidden" from "does not exist" turns an endpoint into an existence oracle over
 the whole namespace. One endpoint getting this wrong undoes the care every
 sibling takes. This applies to submissions, collections, receipts, certificates.
 
+**Refusal is surface-specific, and the difference must be proved rather than
+exempted.** The machine surface returns 401; the portal redirects to sign in,
+because a 401 leaves a person with nowhere to go. The authorization matrix
+therefore splits by surface and asserts both, plus that no portal route serves
+content or performs a write without a session. Lumping them together would have
+been wrong in either direction: either the portal gets a free pass, or the API
+starts redirecting.
+
 **Timestamps round-trip exactly.** TAXII carries milliseconds; PostgreSQL stores
 microseconds. Every write of `date_added` passes through
 `truncate_to_taxii_precision`, or a member echoing `X-TAXII-Date-Added-Last`
 back as `added_after` re-receives the last object on *every* poll.
+
+**Moving a visibility timestamp is asymmetric.** Lowering one that is still in
+the future is safe — no member's cursor can have passed it. Lowering one below
+`now` is not, which is why backdating at distribution time is refused. Raising
+one after release is not either, because members already hold the content. Three
+directions, three different answers; the code enforces each separately and
+`services/embargo.py` explains why.
 
 **Two descriptions of one thing will drift.** The STIX extension is described by
 both a JSON Schema and a `stix2` registration; they diverged within a day. A
@@ -218,6 +242,26 @@ description of something, write the test that pins them together.
 resolves the latest *visible* version. Resolving globally then filtering would
 return nothing for an object whose newest version is withheld — from which the
 caller infers that it exists.
+
+**A model or table with no caller is a claim the system does not keep.** The
+`embargoes` table, `EmbargoUpsert`, and the `Webhook` model all existed and were
+documented before anything read or wrote them — so `SubmissionDetail.embargo`
+reported "no embargo" for content that was under one, and an operator checking
+the obvious place got a wrong answer. Either wire it up or delete it; a schema
+that describes a feature nobody implemented is worse than an absent feature,
+because it reads as done.
+
+**Unused code is untested code, and the type checker only helps once it is
+called.** `session_scope` was written as an async generator without
+`@asynccontextmanager`. It type-checked and linted clean for the whole time it
+had no caller, and failed the moment the embargo sweeper first used it. When you
+write a helper "for later", either use it now or expect it to be wrong.
+
+**Success and failure paths must persist symmetrically.** `authenticate_operator`
+committed its failure bookkeeping and left its success bookkeeping to the
+caller, so a successful login did not clear the lockout counter unless session
+creation also succeeded. Whenever one branch of a function commits, check what
+the other branch owes.
 
 **Anonymity is a promise the server can only partly keep.** The pipeline rewrites
 `created_by_ref`; it cannot sanitise free text. Self-identifying structure

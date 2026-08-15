@@ -209,6 +209,14 @@ filterwarnings = [
 
 [tool.coverage.run]
 branch = true
+# SQLAlchemy's asyncio layer runs on greenlet. Without this, coverage.py loses
+# the trace function across greenlet switches and reports only the statements
+# that *contain* an await -- everything between them shows as missing. The
+# effect is not noise: it understated the total by 8 points and claimed the
+# distribution row-writing loop never executed, in a run whose test reads those
+# rows back over TAXII. It also put CI below its own fail_under gate for a
+# reason no one would guess from the report.
+concurrency = ["greenlet", "thread"]
 source = ["aivs_schemas", "aivs_server", "aivs_client"]
 omit = ["*/alembic/*", "*/tests/*"]
 

@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import datetime as dt
 import uuid
+from collections.abc import Collection
 from typing import TYPE_CHECKING, Final
 
 from sqlalchemy import ColumnElement, and_, or_
@@ -60,6 +61,7 @@ __all__ = [
     "is_system_admin",
     "readable_circle_ids",
     "require",
+    "visible_content_clause",
     "writable_circle_ids",
 ]
 
@@ -266,30 +268,45 @@ def can_manage_org(ctx: AuthContext, target_org_id: uuid.UUID) -> bool:
 # ---------------------------------------------------------------------------
 # The visibility clause
 # ---------------------------------------------------------------------------
-def distribution_visibility_clause(ctx: AuthContext, now: dt.datetime) -> ColumnElement[bool]:
-    """Return the SQL predicate selecting content the caller may read.
+def visible_content_clause(
+    circle_ids: Collection[uuid.UUID], now: dt.datetime
+) -> ColumnElement[bool]:
+    """Return the SQL predicate selecting distributed content readable right now.
 
-    This single expression is the read-side enforcement point for TAXII, and the
-    authoritative embargo gate. Three conditions, all required:
+    **The read-side enforcement point, and the authoritative embargo gate.**
+    Three conditions, all required:
 
-    1. the object was distributed into a circle the caller belongs to,
+    1. the object was distributed into one of ``circle_ids``,
     2. its ``date_added`` for that circle has arrived -- which is what makes
-       embargo enforcement safe even if the release scheduler is not running,
+       embargo enforcement safe even when the release scheduler is not running,
        since an unreleased object simply has a future ``date_added``, and
     3. the owning submission is in a state whose content is visible.
 
-    Callers must join ``Submission`` for condition 3 to resolve. An inactive
-    organisation yields an empty circle set and therefore a clause that matches
-    no rows.
+    Callers must join ``Submission`` for condition 3 to resolve.
+
+    Both readers go through here -- ``taxii.queries`` for a single collection and
+    :func:`distribution_visibility_clause` for everything a caller may read --
+    so the conditions have one definition. They were briefly written twice, and
+    a duplicated security condition is one refactor away from being two
+    different security conditions.
     """
-    circle_ids = readable_circle_ids(ctx)
     if not circle_ids:
         # An explicit false, rather than `IN ()`, which some dialects treat
-        # inconsistently and which reads ambiguously in a query log.
+        # inconsistently and which reads ambiguously in a query log. The failure
+        # mode of an empty set must be "match nothing", never "match everything".
         return or_(False)
 
     return and_(
-        Distribution.circle_id.in_(circle_ids),
+        Distribution.circle_id.in_(tuple(circle_ids)),
         Distribution.date_added <= now,
         Submission.state.in_(tuple(VISIBLE_SUBMISSION_STATES)),
     )
+
+
+def distribution_visibility_clause(ctx: AuthContext, now: dt.datetime) -> ColumnElement[bool]:
+    """Return the predicate selecting everything ``ctx`` may read, across circles.
+
+    An inactive organisation yields an empty circle set and therefore a clause
+    that matches no rows.
+    """
+    return visible_content_clause(readable_circle_ids(ctx), now)

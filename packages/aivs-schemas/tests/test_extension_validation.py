@@ -29,6 +29,7 @@ from aivs_schemas.extension.builders import (
 from aivs_schemas.tlp import (
     LEGACY_TLP10_MARKING_IDS,
     TLP,
+    TLP20_EXTENSION_DEFINITION_ID,
     TLP_MARKING_IDS,
     marking_definition_for,
     tlp_for_marking_id,
@@ -84,9 +85,33 @@ def test_unknown_extension_definition_is_rejected():
 
 
 def test_allowlist_contains_only_the_two_intended_extensions():
-    """AIVS's own extension and TLP 2.0. Anything else is a deliberate decision."""
-    assert len(ALLOWED_EXTENSION_IDS) == 2
-    assert AIVS_EXTENSION_ID in ALLOWED_EXTENSION_IDS
+    """AIVS's own extension and TLP 2.0, by identity rather than by count.
+
+    Asserting `len == 2` holds for any two distinct constants, so swapping
+    TLP 2.0 for an arbitrary third-party extension would have passed -- in the
+    only test of the contents of the gate that decides what AIVS redistributes.
+    """
+    assert frozenset({AIVS_EXTENSION_ID, TLP20_EXTENSION_DEFINITION_ID}) == ALLOWED_EXTENSION_IDS
+
+
+def test_a_tlp20_marked_object_is_accepted():
+    """The second allowlist entry, exercised positively.
+
+    Without this the TLP 2.0 entry is only ever asserted to be present, never
+    shown to work.
+    """
+    validate_stix_object(
+        {
+            "id": "vulnerability--0f9c0000-0000-4000-8000-000000000009",
+            "type": "vulnerability",
+            "extensions": {
+                TLP20_EXTENSION_DEFINITION_ID: {
+                    "extension_type": "property-extension",
+                    "tlp_2_0": "amber+strict",
+                }
+            },
+        }
+    )
 
 
 def test_extensions_must_be_an_object():
@@ -250,6 +275,8 @@ def test_stix2_registration_and_json_schema_describe_the_same_properties():
 
 
 def test_extension_definition_id_matches_the_code_constant():
+    """`extension_definition_sdo` raises on divergence, so this asserts the
+    loader succeeds at all -- the identity check itself lives in the loader."""
     assert extension_definition_sdo()["id"] == AIVS_EXTENSION_ID
 
 

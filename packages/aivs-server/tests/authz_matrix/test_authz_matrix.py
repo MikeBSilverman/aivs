@@ -98,7 +98,11 @@ def test_the_walker_actually_finds_the_routes(app):
     Without this, a change to how routes are stored would silently reduce the
     matrix below to a handful of endpoints and it would keep passing.
     """
-    routes = walk_routes(app.routes)
+    # Deduplicated, because every consuming test iterates `set(walk_routes(...))`.
+    # Counting the raw list would let a walker that descends both
+    # `original_router` and `routes` return the same handful of routes many
+    # times, satisfy this guard, and leave the matrix testing almost nothing.
+    routes = set(walk_routes(app.routes))
     assert len(routes) >= 30, (
         f"route walker found only {len(routes)} routes; it is under-enumerating "
         "and every authorization assertion below is therefore vacuous"
@@ -127,27 +131,44 @@ async def test_every_route_requires_authentication(app):
 
 
 async def test_public_routes_are_exactly_the_intended_set(app):
-    """A route that stops requiring credentials must fail the build.
+    """The public set is EXACTLY `EXPECTED_PUBLIC` -- both directions.
 
-    The previous test skips EXPECTED_PUBLIC; this one confirms the set has not
-    silently grown, by checking each listed entry really is public and that
-    nothing else is.
+    The previous version of this test collected only routes that were public but
+    unlisted, which is logically identical to the test above it. It therefore
+    could not detect the other failure: a listed route that stops being public,
+    is deleted, or lingers in the list after removal. `/healthz` and `/readyz`
+    are the orchestrator's liveness contract, and nothing else in the suite
+    calls them.
     """
     transport = ASGITransport(app=app, client=("127.0.0.1", 0))
-    unexpectedly_public: list[str] = []
+    actually_public: set[tuple[str, str]] = set()
 
     async with AsyncClient(transport=transport, base_url="https://aivs.test") as anonymous:
         for path, method in sorted(set(walk_routes(app.routes))):
             response = await anonymous.request(method, concrete(path), json={})
-            is_public = response.status_code != 401
-            listed = (path, method) in EXPECTED_PUBLIC
-            if is_public and not listed:
-                unexpectedly_public.append(f"{method} {path} -> {response.status_code}")
+            if response.status_code != 401:
+                actually_public.add((path, method))
 
-    assert not unexpectedly_public, (
-        "routes reachable without credentials but not in EXPECTED_PUBLIC:\n  "
-        + "\n  ".join(unexpectedly_public)
+    assert actually_public == set(EXPECTED_PUBLIC), (
+        "the set of routes reachable without credentials has changed.\n"
+        f"  newly public : {sorted(actually_public - set(EXPECTED_PUBLIC))}\n"
+        f"  no longer public: {sorted(set(EXPECTED_PUBLIC) - actually_public)}"
     )
+
+
+async def test_the_health_probes_actually_answer(client):
+    """The orchestrator contract, which nothing else exercises.
+
+    A liveness probe that started returning 401 would take the instance out of
+    rotation on every deployment, and until now no test would have noticed.
+    """
+    liveness = await client.get("/healthz")
+    assert liveness.status_code == 200
+    assert liveness.json()["status"] == "ok"
+
+    readiness = await client.get("/readyz")
+    assert readiness.status_code == 200
+    assert readiness.json()["database"] == "ok"
 
 
 async def test_a_valid_certificate_from_a_suspended_org_reaches_nothing(app, make_org, make_cert):
@@ -201,9 +222,11 @@ async def test_administrative_routes_refuse_an_ordinary_member(app, make_org, ma
     async with AsyncClient(transport=transport, base_url="https://aivs.test") as member:
         for method, path, body in administrative:
             response = await member.request(method, path, json=body, headers=proxy_headers(pem))
-            # 403 is the correct refusal. 404 is acceptable where the resource
-            # genuinely does not exist, but 2xx never is.
-            if response.status_code < 400:
+            # 403 is the correct refusal; 404 is acceptable only where the
+            # resource genuinely does not exist. Anything else -- a 2xx, but also
+            # a 422 from body drift or a 500 -- means this test is not proving
+            # what it claims, so it is reported too.
+            if response.status_code not in (403, 404):
                 permitted.append(f"{method} {path} -> {response.status_code}")
 
     assert not permitted, (

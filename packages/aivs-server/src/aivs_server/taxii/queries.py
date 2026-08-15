@@ -21,7 +21,7 @@ from typing import Any
 
 from sqlalchemy import Select, func, literal, select, tuple_
 
-from aivs_schemas.enums import VISIBLE_SUBMISSION_STATES
+from aivs_server.auth.policy import visible_content_clause
 from aivs_server.db.models import Distribution, StixObject, Submission
 from aivs_server.taxii.filters import TaxiiFilters, VersionSelector
 from aivs_server.taxii.paging import Cursor
@@ -54,11 +54,9 @@ def _visible_rows(circle_id: uuid.UUID, now: dt.datetime) -> Select[Any]:
         .select_from(Distribution)
         .join(StixObject, StixObject.id == Distribution.stix_object_id)
         .join(Submission, Submission.id == Distribution.submission_id)
-        .where(
-            Distribution.circle_id == circle_id,
-            Distribution.date_added <= now,
-            Submission.state.in_(tuple(VISIBLE_SUBMISSION_STATES)),
-        )
+        # The three visibility conditions come from auth.policy so there is one
+        # definition of them; see visible_content_clause.
+        .where(visible_content_clause([circle_id], now))
     )
 
 

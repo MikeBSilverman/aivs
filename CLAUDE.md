@@ -10,7 +10,64 @@ work on it safely.
 
 ---
 
-## 1. Verification gates
+## 1. Write the rule down, in the same session you learn it
+
+**If you learn something that would change how the next person works, it goes in
+this file before the session ends.** Not into a summary, not into a mental note,
+not into a reply the user will scroll past — into the repository.
+
+This is first because everything else here exists only because it was written
+down, and because the alternative silently fails:
+
+- **A session's memory does not survive it.** The next session starts with the
+  repository and nothing else. A rule that lives only in a conversation is a
+  rule that will be rediscovered by repeating its failure.
+- **A delegated agent inherits nothing but its prompt.** Not the context, not
+  the conventions, not the three things that already went wrong today. If a
+  constraint matters to work you hand off, it has to be in the repo or in the
+  prompt — assuming it carries over is how the same mistake gets made twice in
+  parallel.
+- **A human joining later reads files, not history.** Commit messages help, but
+  nobody greps six months of them before making a change.
+
+### What belongs here
+
+The test: **would someone waste time, or take a risk, rediscovering this?** If
+yes, write it. Specifically —
+
+- a failure mode with a non-obvious cause (the test-database hang; the coverage
+  instrumentation)
+- a rule whose reason is not visible from the code (why `404` and not `403`)
+- a convention that is easy to violate accidentally (locking on mutating routes)
+- a tool or environment behaviour that surprised you (routers not flattening;
+  how reviews must be framed)
+
+Do **not** write what the code already says. A rule restating a function's
+signature is noise, and noise is what makes people stop reading the file that
+contains the rules that matter.
+
+### Where it goes
+
+| Kind of knowledge | Home |
+| --- | --- |
+| How to work on this repo safely | this file |
+| Why the system is shaped the way it is | `docs/` |
+| Why *this line* is the way it is | a comment, at that line |
+| Why *this change* was made | the commit message |
+| A decision still being made | a design note in `docs/`, marked as such |
+
+### Write the failure with the rule
+
+Every rule below names the thing that went wrong to produce it. That is
+deliberate. A rule without its reason gets deleted the first time it is
+inconvenient, by someone who cannot tell whether it is load-bearing or
+superstition. One sentence of "this cost us X" is what makes it survive.
+
+Correcting an existing rule is worth as much as adding one. If something here is
+wrong, or was right and no longer is, change it in the same commit as the code
+that made it wrong.
+
+## 2. Verification gates
 
 Nothing lands without all of these passing:
 
@@ -34,7 +91,7 @@ standing exception is `bind_host` in `config.py`, which is argued in place.
 
 ---
 
-## 2. The test database (this has bitten us three times)
+## 3. The test database (this has bitten us three times)
 
 **Every concurrent test run needs its own database.**
 
@@ -67,7 +124,7 @@ the test database).
 
 ---
 
-## 3. Delegated security review
+## 4. Delegated security review
 
 Reviews of this codebase work well and are worth running. Two things govern
 whether they succeed.
@@ -110,7 +167,7 @@ the review does *not* tell you.
 
 ---
 
-## 4. Correctness rules with teeth
+## 5. Correctness rules with teeth
 
 Each of these is here because the opposite was written first.
 
@@ -169,7 +226,7 @@ limit is documented rather than papered over.
 
 ---
 
-## 5. Secrets and key material
+## 6. Secrets and key material
 
 **Nothing cryptographic is ever committed.** `.gitignore` denies key and
 certificate extensions by default, and test certificates are *generated at test
@@ -185,7 +242,7 @@ mode 0600); the remote URL carries no token.
 
 ---
 
-## 6. Migrations
+## 7. Migrations
 
 Autogenerate, then read what it produced. `alembic check` runs in CI and must
 report no drift, so a schema that exists only because someone ran `create_all`
@@ -197,7 +254,7 @@ follow. A reviewer should not have to reconstruct why a column exists.
 
 ---
 
-## 7. Comments and commit messages
+## 8. Comments and commit messages
 
 Comments say **why**, never what. The bar: would this sentence still be worth
 reading in a year, to someone who can already read the code? If it restates the

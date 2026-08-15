@@ -38,6 +38,7 @@ from aivs_server.auth.policy import (
     is_system_admin,
     require,
 )
+from aivs_server.auth.sessions import revoke_sessions_for_certificate
 from aivs_server.db.models import (
     Circle,
     CircleMembership,
@@ -287,13 +288,23 @@ async def revoke_certificate(
     row.status = CertStatus.REVOKED
     row.revoked_at = dt.datetime.now(dt.UTC)
     row.revoked_reason = "revoked via API"
+
+    # Revocation must lock out the humans using this certificate, not only the
+    # machines. resolve_session would refuse them on their next request anyway;
+    # ending them now means the audit trail shows the sessions closing at
+    # revocation time rather than whenever each browser next happened to poll.
+    closed = await revoke_sessions_for_certificate(session, fingerprint=row.fingerprint_sha256)
     await record(
         session,
         action=AuditAction.CERT_REVOKED,
         ctx=ctx,
         resource_type="certificate",
         resource_id=str(certificate_id),
-        details={"fingerprint": row.fingerprint_sha256, "org_id": str(row.org_id)},
+        details={
+            "fingerprint": row.fingerprint_sha256,
+            "org_id": str(row.org_id),
+            "portal_sessions_closed": closed,
+        },
     )
     await session.commit()
     await session.refresh(row)

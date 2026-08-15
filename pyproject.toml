@@ -116,9 +116,11 @@ max-returns = 8
 
 [tool.ruff.lint.per-file-ignores]
 # EM101 exists to keep long messages out of `raise`. CertificateRejectedError
-# takes a short stable *reason token* rather than a message -- those tokens are
-# the audit vocabulary and belong at the raise site where they are read.
+# and SessionRejectedError take a short stable *reason token* rather than a
+# message -- those tokens are the audit vocabulary and belong at the raise site
+# where they are read, not bound to a variable one line earlier.
 "**/auth/mtls.py" = ["EM101"]
+"**/auth/sessions.py" = ["EM101"]
 # Tests: assert is the point; hardcoded test credentials are not secrets;
 # private-member access is sometimes needed to assert on internals.
 "**/tests/**" = [

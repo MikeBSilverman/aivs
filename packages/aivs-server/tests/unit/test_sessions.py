@@ -1,0 +1,449 @@
+"""Portal authentication and the certificate binding.
+
+The property under test is the one that makes the portal's two factors
+independent: a session is bound to the client certificate that carried the
+login, and that binding is re-checked on every request. A stolen cookie is
+useless outside the organisation's certificate-bearing path, and the
+organisation's certificate is useless without a human credential.
+
+The revocation tests matter for a reason a review surfaced: revoking a
+certificate has to lock out the humans using it, not only the machines.
+"""
+
+from __future__ import annotations
+
+import datetime as dt
+
+import pyotp
+import pytest
+from sqlalchemy import select
+
+from aivs_schemas.enums import CertStatus, OperatorRole, OrgStatus, OrgType
+from aivs_server.auth.context import AuthMethod
+from aivs_server.auth.passwords import (
+    encode_secret,
+    generate_totp_secret,
+    hash_password,
+    verify_password,
+    verify_totp,
+)
+from aivs_server.auth.sessions import (
+    LOCKOUT_THRESHOLD,
+    SessionRejectedError,
+    authenticate_operator,
+    establish_session,
+    resolve_session,
+    revoke_session,
+    revoke_sessions_for_certificate,
+)
+from aivs_server.db.models import Operator, PortalSession
+
+pytestmark = pytest.mark.db
+
+PASSWORD = "correct-horse-battery-staple"
+
+
+@pytest.fixture
+async def operator_setup(session, settings, make_org, make_cert):
+    """An active operator at an active org, with a registered certificate."""
+    org = await make_org("meridian-global", org_type=OrgType.GSIB)
+    pem, certificate = await make_cert(org)
+
+    totp_secret = generate_totp_secret()
+    operator = Operator(
+        org_id=org.id,
+        email="analyst@meridian.test",
+        display_name="Test Analyst",
+        role=OperatorRole.ANALYST,
+        password_hash=hash_password(PASSWORD),
+        totp_secret_encrypted=encode_secret(totp_secret),
+        is_active=True,
+    )
+    session.add(operator)
+    await session.commit()
+    await session.refresh(operator)
+    return org, operator, totp_secret, certificate, pem
+
+
+def current_code(secret: str) -> str:
+    return pyotp.TOTP(secret).now()
+
+
+# ---------------------------------------------------------------------------
+# Credential verification
+# ---------------------------------------------------------------------------
+async def test_correct_credentials_authenticate(session, operator_setup):
+    org, operator, secret, _cert, _pem = operator_setup
+    result = await authenticate_operator(
+        session,
+        email=operator.email,
+        password=PASSWORD,
+        totp_code=current_code(secret),
+        org_id=org.id,
+    )
+    assert result.id == operator.id
+
+
+@pytest.mark.parametrize(
+    ("password", "use_valid_code"),
+    [(PASSWORD, False), ("wrong-password-entirely", True), ("wrong", False)],
+)
+async def test_both_factors_are_required(session, operator_setup, password, use_valid_code):
+    """Neither factor alone authenticates."""
+    org, operator, secret, _cert, _pem = operator_setup
+    with pytest.raises(SessionRejectedError):
+        await authenticate_operator(
+            session,
+            email=operator.email,
+            password=password,
+            totp_code=current_code(secret) if use_valid_code else "000000",
+            org_id=org.id,
+        )
+
+
+async def test_a_credential_from_another_orgs_path_is_refused(session, operator_setup, make_org):
+    """A stolen credential replayed from a different firm's network path fails.
+
+    The organisation comes from the client certificate, not from the form, so
+    knowing the password and holding a TOTP device is not enough if you are
+    coming from somewhere else.
+    """
+    _org, operator, secret, _cert, _pem = operator_setup
+    other = await make_org("atlantic-clearing")
+
+    with pytest.raises(SessionRejectedError) as caught:
+        await authenticate_operator(
+            session,
+            email=operator.email,
+            password=PASSWORD,
+            totp_code=current_code(secret),
+            org_id=other.id,
+        )
+    assert caught.value.reason == "operator_org_mismatch"
+
+
+async def test_an_unknown_address_is_refused(session, operator_setup):
+    org, _operator, secret, _cert, _pem = operator_setup
+    with pytest.raises(SessionRejectedError):
+        await authenticate_operator(
+            session,
+            email="nobody@meridian.test",
+            password=PASSWORD,
+            totp_code=current_code(secret),
+            org_id=org.id,
+        )
+
+
+async def test_an_inactive_operator_is_refused(session, operator_setup):
+    org, operator, secret, _cert, _pem = operator_setup
+    operator.is_active = False
+    await session.commit()
+
+    with pytest.raises(SessionRejectedError) as caught:
+        await authenticate_operator(
+            session,
+            email=operator.email,
+            password=PASSWORD,
+            totp_code=current_code(secret),
+            org_id=org.id,
+        )
+    assert caught.value.reason == "operator_inactive"
+
+
+async def test_repeated_failures_lock_the_operator_out(session, operator_setup):
+    """Online guessing is bounded, and the lockout survives a correct password."""
+    org, operator, secret, _cert, _pem = operator_setup
+
+    for _ in range(LOCKOUT_THRESHOLD):
+        with pytest.raises(SessionRejectedError):
+            await authenticate_operator(
+                session,
+                email=operator.email,
+                password="wrong",
+                totp_code="000000",
+                org_id=org.id,
+            )
+
+    with pytest.raises(SessionRejectedError) as caught:
+        await authenticate_operator(
+            session,
+            email=operator.email,
+            password=PASSWORD,
+            totp_code=current_code(secret),
+            org_id=org.id,
+        )
+    assert caught.value.reason == "operator_locked"
+
+
+async def test_a_successful_login_clears_the_failure_count(session, operator_setup):
+    org, operator, secret, _cert, _pem = operator_setup
+
+    with pytest.raises(SessionRejectedError):
+        await authenticate_operator(
+            session, email=operator.email, password="wrong", totp_code="000000", org_id=org.id
+        )
+
+    await authenticate_operator(
+        session,
+        email=operator.email,
+        password=PASSWORD,
+        totp_code=current_code(secret),
+        org_id=org.id,
+    )
+    await session.refresh(operator)
+    assert operator.failed_login_count == 0
+    assert operator.last_login_at is not None
+
+
+# ---------------------------------------------------------------------------
+# The certificate binding
+# ---------------------------------------------------------------------------
+async def test_a_session_resumes_with_the_bound_certificate(session, settings, operator_setup):
+    _org, operator, _secret, certificate, _pem = operator_setup
+    established = await establish_session(
+        session,
+        settings,
+        operator=operator,
+        cert_fingerprint=certificate.fingerprint_sha256,
+    )
+
+    ctx, _csrf_hash = await resolve_session(
+        session,
+        settings,
+        token=established.token,
+        cert_fingerprint=certificate.fingerprint_sha256,
+    )
+    assert ctx.operator_id == operator.id
+    assert ctx.auth_method is AuthMethod.PORTAL_SESSION
+    assert ctx.operator_role is OperatorRole.ANALYST
+
+
+async def test_a_session_cookie_is_useless_from_another_certificate_path(
+    session, settings, operator_setup, ca
+):
+    """The property the whole design rests on.
+
+    Without this, the password and the certificate would be one factor: a
+    stolen cookie would work from anywhere on the network.
+    """
+    _org, operator, _secret, certificate, _pem = operator_setup
+    established = await establish_session(
+        session,
+        settings,
+        operator=operator,
+        cert_fingerprint=certificate.fingerprint_sha256,
+    )
+
+    _other_pem, other_fingerprint, _cert = ca.issue("somewhere-else")
+    with pytest.raises(SessionRejectedError) as caught:
+        await resolve_session(
+            session,
+            settings,
+            token=established.token,
+            cert_fingerprint=other_fingerprint,
+        )
+    assert caught.value.reason == "session_certificate_mismatch"
+
+
+async def test_a_session_cookie_is_useless_with_no_certificate(session, settings, operator_setup):
+    _org, operator, _secret, certificate, _pem = operator_setup
+    established = await establish_session(
+        session,
+        settings,
+        operator=operator,
+        cert_fingerprint=certificate.fingerprint_sha256,
+    )
+
+    with pytest.raises(SessionRejectedError):
+        await resolve_session(session, settings, token=established.token, cert_fingerprint=None)
+
+
+async def test_revoking_the_certificate_ends_the_humans_sessions(session, settings, operator_setup):
+    """Revocation locks out people, not only machines.
+
+    A review found that certificate revocation touched nothing in
+    portal_sessions, so a logged-in analyst would have kept working for the rest
+    of the session TTL after their firm's certificate was pulled.
+    """
+    _org, operator, _secret, certificate, _pem = operator_setup
+    established = await establish_session(
+        session,
+        settings,
+        operator=operator,
+        cert_fingerprint=certificate.fingerprint_sha256,
+    )
+
+    certificate.status = CertStatus.REVOKED
+    certificate.revoked_at = dt.datetime.now(dt.UTC)
+    await session.commit()
+
+    with pytest.raises(SessionRejectedError) as caught:
+        await resolve_session(
+            session,
+            settings,
+            token=established.token,
+            cert_fingerprint=certificate.fingerprint_sha256,
+        )
+    assert caught.value.reason == "session_certificate_revoked"
+
+
+async def test_bulk_revocation_closes_every_bound_session(session, settings, operator_setup):
+    _org, operator, _secret, certificate, _pem = operator_setup
+    first = await establish_session(
+        session, settings, operator=operator, cert_fingerprint=certificate.fingerprint_sha256
+    )
+    second = await establish_session(
+        session, settings, operator=operator, cert_fingerprint=certificate.fingerprint_sha256
+    )
+
+    closed = await revoke_sessions_for_certificate(
+        session, fingerprint=certificate.fingerprint_sha256
+    )
+    await session.commit()
+    assert closed == 2
+
+    for established in (first, second):
+        with pytest.raises(SessionRejectedError):
+            await resolve_session(
+                session,
+                settings,
+                token=established.token,
+                cert_fingerprint=certificate.fingerprint_sha256,
+            )
+
+
+# ---------------------------------------------------------------------------
+# Session lifecycle
+# ---------------------------------------------------------------------------
+async def test_an_unknown_token_is_refused(session, settings, operator_setup):
+    with pytest.raises(SessionRejectedError):
+        await resolve_session(
+            session, settings, token="not-a-real-token", cert_fingerprint="a" * 64
+        )
+
+
+async def test_an_expired_session_is_refused(session, settings, operator_setup):
+    _org, operator, _secret, certificate, _pem = operator_setup
+    established = await establish_session(
+        session, settings, operator=operator, cert_fingerprint=certificate.fingerprint_sha256
+    )
+
+    row = (await session.execute(select(PortalSession))).scalar_one()
+    row.expires_at = dt.datetime.now(dt.UTC) - dt.timedelta(seconds=1)
+    await session.commit()
+
+    with pytest.raises(SessionRejectedError) as caught:
+        await resolve_session(
+            session,
+            settings,
+            token=established.token,
+            cert_fingerprint=certificate.fingerprint_sha256,
+        )
+    assert caught.value.reason == "session_expired"
+
+
+async def test_an_idle_session_is_refused(session, settings, operator_setup):
+    """Idle timeout is separate from the absolute deadline.
+
+    An unattended browser on an analyst's desk should stop working long before
+    the session's outer TTL expires.
+    """
+    _org, operator, _secret, certificate, _pem = operator_setup
+    established = await establish_session(
+        session, settings, operator=operator, cert_fingerprint=certificate.fingerprint_sha256
+    )
+
+    row = (await session.execute(select(PortalSession))).scalar_one()
+    row.last_seen_at = dt.datetime.now(dt.UTC) - dt.timedelta(
+        minutes=settings.session_idle_timeout_minutes + 1
+    )
+    await session.commit()
+
+    with pytest.raises(SessionRejectedError) as caught:
+        await resolve_session(
+            session,
+            settings,
+            token=established.token,
+            cert_fingerprint=certificate.fingerprint_sha256,
+        )
+    assert caught.value.reason == "session_idle_timeout"
+
+
+async def test_logout_revokes_the_session(session, settings, operator_setup):
+    _org, operator, _secret, certificate, _pem = operator_setup
+    established = await establish_session(
+        session, settings, operator=operator, cert_fingerprint=certificate.fingerprint_sha256
+    )
+
+    await revoke_session(session, token=established.token)
+
+    with pytest.raises(SessionRejectedError) as caught:
+        await resolve_session(
+            session,
+            settings,
+            token=established.token,
+            cert_fingerprint=certificate.fingerprint_sha256,
+        )
+    assert caught.value.reason == "session_revoked"
+
+
+async def test_suspending_the_org_ends_its_sessions(session, settings, operator_setup):
+    org, operator, _secret, certificate, _pem = operator_setup
+    established = await establish_session(
+        session, settings, operator=operator, cert_fingerprint=certificate.fingerprint_sha256
+    )
+
+    org.status = OrgStatus.SUSPENDED
+    await session.commit()
+
+    with pytest.raises(SessionRejectedError) as caught:
+        await resolve_session(
+            session,
+            settings,
+            token=established.token,
+            cert_fingerprint=certificate.fingerprint_sha256,
+        )
+    assert caught.value.reason == "org_inactive"
+
+
+async def test_each_login_mints_a_fresh_token(session, settings, operator_setup):
+    """A session fixed before login must not survive it."""
+    _org, operator, _secret, certificate, _pem = operator_setup
+    first = await establish_session(
+        session, settings, operator=operator, cert_fingerprint=certificate.fingerprint_sha256
+    )
+    second = await establish_session(
+        session, settings, operator=operator, cert_fingerprint=certificate.fingerprint_sha256
+    )
+    assert first.token != second.token
+    assert first.csrf_token != second.csrf_token
+
+
+# ---------------------------------------------------------------------------
+# Password and TOTP primitives
+# ---------------------------------------------------------------------------
+def test_a_short_password_is_refused():
+    with pytest.raises(ValueError, match="at least"):
+        hash_password("short")
+
+
+def test_verification_of_a_missing_operator_always_fails():
+    """Called with None so the timing does not reveal whether the address exists."""
+    assert verify_password(None, "anything") is False
+
+
+def test_a_correct_password_verifies():
+    stored = hash_password(PASSWORD)
+    assert verify_password(stored, PASSWORD) is True
+    assert verify_password(stored, PASSWORD + "x") is False
+
+
+@pytest.mark.parametrize("code", ["", "abcdef", "12345", None])
+def test_a_malformed_totp_code_is_refused(code):
+    secret = generate_totp_secret()
+    assert verify_totp(secret, code or "") is False
+
+
+def test_a_missing_totp_secret_never_verifies():
+    """An operator part-way through enrolment cannot pass the second factor."""
+    assert verify_totp(None, "123456") is False

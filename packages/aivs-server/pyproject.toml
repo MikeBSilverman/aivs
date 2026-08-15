@@ -21,7 +21,6 @@ dependencies = [
     "python-multipart>=0.0.20",  # portal form parsing
     "itsdangerous>=2.2",         # signed pagination cursors and CSRF tokens
     "httpx>=0.28",               # SSRF-guarded webhook delivery
-    "apscheduler>=3.11",         # embargo release sweeper
 ]
 
 [project.scripts]

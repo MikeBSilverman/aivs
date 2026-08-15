@@ -313,11 +313,20 @@ and_(
 ```
 
 The read-time comparison `date_added <= now` **is** the embargo gate. The
-APScheduler sweeper that flips `embargoes.status` is a convenience for
-notifications and operator visibility, not the enforcement point. If the
-scheduler dies, nothing leaks early and the backlog self-heals on restart. There
-is no code path in which a stalled background job releases content, and none in
-which a crashed one withholds it past its time.
+sweeper that flips `embargoes.status` is a convenience for operator visibility
+and the audit trail, not the enforcement point. If it dies, nothing leaks early
+and the backlog self-heals on restart. There is no code path in which a stalled
+background job releases content, and none in which a crashed one withholds it
+past its time.
+
+The sweeper is a plain `asyncio` task on the application lifespan
+(`main._embargo_sweeper`), running every `AIVS_EMBARGO_SWEEP_INTERVAL_SECONDS`.
+A scheduling framework was considered and rejected: this is one `await
+asyncio.sleep` around one idempotent query, and the dependency would land in
+every member firm's software bill of materials for that. It logs and continues
+on failure — an instance that stopped serving members because a bookkeeping task
+hit a transient database error would be a far worse outcome than a stale status
+column.
 
 The supporting index is `ix_distributions_circle_paging` on
 `(circle_id, date_added, id)`. Its column order mirrors the `ORDER BY` in the

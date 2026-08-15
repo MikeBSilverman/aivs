@@ -161,8 +161,18 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_production_posture(self) -> Self:
-        """Refuse to start if a production deployment has a dev bypass enabled."""
-        if self.environment != "production":
+        """Refuse to start if a hardened deployment has a dev bypass enabled.
+
+        The exemption is allow-listed to ``dev`` alone, never denied for
+        ``production`` alone. An earlier version returned early for everything
+        that was not literally ``"production"``, which meant a ``staging``
+        deployment -- which for a financial-sector ISAC routinely mirrors
+        production and holds real embargoed intelligence -- could run with
+        ``dev_trust_unauthenticated_proxy`` set and silently lose the entire
+        proxy-authentication control. Fail closed: anything that is not an
+        engineer's laptop is held to the production posture.
+        """
+        if self.environment == "dev":
             return self
 
         violations: list[str] = []
@@ -180,8 +190,9 @@ class Settings(BaseSettings):
             violations.append("log_level (DEBUG may record request bodies)")
 
         if violations:
-            msg = "refusing to start in production with unsafe settings: " + ", ".join(
-                sorted(violations)
+            msg = (
+                f"refusing to start in environment={self.environment!r} with unsafe "
+                "settings: " + ", ".join(sorted(violations))
             )
             raise ValueError(msg)
         return self

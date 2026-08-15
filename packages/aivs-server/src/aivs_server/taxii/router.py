@@ -314,7 +314,7 @@ async def list_objects(
             settings.session_secret.get_secret_value(),
             Cursor(
                 date_added=page[-1].date_added,
-                distribution_id=page[-1].distribution_id,
+                seq=page[-1].seq,
                 collection_id=collection_id,
             ),
         )
@@ -487,7 +487,7 @@ async def get_manifest(
             settings.session_secret.get_secret_value(),
             Cursor(
                 date_added=page[-1].date_added,
-                distribution_id=page[-1].distribution_id,
+                seq=page[-1].seq,
                 collection_id=collection_id,
             ),
         )

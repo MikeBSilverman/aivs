@@ -19,7 +19,7 @@ import datetime as dt
 import uuid
 from typing import Any
 
-from sqlalchemy import Select, and_, func, select
+from sqlalchemy import Select, func, literal, select, tuple_
 
 from aivs_schemas.enums import VISIBLE_SUBMISSION_STATES
 from aivs_server.db.models import Distribution, StixObject, Submission
@@ -41,6 +41,7 @@ def _visible_rows(circle_id: uuid.UUID, now: dt.datetime) -> Select[Any]:
     return (
         select(
             Distribution.id.label("distribution_id"),
+            Distribution.seq.label("seq"),
             Distribution.date_added.label("date_added"),
             StixObject.id.label("stix_object_id"),
             StixObject.stix_id.label("stix_id"),
@@ -131,10 +132,13 @@ def build_object_listing_query(
 ) -> Select[Any]:
     """Build the ordered, paginated query behind an objects listing.
 
-    Ordering is ascending by ``(date_added, id)``, matching both the
+    Ordering is ascending by ``(date_added, seq)``, matching both the
     specification's requirement that objects sort by date added and the column
     order of ``ix_distributions_circle_paging``. Changing one without the other
-    turns every member poll into a sequential scan.
+    turns every member poll into a sequential scan. ``seq`` -- the distribution
+    row's monotonic identity, not its random UUID -- is what makes the tiebreaker
+    within one ``date_added`` value stable enough that pagination cannot skip a
+    row (see ``Distribution.seq``).
 
     ``limit + 1`` rows are fetched so the caller can set the envelope's ``more``
     flag without a second counting query.
@@ -144,6 +148,7 @@ def build_object_listing_query(
 
     query = select(
         visible.c.distribution_id,
+        visible.c.seq,
         visible.c.date_added,
         visible.c.stix_id,
         visible.c.modified,
@@ -165,22 +170,16 @@ def build_object_listing_query(
         query = query.where(visible.c.date_added > filters.added_after)
 
     if cursor is not None:
-        # Keyset predicate over the composite sort key. The tuple comparison
-        # form lets PostgreSQL use the index directly rather than evaluating a
-        # disjunction row by row.
+        # Keyset predicate over the composite sort key, written as a row-value
+        # comparison so PostgreSQL walks ix_distributions_circle_paging directly
+        # rather than evaluating a disjunction row by row. Strictly greater than
+        # the cursor position, so the row the cursor points at is not repeated.
         query = query.where(
-            and_(
-                visible.c.date_added >= cursor.date_added,
-                ~and_(
-                    visible.c.date_added == cursor.date_added,
-                    visible.c.distribution_id <= cursor.distribution_id,
-                ),
-            )
+            tuple_(visible.c.date_added, visible.c.seq)
+            > tuple_(literal(cursor.date_added), literal(cursor.seq))
         )
 
-    return query.order_by(visible.c.date_added.asc(), visible.c.distribution_id.asc()).limit(
-        limit + 1
-    )
+    return query.order_by(visible.c.date_added.asc(), visible.c.seq.asc()).limit(limit + 1)
 
 
 def build_version_listing_query(

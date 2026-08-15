@@ -12,11 +12,24 @@ from aivs_server.auth.deps import AuthenticatedContext, SessionDep, SettingsDep
 
 __all__ = ["public_router", "router"]
 
-#: Endpoints reachable without a client certificate. The reverse proxy confines
-#: these to the internal network so that only the container healthcheck and the
-#: orchestrator can call them; nothing here reveals anything about members or
-#: content. The authorization matrix test asserts that this router's routes are
-#: exactly the intended set of unauthenticated endpoints.
+#: Endpoints reachable without a client certificate.
+#:
+#: These answer the orchestrator's health probes, which cannot present a member
+#: certificate. Two things are true and were previously misstated here:
+#:
+#: 1. The orchestrator and container healthcheck reach these on the proxy's
+#:    *internal* listener, which is not exposed off-host.
+#: 2. They are ALSO reachable on the public listener, gated only by mTLS -- the
+#:    proxy does not carve them out -- so any holder of a valid member
+#:    certificate can call them. That is acceptable only because nothing here
+#:    reveals anything about members or content: liveness is a constant, and the
+#:    readiness probe discloses at most whether the database is reachable, which
+#:    an authenticated member already learns the instant any real request fails.
+#:
+#: The consequence for maintainers: never add anything to this router that
+#: reveals more than that, because "unauthenticated" here also means "readable
+#: by every member". The authorization matrix test asserts that this router's
+#: routes are exactly the intended set.
 public_router = APIRouter(tags=["meta"])
 
 router = APIRouter(prefix="/api/v1", tags=["meta"])

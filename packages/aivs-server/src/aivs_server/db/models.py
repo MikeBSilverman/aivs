@@ -28,6 +28,7 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    Identity,
     Index,
     Integer,
     Numeric,
@@ -35,6 +36,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, INET, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -271,6 +273,22 @@ class TaxiiCollection(TimestampMixin, Base):
     can_write: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
+    __table_args__ = (
+        # A collection is the public projection of exactly one circle, and the
+        # visibility query returns a circle's entire content through it. Two
+        # active collections over the same circle would therefore serve the same
+        # objects twice under different ids and split retrieval receipts
+        # confusingly across them. Enforce one active collection per circle in
+        # the schema rather than trusting operators to. Partial, so retiring a
+        # collection and creating its replacement is not blocked.
+        Index(
+            "uq_taxii_collections_one_active_per_circle",
+            "circle_id",
+            unique=True,
+            postgresql_where=text("is_active"),
+        ),
+    )
+
     circle: Mapped[Circle] = relationship()
 
 
@@ -427,14 +445,30 @@ class Distribution(Base):
     )
     date_added: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
+    #: Monotonic insertion order, used as the *tiebreaker* within a single
+    #: ``date_added`` value for keyset pagination. This must not be the primary
+    #: key: the primary key is a random UUID, and a random tiebreaker breaks the
+    #: no-skip guarantee. When many rows share one ``date_added`` -- which is
+    #: exactly what an embargo release of a batch produces, all stamped with the
+    #: single ``release_at`` truncated to the same millisecond -- a random
+    #: tiebreaker lets a row committed after a member paged past that millisecond
+    #: sort *below* the cursor and be silently skipped. An identity sequence
+    #: increases with insertion order, so the sort key only ever moves forward.
+    #:
+    #: This makes same-batch skips impossible. The distribution service must
+    #: additionally write all rows for one submission in a single transaction, so
+    #: that MVCC presents the batch atomically to a concurrent reader; that
+    #: obligation is enforced where the rows are written, not here.
+    seq: Mapped[int] = mapped_column(BigInteger, Identity(), nullable=False, unique=True)
+
     __table_args__ = (
         UniqueConstraint(
             "stix_object_id", "circle_id", name="uq_distributions_stix_object_id_circle_id"
         ),
         # The keyset-pagination index. Column order mirrors the ORDER BY in
-        # taxii.objects exactly; changing one without the other silently turns
+        # taxii.queries exactly; changing one without the other silently turns
         # every member poll into a sequential scan.
-        Index("ix_distributions_circle_paging", "circle_id", "date_added", "id"),
+        Index("ix_distributions_circle_paging", "circle_id", "date_added", "seq"),
     )
 
 

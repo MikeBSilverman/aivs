@@ -41,10 +41,16 @@ class CursorError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class Cursor:
-    """Position within a collection's ordered stream of distributions."""
+    """Position within a collection's ordered stream of distributions.
+
+    The sort key is ``(date_added, seq)``. ``seq`` is the distribution row's
+    monotonic identity, not its random UUID: a random tiebreaker within one
+    ``date_added`` value would let a concurrently-committed row sort below the
+    cursor and be skipped. See ``Distribution.seq``.
+    """
 
     date_added: dt.datetime
-    distribution_id: uuid.UUID
+    seq: int
     collection_id: uuid.UUID
 
 
@@ -53,7 +59,7 @@ def encode_cursor(secret: str, cursor: Cursor) -> str:
     serializer = URLSafeSerializer(secret, salt=_SALT)
     payload = {
         "d": cursor.date_added.astimezone(dt.UTC).isoformat(),
-        "i": str(cursor.distribution_id),
+        "s": cursor.seq,
         "c": str(cursor.collection_id),
     }
     token: str = serializer.dumps(payload)
@@ -80,7 +86,7 @@ def decode_cursor(secret: str, token: str, expected_collection_id: uuid.UUID) ->
 
     try:
         date_added = dt.datetime.fromisoformat(str(payload["d"]))
-        distribution_id = uuid.UUID(str(payload["i"]))
+        seq = int(payload["s"])
         collection_id = uuid.UUID(str(payload["c"]))
     except (KeyError, ValueError, TypeError) as exc:
         msg = "cursor payload malformed"
@@ -94,8 +100,4 @@ def decode_cursor(secret: str, token: str, expected_collection_id: uuid.UUID) ->
         msg = "cursor was issued for a different collection"
         raise CursorError(msg)
 
-    return Cursor(
-        date_added=date_added,
-        distribution_id=distribution_id,
-        collection_id=collection_id,
-    )
+    return Cursor(date_added=date_added, seq=seq, collection_id=collection_id)

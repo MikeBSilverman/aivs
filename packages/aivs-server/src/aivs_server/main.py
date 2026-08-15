@@ -41,6 +41,7 @@ from aivs_server.middleware import (
     security_headers_for,
 )
 from aivs_server.notify.dispatcher import run_dispatcher
+from aivs_server.portal import admin_routes as portal_admin_routes
 from aivs_server.portal import routes as portal_routes
 from aivs_server.services.embargo import sweep_due_embargoes
 from aivs_server.taxii import router as taxii_router
@@ -186,6 +187,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(acknowledgments.router)
     app.include_router(admin.router)
     app.include_router(portal_routes.router)
+    app.include_router(portal_admin_routes.router)
     app.include_router(taxii_router.router)
 
     # Served from the package so a deployment needs no separate asset step.

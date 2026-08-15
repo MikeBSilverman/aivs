@@ -1,0 +1,486 @@
+"""The hosting ISAC's administrative screens.
+
+Everything an ISAC operator needs to run an instance without reaching for
+``curl``: enrolling member firms, registering and revoking their certificates,
+and running sharing circles.
+
+This exists because the API-only version of these operations was, in practice, a
+barrier to deploying AIVS at all. An ISAC evaluating the product does not have an
+engineer on hand to compose administrative requests, and "you administer it over
+the REST API" is a reasonable thing to say about a library and an unreasonable
+thing to say about a product an organisation is meant to operate.
+
+**No new authorization.** Every route here calls the same policy predicates the
+native API does and then the same service functions, so the portal cannot become
+a second, weaker door to the same operations. Where a route needs the hosting
+ISAC, it says ``require(is_system_admin(ctx), ...)`` before it acts, not after.
+
+**Reads before writes, and names before identifiers.** A group is easier to
+select and correspondingly easier to be wrong about, so the circle screen
+resolves a membership rule to the actual list of organisations it currently
+matches. The moment before releasing embargoed intelligence to a group is the
+moment to make that group concrete.
+"""
+
+from __future__ import annotations
+
+import uuid
+from typing import Annotated
+
+from fastapi import APIRouter, Form, HTTPException, Request, Response, status
+from fastapi.responses import HTMLResponse, RedirectResponse
+from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
+
+from aivs_schemas.enums import CertStatus, CircleRole, OrgStatus, OrgType
+from aivs_server.audit.log import AuditAction, record
+from aivs_server.auth.deps import SessionDep, SettingsDep
+from aivs_server.auth.policy import is_system_admin, require
+from aivs_server.db.models import (
+    Circle,
+    CircleMembership,
+    ClientCertificate,
+    Organization,
+    TaxiiCollection,
+)
+from aivs_server.portal.shared import (
+    base_context,
+    current_session,
+    operator_name,
+    render,
+    require_csrf,
+    set_notice,
+)
+from aivs_server.services.circles import (
+    CircleMembershipError,
+    add_circle_members,
+    reconcile_circle,
+    resolve_organisations,
+)
+
+__all__ = ["router"]
+
+router = APIRouter(prefix="/portal/admin", tags=["portal-admin"])
+
+
+def _redirect(path: str) -> RedirectResponse:
+    return RedirectResponse(path, status_code=status.HTTP_303_SEE_OTHER)
+
+
+def _parse_names(raw: str) -> tuple[list[uuid.UUID], list[str]]:
+    """Split a pasted roster into identifiers and slugs.
+
+    Operators paste lists, and what they paste is whatever they already have --
+    a column from a spreadsheet, a comma-separated line from an email. Accepting
+    both separators and sorting UUIDs from slugs here means the form does not
+    have to ask which kind they are pasting.
+    """
+    tokens = [token.strip() for token in raw.replace(",", "\n").split("\n") if token.strip()]
+    ids: list[uuid.UUID] = []
+    slugs: list[str] = []
+    for token in tokens:
+        try:
+            ids.append(uuid.UUID(token))
+        except ValueError:
+            slugs.append(token)
+    return ids, slugs
+
+
+# ---------------------------------------------------------------------------
+# Organisations
+# ---------------------------------------------------------------------------
+@router.get("/orgs", response_class=HTMLResponse)
+async def orgs_screen(request: Request, settings: SettingsDep, session: SessionDep) -> Response:
+    """Every enrolled organisation, with its certificates."""
+    ctx, _csrf = await current_session(request, settings, session)
+    require(is_system_admin(ctx), "portal_admin_orgs")
+
+    orgs = (await session.execute(select(Organization).order_by(Organization.slug))).scalars().all()
+    certificate_counts: dict[uuid.UUID, int] = {
+        row.org_id: row.total
+        for row in (
+            await session.execute(
+                select(
+                    ClientCertificate.org_id,
+                    func.count().label("total"),
+                )
+                .where(ClientCertificate.status == CertStatus.ACTIVE)
+                .group_by(ClientCertificate.org_id)
+            )
+        ).all()
+    }
+
+    context = base_context(request, settings, ctx, await operator_name(session, ctx), "admin-orgs")
+    context.update(
+        {
+            "orgs": [
+                {
+                    "id": str(org.id),
+                    "slug": org.slug,
+                    "name": org.name,
+                    "org_type": org.org_type.value,
+                    "status": org.status.value,
+                    "certificates": certificate_counts.get(org.id, 0),
+                }
+                for org in orgs
+            ],
+            "org_types": [org_type.value for org_type in OrgType],
+        }
+    )
+    return render(request, "admin_orgs.html", context)
+
+
+@router.post("/orgs")
+async def enrol_org(
+    request: Request,
+    settings: SettingsDep,
+    session: SessionDep,
+    csrf_token: Annotated[str, Form()],
+    slug: Annotated[str, Form()],
+    name: Annotated[str, Form()],
+    org_type: Annotated[str, Form()],
+    contact_email: Annotated[str, Form()] = "",
+) -> Response:
+    """Enrol an organisation. It starts pending, exactly as over the API."""
+    ctx, csrf_hash = await current_session(request, settings, session)
+    require_csrf(csrf_token, csrf_hash)
+    require(is_system_admin(ctx), "portal_admin_orgs")
+
+    response = _redirect("/portal/admin/orgs")
+    try:
+        organization = Organization(
+            slug=slug.strip(),
+            name=name.strip(),
+            org_type=OrgType(org_type),
+            contact_email=contact_email.strip() or None,
+            status=OrgStatus.PENDING,
+            stix_identity_id=f"identity--{uuid.uuid4()}",
+        )
+        session.add(organization)
+        await record(
+            session,
+            action=AuditAction.ORG_CREATED,
+            ctx=ctx,
+            resource_type="organization",
+            resource_id=slug,
+            details={"org_type": org_type, "via": "portal"},
+        )
+        await session.commit()
+    except (IntegrityError, ValueError) as exc:
+        await session.rollback()
+        set_notice(response, settings, "error", f"Could not enrol {slug}: {exc}")
+        return response
+
+    set_notice(response, settings, "info", f"Enrolled {slug}. Activate it to grant access.")
+    return response
+
+
+@router.post("/orgs/{org_id}/{action}")
+async def org_status(
+    org_id: uuid.UUID,
+    action: str,
+    request: Request,
+    settings: SettingsDep,
+    session: SessionDep,
+    csrf_token: Annotated[str, Form()],
+) -> Response:
+    """Activate or suspend an organisation.
+
+    Reconciliation runs through the same service the API uses, so a rule-managed
+    circle picks up an activation here exactly as it would there.
+    """
+    ctx, csrf_hash = await current_session(request, settings, session)
+    require_csrf(csrf_token, csrf_hash)
+    require(is_system_admin(ctx), "portal_admin_orgs")
+
+    if action not in ("activate", "suspend"):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Not found")
+
+    organization = await session.get(Organization, org_id)
+    if organization is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Not found")
+
+    from aivs_server.services.circles import (  # noqa: PLC0415 - avoids an import cycle
+        reconcile_circles_for_org,
+    )
+
+    previous = organization.status
+    organization.status = OrgStatus.ACTIVE if action == "activate" else OrgStatus.SUSPENDED
+    # Flushed before reconciling: autoflush is off, so the rule would otherwise
+    # be evaluated against the status this organisation had a moment ago.
+    await session.flush()
+    await reconcile_circles_for_org(session, ctx, organisation=organization)
+
+    await record(
+        session,
+        action=AuditAction.ORG_STATUS_CHANGED,
+        ctx=ctx,
+        resource_type="organization",
+        resource_id=str(org_id),
+        details={"from": previous.value, "to": organization.status.value, "via": "portal"},
+    )
+    await session.commit()
+
+    response = _redirect("/portal/admin/orgs")
+    set_notice(
+        response, settings, "info", f"{organization.slug} is now {organization.status.value}."
+    )
+    return response
+
+
+# ---------------------------------------------------------------------------
+# Circles
+# ---------------------------------------------------------------------------
+@router.get("/circles", response_class=HTMLResponse)
+async def circles_screen(request: Request, settings: SettingsDep, session: SessionDep) -> Response:
+    """Every circle, with its membership count and rule."""
+    ctx, _csrf = await current_session(request, settings, session)
+    require(is_system_admin(ctx), "portal_admin_circles")
+
+    circles = (await session.execute(select(Circle).order_by(Circle.slug))).scalars().all()
+    counts: dict[uuid.UUID, int] = {
+        row.circle_id: row.total
+        for row in (
+            await session.execute(
+                select(
+                    CircleMembership.circle_id,
+                    func.count().label("total"),
+                ).group_by(CircleMembership.circle_id)
+            )
+        ).all()
+    }
+
+    context = base_context(
+        request, settings, ctx, await operator_name(session, ctx), "admin-circles"
+    )
+    context.update(
+        {
+            "circles": [
+                {
+                    "id": str(circle.id),
+                    "slug": circle.slug,
+                    "name": circle.name,
+                    "minimum_tlp": circle.minimum_tlp.value,
+                    "is_active": circle.is_active,
+                    "members": counts.get(circle.id, 0),
+                    "rule": ", ".join(circle.auto_member_org_types),
+                }
+                for circle in circles
+            ],
+            "org_types": [org_type.value for org_type in OrgType if org_type is not OrgType.ADMIN],
+            "tlps": ["clear", "green", "amber", "amber_strict", "red"],
+        }
+    )
+    return render(request, "admin_circles.html", context)
+
+
+@router.post("/circles")
+async def create_circle_screen(
+    request: Request,
+    settings: SettingsDep,
+    session: SessionDep,
+    csrf_token: Annotated[str, Form()],
+    slug: Annotated[str, Form()],
+    name: Annotated[str, Form()],
+    minimum_tlp: Annotated[str, Form()] = "amber",
+    auto_member_org_types: Annotated[list[str], Form()] = [],  # noqa: B006 - FastAPI form list
+) -> Response:
+    """Create a circle, its collection, and populate any rule immediately."""
+    ctx, csrf_hash = await current_session(request, settings, session)
+    require_csrf(csrf_token, csrf_hash)
+    require(is_system_admin(ctx), "portal_admin_circles")
+
+    from aivs_schemas.enums import TLP  # noqa: PLC0415 - local to this handler
+
+    response = _redirect("/portal/admin/circles")
+    try:
+        circle = Circle(
+            slug=slug.strip(),
+            name=name.strip(),
+            minimum_tlp=TLP(minimum_tlp),
+            auto_member_org_types=list(auto_member_org_types),
+        )
+        session.add(circle)
+        await session.flush()
+        session.add(
+            TaxiiCollection(
+                circle_id=circle.id,
+                title=circle.name,
+                alias=circle.slug,
+                can_read=True,
+                # See api.admin.create_circle: there is no TAXII write endpoint,
+                # so advertising one sends off-the-shelf clients at a 405.
+                can_write=False,
+            )
+        )
+        await record(
+            session,
+            action=AuditAction.CIRCLE_CREATED,
+            ctx=ctx,
+            resource_type="circle",
+            resource_id=slug,
+            details={
+                "minimum_tlp": minimum_tlp,
+                "auto_member_org_types": list(auto_member_org_types),
+                "via": "portal",
+            },
+        )
+        await reconcile_circle(session, ctx, circle=circle)
+        await session.commit()
+    except (IntegrityError, ValueError) as exc:
+        await session.rollback()
+        set_notice(response, settings, "error", f"Could not create {slug}: {exc}")
+        return response
+
+    set_notice(response, settings, "info", f"Created circle {slug}.")
+    return response
+
+
+@router.get("/circles/{circle_id}", response_class=HTMLResponse)
+async def circle_detail(
+    circle_id: uuid.UUID, request: Request, settings: SettingsDep, session: SessionDep
+) -> Response:
+    """One circle's membership, by name.
+
+    The membership is listed with each organisation's join date, because that is
+    what bounds what they can read and an operator answering "why can they not
+    see this?" needs it in front of them.
+    """
+    ctx, _csrf = await current_session(request, settings, session)
+    require(is_system_admin(ctx), "portal_admin_circles")
+
+    circle = await session.get(Circle, circle_id)
+    if circle is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Not found")
+
+    rows = (
+        await session.execute(
+            select(CircleMembership, Organization)
+            .join(Organization, Organization.id == CircleMembership.org_id)
+            .where(CircleMembership.circle_id == circle_id)
+            .order_by(Organization.slug)
+        )
+    ).all()
+
+    context = base_context(
+        request, settings, ctx, await operator_name(session, ctx), "admin-circles"
+    )
+    context.update(
+        {
+            "circle": {
+                "id": str(circle.id),
+                "slug": circle.slug,
+                "name": circle.name,
+                "minimum_tlp": circle.minimum_tlp.value,
+                "rule": ", ".join(circle.auto_member_org_types),
+            },
+            "members": [
+                {
+                    "org_id": str(org.id),
+                    "slug": org.slug,
+                    "name": org.name,
+                    "org_type": org.org_type.value,
+                    "status": org.status.value,
+                    "role": membership.role.value,
+                    "joined_at": membership.joined_at.strftime("%Y-%m-%d %H:%M"),
+                    "managed_by_rule": membership.managed_by_rule,
+                }
+                for membership, org in rows
+            ],
+            "roles": [role.value for role in CircleRole],
+        }
+    )
+    return render(request, "admin_circle_detail.html", context)
+
+
+@router.post("/circles/{circle_id}/members")
+async def add_members_screen(
+    circle_id: uuid.UUID,
+    request: Request,
+    settings: SettingsDep,
+    session: SessionDep,
+    csrf_token: Annotated[str, Form()],
+    roster: Annotated[str, Form()],
+    role: Annotated[str, Form()] = "member",
+) -> Response:
+    """Add a pasted roster of organisations to a circle."""
+    ctx, csrf_hash = await current_session(request, settings, session)
+    require_csrf(csrf_token, csrf_hash)
+    require(is_system_admin(ctx), "portal_admin_circles")
+
+    circle = await session.get(Circle, circle_id)
+    if circle is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Not found")
+
+    response = _redirect(f"/portal/admin/circles/{circle_id}")
+    org_ids, org_slugs = _parse_names(roster)
+
+    try:
+        organisations = await resolve_organisations(session, org_ids=org_ids, org_slugs=org_slugs)
+        added = await add_circle_members(
+            session,
+            ctx,
+            circle=circle,
+            organisations=organisations,
+            role=CircleRole(role),
+        )
+        await session.commit()
+    except (CircleMembershipError, ValueError) as exc:
+        await session.rollback()
+        set_notice(response, settings, "error", str(exc))
+        return response
+
+    skipped = len(organisations) - len(added)
+    message = f"Added {len(added)} organisation(s) to {circle.slug}."
+    if skipped:
+        message += f" {skipped} already belonged."
+    set_notice(response, settings, "info", message)
+    return response
+
+
+@router.post("/circles/{circle_id}/members/{org_id}/remove")
+async def remove_member_screen(
+    circle_id: uuid.UUID,
+    org_id: uuid.UUID,
+    request: Request,
+    settings: SettingsDep,
+    session: SessionDep,
+    csrf_token: Annotated[str, Form()],
+) -> Response:
+    """Remove one organisation from a circle."""
+    ctx, csrf_hash = await current_session(request, settings, session)
+    require_csrf(csrf_token, csrf_hash)
+    require(is_system_admin(ctx), "portal_admin_circles")
+
+    membership = (
+        await session.execute(
+            select(CircleMembership).where(
+                CircleMembership.circle_id == circle_id,
+                CircleMembership.org_id == org_id,
+            )
+        )
+    ).scalar_one_or_none()
+
+    response = _redirect(f"/portal/admin/circles/{circle_id}")
+    if membership is None:
+        set_notice(response, settings, "error", "That organisation is not a member.")
+        return response
+
+    await session.delete(membership)
+    await record(
+        session,
+        action=AuditAction.CIRCLE_MEMBER_REMOVED,
+        ctx=ctx,
+        resource_type="circle",
+        resource_id=str(circle_id),
+        details={"org_id": str(org_id), "via": "portal"},
+    )
+    await session.commit()
+
+    set_notice(
+        response,
+        settings,
+        "info",
+        "Removed. Content they already collected is theirs; this stops future delivery.",
+    )
+    return response

@@ -29,6 +29,8 @@
         <a href="/portal/submit" {% if active == 'submit' %}aria-current="page"{% endif %}>New finding</a>
         {% if is_admin %}
           <a href="/portal/review" {% if active == 'review' %}aria-current="page"{% endif %}>Review queue</a>
+          <a href="/portal/admin/orgs" {% if active == 'admin-orgs' %}aria-current="page"{% endif %}>Organisations</a>
+          <a href="/portal/admin/circles" {% if active == 'admin-circles' %}aria-current="page"{% endif %}>Circles</a>
         {% endif %}
       </nav>
       <span class="whoami">

@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Circles &middot; {{ instance_name }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <h1>Sharing circles</h1>
+  <p>A circle is the unit of trust tiering, and the audience you select when
+     distributing. Membership can be maintained by hand or by a rule.</p>
+</div>
+
+<div class="card">
+  {% if circles %}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Slug</th><th>Name</th><th>Floor</th>
+              <th>Members</th><th>Automatic membership</th></tr>
+        </thead>
+        <tbody>
+          {% for circle in circles %}
+            <tr>
+              <td class="mono"><a href="/portal/admin/circles/{{ circle.id }}">{{ circle.slug }}</a></td>
+              <td>{{ circle.name }}</td>
+              <td><span class="badge tlp tlp-{{ circle.minimum_tlp }}">{{ circle.minimum_tlp }}</span></td>
+              <td class="muted">{{ circle.members }}</td>
+              <td class="muted">{% if circle.rule %}{{ circle.rule }}{% else %}&mdash; manual{% endif %}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="empty">No circles exist yet.</div>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Create a circle</h2>
+  <p class="muted">
+    An automatic membership rule adds every <em>active</em> organisation of the
+    chosen types, now and as they are enrolled. Members added this way receive
+    content shared from the moment they join &mdash; never the circle's back
+    catalogue.
+  </p>
+  <form method="post" action="/portal/admin/circles" class="stack">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Slug
+      <input name="slug" required pattern="[a-z0-9][a-z0-9-]{1,62}[a-z0-9]" placeholder="section9">
+    </label>
+    <label>Name
+      <input name="name" required maxlength="200" placeholder="Section 9 firms">
+    </label>
+    <label>Minimum marking
+      <select name="minimum_tlp">
+        {% for value in tlps %}
+          <option value="{{ value }}" {% if value == 'amber' %}selected{% endif %}>{{ value }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <fieldset>
+      <legend>Automatic membership <span class="muted">(optional)</span></legend>
+      {% for value in org_types %}
+        <label class="inline">
+          <input type="checkbox" name="auto_member_org_types" value="{{ value }}"> {{ value }}
+        </label>
+      {% endfor %}
+    </fieldset>
+    <button type="submit" class="primary">Create</button>
+  </form>
+</div>
+{% endblock %}

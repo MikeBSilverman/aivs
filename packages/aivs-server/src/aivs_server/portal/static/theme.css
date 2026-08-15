@@ -402,3 +402,91 @@ footer {
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }
 }
+
+/* ---------------------------------------------------------------------------
+   Administrative screens.
+
+   Forms only: no client-side behaviour, so the portal's default-src 'none'
+   Content-Security-Policy stays intact. A button styled as a link is how a
+   state change stays a POST while still reading as an inline action.
+   --------------------------------------------------------------------------- */
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  max-width: 32rem;
+}
+
+.stack label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.stack label.inline {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.stack input,
+.stack select,
+.stack textarea {
+  font: inherit;
+  color: var(--ink);
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--white);
+}
+
+.stack textarea {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  resize: vertical;
+}
+
+.stack fieldset {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.7rem 0.9rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.9rem;
+}
+
+.stack legend {
+  font-size: 0.85rem;
+  color: var(--muted);
+  padding: 0 0.3rem;
+}
+
+button.primary {
+  align-self: flex-start;
+  font: inherit;
+  padding: 0.5rem 1.1rem;
+  border: 0;
+  border-radius: 8px;
+  background: var(--brand);
+  color: var(--white);
+  cursor: pointer;
+}
+
+button.primary:hover {
+  background: var(--brand-deep);
+}
+
+button.linklike {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: var(--brand);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+td form {
+  display: inline;
+}

@@ -23,33 +23,28 @@ Four controls, applied in order, and each closes a distinct hole:
 Payloads are signed with HMAC-SHA256 over the exact bytes sent, so a receiver
 can verify the notification came from their instance rather than from anyone who
 learned the URL.
+
+This module owns *what is safe to connect to* and *how a payload is signed*, and
+nothing else. The delivery loop -- queueing, retries, backoff, recording
+outcomes -- lives in :mod:`aivs_server.notify.dispatcher`, and what a
+notification is allowed to say lives in :mod:`aivs_server.notify.events`. The
+split matters because these checks are the security-critical part and should be
+readable without the scheduling around them.
 """
 
 from __future__ import annotations
 
-import datetime as dt
 import hashlib
 import hmac
 import ipaddress
-import json
 import logging
 import socket
-import uuid
 from dataclasses import dataclass
-from typing import Any, Final
+from typing import Final
 from urllib.parse import urlparse
-
-import httpx
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from aivs_server.audit.log import AuditAction, record
-from aivs_server.config import Settings
-from aivs_server.db.models import Webhook, WebhookDelivery
 
 __all__ = [
     "WebhookRejectedError",
-    "deliver_event",
     "resolve_delivery_target",
     "sign_payload",
 ]
@@ -167,138 +162,3 @@ def sign_payload(secret: bytes, body: bytes, timestamp: str) -> str:
     message = timestamp.encode("ascii") + b"." + body
     digest = hmac.new(secret, message, hashlib.sha256).hexdigest()
     return f"{SIGNATURE_VERSION}={digest}"
-
-
-async def _post(
-    client: httpx.AsyncClient, target: DeliveryTarget, body: bytes, headers: dict[str, str]
-) -> httpx.Response:
-    """POST to the validated address, presenting the original hostname.
-
-    The URL's host is replaced by the address that was checked, while SNI and
-    the Host header keep the name -- so TLS verification still checks the
-    certificate against the hostname the member registered, and no second DNS
-    lookup can substitute a different address.
-    """
-    parsed = urlparse(target.url)
-    literal = f"[{target.address}]" if ":" in target.address else target.address
-    pinned = parsed._replace(netloc=f"{literal}:{target.port}").geturl()
-
-    return await client.post(
-        pinned,
-        content=body,
-        headers={**headers, "Host": target.hostname},
-        extensions={"sni_hostname": target.hostname},
-    )
-
-
-async def deliver_event(
-    session: AsyncSession,
-    settings: Settings,
-    *,
-    webhook: Webhook,
-    event: str,
-    payload: dict[str, Any],
-    secret: bytes,
-    now: dt.datetime | None = None,
-) -> WebhookDelivery:
-    """Attempt one delivery, recording the outcome either way.
-
-    Returns the delivery record rather than raising: a member's endpoint being
-    down is their operational problem, not an error in ours, and the whole point
-    of recording attempts is that failures are data.
-    """
-    now = now or dt.datetime.now(dt.UTC)
-    timestamp = now.isoformat()
-    body = json.dumps(
-        {"event": event, "sent_at": timestamp, "data": payload},
-        separators=(",", ":"),
-        sort_keys=True,
-    ).encode("utf-8")
-
-    delivery = WebhookDelivery(webhook_id=webhook.id, event=event, attempts=1)
-    session.add(delivery)
-
-    headers = {
-        "content-type": "application/json",
-        SIGNATURE_HEADER: sign_payload(secret, body, timestamp),
-        "x-aivs-timestamp": timestamp,
-        "x-aivs-event": event,
-        "user-agent": f"aivs/{settings.instance_name}",
-    }
-
-    try:
-        target = resolve_delivery_target(
-            webhook.url, allow_private=settings.dev_allow_private_webhook_targets
-        )
-    except WebhookRejectedError as exc:
-        delivery.error = f"target rejected: {exc.reason}"
-        webhook.consecutive_failures += 1
-        await record(
-            session,
-            action=AuditAction.WEBHOOK_DELIVERY_FAILED,
-            actor_type="system",
-            org_id=webhook.org_id,
-            resource_type="webhook",
-            resource_id=str(webhook.id),
-            details={"event": event, "reason": exc.reason},
-        )
-        return delivery
-
-    try:
-        async with httpx.AsyncClient(
-            timeout=settings.webhook_timeout_seconds,
-            # An allowed host redirecting to a forbidden one would defeat the
-            # address check, and a 30x is not a delivery.
-            follow_redirects=False,
-        ) as client:
-            response = await _post(client, target, body, headers)
-            delivery.response_code = response.status_code
-            if _SUCCESS_FLOOR <= response.status_code < _SUCCESS_CEILING:
-                delivery.delivered_at = now
-                webhook.consecutive_failures = 0
-            else:
-                delivery.error = f"endpoint returned {response.status_code}"
-                webhook.consecutive_failures += 1
-    except httpx.HTTPError as exc:
-        # Deliberately broad within httpx's own hierarchy: timeouts, TLS
-        # failures and connection errors are all "their endpoint did not accept
-        # it", and none should propagate into whatever triggered the event.
-        delivery.error = type(exc).__name__
-        webhook.consecutive_failures += 1
-
-    if delivery.delivered_at is None:
-        await record(
-            session,
-            action=AuditAction.WEBHOOK_DELIVERY_FAILED,
-            actor_type="system",
-            org_id=webhook.org_id,
-            resource_type="webhook",
-            resource_id=str(webhook.id),
-            details={
-                "event": event,
-                "response_code": delivery.response_code,
-                "error": delivery.error,
-                "consecutive_failures": webhook.consecutive_failures,
-            },
-        )
-
-    return delivery
-
-
-async def active_webhooks_for(
-    session: AsyncSession, *, org_id: uuid.UUID, event: str
-) -> list[Webhook]:
-    """Return an organisation's active webhooks subscribed to ``event``."""
-    rows = (
-        (
-            await session.execute(
-                select(Webhook).where(
-                    Webhook.org_id == org_id,
-                    Webhook.is_active.is_(True),
-                )
-            )
-        )
-        .scalars()
-        .all()
-    )
-    return [hook for hook in rows if not hook.events or event in hook.events]

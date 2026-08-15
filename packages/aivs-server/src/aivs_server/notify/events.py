@@ -140,7 +140,7 @@ async def queue_visibility_notifications(
 
     queued = 0
     for webhook, collection_id in rows:
-        # An empty `events` list means "everything", matching active_webhooks_for.
+        # An empty `events` list means "subscribe to everything".
         if webhook.events and EVENT_SUBMISSION_VISIBLE not in webhook.events:
             continue
         if webhook.org_id == submitter_org_id:

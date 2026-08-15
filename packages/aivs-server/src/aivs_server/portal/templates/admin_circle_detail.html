@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}{{ circle.slug }} &middot; {{ instance_name }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <h1>{{ circle.name }}</h1>
+  <p class="mono muted">{{ circle.slug }}</p>
+  <p>
+    Minimum marking <span class="badge tlp tlp-{{ circle.minimum_tlp }}">{{ circle.minimum_tlp }}</span>.
+    {% if circle.rule %}
+      Automatic membership: <strong>{{ circle.rule }}</strong>.
+    {% else %}
+      Membership is maintained by hand.
+    {% endif %}
+  </p>
+</div>
+
+<div class="card">
+  <h2>Members</h2>
+  <p class="muted">
+    &ldquo;Member since&rdquo; bounds what each organisation can read: content
+    shared before that moment is not delivered to them.
+  </p>
+  {% if members %}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Slug</th><th>Name</th><th>Type</th><th>Status</th>
+              <th>Role</th><th>Member since</th><th>Source</th><th></th></tr>
+        </thead>
+        <tbody>
+          {% for member in members %}
+            <tr>
+              <td class="mono">{{ member.slug }}</td>
+              <td>{{ member.name }}</td>
+              <td class="muted nowrap">{{ member.org_type }}</td>
+              <td><span class="badge state-{{ member.status }}">{{ member.status }}</span></td>
+              <td class="muted">{{ member.role }}</td>
+              <td class="muted nowrap mono">{{ member.joined_at }}</td>
+              <td class="muted">{% if member.managed_by_rule %}rule{% else %}added{% endif %}</td>
+              <td>
+                <form method="post" action="/portal/admin/circles/{{ circle.id }}/members/{{ member.org_id }}/remove">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                  <button type="submit" class="linklike">Remove</button>
+                </form>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="empty">No organisations belong to this circle.</div>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Add organisations</h2>
+  <p class="muted">
+    Paste slugs or identifiers, one per line or comma separated. Organisations
+    already in the circle are skipped, so re-applying a roster is safe. Every
+    name must resolve &mdash; a partial application would leave you believing
+    the list was complete.
+  </p>
+  <form method="post" action="/portal/admin/circles/{{ circle.id }}/members" class="stack">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Roster
+      <textarea name="roster" rows="6" required
+                placeholder="meridian-global&#10;atlantic-clearing"></textarea>
+    </label>
+    <label>Role
+      <select name="role">
+        {% for value in roles %}<option value="{{ value }}">{{ value }}</option>{% endfor %}
+      </select>
+    </label>
+    <button type="submit" class="primary">Add to circle</button>
+  </form>
+</div>
+
+<p><a href="/portal/admin/circles">&larr; All circles</a></p>
+{% endblock %}

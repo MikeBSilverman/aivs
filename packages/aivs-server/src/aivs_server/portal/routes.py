@@ -18,22 +18,16 @@ import datetime as dt
 import hashlib
 import json
 import uuid
-from pathlib import Path
-from typing import Annotated, Any, Final
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Form, HTTPException, Request, Response, status
 from fastapi.responses import HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
-from itsdangerous import BadSignature, URLSafeTimedSerializer
 from sqlalchemy import func, select
 
 from aivs_schemas.enums import TLP, CertStatus, DiscoveryScope, OrgStatus, SubmissionState
-from aivs_schemas.tlp import TLP_NAMES
 from aivs_server.audit.log import AuditAction, record_independently
 from aivs_server.auth.context import AuthContext
 from aivs_server.auth.deps import SessionDep, SettingsDep
-from aivs_server.auth.mtls import CertificateRejectedError, extract_client_certificate
-from aivs_server.auth.passwords import constant_time_equals
 from aivs_server.auth.policy import (
     can_transition_submission,
     can_view_submission,
@@ -47,7 +41,6 @@ from aivs_server.auth.sessions import (
     SessionRejectedError,
     authenticate_operator,
     establish_session,
-    resolve_session,
     revoke_session,
 )
 from aivs_server.config import Settings
@@ -56,11 +49,23 @@ from aivs_server.db.models import (
     Circle,
     ClientCertificate,
     Distribution,
-    Operator,
     Organization,
     StixObject,
     Submission,
     SubmissionTransition,
+)
+from aivs_server.portal.shared import (
+    LOGIN_FAILED,
+    TEMPLATES,
+    base_context,
+    client_fingerprint,
+    current_session,
+    operator_name,
+    render,
+    require_csrf,
+    set_notice,
+    stamp,
+    tlp_label,
 )
 from aivs_server.services.distribution import DistributionError, distribute_submission
 from aivs_server.services.submissions import (
@@ -74,179 +79,6 @@ __all__ = ["router"]
 
 router = APIRouter(prefix="/portal", tags=["portal"])
 
-_TEMPLATES = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
-
-#: One message for every login failure. Which of the three inputs was wrong is
-#: half the credential.
-_LOGIN_FAILED = "Those credentials were not accepted."
-
-
-# ---------------------------------------------------------------------------
-# Session plumbing
-# ---------------------------------------------------------------------------
-def _client_fingerprint(request: Request, settings: Settings) -> str | None:
-    """Fingerprint of the certificate on this request, or ``None``.
-
-    The portal is reached through the same mTLS proxy as everything else, so
-    this is the organisation's identity. Absent means the deployment is not
-    behind the proxy, which the session binding then refuses.
-    """
-    headers = {key.lower(): value for key, value in request.headers.items()}
-    peer = request.client.host if request.client else None
-    try:
-        return extract_client_certificate(settings, headers, peer).fingerprint_sha256
-    except CertificateRejectedError:
-        return None
-
-
-async def _current_session(
-    request: Request, settings: Settings, session: SessionDep
-) -> tuple[AuthContext, str]:
-    """Resolve the signed-in analyst, or redirect to the login page."""
-    token = request.cookies.get(settings.session_cookie_name)
-    if not token:
-        raise _redirect_to_login()
-    try:
-        return await resolve_session(
-            session,
-            settings,
-            token=token,
-            cert_fingerprint=_client_fingerprint(request, settings),
-            request_id=request.scope.get("aivs_request_id", ""),
-            source_ip=request.client.host if request.client else None,
-        )
-    except SessionRejectedError as exc:
-        await record_independently(
-            action=AuditAction.SESSION_REJECTED,
-            outcome="denied",
-            request_id=request.scope.get("aivs_request_id"),
-            source_ip=request.client.host if request.client else None,
-            details={"reason": exc.reason, "path": request.url.path},
-        )
-        raise _redirect_to_login() from exc
-
-
-def _redirect_to_login() -> HTTPException:
-    """A redirect expressed as an exception, so callers can raise it inline."""
-    return HTTPException(
-        status_code=status.HTTP_303_SEE_OTHER, headers={"Location": "/portal/login"}
-    )
-
-
-def _require_csrf(submitted: str, expected_hash: str) -> None:
-    """Reject a form post whose CSRF token does not match the session.
-
-    Compared as digests in constant time. A missing or wrong token is a 403 with
-    no detail: a cross-site attempt should learn nothing about why it failed.
-    """
-    digest = hashlib.sha256(submitted.encode("utf-8")).hexdigest()
-    if not constant_time_equals(digest, expected_hash):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Invalid form token")
-
-
-def _base_context(
-    request: Request, settings: Settings, ctx: AuthContext, operator_name: str, active: str
-) -> dict[str, Any]:
-    return {
-        "request": request,
-        "instance_name": settings.instance_name,
-        "org_slug": ctx.org_slug,
-        "operator_name": operator_name,
-        "is_admin": is_system_admin(ctx),
-        "active": active,
-        "notices": _take_notices(request),
-        # Every authenticated page carries the sign-out form, so the token
-        # belongs in the shared context rather than being threaded through each
-        # route. Pages that mint their own still override it.
-        "csrf_token": request.cookies.get("aivs_csrf", ""),
-    }
-
-
-#: Cookie carrying a one-shot notice across the redirect that follows a POST.
-#: Signed so the message rendered back to the operator is one this server wrote,
-#: and cleared as soon as it is read.
-_NOTICE_COOKIE: Final[str] = "aivs_notice"
-_NOTICE_SALT: Final[str] = "aivs.portal.notice.v1"
-_NOTICE_MAX_AGE: Final[int] = 60
-
-
-def _set_notice(response: Response, settings: Settings, level: str, message: str) -> None:
-    """Attach a one-shot notice to a redirect response."""
-    serializer = URLSafeTimedSerializer(
-        settings.session_secret.get_secret_value(), salt=_NOTICE_SALT
-    )
-    response.set_cookie(
-        _NOTICE_COOKIE,
-        serializer.dumps({"level": level, "message": message}),
-        max_age=_NOTICE_MAX_AGE,
-        httponly=True,
-        secure=True,
-        samesite="strict",
-        path="/portal",
-    )
-
-
-def _take_notices(request: Request) -> list[dict[str, str]]:
-    """Read and consume any pending notice.
-
-    Without this, a workflow verb that failed redirected to the same page as one
-    that succeeded, with nothing to distinguish them -- so an operator who tried
-    to distribute to a circle whose TLP floor refused the submission was shown
-    the detail page and no message, and would reasonably conclude the members had
-    been warned.
-    """
-    raw = request.cookies.get(_NOTICE_COOKIE)
-    if not raw:
-        return []
-
-    settings: Settings = request.app.state.settings
-    serializer = URLSafeTimedSerializer(
-        settings.session_secret.get_secret_value(), salt=_NOTICE_SALT
-    )
-    try:
-        payload = serializer.loads(raw, max_age=_NOTICE_MAX_AGE)
-    except BadSignature:
-        return []
-
-    if not isinstance(payload, dict):
-        return []
-    level = str(payload.get("level", "error"))
-    message = str(payload.get("message", ""))
-    if not message:
-        return []
-
-    # Consumed, so _render clears it. A notice that survived the page it was
-    # written for would reappear on the next reload and describe a failure that
-    # had already been reported.
-    request.state.aivs_notice_consumed = True
-    return [{"level": level, "message": message}]
-
-
-def _render(request: Request, template: str, context: dict[str, Any]) -> Response:
-    """Render a portal template, clearing any notice this page just displayed."""
-    response = _TEMPLATES.TemplateResponse(request, template, context)
-    if getattr(request.state, "aivs_notice_consumed", False):
-        response.delete_cookie(_NOTICE_COOKIE, path="/portal")
-    return response
-
-
-async def _operator_name(session: SessionDep, ctx: AuthContext) -> str:
-    if ctx.operator_id is None:
-        return ctx.org_slug
-    operator = await session.get(Operator, ctx.operator_id)
-    return operator.display_name if operator else ctx.org_slug
-
-
-def _tlp_label(value: Any) -> str:
-    try:
-        return TLP_NAMES[TLP(str(value))]
-    except (ValueError, KeyError):
-        return str(value)
-
-
-def _stamp(value: dt.datetime | None) -> str:
-    return value.strftime("%Y-%m-%d %H:%M") if value else ""
-
 
 # ---------------------------------------------------------------------------
 # Login
@@ -259,7 +91,7 @@ async def login_form(request: Request, settings: SettingsDep) -> Response:
     login form is protected before a session exists.
     """
     token = uuid.uuid4().hex
-    response = _TEMPLATES.TemplateResponse(
+    response = TEMPLATES.TemplateResponse(
         request,
         "login.html",
         {
@@ -295,9 +127,9 @@ async def login(
 ) -> Response:
     """Verify credentials and establish a session bound to the certificate."""
     expected = request.cookies.get("aivs_login_csrf", "")
-    _require_csrf(csrf_token, expected)
+    require_csrf(csrf_token, expected)
 
-    fingerprint = _client_fingerprint(request, settings)
+    fingerprint = client_fingerprint(request, settings)
     if fingerprint is None:
         # No certificate, no session: the binding established below is what makes
         # the password and the transport two independent factors.
@@ -389,14 +221,14 @@ async def _login_failure(request: Request, settings: Settings, email: str, reaso
         details={"reason": reason, "email": email},
     )
     token = uuid.uuid4().hex
-    response = _TEMPLATES.TemplateResponse(
+    response = TEMPLATES.TemplateResponse(
         request,
         "login.html",
         {
             "request": request,
             "instance_name": settings.instance_name,
             "csrf_token": token,
-            "error": _LOGIN_FAILED,
+            "error": LOGIN_FAILED,
             "email": email,
             "notices": [],
         },
@@ -430,8 +262,8 @@ async def logout(
     protection incidental, resting on a cookie attribute rather than on the check
     every sibling route performs.
     """
-    ctx, csrf_hash = await _current_session(request, settings, session)
-    _require_csrf(csrf_token, csrf_hash)
+    ctx, csrf_hash = await current_session(request, settings, session)
+    require_csrf(csrf_token, csrf_hash)
     del ctx
 
     token = request.cookies.get(settings.session_cookie_name)
@@ -455,7 +287,7 @@ async def logout(
 @router.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request, settings: SettingsDep, session: SessionDep) -> Response:
     """What this analyst's firm can see, and what it has filed."""
-    ctx, _csrf_hash = await _current_session(request, settings, session)
+    ctx, _csrf_hash = await current_session(request, settings, session)
     now = dt.datetime.now(dt.UTC)
     circle_grants = readable_circle_grants(ctx)
 
@@ -479,10 +311,10 @@ async def dashboard(request: Request, settings: SettingsDep, session: SessionDep
         ).all()
         recent = [
             {
-                "date_added": _stamp(row.date_added),
+                "date_added": stamp(row.date_added),
                 "name": row.name or "(unnamed object)",
                 "tlp": str(row.tlp),
-                "tlp_label": _tlp_label(row.tlp),
+                "tlp_label": tlp_label(row.tlp),
             }
             for row in rows
         ]
@@ -513,7 +345,7 @@ async def dashboard(request: Request, settings: SettingsDep, session: SessionDep
         ) or 0
 
     organization = await session.get(Organization, ctx.org_id)
-    context = _base_context(request, settings, ctx, await _operator_name(session, ctx), "dashboard")
+    context = base_context(request, settings, ctx, await operator_name(session, ctx), "dashboard")
     context.update(
         {
             "org_name": organization.name if organization else ctx.org_slug,
@@ -526,7 +358,7 @@ async def dashboard(request: Request, settings: SettingsDep, session: SessionDep
             "recent": recent,
         }
     )
-    return _render(request, "dashboard.html", context)
+    return render(request, "dashboard.html", context)
 
 
 # ---------------------------------------------------------------------------
@@ -538,9 +370,9 @@ def _submission_row(item: Submission) -> dict[str, Any]:
         "title": item.title,
         "state": str(item.state),
         "tlp": str(item.tlp),
-        "tlp_label": _tlp_label(item.tlp),
+        "tlp_label": tlp_label(item.tlp),
         "scope": str(item.discovery_scope).replace("_", " "),
-        "created_at": _stamp(item.created_at),
+        "created_at": stamp(item.created_at),
     }
 
 
@@ -549,7 +381,7 @@ async def list_submissions(
     request: Request, settings: SettingsDep, session: SessionDep
 ) -> Response:
     """Submissions filed by this analyst's organisation."""
-    ctx, _csrf_hash = await _current_session(request, settings, session)
+    ctx, _csrf_hash = await current_session(request, settings, session)
     rows = (
         (
             await session.execute(
@@ -563,9 +395,7 @@ async def list_submissions(
         .all()
     )
 
-    context = _base_context(
-        request, settings, ctx, await _operator_name(session, ctx), "submissions"
-    )
+    context = base_context(request, settings, ctx, await operator_name(session, ctx), "submissions")
     context.update(
         {
             "heading": "Your submissions",
@@ -574,7 +404,7 @@ async def list_submissions(
             "empty_message": "Your firm has not filed anything yet.",
         }
     )
-    return _render(request, "submissions.html", context)
+    return render(request, "submissions.html", context)
 
 
 @router.get("/review", response_class=HTMLResponse)
@@ -585,7 +415,7 @@ async def review_queue(request: Request, settings: SettingsDep, session: Session
     coordinated-disclosure consent problem, so it gets its own screen rather
     than being a filter on a list.
     """
-    ctx, _csrf_hash = await _current_session(request, settings, session)
+    ctx, _csrf_hash = await current_session(request, settings, session)
     if not is_system_admin(ctx):
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Not found")
 
@@ -602,7 +432,7 @@ async def review_queue(request: Request, settings: SettingsDep, session: Session
         .all()
     )
 
-    context = _base_context(request, settings, ctx, await _operator_name(session, ctx), "review")
+    context = base_context(request, settings, ctx, await operator_name(session, ctx), "review")
     context.update(
         {
             "heading": "Review queue",
@@ -611,7 +441,7 @@ async def review_queue(request: Request, settings: SettingsDep, session: Session
             "empty_message": "Nothing is waiting for review.",
         }
     )
-    return _render(request, "submissions.html", context)
+    return render(request, "submissions.html", context)
 
 
 @router.get("/submissions/{submission_id}", response_class=HTMLResponse)
@@ -622,7 +452,7 @@ async def submission_detail(
     session: SessionDep,
 ) -> Response:
     """One submission, its history, and the actions this analyst may take."""
-    ctx, csrf_hash = await _current_session(request, settings, session)
+    ctx, csrf_hash = await current_session(request, settings, session)
     submission = await load_submission(session, submission_id)
     if submission is None or not can_view_submission(ctx, submission):
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Not found")
@@ -671,15 +501,13 @@ async def submission_detail(
                 "org_slug": row.slug,
                 "ack_type": str(row.ack_type),
                 "via": str(row.via),
-                "first_at": _stamp(row.first_at),
+                "first_at": stamp(row.first_at),
                 "occurrences": row.occurrences,
             }
             for row in rows
         ]
 
-    context = _base_context(
-        request, settings, ctx, await _operator_name(session, ctx), "submissions"
-    )
+    context = base_context(request, settings, ctx, await operator_name(session, ctx), "submissions")
     context.update(
         {
             "submission": {
@@ -687,11 +515,11 @@ async def submission_detail(
                 "summary": submission.summary,
                 "object_count": object_count,
                 "anonymous": submission.distribute_anonymously,
-                "distributed_at": _stamp(submission.distributed_at),
+                "distributed_at": stamp(submission.distributed_at),
             },
             "transitions": [
                 {
-                    "at": _stamp(entry.at),
+                    "at": stamp(entry.at),
                     "from_state": str(entry.from_state) if entry.from_state else None,
                     "to_state": str(entry.to_state),
                     "reason": entry.reason,
@@ -705,7 +533,7 @@ async def submission_detail(
         }
     )
     del csrf_hash
-    return _render(request, "submission_detail.html", context)
+    return render(request, "submission_detail.html", context)
 
 
 async def _available_actions(
@@ -739,7 +567,7 @@ async def _available_actions(
             .all()
         )
         circles = [
-            {"id": str(row.id), "name": row.name, "minimum_tlp": _tlp_label(row.minimum_tlp)}
+            {"id": str(row.id), "name": row.name, "minimum_tlp": tlp_label(row.minimum_tlp)}
             for row in rows
         ]
 
@@ -796,8 +624,8 @@ async def perform_action(
     native API uses are called, so the portal cannot become a second, weaker
     door to the same operations.
     """
-    ctx, csrf_hash = await _current_session(request, settings, session)
-    _require_csrf(csrf_token, csrf_hash)
+    ctx, csrf_hash = await current_session(request, settings, session)
+    require_csrf(csrf_token, csrf_hash)
 
     submission = await load_submission(session, submission_id, for_update=True)
     if submission is None or not can_view_submission(ctx, submission):
@@ -852,7 +680,7 @@ async def perform_action(
             resource_id=str(submission_id),
             details={"verb": verb, "error": str(exc)},
         )
-        _set_notice(response, settings, "error", str(exc))
+        set_notice(response, settings, "error", str(exc))
 
     return response
 
@@ -862,10 +690,10 @@ async def perform_action(
 # ---------------------------------------------------------------------------
 @router.get("/submit", response_class=HTMLResponse)
 async def submit_form(request: Request, settings: SettingsDep, session: SessionDep) -> Response:
-    ctx, _csrf_hash = await _current_session(request, settings, session)
-    context = _base_context(request, settings, ctx, await _operator_name(session, ctx), "submit")
+    ctx, _csrf_hash = await current_session(request, settings, session)
+    context = base_context(request, settings, ctx, await operator_name(session, ctx), "submit")
     context.update({"form": {}, "error": None, "csrf_token": request.cookies.get("aivs_csrf", "")})
-    return _render(request, "submit.html", context)
+    return render(request, "submit.html", context)
 
 
 @router.post("/submit", response_class=HTMLResponse)
@@ -886,13 +714,13 @@ async def submit_finding(
     Calls the same service the API does, so the validation a member gets here is
     the validation they would get there.
     """
-    ctx, csrf_hash = await _current_session(request, settings, session)
-    _require_csrf(csrf_token, csrf_hash)
+    ctx, csrf_hash = await current_session(request, settings, session)
+    require_csrf(csrf_token, csrf_hash)
 
     form_values = {"title": title, "summary": summary, "bundle": bundle}
 
     def failure(message: str) -> Response:
-        context = _base_context(request, settings, ctx, "", "submit")
+        context = base_context(request, settings, ctx, "", "submit")
         context.update(
             {
                 "form": form_values,
@@ -900,7 +728,7 @@ async def submit_finding(
                 "csrf_token": request.cookies.get("aivs_csrf", ""),
             }
         )
-        return _TEMPLATES.TemplateResponse(
+        return TEMPLATES.TemplateResponse(
             request, "submit.html", context, status_code=status.HTTP_400_BAD_REQUEST
         )
 

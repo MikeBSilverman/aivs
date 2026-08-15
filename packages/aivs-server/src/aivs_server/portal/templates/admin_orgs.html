@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Organisations &middot; {{ instance_name }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <h1>Organisations</h1>
+  <p>Member firms enrolled on this instance. Enrolment and activation are
+     separate steps, so a half-finished onboarding cannot authenticate.</p>
+</div>
+
+<div class="card">
+  {% if orgs %}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Slug</th><th>Name</th><th>Type</th><th>Status</th>
+              <th>Certificates</th><th>Action</th></tr>
+        </thead>
+        <tbody>
+          {% for org in orgs %}
+            <tr>
+              <td class="mono">{{ org.slug }}</td>
+              <td>{{ org.name }}</td>
+              <td class="muted nowrap">{{ org.org_type }}</td>
+              <td><span class="badge state-{{ org.status }}">{{ org.status }}</span></td>
+              <td class="muted">{{ org.certificates }}</td>
+              <td>
+                <form method="post" action="/portal/admin/orgs/{{ org.id }}/{% if org.status == 'active' %}suspend{% else %}activate{% endif %}">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                  <button type="submit" class="linklike">
+                    {% if org.status == 'active' %}Suspend{% else %}Activate{% endif %}
+                  </button>
+                </form>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="empty">No organisations are enrolled yet.</div>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Enrol an organisation</h2>
+  <form method="post" action="/portal/admin/orgs" class="stack">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>Slug
+      <input name="slug" required pattern="[a-z0-9][a-z0-9-]{1,62}[a-z0-9]"
+             placeholder="meridian-global">
+    </label>
+    <label>Name
+      <input name="name" required maxlength="200" placeholder="Meridian Global Bank">
+    </label>
+    <label>Type
+      <select name="org_type">
+        {% for value in org_types %}<option value="{{ value }}">{{ value }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Contact email <span class="muted">(optional)</span>
+      <input name="contact_email" type="email" maxlength="320">
+    </label>
+    <button type="submit" class="primary">Enrol</button>
+  </form>
+</div>
+{% endblock %}

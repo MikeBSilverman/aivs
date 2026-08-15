@@ -37,12 +37,13 @@ submission in a circle rather than within one, so a member who re-submitted a
 peer's `stix_id` with a later timestamp took over the default feed and the peer's
 warning stopped being delivered.
 
-**Open.** `can_administer_circle` permits a member organisation holding
-`CIRCLE_ADMIN` to add organisations to that circle, and visibility carries no
-membership-start term — so a delegated circle admin can grant a new member the
-circle's entire back catalogue without the hosting ISAC being involved. This is
-deliberate delegation whose blast radius is not documented. Decide whether to
-restrict it to the ISAC or to add `joined_at` to the visibility clause.
+**Closed since this assessment.** Both halves of the delegated-circle-admin
+finding are fixed. Visibility now carries a membership-start term
+(`date_added >= joined_at`, per circle), so joining a circle grants participation
+rather than its back catalogue; and `can_administer_circle` is the hosting ISAC
+alone. Admitting an organisation to a circle holding other members' embargoed
+intelligence is a read-in, and it belongs with the party the sharing agreement
+runs to.
 
 ---
 
@@ -77,15 +78,18 @@ a multi-value option that Compose concatenates; `!override` now pins it.
 | Control | Where |
 |---|---|
 | Single committed lockfile | `uv.lock`, workspace-wide |
-| Dependency audit fails the build | `pip-audit --strict` in `azure-pipelines.yml` |
+| Dependency audit fails the build **[fixed]** | `pip-audit --strict` over the exported lockfile. The gate was `--skip-editable --strict`, which in a uv workspace could only ever fail: the three workspace members install as editable and `--strict` counts every skipped distribution as an error. It had been red without anyone noticing. |
+| Reproducible SBOM **[fixed]** | `scripts/generate-sbom.sh` — CycloneDX 1.6 from the frozen lockfile, runtime dependencies only, byte-identical for an unchanged lock so two releases can be diffed |
+| Image SBOM including the OS layer **[fixed]** | pinned syft scan in the Package stage; a Python-environment scan cannot see the Debian base, which is most of what a member firm's scanner flags |
 | Base images pinned by tag, overridable by digest | `packages/aivs-server/Dockerfile` |
 | Build toolchain pinned **[fixed]** | CI installs the same uv version the Dockerfile uses, rather than piping the unversioned installer |
 | Two-stage build leaves no compiler or installer in the runtime image | `Dockerfile` |
 | No CDN, no external fetch at runtime | portal CSP is `default-src 'none'`; fonts and CSS are served from the package |
 
-**Open.** There is no SBOM and no signed provenance for the published image.
-For a product a bank's third-party risk team will assess, a CycloneDX SBOM
-generated in CI and attached to the release is the obvious next step.
+**Open.** No signed provenance or attestation for the published image. The two
+SBOMs are published as build artifacts but nothing attests that a given image was
+built from a given source commit. Sigstore/cosign attestation is the next step,
+and matters more once an ISAC is pulling images rather than building them.
 
 ---
 
@@ -266,9 +270,9 @@ conclude the members had been warned.
 
 | Category | Standing |
 |---|---|
-| A01 Broken Access Control | Strong. One open question on delegated circle administration. |
+| A01 Broken Access Control | Strong. The delegated-circle-administration question is settled: the hosting ISAC alone. |
 | A02 Security Misconfiguration | Strong after this review. Placeholders and the issuer pin now fail closed. |
-| A03 Supply Chain | Good. SBOM and signed provenance are the gap. |
+| A03 Supply Chain | Strong. Reproducible SBOM for the app and the image; signed provenance is the remaining gap. |
 | A04 Cryptographic Failures | Strong in transit and for passwords. Secrets at rest are base64 and honestly labelled; envelope encryption is designed, not built. |
 | A05 Injection | No known vector. Verified by inspection and by semgrep. |
 | A06 Insecure Design | Strong. Two features described by the schema and not implemented. |

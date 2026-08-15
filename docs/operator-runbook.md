@@ -170,11 +170,15 @@ Choose the role deliberately:
 | --- | --- |
 | `member` | Read only |
 | `contributor` | Read and submit |
-| `circle_admin` | Read, submit, and manage that circle's membership |
+| `circle_admin` | Historical — same as `contributor` |
 
 Default to `member`. Upgrade to `contributor` when the firm is ready to submit
-and understands the `discovery_scope` attestation. `circle_admin` should be rare
-— it delegates membership control over a trust tier to a member firm.
+and understands the `discovery_scope` attestation.
+
+Do not reach for `circle_admin`: it grants nothing beyond `contributor`. Deciding
+who is in a circle is yours and cannot be delegated — a circle holds other
+members' embargoed intelligence, and you are the party their sharing agreement
+runs to.
 
 ### 2.5 Confirm
 

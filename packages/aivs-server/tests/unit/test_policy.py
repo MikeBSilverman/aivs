@@ -215,24 +215,52 @@ def test_circle_access_follows_membership():
 
 
 @pytest.mark.parametrize(
-    ("role", "may_write", "may_administer"),
+    ("role", "may_write"),
     [
-        (CircleRole.MEMBER, False, False),
-        (CircleRole.CONTRIBUTOR, True, False),
-        (CircleRole.CIRCLE_ADMIN, True, True),
+        (CircleRole.MEMBER, False),
+        (CircleRole.CONTRIBUTOR, True),
+        (CircleRole.CIRCLE_ADMIN, True),
     ],
 )
-def test_circle_roles_grant_what_they_say(role, may_write, may_administer):
+def test_circle_roles_grant_what_they_say(role, may_write):
+    """Reading and contributing follow the role. Administering does not."""
     ctx = context(circles={CIRCLE: role})
     assert can_read_circle(ctx, CIRCLE) is True
     assert can_submit_to_circle(ctx, CIRCLE) is may_write
-    assert can_administer_circle(ctx, CIRCLE) is may_administer
 
 
-def test_a_circle_admin_administers_only_that_circle():
-    ctx = context(circles={CIRCLE: CircleRole.CIRCLE_ADMIN, OTHER_CIRCLE: CircleRole.MEMBER})
+@pytest.mark.parametrize("role", list(CircleRole))
+def test_no_circle_role_permits_administering_it(role):
+    """Admitting an organisation to a circle is the hosting ISAC's alone.
+
+    A circle carries other members' embargoed intelligence, and membership is
+    backed by an agreement the ISAC holds. A classified programme does not let a
+    cleared participant read in the next one; the programme manager does. That
+    includes CIRCLE_ADMIN, whose name is now historical -- it is retained only
+    because removing a PostgreSQL enum value is disruptive, and it confers
+    exactly what CONTRIBUTOR does.
+    """
+    ctx = context(circles={CIRCLE: role})
+    assert can_administer_circle(ctx, CIRCLE) is False
+
+
+def test_the_hosting_isac_administers_every_circle():
+    """Including circles it has not joined -- administering is not reading.
+
+    The ISAC runs membership without appearing in the feed; reading a circle
+    still requires joining it, visibly. See
+    test_the_isac_does_not_read_circles_it_has_not_joined.
+    """
+    ctx = context(org_type=OrgType.ADMIN)
     assert can_administer_circle(ctx, CIRCLE) is True
-    assert can_administer_circle(ctx, OTHER_CIRCLE) is False
+    assert can_administer_circle(ctx, OTHER_CIRCLE) is True
+
+
+def test_a_suspended_isac_administers_nothing():
+    """The status check comes first here as it does everywhere else."""
+    for status in INACTIVE:
+        ctx = context(org_type=OrgType.ADMIN, status=status)
+        assert can_administer_circle(ctx, CIRCLE) is False
 
 
 def test_the_isac_does_not_read_circles_it_has_not_joined():

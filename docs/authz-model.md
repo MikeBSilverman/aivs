@@ -77,7 +77,15 @@ nowhere else.
 | --- | --- |
 | `member` | Read content distributed into the circle. |
 | `contributor` | Read, **and** contribute content into the circle. |
-| `circle_admin` | Read, contribute, **and** manage the circle's membership. |
+| `circle_admin` | Historical. Confers exactly what `contributor` does. |
+
+`circle_admin` **no longer administers anything.** Admitting an organisation to a
+circle is the hosting ISAC's alone: the circle carries other members' embargoed
+intelligence, and membership is backed by an agreement the ISAC holds. A
+classified programme does not let a cleared participant read in the next one; the
+programme manager does. The value survives only because removing a PostgreSQL
+enum member is disruptive out of proportion to the tidiness, and because it marks
+the firms a future delegation model would start from.
 
 These are orthogonal to `OperatorRole`. An `org_admin` at a firm holding only
 `member` in a circle cannot contribute to it; a rank-and-file `analyst` at a firm
@@ -182,7 +190,7 @@ caller's org belongs to, at the role shown.
 | **Circles** |
 | Read circle content (TAXII objects, manifest) | N | circle: any role | circle: any role | circle: any role | circle: any role — **no bypass** | circle: any role — **no bypass** |
 | Contribute into a circle | N | circle: `contributor`/`circle_admin` | circle: `contributor`/`circle_admin` | circle: `contributor`/`circle_admin` | Y | Y |
-| Manage circle membership | N | circle: `circle_admin` | circle: `circle_admin` | circle: `circle_admin` | Y | Y |
+| Manage circle membership | N | N | N | N | Y | Y |
 | Create or delete a circle | N | N | N | N | Y | Y |
 | **Submissions** |
 | Create a draft | N | Y (own org) | Y (own org) | Y (own org) | Y | Y |

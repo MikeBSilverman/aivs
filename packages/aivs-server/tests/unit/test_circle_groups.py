@@ -145,6 +145,53 @@ async def test_a_membership_can_be_restored_with_its_original_date(
     assert row.joined_at == original
 
 
+async def test_a_member_cannot_read_another_firm_into_a_circle(
+    client, make_org, make_cert, make_circle, join_circle, session
+):
+    """Admission is the hosting ISAC's alone, over the API as over the portal.
+
+    A circle carries other members' embargoed intelligence. Letting a member
+    firm admit another firm to it is letting a cleared participant read in the
+    next one, which is not how a programme with an obligation behind it works.
+    Holding CIRCLE_ADMIN does not change this; that role no longer administers.
+    """
+    circle = await make_circle("section9")
+    insider = await make_org("insider-firm", org_type=OrgType.GSIB)
+    insider_pem, _ = await make_cert(insider)
+    await join_circle(insider, circle, role=CircleRole.CIRCLE_ADMIN)
+
+    outsider = await make_org("outsider-firm", org_type=OrgType.GSIB)
+
+    response = await client.post(
+        f"{API}/circles/{circle.id}/members",
+        json={"org_ids": [str(outsider.id)]},
+        headers=proxy_headers(insider_pem),
+    )
+    assert response.status_code == 403
+
+    members = await members_of(session, circle.id)
+    assert [row.org_id for row in members] == [insider.id]
+
+
+async def test_a_member_cannot_remove_another_firm_from_a_circle(
+    client, make_org, make_cert, make_circle, join_circle, session
+):
+    """The same rule in the other direction: nor can they read anyone *out*."""
+    circle = await make_circle("section9")
+    insider = await make_org("insider-firm", org_type=OrgType.GSIB)
+    insider_pem, _ = await make_cert(insider)
+    await join_circle(insider, circle, role=CircleRole.CIRCLE_ADMIN)
+
+    peer = await make_org("peer-firm", org_type=OrgType.GSIB)
+    await join_circle(peer, circle)
+
+    response = await client.delete(
+        f"{API}/circles/{circle.id}/members/{peer.id}", headers=proxy_headers(insider_pem)
+    )
+    assert response.status_code == 403
+    assert len(await members_of(session, circle.id)) == 2
+
+
 # ---------------------------------------------------------------------------
 # Rules
 # ---------------------------------------------------------------------------

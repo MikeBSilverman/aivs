@@ -424,7 +424,7 @@ Constraints and expectations:
 
 ## 10. Optional: submitting
 
-If your firm contributes, you need `contributor` or `circle_admin` in the target
+If your firm contributes, you need `contributor` in the target
 circle. Reading a circle does not imply writing to it.
 
 **What AIVS accepts:**

@@ -82,8 +82,16 @@ class CertStatus(StrEnum):
 class CircleRole(StrEnum):
     """An organisation's role within one sharing circle.
 
-    ``MEMBER`` may read; ``CONTRIBUTOR`` may also submit; ``CIRCLE_ADMIN`` may
-    additionally manage the circle's membership.
+    ``MEMBER`` may read; ``CONTRIBUTOR`` may also submit.
+
+    ``CIRCLE_ADMIN`` **no longer administers anything**, and the name is kept
+    only because removing a value from a PostgreSQL enum is disruptive out of
+    proportion to the tidiness. It currently confers exactly what
+    ``CONTRIBUTOR`` does. Admitting an organisation to a circle is the hosting
+    ISAC's alone -- see ``auth.policy.can_administer_circle`` for why -- and the
+    value is reserved against that decision being revisited rather than
+    describing a capability the system grants today. Prefer ``CONTRIBUTOR``
+    unless you are deliberately marking a firm for a future delegation model.
     """
 
     MEMBER = "member"

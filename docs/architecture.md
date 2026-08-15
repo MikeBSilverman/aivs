@@ -53,7 +53,7 @@ transition or a valid marking is.
 An **organization** is a member firm, or the hosting ISAC itself
 (`org_type = admin`). Organizations join **circles**, which are the unit of trust
 tiering — "Section 9", "GSIB", "AI supply chain" — with a role of `member`,
-`contributor`, or `circle_admin`. Each circle is projected outward as one TAXII
+or `contributor`. Each circle is projected outward as one TAXII
 **collection**. A member creates a **submission**, attaches STIX objects to it,
 and moves it to `submitted`. The hosting ISAC reviews it, moves it to
 `validated`, then to `distributed`; distribution writes one **distribution** row

@@ -155,13 +155,30 @@ def can_submit_to_circle(ctx: AuthContext, circle_id: uuid.UUID) -> bool:
 
 
 def can_administer_circle(ctx: AuthContext, circle_id: uuid.UUID) -> bool:
-    """Return whether the caller may change ``circle_id``'s membership."""
-    if not is_active(ctx):
-        return False
-    if is_system_admin(ctx):
-        return True
-    grant = ctx.circles.get(circle_id)
-    return grant is not None and grant.role is CircleRole.CIRCLE_ADMIN
+    """Return whether the caller may change ``circle_id``'s membership.
+
+    **The hosting ISAC alone.** Admitting an organisation to a circle is a
+    read-in: the circle carries other members' embargoed intelligence, and
+    membership is normally backed by a sharing agreement, sector eligibility and
+    an NDA that the ISAC — not a member firm — holds. A classified programme does
+    not let a cleared participant read in the next one; the programme manager
+    does, because the manager is who the obligation runs to. This works the same
+    way, and for the same reason.
+
+    Delegation to a member holding ``CircleRole.CIRCLE_ADMIN`` was permitted
+    until the argument for it ran out. That argument was operational load, and
+    rule-based membership (``services/circles.py``) plus the portal's
+    administrative screens absorbed nearly all of it: the routine changes now
+    happen without anyone filing anything. What was left was a member firm able
+    to admit another firm to a room holding a third firm's content, which is a
+    hole in the one claim an ISAC-in-a-box is really selling.
+
+    ``circle_id`` is still taken, and is deliberately not ignored by the
+    signature: if delegation is reintroduced it is reintroduced here, scoped to a
+    circle, rather than by widening some caller's idea of what "admin" means.
+    """
+    del circle_id
+    return is_system_admin(ctx)
 
 
 def readable_circle_ids(ctx: AuthContext) -> frozenset[uuid.UUID]:

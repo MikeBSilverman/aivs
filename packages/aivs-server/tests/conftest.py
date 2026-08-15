@@ -35,6 +35,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.x509.oid import NameOID
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from aivs_schemas.enums import (
@@ -284,16 +285,32 @@ async def clean_database(engine: Any, _schema: None) -> AsyncIterator[None]:
     restored immediately afterwards. Doing this explicitly -- rather than
     quietly granting the test role a way around the protection -- keeps the
     protection honest: nothing in the application can take this path.
+
+    ``TRUNCATE`` needs an ACCESS EXCLUSIVE lock, so **two test runs cannot share
+    one database**: the second blocks on the first indefinitely and the suite
+    appears to hang with no explanation. The ``lock_timeout`` below turns that
+    into an immediate, self-describing failure. Point concurrent runs at
+    separate databases with ``AIVS_TEST_DATABASE_URL``.
     """
     yield
     async with engine.begin() as connection:
-        for table in ("audit_log", "submission_transitions"):
-            await connection.execute(text(f"ALTER TABLE {table} DISABLE TRIGGER USER"))
-        await connection.execute(
-            text(f"TRUNCATE {', '.join(_ALL_TABLES)} RESTART IDENTITY CASCADE")
-        )
-        for table in ("audit_log", "submission_transitions"):
-            await connection.execute(text(f"ALTER TABLE {table} ENABLE TRIGGER USER"))
+        # Fail fast rather than queue behind another run's cleanup.
+        await connection.execute(text("SET LOCAL lock_timeout = '15s'"))
+        try:
+            for table in ("audit_log", "submission_transitions"):
+                await connection.execute(text(f"ALTER TABLE {table} DISABLE TRIGGER USER"))
+            await connection.execute(
+                text(f"TRUNCATE {', '.join(_ALL_TABLES)} RESTART IDENTITY CASCADE")
+            )
+            for table in ("audit_log", "submission_transitions"):
+                await connection.execute(text(f"ALTER TABLE {table} ENABLE TRIGGER USER"))
+        except OperationalError as exc:  # pragma: no cover - diagnostic path
+            message = (
+                f"could not reset {TEST_DATABASE_URL.rsplit('/', 1)[-1]} within the lock "
+                "timeout. Another test run is almost certainly using the same database; "
+                "give each run its own via AIVS_TEST_DATABASE_URL."
+            )
+            raise RuntimeError(message) from exc
 
 
 @pytest.fixture

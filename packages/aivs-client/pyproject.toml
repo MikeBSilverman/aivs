@@ -14,7 +14,7 @@ dependencies = [
 ]
 
 [project.scripts]
-aivs = "aivs_client.cli:app"
+aivs = "aivs_client.cli:main"
 
 [build-system]
 requires = ["hatchling"]

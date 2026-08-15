@@ -1,0 +1,183 @@
+# CI for AIVS.
+#
+# Source lives in Azure DevOps. This pipeline runs the same checks a developer
+# runs locally, against a real PostgreSQL service container, and fails the build
+# on any of them.
+#
+# The ordering is deliberate: the fast, cheap checks (format, lint, types) run
+# before the database is needed, so a formatting mistake fails in under a minute
+# rather than after the full suite. Security checks run unconditionally rather
+# than as a nightly job -- a dependency advisory that lands on a Tuesday should
+# break Tuesday's build, not be discovered in a monthly report.
+#
+# One-time setup: none. There are no pipeline variables or service connections
+# to configure, because nothing here talks to anything outside the agent.
+
+trigger:
+  branches:
+    include:
+      - main
+
+pr:
+  branches:
+    include:
+      - main
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  # Pinned rather than floating. The container images the members deploy are
+  # built on 3.12, and CI must not pass on a version production does not run.
+  PYTHON_VERSION: "3.12"
+  # Points the test suite at the service container below.
+  AIVS_TEST_DATABASE_URL: "postgresql+psycopg://aivs:aivs@localhost:5432/aivs_test"
+  AIVS_MIGRATION_DATABASE_URL: "postgresql+psycopg://aivs:aivs@localhost:5432/aivs_dev"
+  UV_CACHE_DIR: $(Pipeline.Workspace)/.uv-cache
+
+stages:
+  - stage: Verify
+    displayName: Verify
+    jobs:
+      - job: checks
+        displayName: Lint, types, security, tests
+        timeoutInMinutes: 20
+
+        services:
+          postgres: postgres
+
+        steps:
+          - task: UsePythonVersion@0
+            inputs:
+              versionSpec: $(PYTHON_VERSION)
+            displayName: Use Python $(PYTHON_VERSION)
+
+          - task: Cache@2
+            inputs:
+              key: 'uv | "$(Agent.OS)" | uv.lock'
+              restoreKeys: |
+                uv | "$(Agent.OS)"
+              path: $(UV_CACHE_DIR)
+            displayName: Cache uv downloads
+
+          - script: |
+              set -euo pipefail
+              curl -LsSf https://astral.sh/uv/install.sh | sh
+              echo "##vso[task.prependpath]$HOME/.local/bin"
+            displayName: Install uv
+
+          - script: |
+              set -euo pipefail
+              # --frozen: install exactly what uv.lock pins. A lockfile that has
+              # drifted from pyproject.toml fails here rather than silently
+              # resolving to something nobody reviewed.
+              uv sync --frozen --python "$(PYTHON_VERSION)"
+            displayName: Install dependencies (locked)
+
+          # -- Fast checks first ------------------------------------------
+          - script: uv run ruff format --check .
+            displayName: Format
+
+          - script: uv run ruff check --output-format=github .
+            displayName: Lint
+
+          - script: |
+              set -euo pipefail
+              uv run mypy \
+                packages/aivs-schemas/src \
+                packages/aivs-server/src \
+                packages/aivs-client/src
+            displayName: Types (strict)
+
+          # -- Security ---------------------------------------------------
+          - script: uv run bandit -c pyproject.toml -r packages/aivs-server/src packages/aivs-schemas/src packages/aivs-client/src
+            displayName: Static security analysis
+
+          - script: |
+              set -euo pipefail
+              # Editable workspace members have no published advisories to check;
+              # everything else is audited against the advisory database.
+              uv run pip-audit --skip-editable --strict
+            displayName: Dependency advisories
+
+          - script: |
+              set -euo pipefail
+              for script in deploy/ca/*.sh; do
+                bash -n "$script"
+              done
+              if command -v shellcheck >/dev/null; then
+                shellcheck -S warning deploy/ca/*.sh
+              fi
+            displayName: Shell script checks
+
+          # -- Database-backed --------------------------------------------
+          - script: |
+              set -euo pipefail
+              until pg_isready -h localhost -p 5432 -U aivs; do sleep 1; done
+              PGPASSWORD=aivs psql -h localhost -U aivs -d postgres \
+                -c "CREATE DATABASE aivs_test;" -c "CREATE DATABASE aivs_dev;"
+            displayName: Prepare databases
+
+          - script: |
+              set -euo pipefail
+              # Migrations must apply cleanly from empty, and must leave no
+              # difference against the models. A schema that only exists because
+              # someone ran create_all locally would fail here.
+              uv run alembic -c packages/aivs-server/alembic.ini upgrade head
+              uv run alembic -c packages/aivs-server/alembic.ini check
+            displayName: Migrations apply with no drift
+
+          - script: |
+              set -euo pipefail
+              uv run pytest \
+                --junitxml=junit.xml \
+                --cov=aivs_server --cov=aivs_schemas --cov=aivs_client \
+                --cov-report=xml --cov-report=term-missing \
+                -q
+            displayName: Tests
+
+          - task: PublishTestResults@2
+            condition: succeededOrFailed()
+            inputs:
+              testResultsFormat: JUnit
+              testResultsFiles: junit.xml
+              testRunTitle: AIVS $(Build.BuildNumber)
+            displayName: Publish test results
+
+          - task: PublishCodeCoverageResults@2
+            condition: succeededOrFailed()
+            inputs:
+              summaryFileLocation: coverage.xml
+            displayName: Publish coverage
+
+  - stage: Package
+    displayName: Package
+    dependsOn: Verify
+    condition: succeeded()
+    jobs:
+      - job: image
+        displayName: Build the server image
+        timeoutInMinutes: 20
+        steps:
+          - script: |
+              set -euo pipefail
+              # Built but not pushed. AIVS is deployed by each hosting ISAC from
+              # their own registry; this stage exists to prove the Dockerfile
+              # still builds against the committed lockfile, not to publish.
+              docker build \
+                -f packages/aivs-server/Dockerfile \
+                -t "aivs-server:$(Build.BuildNumber)" \
+                .
+            displayName: docker build
+
+          - script: |
+              set -euo pipefail
+              # The image must refuse to start without configuration. If this
+              # exits 0, the production-posture interlock has regressed.
+              if docker run --rm "aivs-server:$(Build.BuildNumber)" \
+                   python -m aivs_server.config; then
+                echo "ERROR: server accepted an empty configuration" >&2
+                exit 1
+              fi
+              echo "confirmed: refuses to start unconfigured"
+            displayName: Image fails closed without configuration

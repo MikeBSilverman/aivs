@@ -34,13 +34,20 @@ ASGIApp = Callable[[Scope, Receive, Send], Awaitable[None]]
 #: - ``nosniff``      : the API returns JSON; never let a browser re-interpret it.
 #: - ``DENY``         : nothing in AIVS is meant to be framed.
 #: - ``no-referrer``  : submission URLs contain identifiers; do not leak them.
-#: - HSTS with preload: the service is https-only on every deployment.
+#: - HSTS            : the service is https-only on every deployment.
 #: - ``Permissions-Policy``: the portal needs no device capability at all.
+#:
+#: **``preload`` is deliberately absent.** Submitting a domain to the browser
+#: preload list is effectively irreversible, and it is the hosting ISAC's
+#: decision about their own domain, not ours to make on their behalf by shipping
+#: a default. ``deploy/nginx`` declines it for the same reason; this must not
+#: reintroduce it, because when both layers emit HSTS a user agent honours the
+#: first header it sees (RFC 6797 section 8.1) -- which is this one.
 _BASE_SECURITY_HEADERS: Final[tuple[tuple[bytes, bytes], ...]] = (
     (b"x-content-type-options", b"nosniff"),
     (b"x-frame-options", b"DENY"),
     (b"referrer-policy", b"no-referrer"),
-    (b"strict-transport-security", b"max-age=31536000; includeSubDomains; preload"),
+    (b"strict-transport-security", b"max-age=63072000; includeSubDomains"),
     (b"permissions-policy", b"accelerometer=(), camera=(), geolocation=(), microphone=(), usb=()"),
     (b"cross-origin-opener-policy", b"same-origin"),
     (b"cross-origin-resource-policy", b"same-origin"),

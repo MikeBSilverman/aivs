@@ -90,6 +90,33 @@ async def _isac_identity(session: AsyncSession) -> str | None:
     ).scalar_one_or_none()
 
 
+def _validate_release_time(release_at: dt.datetime | None, now: dt.datetime) -> None:
+    """Refuse a release time that cannot mean what it says.
+
+    A backdated ``release_at`` writes a ``date_added`` below cursors members
+    have already passed, and ``added_after`` polling never looks backwards. The
+    content would then be permanently invisible to precisely the members who are
+    collecting correctly -- while the receipts table showed they simply never
+    fetched it, so the failure would look like the member's.
+
+    Refused rather than silently clamped to ``now``: clamping would make the
+    audit record disagree with the operator's stated intent about when content
+    went live.
+    """
+    if release_at is None:
+        return
+    if release_at.tzinfo is None:
+        msg = "release_at must be timezone-aware"
+        raise DistributionError(msg)
+    if release_at < now:
+        msg = (
+            f"release_at is in the past ({release_at.isoformat()}); an embargo cannot "
+            "be backdated, and doing so would hide the content from members who have "
+            "already polled past that time"
+        )
+        raise DistributionError(msg)
+
+
 async def _resolve_target_circles(
     session: AsyncSession, submission: Submission, circle_ids: Sequence[uuid.UUID]
 ) -> list[Circle]:
@@ -153,9 +180,7 @@ async def distribute_submission(
         )
         raise DistributionError(msg)
 
-    if release_at is not None and release_at.tzinfo is None:
-        msg = "release_at must be timezone-aware"
-        raise DistributionError(msg)
+    _validate_release_time(release_at, now)
 
     # Truncated because TAXII timestamps carry milliseconds. Without this a
     # member echoing X-TAXII-Date-Added-Last back as added_after receives the
@@ -189,15 +214,26 @@ async def distribute_submission(
                 # attributed to the ISAC that vouched for it.
                 stored.raw = {**stored.raw, "created_by_ref": identity}
 
-    # Objects already visible in a target circle, so a re-distribution or a
-    # supersede that reuses an object version does not deliver it twice.
+    # Rows for *these* objects that are already live in a target circle, so a
+    # re-distribution of the same submission does not deliver it twice.
+    #
+    # Scoped to this submission's own StixObject ids, deliberately. An earlier
+    # version keyed this on (circle, stix_id, modified) across every submission,
+    # which conflicted with the per-submission uniqueness of stix_objects: two
+    # organisations may legitimately hold the same stix_id, so one member's
+    # object would suppress another's and circle members would receive whichever
+    # arrived first, under an id that claims to be the other. Matching on the
+    # concrete object id cannot do that, and the unique constraint on
+    # (stix_object_id, circle_id) is what actually prevents double delivery.
+    object_ids = [stored.id for stored in objects]
     already = {
-        (circle_id, stix_id, modified)
-        for circle_id, stix_id, modified in (
+        (circle_id, stix_object_id)
+        for circle_id, stix_object_id in (
             await session.execute(
-                select(Distribution.circle_id, StixObject.stix_id, StixObject.modified)
-                .join(StixObject, StixObject.id == Distribution.stix_object_id)
-                .where(Distribution.circle_id.in_(list(found)))
+                select(Distribution.circle_id, Distribution.stix_object_id).where(
+                    Distribution.circle_id.in_(list(found)),
+                    Distribution.stix_object_id.in_(object_ids),
+                )
             )
         ).all()
     }
@@ -206,7 +242,7 @@ async def distribute_submission(
     rows_skipped = 0
     for circle in circles:
         for stored in objects:
-            if (circle.id, stored.stix_id, stored.modified) in already:
+            if (circle.id, stored.id) in already:
                 rows_skipped += 1
                 continue
             session.add(
@@ -218,6 +254,17 @@ async def distribute_submission(
                 )
             )
             rows_written += 1
+
+    if rows_written == 0:
+        # Every object was already live in every target circle. Reporting
+        # success here would tell an operator a distribution went out when
+        # nothing was delivered, which is the one thing they must not be
+        # misinformed about.
+        msg = (
+            "nothing to distribute: every object in this submission is already "
+            "visible in all of the requested circles"
+        )
+        raise DistributionError(msg)
 
     await record(
         session,

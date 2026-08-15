@@ -447,3 +447,206 @@ async def test_distribution_is_recorded_in_the_audit_trail(client, member, isac,
     assert "submission.created" in actions
     assert "submission.distributed" in actions
     assert "submission.transitioned" in actions
+
+
+# ---------------------------------------------------------------------------
+# Regressions from the write-path review
+# ---------------------------------------------------------------------------
+async def test_one_members_object_cannot_suppress_anothers(
+    client, member, isac, circle, join_circle, session
+):
+    """Two organisations may carry the same STIX id; neither may silence the other.
+
+    Duplicate suppression was once keyed on (circle, stix_id, modified) across
+    every submission, which conflicted with the per-submission uniqueness of
+    stix_objects: the second organisation's object was skipped as "already
+    delivered" and members received the first one's content under that id.
+    """
+    shared_id = "vulnerability--aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa"
+    target, collection = await circle()
+
+    first_org, first_pem = await member("meridian-global")
+    await join_circle(first_org, target)
+    _isac_org, isac_pem = isac
+
+    second_org, second_pem = await member("atlantic-clearing")
+    await join_circle(second_org, target)
+
+    async def file_and_distribute(pem, name):
+        created = await create_draft(
+            client, pem, title=name, bundle=bundle(stix_id=shared_id, name=name)
+        )
+        await client.post(f"{API}/{created['id']}/submit", json={}, headers=proxy_headers(pem))
+        await client.post(
+            f"{API}/{created['id']}/validate", json={}, headers=proxy_headers(isac_pem)
+        )
+        return await client.post(
+            f"{API}/{created['id']}/distribute",
+            json={"circle_ids": [str(target.id)]},
+            headers=proxy_headers(isac_pem),
+        )
+
+    assert (await file_and_distribute(first_pem, "first-firms-finding")).status_code == 200
+    second = await file_and_distribute(second_pem, "second-firms-finding")
+    assert second.status_code == 200, second.text
+
+    # Both are delivered; the second was not silently swallowed.
+    feed = await client.get(
+        f"/taxii2/aivs/collections/{collection.id}/objects/",
+        params={"match[version]": "all"},
+        headers=proxy_headers(first_pem),
+    )
+    names = {obj["name"] for obj in feed.json()["objects"]}
+    assert names == {"first-firms-finding", "second-firms-finding"}
+
+
+async def test_a_backdated_release_time_is_refused(client, member, isac, circle):
+    """A backdated date_added sorts below cursors members have already passed.
+
+    `added_after` polling never looks backwards, so the content would be
+    permanently invisible to exactly the members collecting correctly, while the
+    receipts table showed they simply never fetched it.
+    """
+    _org, pem = await member()
+    _isac_org, isac_pem = isac
+    target, _collection = await circle()
+
+    created = await create_draft(client, pem)
+    await client.post(f"{API}/{created['id']}/submit", json={}, headers=proxy_headers(pem))
+    await client.post(f"{API}/{created['id']}/validate", json={}, headers=proxy_headers(isac_pem))
+
+    past = dt.datetime.now(dt.UTC) - dt.timedelta(days=1)
+    response = await client.post(
+        f"{API}/{created['id']}/distribute",
+        json={"circle_ids": [str(target.id)], "release_at": past.isoformat()},
+        headers=proxy_headers(isac_pem),
+    )
+    assert response.status_code == 409
+    assert "backdated" in response.text
+
+
+async def test_redistributing_the_same_submission_reports_nothing_to_do(
+    client, member, isac, circle
+):
+    """Reporting success for a distribution that delivered nothing misleads the operator."""
+    _org, pem = await member()
+    _isac_org, isac_pem = isac
+    target, _collection = await circle()
+
+    created = await create_draft(client, pem)
+    await client.post(f"{API}/{created['id']}/submit", json={}, headers=proxy_headers(pem))
+    await client.post(f"{API}/{created['id']}/validate", json={}, headers=proxy_headers(isac_pem))
+    first = await client.post(
+        f"{API}/{created['id']}/distribute",
+        json={"circle_ids": [str(target.id)]},
+        headers=proxy_headers(isac_pem),
+    )
+    assert first.status_code == 200
+
+    # Already distributed, so the state guard refuses before reaching the
+    # nothing-to-deliver check; either refusal is correct, a 2xx is not.
+    again = await client.post(
+        f"{API}/{created['id']}/distribute",
+        json={"circle_ids": [str(target.id)]},
+        headers=proxy_headers(isac_pem),
+    )
+    assert again.status_code == 409
+
+
+async def test_modified_before_created_is_refused(client, member):
+    """Invalid STIX, and it inverts `match[version]=last` for the submitter."""
+    _org, pem = await member()
+    payload_bundle = bundle()
+    payload_bundle["objects"][0]["created"] = "2026-08-01T00:00:00.000Z"
+    payload_bundle["objects"][0]["modified"] = "2020-01-01T00:00:00.000Z"
+
+    response = await client.post(
+        API,
+        json={
+            "title": "Backwards timestamps",
+            "discovery_scope": "ai_system",
+            "bundle": payload_bundle,
+        },
+        headers=proxy_headers(pem),
+    )
+    assert response.status_code == 400
+    assert "modified" in response.text
+
+
+async def test_oversized_content_is_a_client_error_not_a_server_fault(client, member):
+    """A value too long for its column means the bundle is malformed, not that we broke."""
+    _org, pem = await member()
+    payload_bundle = bundle()
+    payload_bundle["objects"][0]["id"] = "vulnerability--" + "a" * 200
+
+    response = await client.post(
+        API,
+        json={
+            "title": "Oversized identifier",
+            "discovery_scope": "ai_system",
+            "bundle": payload_bundle,
+        },
+        headers=proxy_headers(pem),
+    )
+    assert response.status_code == 400, "must not surface as 500"
+
+
+async def test_anonymous_submission_refuses_an_identity_object(client, member):
+    """Anonymity is a promise; an identity SDO would deliver the name anyway.
+
+    `created_by_ref` is the only attribution the pipeline rewrites. An identity
+    object riding along in the same bundle is redistributed verbatim, in the
+    same envelope, naming the submitter the server promised to withhold.
+    """
+    _org, pem = await member()
+    payload_bundle = bundle()
+    payload_bundle["objects"].append(
+        {
+            "type": "identity",
+            "spec_version": "2.1",
+            "id": "identity--bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb",
+            "created": "2026-08-01T00:00:00.000Z",
+            "modified": "2026-08-01T00:00:00.000Z",
+            "name": "Meridian Global Bank",
+        }
+    )
+
+    response = await client.post(
+        API,
+        json={
+            "title": "Anonymous but self-identifying",
+            "discovery_scope": "ai_system",
+            "distribute_anonymously": True,
+            "bundle": payload_bundle,
+        },
+        headers=proxy_headers(pem),
+    )
+    assert response.status_code == 400
+    assert "identity" in response.text
+
+
+async def test_identity_objects_are_fine_when_not_anonymous(client, member):
+    """The restriction applies only where anonymity was promised."""
+    _org, pem = await member()
+    payload_bundle = bundle()
+    payload_bundle["objects"].append(
+        {
+            "type": "identity",
+            "spec_version": "2.1",
+            "id": "identity--cccccccc-3333-4333-8333-cccccccccccc",
+            "created": "2026-08-01T00:00:00.000Z",
+            "modified": "2026-08-01T00:00:00.000Z",
+            "name": "Meridian Global Bank",
+        }
+    )
+
+    response = await client.post(
+        API,
+        json={
+            "title": "Attributed submission",
+            "discovery_scope": "ai_system",
+            "bundle": payload_bundle,
+        },
+        headers=proxy_headers(pem),
+    )
+    assert response.status_code == 201

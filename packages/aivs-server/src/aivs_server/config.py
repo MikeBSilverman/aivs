@@ -85,6 +85,16 @@ class Settings(BaseSettings):
     header_proxy_auth: str = "x-proxy-auth"
     header_request_id: str = "x-request-id"
 
+    #: RFC 4514 subject DN of the issuing CA that certificates must chain from,
+    #: e.g. "CN=AIVS Issuing CA,O=Global FS-ISAC,C=US".
+    #:
+    #: Registration refuses any certificate whose issuer does not match. Without
+    #: it, the only thing preventing a registered self-signed certificate from
+    #: authenticating is the proxy's verdict -- and this application deliberately
+    #: does not treat the proxy as the sole authority on identity anywhere else.
+    #: Empty disables the check, which is appropriate only before a CA exists.
+    expected_certificate_issuer_dn: str = ""
+
     # -- Development-only escape hatches (refused in production) -----------
     #: Accept identity headers without a valid ``X-Proxy-Auth``. NEVER in prod.
     dev_trust_unauthenticated_proxy: bool = False

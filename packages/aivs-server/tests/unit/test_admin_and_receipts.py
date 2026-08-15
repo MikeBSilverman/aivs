@@ -364,7 +364,13 @@ async def test_receipts_are_not_visible_to_other_members(
     client, member, make_circle, join_circle, publish
 ):
     """Which firms attend to which threats is not an inference members may draw
-    about each other."""
+    about each other.
+
+    Reported as 404, not 403, and identically to an id that does not exist.
+    Distinguishing the two would make this endpoint an existence oracle over the
+    whole submission namespace for any authenticated member -- undoing the care
+    the sibling endpoints take to collapse both cases.
+    """
     owner, _owner_pem = await member("meridian-global")
     circle = await make_circle("section9")
     await join_circle(owner, circle)
@@ -373,10 +379,16 @@ async def test_receipts_are_not_visible_to_other_members(
     other, other_pem = await member("atlantic-clearing")
     await join_circle(other, circle)
 
-    response = await client.get(
+    real = await client.get(
         f"{API}/submissions/{submission.id}/receipts", headers=proxy_headers(other_pem)
     )
-    assert response.status_code == 403
+    assert real.status_code == 404
+
+    invented = await client.get(
+        f"{API}/submissions/{uuid.uuid4()}/receipts", headers=proxy_headers(other_pem)
+    )
+    assert invented.status_code == 404
+    assert real.text == invented.text, "a real id must be indistinguishable from an invented one"
 
 
 async def test_the_isac_can_read_receipts(client, isac, member, make_circle, join_circle, publish):

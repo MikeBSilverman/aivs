@@ -31,7 +31,7 @@ from aivs_schemas.models import (
     OrganizationOut,
 )
 from aivs_server.audit.log import AuditAction, record
-from aivs_server.auth.deps import AuthenticatedContext, SessionDep
+from aivs_server.auth.deps import AuthenticatedContext, SessionDep, SettingsDep
 from aivs_server.auth.policy import (
     can_administer_circle,
     can_manage_org,
@@ -197,6 +197,7 @@ async def register_certificate(
     payload: CertificateRegister,
     ctx: AuthenticatedContext,
     session: SessionDep,
+    settings: SettingsDep,
 ) -> ClientCertificate:
     """Register an issued certificate against an organisation.
 
@@ -219,6 +220,18 @@ async def register_certificate(
 
     if certificate.not_valid_after_utc <= dt.datetime.now(dt.UTC):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Certificate has already expired")
+
+    # The issuer must be the CA this instance trusts. Registration is what binds
+    # a fingerprint to an organisation, so without this the application would
+    # accept a self-signed certificate and rely entirely on the proxy refusing
+    # it at handshake time -- making the proxy the single point of failure for
+    # identity, which is exactly what auth/mtls.py declines to do elsewhere.
+    expected_issuer = settings.expected_certificate_issuer_dn.strip()
+    if expected_issuer and certificate.issuer.rfc4514_string() != expected_issuer:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail="Certificate was not issued by this instance's certificate authority",
+        )
 
     row = ClientCertificate(
         org_id=org_id,

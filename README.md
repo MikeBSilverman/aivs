@@ -32,6 +32,13 @@ firms are now most exposed and least served. That is the white space.
 
 ---
 
+## Working on AIVS
+
+Read [CLAUDE.md](CLAUDE.md) before contributing. It carries the verification
+gates, the test-database isolation rule, and the correctness rules that exist
+because the opposite was written first — each one with the failure that
+produced it, so the reasoning survives the next refactor.
+
 ## What AIVS is
 
 A single-tenant sharing server an ISAC runs for its members:

@@ -202,7 +202,7 @@ caller's org belongs to, at the role shown.
 | Set an embargo on own submission | N | own | own | own | Y | Y |
 | Lift or extend an embargo | N | N | N | N | Y | Y |
 | **Acknowledgments** |
-| Record `acknowledged` / `actioned` | N | own org | own org | own org | Y | Y |
+| Record `acknowledged` / `actioned` [^ack] | N | own org | own org | own org | N | N |
 | **Audit log** |
 | Read the audit log | N | N | N | N | Y | Y |
 | Modify the audit log | N | N | N | N | **N — database-enforced** | **N — database-enforced** |
@@ -220,6 +220,18 @@ action. This is worth knowing before someone tries to automate certificate
 rotation against the native API with the outgoing certificate.
 
 ---
+
+
+[^ack]: The hosting ISAC is deliberately **not** able to acknowledge a member's
+    submission, despite being able to do most things a member can. An
+    acknowledgment is one organisation asserting what *it* did about a warning —
+    "we received this, we acted on it" — and it is the member's own evidence,
+    used to demonstrate their response to their own regulator. An ISAC recording
+    an acknowledgment on a member's behalf would be manufacturing that evidence,
+    which is the one property this record has to have. The gate in
+    `api/acknowledgments.py` enforces it structurally: a caller must hold a
+    server-written retrieval receipt for the submission, and the ISAC has none
+    unless it visibly joined the circle and collected the content itself.
 
 ## 6. The predicates, one line each
 

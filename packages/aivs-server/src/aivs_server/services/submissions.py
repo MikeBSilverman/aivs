@@ -46,6 +46,13 @@ __all__ = [
 #: severity that is not true of it.
 _CVSS_MAX: Final[float] = 10.0
 
+#: Storage bounds for the columns these values land in (see db/models.py).
+#: Enforced at ingest so oversized member content is a validation error naming
+#: the object, not a database exception surfacing as a server fault.
+_MAX_STIX_ID: Final[int] = 100
+_MAX_STIX_TYPE: Final[int] = 60
+_MAX_OBJECT_NAME: Final[int] = 300
+
 
 class SubmissionError(ValueError):
     """A submission operation was rejected for a reason the caller can fix."""
@@ -82,7 +89,10 @@ def _extract_indexed_fields(obj: dict[str, Any]) -> dict[str, Any]:
     """
     name = obj.get("name")
     extracted: dict[str, Any] = {
-        "name": name if isinstance(name, str) else None,
+        # Truncated rather than rejected: `name` is a search convenience, not
+        # identity, and `raw` keeps the full value. Refusing a vulnerability
+        # report over a long title would be the wrong trade.
+        "name": name[:_MAX_OBJECT_NAME] if isinstance(name, str) else None,
         "cve_id": None,
         "cvss_score": None,
     }
@@ -109,6 +119,39 @@ def _extract_indexed_fields(obj: dict[str, Any]) -> dict[str, Any]:
     return extracted
 
 
+def _reject_self_identifying_content(bundle: dict[str, Any]) -> None:
+    """Refuse a bundle that would identify an anonymous submitter anyway.
+
+    ``distribute_anonymously`` is a promise the *server* makes -- "the ISAC still
+    knows; consumers do not" -- and the distribution pipeline can only keep the
+    part of it that it controls, which is the ``created_by_ref`` it rewrites.
+    Everything else in the document is redistributed verbatim, so a bundle
+    carrying the submitter's own ``identity`` SDO delivers their name to every
+    circle member in the same envelope as the anonymised finding.
+
+    Refused rather than stripped, matching how TLP floors are handled: silently
+    removing objects would change the meaning of content the submitter authored,
+    and a bundle whose ``created_by_ref`` no longer resolves is arguably worse
+    than one that never claimed to.
+
+    This closes the structural leak. It cannot cover free text -- a description
+    naming the firm is still the submitter's responsibility, and the validating
+    operator's to catch. That limit is documented rather than papered over.
+    """
+    identities = [
+        obj.get("id", "<no id>")
+        for obj in bundle.get("objects") or []
+        if isinstance(obj, dict) and obj.get("type") == "identity"
+    ]
+    if identities:
+        msg = (
+            "an anonymous submission must not carry identity objects, which are "
+            f"redistributed verbatim and would name the submitter: {', '.join(identities)}. "
+            "Remove them, or submit without distribute_anonymously."
+        )
+        raise SubmissionError(msg)
+
+
 async def replace_submission_objects(
     session: AsyncSession, submission: Submission, bundle: dict[str, Any]
 ) -> int:
@@ -125,6 +168,9 @@ async def replace_submission_objects(
     # Validates every object in the bundle, including ones AIVS does not read,
     # and enforces the extension allowlist.
     validate_bundle(bundle)
+
+    if submission.distribute_anonymously:
+        _reject_self_identifying_content(bundle)
 
     await session.execute(delete(StixObject).where(StixObject.submission_id == submission.id))
 
@@ -153,6 +199,32 @@ async def replace_submission_objects(
         created = _parse_stix_timestamp(created_raw, "created", stix_id)
         modified = _parse_stix_timestamp(modified_raw, "modified", stix_id)
 
+        if modified < created:
+            # STIX requires modified >= created. Beyond validity, a backwards
+            # pair inverts `match[version]=last`, which resolves max(modified):
+            # a submitter's corrected object would lose to their original.
+            msg = (
+                f"object {stix_id} has 'modified' ({modified.isoformat()}) earlier "
+                f"than 'created' ({created.isoformat()})"
+            )
+            raise SubmissionError(msg)
+
+        # Bounds matching the storage columns, checked here so that oversized
+        # member content is a 400 naming the offending object rather than a
+        # database error surfacing as a server fault.
+        for value, limit, field in (
+            (stix_id, _MAX_STIX_ID, "id"),
+            (stix_type, _MAX_STIX_TYPE, "type"),
+        ):
+            if len(value) > limit:
+                msg = f"object '{value[:60]}...' has a '{field}' longer than {limit} characters"
+                raise SubmissionError(msg)
+
+        spec_version = obj.get("spec_version", "2.1")
+        if spec_version != "2.1":
+            msg = f"object {stix_id} declares spec_version {spec_version!r}; AIVS stores 2.1 only"
+            raise SubmissionError(msg)
+
         key = (stix_id, modified)
         if key in seen:
             # The same version twice in one bundle would violate the per-
@@ -166,7 +238,7 @@ async def replace_submission_objects(
             StixObject(
                 stix_id=stix_id,
                 type=stix_type,
-                spec_version=obj.get("spec_version", "2.1"),
+                spec_version=spec_version,
                 created=created,
                 modified=modified,
                 submission_id=submission.id,
@@ -326,8 +398,25 @@ async def apply_transition(
     return submission
 
 
-async def load_submission(session: AsyncSession, submission_id: uuid.UUID) -> Submission | None:
-    """Fetch a submission by id, or ``None``."""
-    return (
-        await session.execute(select(Submission).where(Submission.id == submission_id))
-    ).scalar_one_or_none()
+async def load_submission(
+    session: AsyncSession, submission_id: uuid.UUID, *, for_update: bool = False
+) -> Submission | None:
+    """Fetch a submission by id, or ``None``.
+
+    ``for_update`` takes a row lock, and every route that goes on to *change*
+    the submission must use it. Without it, transitions are an unguarded
+    read-modify-write: two requests both read ``validated``, both pass their
+    guards, and the second UPDATE overwrites the first with no predicate on the
+    state that was observed.
+
+    The case that makes this matter is not hypothetical. Withdrawal is the
+    submitter's only stop button, and "hold on, do not send that" is precisely
+    the moment a submitter's withdraw and an operator's distribute are issued
+    seconds apart. Losing that update distributes content the submitter
+    retracted, and writes a transition history whose ``from_state`` never
+    existed.
+    """
+    query = select(Submission).where(Submission.id == submission_id)
+    if for_update:
+        query = query.with_for_update()
+    return (await session.execute(query)).scalar_one_or_none()

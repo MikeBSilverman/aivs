@@ -16,6 +16,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import select
+from sqlalchemy.exc import DBAPIError, IntegrityError
 
 from aivs_schemas.enums import SubmissionState
 from aivs_schemas.extension.builders import (
@@ -63,17 +64,32 @@ _CLIENT_ERRORS = (
     UnknownExtensionError,
 )
 
+#: Database-level rejections of submitter-supplied content. These are the
+#: caller's problem, not a server fault: a value too long for its column or one
+#: that violates a check constraint means the bundle is malformed. They are
+#: caught alongside _CLIENT_ERRORS so a member's typo returns 400 rather than
+#: 500. The message is deliberately not echoed -- it would expose column names
+#: and constraint definitions.
+_STORAGE_ERRORS = (IntegrityError, DBAPIError)
+
 
 async def _require_visible_submission(
-    session: SessionDep, ctx: AuthenticatedContext, submission_id: uuid.UUID
+    session: SessionDep,
+    ctx: AuthenticatedContext,
+    submission_id: uuid.UUID,
+    *,
+    for_update: bool = False,
 ) -> Submission:
     """Load a submission the caller may see, or 404.
 
     A submission the caller may not see is reported as absent rather than
     forbidden, so that identifiers cannot be probed to learn which other firms
     have filed what.
+
+    ``for_update`` must be set by every route that changes the submission; see
+    ``load_submission`` for why an unlocked read-modify-write loses updates.
     """
-    submission = await load_submission(session, submission_id)
+    submission = await load_submission(session, submission_id, for_update=for_update)
     if submission is None or not can_view_submission(ctx, submission):
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Submission not found")
     return submission
@@ -95,10 +111,15 @@ async def create(
             distribute_anonymously=payload.distribute_anonymously,
             bundle=payload.bundle,
         )
+        await session.commit()
     except _CLIENT_ERRORS as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except _STORAGE_ERRORS as exc:
+        await session.rollback()
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, detail="Submission content rejected by storage"
+        ) from exc
 
-    await session.commit()
     await session.refresh(submission)
     return submission
 
@@ -182,15 +203,20 @@ async def amend(
     session: SessionDep,
 ) -> Submission:
     """Amend a draft. Refused once the submission has left the submitter."""
-    submission = await _require_visible_submission(session, ctx, submission_id)
+    submission = await _require_visible_submission(session, ctx, submission_id, for_update=True)
     try:
         await update_submission(
             session, ctx, submission, changes=payload.model_dump(exclude_none=True)
         )
+        await session.commit()
     except _CLIENT_ERRORS as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except _STORAGE_ERRORS as exc:
+        await session.rollback()
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, detail="Submission content rejected by storage"
+        ) from exc
 
-    await session.commit()
     await session.refresh(submission)
     return submission
 
@@ -202,7 +228,7 @@ async def _transition(
     target: SubmissionState,
     reason: str | None,
 ) -> Submission:
-    submission = await _require_visible_submission(session, ctx, submission_id)
+    submission = await _require_visible_submission(session, ctx, submission_id, for_update=True)
     try:
         await apply_transition(session, ctx, submission, target, reason=reason)
     except _CLIENT_ERRORS as exc:
@@ -267,7 +293,7 @@ async def distribute(
     polling concurrently sees the whole batch or none of it. A ``release_at`` in
     the future produces an embargo that holds without any scheduler running.
     """
-    submission = await _require_visible_submission(session, ctx, submission_id)
+    submission = await _require_visible_submission(session, ctx, submission_id, for_update=True)
 
     require(
         is_system_admin(ctx),

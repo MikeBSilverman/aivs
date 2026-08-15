@@ -20,16 +20,18 @@ members must not be able to draw about each other.
 
 from __future__ import annotations
 
+import datetime as dt
 import uuid
 
 from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 
 from aivs_schemas.enums import AckType, AckVia
 from aivs_schemas.models import AcknowledgmentCreate, AcknowledgmentOut, ReceiptOut
 from aivs_server.audit.log import AuditAction, record
 from aivs_server.auth.deps import AuthenticatedContext, SessionDep
-from aivs_server.auth.policy import can_view_submission_receipts, require
+from aivs_server.auth.policy import can_view_submission_receipts
 from aivs_server.db.models import Acknowledgment, Organization
 from aivs_server.services.submissions import load_submission
 
@@ -48,10 +50,11 @@ async def acknowledge(
 ) -> Acknowledgment:
     """Record that the caller's organisation acknowledged or actioned a submission.
 
-    Repeatable by design: a firm that acknowledges a warning and later actions it
-    should be able to say both, and the timeline of those assertions is part of
-    the record. Only automatic retrieval receipts are collapsed to one row per
-    day, and those are written by the server rather than here.
+    A firm that acknowledges a warning and later actions it can say both --
+    the two types are recorded separately. Each is collapsed to one row per
+    organisation, per submission, per day, so the timeline is preserved without
+    the record being paddable. Repeating the same assertion on the same day is
+    idempotent and returns the existing row.
     """
     submission = await load_submission(session, payload.submission_id)
     if submission is None:
@@ -72,6 +75,7 @@ async def acknowledge(
     if not visible and submission.submitter_org_id != ctx.org_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Submission not found")
 
+    now = dt.datetime.now(dt.UTC)
     acknowledgment = Acknowledgment(
         org_id=ctx.org_id,
         submission_id=submission.id,
@@ -79,9 +83,19 @@ async def acknowledge(
         via=AckVia.API,
         actor_ref=ctx.actor_id,
         note=payload.note,
-        # Null so the daily-dedupe constraint does not apply: explicit member
-        # assertions are deliberately repeatable, unlike retrieval receipts.
-        dedupe_day=None,
+        # Deduplicated per day, like retrieval receipts.
+        #
+        # An earlier version left this null so that explicit assertions would be
+        # freely repeatable. PostgreSQL treats nulls as distinct in a unique
+        # constraint, so that made the constraint inert and let one member write
+        # unbounded rows into two tables that have no delete path -- inflating
+        # the occurrence counts in the submitter's own receipts view, which is
+        # the artefact this data exists to be trusted as.
+        #
+        # One `acknowledged` and one `actioned` per organisation per submission
+        # per day still records the timeline that matters ("when did they first
+        # say they had acted"), without letting the record be padded.
+        dedupe_day=now.date(),
     )
     session.add(acknowledgment)
 
@@ -93,7 +107,24 @@ async def acknowledge(
         resource_id=str(submission.id),
         details={"ack_type": payload.ack_type.value},
     )
-    await session.commit()
+    try:
+        await session.commit()
+    except IntegrityError:
+        # Already asserted today. Idempotent rather than an error: a collector
+        # retrying after a timeout should not see a failure for something it
+        # successfully recorded.
+        await session.rollback()
+        return (
+            await session.execute(
+                select(Acknowledgment).where(
+                    Acknowledgment.org_id == ctx.org_id,
+                    Acknowledgment.submission_id == submission.id,
+                    Acknowledgment.ack_type == payload.ack_type,
+                    Acknowledgment.dedupe_day == now.date(),
+                )
+            )
+        ).scalar_one()
+
     await session.refresh(acknowledgment)
     return acknowledgment
 
@@ -109,13 +140,14 @@ async def receipts(
     have it") without reproducing every individual poll.
     """
     submission = await load_submission(session, submission_id)
-    if submission is None:
+    # Absent and not-permitted are reported identically, matching
+    # `_require_visible_submission` and the acknowledgment gate below. Answering
+    # 403 for a real id and 404 for an invented one would make this endpoint an
+    # existence oracle over the submission namespace for any authenticated
+    # member -- the one thing those sibling paths take care to avoid, and which
+    # this endpoint would otherwise undo for the whole namespace.
+    if submission is None or not can_view_submission_receipts(ctx, submission):
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Submission not found")
-
-    require(
-        can_view_submission_receipts(ctx, submission),
-        "receipts_visible_to_submitter_and_isac_only",
-    )
 
     rows = (
         await session.execute(

@@ -121,6 +121,8 @@ max-returns = 8
 # where they are read, not bound to a variable one line earlier.
 "**/auth/mtls.py" = ["EM101"]
 "**/auth/sessions.py" = ["EM101"]
+# WebhookRejectedError likewise carries a reason token, not a message.
+"**/notify/webhooks.py" = ["EM101", "EM102"]
 # Tests: assert is the point; hardcoded test credentials are not secrets;
 # private-member access is sometimes needed to assert on internals.
 "**/tests/**" = [

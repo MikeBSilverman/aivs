@@ -1,0 +1,53 @@
+# =============================================================================
+# AIVS WireGuard overlay -- MEMBER side.
+#
+# Hand this to a member organisation together with:
+#   * the hub's public key and endpoint,
+#   * the overlay address you allocated them in wg0.conf,
+#   * their pre-shared key (over a channel separate from everything else),
+#   * their client certificate, private key and ca-chain.pem from
+#     deploy/ca/out/clients/<slug>/.
+#
+# They install it as /etc/wireguard/aivs.conf, chmod 0600, and bring it up with
+#     systemctl enable --now wg-quick@aivs
+#
+# THE MEMBER GENERATES THEIR OWN KEY. You should never see it:
+#     wg genkey | tee aivs.key | wg pubkey > aivs.pub
+#     chmod 0600 aivs.key
+# They send you aivs.pub only.
+# =============================================================================
+
+[Interface]
+# The overlay address allocated by the ISAC. Must match the AllowedIPs /32 in
+# the hub's [Peer] block for this member exactly.
+Address = 10.88.0.10/32
+
+# The member's own private key. Never leaves this host.
+PrivateKey = REPLACE_ME_member_private_key
+
+# No DNS line. AIVS is reached by its overlay IP or by a name the member
+# resolves themselves; pushing a DNS server would redirect the member's entire
+# name resolution through the ISAC, which is neither wanted nor proportionate.
+
+
+[Peer]
+# The hub's public key, published by the ISAC.
+PublicKey = REPLACE_ME_hub_public_key
+
+# The pre-shared key for this pair, from the ISAC.
+PresharedKey = REPLACE_ME_preshared_key
+
+# Public address of the AIVS host and its WireGuard port.
+Endpoint = aivs.example-isac.org:51820
+
+# ONLY the AIVS host, as a /32 -- deliberately not 10.88.0.0/24 and emphatically
+# not 0.0.0.0/0. AllowedIPs on this side decides which traffic is ROUTED into
+# the tunnel, so a wide value would pull the member's other traffic through the
+# ISAC's network. A /32 means the tunnel carries AIVS traffic and nothing else.
+AllowedIPs = 10.88.0.1/32
+
+# Keeps the session alive through the member's NAT so the ISAC can reach them
+# for webhook delivery without waiting for them to speak first. 25 seconds is
+# the conventional value: below the ~30s idle timeout of most consumer NATs.
+# Omit it if this peer only ever polls and never receives.
+PersistentKeepalive = 25

@@ -1,0 +1,122 @@
+# =============================================================================
+# Docker build context exclusions.
+#
+# The build context is the whole repository root (the Dockerfile needs uv.lock
+# and the sibling workspace packages), so this file is what keeps key material,
+# local state and tooling caches out of the daemon's hands. Anything listed
+# here cannot end up in an image layer even by accident -- including in an
+# intermediate layer that `docker history` would still expose.
+#
+# The first section mirrors the secret patterns in .gitignore. It is duplicated
+# rather than referenced because the two mechanisms are independent: a file
+# that is git-ignored is still perfectly visible to `docker build`, and a
+# working tree that has been used for local testing WILL contain the CA output
+# directory this excludes.
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Key material and secrets -- deny by default
+# ---------------------------------------------------------------------------
+**/*.pem
+**/*.key
+**/*.crt
+**/*.cer
+**/*.der
+**/*.csr
+**/*.p12
+**/*.pfx
+**/*.jks
+**/*.keystore
+**/*.gpg
+**/*.asc
+**/.env
+**/.env.*
+**/secrets/
+**/*.pat
+
+# The whole CA directory. Its private/ subdirectory holds the issuing key and
+# out/ holds every member's material. None of it belongs anywhere near an
+# image, and the running containers receive what they need through mounts.
+deploy/ca/
+
+# WireGuard configurations contain private keys and pre-shared keys.
+deploy/wireguard/
+
+# ---------------------------------------------------------------------------
+# Deployment material that is mounted, never built in
+# ---------------------------------------------------------------------------
+# nginx configuration reaches the proxy as a read-only bind mount, so a copy
+# inside the application image would only ever be a stale decoy during an
+# incident review.
+deploy/
+docker-compose.yml
+docker-compose.dev.yml
+
+# ---------------------------------------------------------------------------
+# Local state that would bloat or poison the image
+# ---------------------------------------------------------------------------
+# .git carries the full history: every secret ever committed and reverted, and
+# tens of megabytes of objects. It is the single most common way a credential
+# reaches a published image.
+.git/
+.gitignore
+.gitattributes
+.github/
+.claude/
+
+# A host virtualenv contains absolute paths and host-architecture binaries. If
+# it were copied in it could shadow the image's own environment.
+.venv/
+venv/
+env/
+
+**/__pycache__/
+**/*.py[cod]
+**/*.so
+**/*.egg-info/
+build/
+dist/
+.eggs/
+
+# ---------------------------------------------------------------------------
+# Tooling caches and reports
+# ---------------------------------------------------------------------------
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+junit*.xml
+bandit-report.json
+pip-audit-report.json
+semgrep-report.json
+
+# ---------------------------------------------------------------------------
+# Tests and developer material
+#
+# Excluded from the image both to keep it small and to remove code paths: test
+# fixtures generate certificates and construct permissive Settings objects, and
+# none of that should be present in a production container.
+# ---------------------------------------------------------------------------
+**/tests/
+**/conftest.py
+docs/
+demo/
+scripts/
+LICENSE
+
+# ---------------------------------------------------------------------------
+# Editors, OS and logs
+# ---------------------------------------------------------------------------
+.vscode/
+.idea/
+**/*.swp
+.DS_Store
+Thumbs.db
+**/*.log
+pgdata/
+.local/
+.aivs-dev/

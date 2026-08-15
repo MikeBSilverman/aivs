@@ -36,6 +36,7 @@ from aivs_server.middleware import (
     RequestContextMiddleware,
     SecurityHeadersMiddleware,
 )
+from aivs_server.taxii import router as taxii_router
 
 __all__ = ["create_app"]
 
@@ -111,6 +112,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.include_router(meta.public_router)
     app.include_router(meta.router)
+    app.include_router(taxii_router.router)
 
     return app
 

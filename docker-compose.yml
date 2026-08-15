@@ -1,0 +1,447 @@
+# =============================================================================
+# AIVS production stack.
+#
+#   proxy  nginx, terminates mutual TLS. THE ONLY SERVICE WITH A PUBLISHED PORT.
+#   app    the FastAPI application. No published port, by design.
+#   db     PostgreSQL 16. No published port, and no route off the host at all.
+#
+# START HERE:
+#
+#   1. cp deploy/env.example deploy/.env && chmod 0600 deploy/.env
+#      Fill it in -- every value is mandatory and there are no defaults for the
+#      secrets. deploy/.env is git-ignored (the .env pattern in .gitignore).
+#   2. deploy/ca/init-ca.sh --org "Your ISAC"
+#      deploy/ca/server-cert.sh --hostname aivs.your-isac.example
+#   3. docker compose --env-file deploy/.env up -d
+#
+# THE --env-file FLAG IS NOT OPTIONAL. Compose reads variables from a `.env`
+# beside this file by default, which does not exist here; without --env-file
+# every ${VAR:?...} below aborts the command with a message naming the variable
+# it wanted. That is deliberate: a stack that starts with an empty proxy secret
+# would fail closed but confusingly, and failing at `compose up` is clearer.
+# deploy/README.md has the full first-run sequence.
+#
+# -----------------------------------------------------------------------------
+# THE TRUST MODEL THIS FILE IMPLEMENTS
+#
+# The application derives an organisation's identity from HTTP headers. Three
+# stacked controls make that safe; this file is responsible for two of them.
+#
+#   1. THE APP PUBLISHES NO HOST PORT. Look at the `app` service: it has no
+#      `ports:` key. It is reachable only from the `backend` network, and the
+#      only other member of that network is the proxy. Adding a port mapping
+#      there -- even "127.0.0.1:8000:8000" for a quick debug -- makes every
+#      identity header in the system client-settable by anything that can reach
+#      the host. Do not. Use docker-compose.dev.yml if you need that locally.
+#
+#   2. The proxy unconditionally overwrites the identity headers.
+#      See deploy/nginx/snippets/aivs-identity-headers.conf.
+#
+#   3. The proxy presents a shared secret and connects from a fixed address.
+#      AIVS_PROXY_SHARED_SECRET reaches the proxy through an envsubst template
+#      and the app through its environment; AIVS_TRUSTED_PROXY_CIDRS below is
+#      pinned to the proxy's static address on the backend network.
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Shared logging policy.
+#
+# Bounded, so that a log flood -- which an unauthenticated attacker can trigger
+# simply by opening connections -- cannot fill the host's disk and take the
+# database down with it. Route to a real collector in production; the JSON
+# access log format in nginx.conf is shaped for that.
+# -----------------------------------------------------------------------------
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
+# -----------------------------------------------------------------------------
+# Hardening applied identically to all three services.
+#
+#   cap_drop ALL          None of these processes needs a Linux capability.
+#                         nginx would normally want CAP_NET_BIND_SERVICE, which
+#                         is why it listens on 8443 inside the container and
+#                         the port mapping does the translation to 443.
+#   no-new-privileges     Blocks setuid/setgid escalation for the whole process
+#                         tree, so a compromised worker cannot regain what
+#                         cap_drop removed.
+#   read_only             The root filesystem is immutable. Anything that must
+#                         be writable is an explicit tmpfs or a named volume,
+#                         which makes the writable set auditable at a glance.
+#   init                  A real init as PID 1, so orphaned children are reaped
+#                         and SIGTERM is forwarded for a clean shutdown.
+#   restart               Survive a host reboot and a transient crash, but do
+#                         not mask a crash loop -- `unless-stopped` still lets
+#                         an operator stop a service and have it stay stopped.
+# -----------------------------------------------------------------------------
+x-hardening: &hardening
+  read_only: true
+  init: true
+  restart: unless-stopped
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+  logging: *default-logging
+
+
+services:
+
+  # ===========================================================================
+  # Edge proxy -- mutual TLS termination.
+  # ===========================================================================
+  proxy:
+    <<: *hardening
+    # nginx-unprivileged rather than the stock nginx image: it runs as uid 101
+    # from PID 1 with no root master process, which is what lets cap_drop: ALL
+    # work. The stock image starts its master as root to bind port 80/443 and
+    # only then drops to the nginx user.
+    #
+    # Pin by digest for a reviewed deployment:
+    #   docker buildx imagetools inspect nginxinc/nginx-unprivileged:1.27-alpine \
+    #     --format '{{.Manifest.Digest}}'
+    # then set AIVS_PROXY_IMAGE in deploy/.env to the image@sha256:... form.
+    image: ${AIVS_PROXY_IMAGE:-nginxinc/nginx-unprivileged:1.27-alpine}
+    container_name: aivs-proxy
+    user: "101:101"
+
+    # THE ONLY PUBLISHED PORT IN THE STACK.
+    #
+    # Host 443 -> container 8443. AIVS_BIND_ADDRESS defaults to all interfaces;
+    # set it to the host's WireGuard overlay address to make AIVS unreachable
+    # from the public internet entirely, which is the recommended topology (see
+    # deploy/wireguard/ and deploy/nginx/allowlist.conf.example).
+    ports:
+      - "${AIVS_BIND_ADDRESS:-0.0.0.0}:443:8443"
+
+    environment:
+      # Consumed by deploy/nginx/templates/10-proxy-auth.conf.template at
+      # container start. The `:?` form aborts `docker compose up` if it is
+      # unset rather than starting a proxy that authenticates to nothing.
+      AIVS_PROXY_SHARED_SECRET: ${AIVS_PROXY_SHARED_SECRET:?set AIVS_PROXY_SHARED_SECRET in deploy/.env (>= 32 chars)}
+      # Render templates into a tmpfs instead of the default /etc/nginx/conf.d,
+      # which is read-only here. nginx.conf includes /etc/nginx/rendered/*.conf.
+      NGINX_ENVSUBST_OUTPUT_DIR: /etc/nginx/rendered
+      # Substitute ONLY AIVS_-prefixed variables. Without this filter envsubst
+      # also replaces nginx's own $host, $remote_addr and $ssl_* references in
+      # any template with empty strings.
+      NGINX_ENVSUBST_FILTER: "^AIVS_"
+      # NGINX_ENTRYPOINT_QUIET_LOGS is deliberately NOT set. Those logs are how
+      # you find out that the template was not rendered -- the failure is
+      # otherwise visible only as nginx refusing to start with "unknown
+      # variable proxy_shared_secret", which is correct but unhelpfully far
+      # from the cause.
+
+    volumes:
+      # All configuration is read-only. The proxy cannot rewrite its own rules.
+      - ./deploy/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./deploy/nginx/snippets:/etc/nginx/snippets:ro
+      - ./deploy/nginx/templates:/etc/nginx/templates:ro
+      # The shipped example allows private and overlay ranges only. Change this
+      # source path to ./deploy/nginx/allowlist.conf once you have written your
+      # own; the file is mounted unconditionally so that a missing allowlist is
+      # a start-up failure rather than an absent control nobody notices.
+      - ./deploy/nginx/allowlist.conf.example:/etc/nginx/allowlist.conf:ro
+      # CA material: the trust anchor, the server certificate and its key.
+      # Read-only, so a compromised proxy cannot alter the set of CAs it trusts.
+      - ca_material:/etc/nginx/ca:ro
+
+    # Every writable path in the container, enumerated.
+    #   noexec,nosuid,nodev  nothing here should ever be executed or confer
+    #                        privilege; this closes the classic
+    #                        "write a payload to /tmp and run it" step.
+    #   /etc/nginx/rendered  holds the file containing the proxy shared secret.
+    #                        RAM only, owned by and readable only by uid 101,
+    #                        destroyed with the container.
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777
+      - /var/cache/nginx:rw,noexec,nosuid,nodev,size=64m,uid=101,gid=101,mode=0700
+      - /etc/nginx/rendered:rw,noexec,nosuid,nodev,size=1m,uid=101,gid=101,mode=0700
+
+    networks:
+      frontend:
+      backend:
+        # Static address so the application's trusted_proxy_cidrs can be a /32.
+        # With a dynamic address the allowlist would have to be the whole
+        # subnet, and any container that landed on it could then present the
+        # shared secret from an address the app accepts.
+        ipv4_address: 172.29.10.2
+
+    depends_on:
+      app:
+        condition: service_healthy
+
+    # Hits the internal listener on 8080, which requires no client certificate
+    # and is restricted to loopback and the backend subnet by nginx.conf. wget
+    # comes from busybox in the alpine base, so no extra package is installed
+    # just to run this.
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:8080/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+    # Sized for an ISAC: hundreds of member connections, not millions. The limit
+    # matters more than its exact value -- it stops a connection flood against
+    # the proxy from starving the database of memory on the same host.
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 256M
+        reservations:
+          memory: 64M
+    pids_limit: 256
+
+  # ===========================================================================
+  # Application.
+  #
+  # NO `ports:` KEY. See the trust model note at the top of this file.
+  # ===========================================================================
+  app:
+    <<: *hardening
+    build:
+      # The repository root: the build needs uv.lock and the sibling workspace
+      # packages, not just packages/aivs-server.
+      context: .
+      dockerfile: packages/aivs-server/Dockerfile
+    image: ${AIVS_APP_IMAGE:-aivs-server:local}
+    container_name: aivs-app
+    user: "10001:10001"
+
+    environment:
+      # -- Deployment identity ---------------------------------------------
+      AIVS_ENVIRONMENT: production
+      AIVS_INSTANCE_NAME: ${AIVS_INSTANCE_NAME:?set AIVS_INSTANCE_NAME in deploy/.env}
+      AIVS_PUBLIC_BASE_URL: ${AIVS_PUBLIC_BASE_URL:?set AIVS_PUBLIC_BASE_URL in deploy/.env (must be https)}
+
+      # -- Database ---------------------------------------------------------
+      # The password is URL-encoded into a DSN, so it must be URL-safe: generate
+      # it with `openssl rand -base64 36 | tr '+/' '-_'` or use hex. A raw '@'
+      # or '/' in the password silently truncates the host or the database name.
+      AIVS_DATABASE_URL: postgresql+psycopg://${AIVS_DB_USER:-aivs}:${AIVS_DB_PASSWORD:?set AIVS_DB_PASSWORD in deploy/.env}@db:5432/${AIVS_DB_NAME:-aivs}
+
+      # -- Trust boundary ---------------------------------------------------
+      AIVS_PROXY_SHARED_SECRET: ${AIVS_PROXY_SHARED_SECRET:?set AIVS_PROXY_SHARED_SECRET in deploy/.env (>= 32 chars)}
+      # A /32 matching the proxy's static address on the backend network above.
+      # Pydantic parses this as JSON, so the quoting matters. Widening it to the
+      # subnet would let any container on `backend` present the shared secret
+      # from an accepted address.
+      AIVS_TRUSTED_PROXY_CIDRS: '["172.29.10.2/32"]'
+
+      # -- Sessions ---------------------------------------------------------
+      AIVS_SESSION_SECRET: ${AIVS_SESSION_SECRET:?set AIVS_SESSION_SECRET in deploy/.env (>= 32 chars)}
+
+      # -- Logging ----------------------------------------------------------
+      # DEBUG is refused outright in production by validate_production_posture,
+      # because debug logging can record request bodies -- which here are
+      # embargoed pre-CVE advisories.
+      AIVS_LOG_LEVEL: ${AIVS_LOG_LEVEL:-INFO}
+
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,uid=10001,gid=10001,mode=0700
+
+    networks:
+      # `backend` carries proxy -> app. It is not marked internal, which gives
+      # the app the egress it needs for outbound webhook delivery to members.
+      - backend
+      # `data` carries app -> db and is internal: the database has no route off
+      # the host in either direction.
+      - data
+
+    depends_on:
+      db:
+        condition: service_healthy
+
+    # Restates the image's own HEALTHCHECK so that the whole health contract is
+    # visible in one file during a review. `python -m aivs_server.config`
+    # constructs Settings, which runs every validator including
+    # validate_production_posture: a container started with a dev bypass
+    # enabled reports unhealthy instead of quietly serving traffic.
+    healthcheck:
+      test: ["CMD", "python", "-m", "aivs_server.config"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 1G
+        reservations:
+          memory: 256M
+    pids_limit: 512
+
+  # ===========================================================================
+  # Database.
+  #
+  # No published port and only on the `data` network, which is internal: true.
+  # The database is unreachable from the host's network stack and cannot itself
+  # reach anything off the host -- which also means a SQL-injection foothold has
+  # no egress path to exfiltrate over.
+  # ===========================================================================
+  db:
+    <<: *hardening
+    image: ${AIVS_DB_IMAGE:-postgres:16-alpine}
+    container_name: aivs-db
+    # uid/gid 70 is `postgres` in the alpine image. Set explicitly so the
+    # container never starts as root: the official entrypoint would otherwise
+    # begin as root and drop privileges itself, and its chown/chmod steps are
+    # unnecessary here because the image ships /var/lib/postgresql/data with the
+    # right ownership and Docker preserves that when it populates a fresh
+    # named volume.
+    user: "70:70"
+
+    environment:
+      POSTGRES_USER: ${AIVS_DB_USER:-aivs}
+      POSTGRES_PASSWORD: ${AIVS_DB_PASSWORD:?set AIVS_DB_PASSWORD in deploy/.env}
+      POSTGRES_DB: ${AIVS_DB_NAME:-aivs}
+      # --data-checksums detects silent corruption in the audit log, which is
+      # append-only and therefore has no other way of noticing.
+      # scram-sha-256 rather than the historical md5: md5 password verifiers are
+      # crackable offline from a captured hash.
+      POSTGRES_INITDB_ARGS: "--data-checksums --auth-host=scram-sha-256 --auth-local=scram-sha-256"
+      POSTGRES_HOST_AUTH_METHOD: scram-sha-256
+
+    command:
+      - postgres
+      - -c
+      - password_encryption=scram-sha-256
+      # Connection and DDL auditing. AIVS keeps its own append-only audit log in
+      # the database; these cover what happens *around* it, including an
+      # operator connecting with psql or a migration being applied.
+      - -c
+      - log_connections=on
+      - -c
+      - log_disconnections=on
+      - -c
+      - log_statement=ddl
+      - -c
+      - log_min_duration_statement=1000
+      - -c
+      - log_line_prefix=%m [%p] %q%u@%d %a
+      # TLS is off for this hop: it is a private, internal-only bridge network
+      # between two containers on one host, and enabling it would add a
+      # certificate to rotate for no attacker who is not already inside the
+      # network namespace. A multi-host deployment MUST turn it on (mount a
+      # server certificate and add `-c ssl=on -c ssl_cert_file=... `) or carry
+      # the hop over WireGuard.
+      - -c
+      - ssl=off
+      # Bounded so a connection leak cannot exhaust the app's pool budget and
+      # the host's memory at the same time. The app's own pool is 10 + 5
+      # overflow per worker; this leaves room for migrations and one operator.
+      - -c
+      - max_connections=60
+      - -c
+      - shared_buffers=256MB
+
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+    # Writable paths under a read-only root filesystem.
+    # /run/postgresql is where the unix socket goes. In the alpine image
+    # /var/run is a symlink to /run, so this is the same directory the
+    # entrypoint means when it says /var/run/postgresql.
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,uid=70,gid=70,mode=0700
+      - /run/postgresql:rw,noexec,nosuid,nodev,size=8m,uid=70,gid=70,mode=0700
+
+    networks:
+      - data
+
+    healthcheck:
+      # Over the local socket, as the application's own role and database, so
+      # this fails if the role or database is missing rather than merely if the
+      # postmaster is up.
+      test: ["CMD-SHELL", "pg_isready -q -U \"${AIVS_DB_USER:-aivs}\" -d \"${AIVS_DB_NAME:-aivs}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+        reservations:
+          memory: 512M
+    pids_limit: 256
+
+
+# =============================================================================
+# Networks
+#
+# Three, so that reachability is a property of the topology rather than of
+# everyone remembering to configure a firewall.
+#
+#   frontend  proxy <-> the host's published port. Nothing else is on it.
+#   backend   proxy <-> app. Not internal: the app needs egress for outbound
+#             webhook delivery to members. Fixed subnet so the proxy can have a
+#             static address that the app's trusted_proxy_cidrs pins to a /32.
+#   data      app <-> db, internal: true. No gateway, no route off the host,
+#             in either direction.
+#
+# The subnets are explicit rather than auto-allocated because
+# AIVS_TRUSTED_PROXY_CIDRS and the allow/deny rules in nginx.conf's internal
+# listener both name 172.29.10.0/24. If you change it here, change it in both
+# of those places too -- there is no way to derive one from the other.
+# =============================================================================
+networks:
+  frontend:
+    name: aivs_frontend
+    driver: bridge
+
+  backend:
+    name: aivs_backend
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.29.10.0/24
+
+  data:
+    name: aivs_data
+    driver: bridge
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.29.20.0/24
+
+
+# =============================================================================
+# Volumes
+# =============================================================================
+volumes:
+  # PostgreSQL data directory. A plain named volume: nothing on the host needs
+  # to read it, and keeping it out of the bind-mount world means a stray
+  # `rm -rf` in the checkout cannot take the database with it.
+  pgdata:
+    name: aivs_pgdata
+
+  # CA material, mounted read-only into the proxy at /etc/nginx/ca.
+  #
+  # This is a NAMED volume backed by a host directory, rather than a plain bind
+  # mount, for one practical reason: the CA scripts in deploy/ca/ run on the
+  # host (the whole point of the design is that no CA daemon runs), so the host
+  # and the container must see the same files -- while everything else about it
+  # should behave like a managed volume, including being named in
+  # `docker volume ls` and in backup tooling.
+  #
+  # AIVS_CA_DIR must be an ABSOLUTE path to deploy/ca/out, and that directory
+  # must already exist -- deploy/ca/init-ca.sh creates it. Docker will not
+  # create it for you, and will fail the mount if it is missing, which is the
+  # correct outcome: starting the proxy with no trust anchor should not be
+  # possible.
+  ca_material:
+    name: aivs_ca_material
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${AIVS_CA_DIR:?set AIVS_CA_DIR in deploy/.env to the ABSOLUTE path of deploy/ca/out}

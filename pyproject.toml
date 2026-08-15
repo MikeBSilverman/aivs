@@ -104,6 +104,7 @@ select = [
 ignore = [
     "ANN401",  # allow typing.Any where genuinely needed (documented at use site)
     "PLR0913", # argument count -- FastAPI dependency injection legitimately exceeds it
+    "PLR0917", # positional-argument count -- same reason as PLR0913
     "TRY003",  # long messages in raise; our EM rules already cover the real issue
     "SIM108",  # ternary-vs-if is a readability judgement call
 ]
@@ -120,7 +121,12 @@ max-returns = 8
 "**/auth/mtls.py" = ["EM101"]
 # Tests: assert is the point; hardcoded test credentials are not secrets;
 # private-member access is sometimes needed to assert on internals.
-"**/tests/**" = ["S101", "S105", "S106", "S107", "SLF001", "ANN201", "ANN001", "PLR2004", "ARG001"]
+"**/tests/**" = [
+    "S101", "S105", "S106", "S107",  # asserts and fake credentials are the point
+    "SLF001",                        # asserting on internals is legitimate in tests
+    "ANN001", "ANN201", "ANN202",    # fixture factories are inferred, not annotated
+    "PLR2004", "ARG001",
+]
 "**/conftest.py" = ["ANN201", "ANN001", "ARG001"]
 # Alembic scaffolding is generated and follows its own conventions.
 "**/alembic/env.py" = ["ANN", "ERA"]

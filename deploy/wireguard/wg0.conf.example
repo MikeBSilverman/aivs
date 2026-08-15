@@ -1,0 +1,112 @@
+# =============================================================================
+# AIVS WireGuard overlay -- HUB (the AIVS host).
+#
+#     cp deploy/wireguard/wg0.conf.example /etc/wireguard/wg0.conf
+#     chmod 0600 /etc/wireguard/wg0.conf
+#     # fill in the keys, then:
+#     systemctl enable --now wg-quick@wg0
+#
+# Files named deploy/wireguard/*.conf are git-ignored; only *.conf.example is
+# tracked. Never commit a real configuration -- PrivateKey and PresharedKey are
+# both secrets, and a WireGuard private key is unrecoverable if leaked.
+#
+# -----------------------------------------------------------------------------
+# WHAT THIS BUYS, AND WHAT IT DOES NOT
+#
+# The overlay authenticates the HOST. Mutual TLS authenticates the
+# ORGANISATION. They are different questions and neither answers the other:
+# a member's laptop may be a legitimate peer while presenting a certificate
+# that AIVS has revoked, and a valid certificate presented from an unknown host
+# is exactly what a stolen certificate looks like.
+#
+# What the overlay adds is that AIVS's TLS listener stops being reachable from
+# the internet at all. Every pre-authentication attack surface -- the TLS
+# stack, nginx's HTTP parser, the connection-flood limits -- goes behind a
+# Noise handshake that silently drops any packet not from a known peer.
+# WireGuard does not respond to unauthenticated traffic, so a port scan finds
+# nothing.
+#
+# It also gives per-member cut-off that does not depend on a member's public
+# address staying put: delete the [Peer] block and run `wg syncconf`, and that
+# member is gone in the time it takes the command to return.
+#
+# Recommended topology:
+#   * AIVS_BIND_ADDRESS in deploy/.env set to 10.88.0.1, so the proxy publishes
+#     port 443 on the overlay interface only.
+#   * deploy/nginx/allowlist.conf allowing 10.88.0.0/24 and denying all else.
+#   * The host firewall permitting UDP/51820 from anywhere and TCP/443 from
+#     nowhere.
+# =============================================================================
+
+[Interface]
+# The hub's overlay address. Members reach AIVS at https://10.88.0.1 (or at a
+# name that resolves to it -- issue the server certificate with a matching SAN,
+# see deploy/ca/server-cert.sh --san-ip 10.88.0.1).
+Address = 10.88.0.1/24
+
+ListenPort = 51820
+
+# The hub's private key. Generate with:
+#     wg genkey | tee hub.key | wg pubkey > hub.pub
+#     chmod 0600 hub.key
+# Distribute hub.pub to members; it is not secret.
+PrivateKey = REPLACE_ME_hub_private_key
+
+# Prevent the overlay from becoming a transit network. AIVS is the only thing
+# on it, members must not be able to reach each other through the hub, and the
+# hub must not forward overlay traffic into the ISAC's own network.
+#
+# These run as root at interface up/down. Adjust to your firewall (nftables,
+# firewalld) rather than deleting them: without the FORWARD drop the hub is a
+# router between every member network that ever connects.
+PostUp   = iptables -I FORWARD -i %i -j DROP; iptables -I FORWARD -o %i -j DROP
+PostDown = iptables -D FORWARD -i %i -j DROP; iptables -D FORWARD -o %i -j DROP
+
+# Leave IP forwarding off on the host (net.ipv4.ip_forward=0). AIVS terminates
+# every connection itself; nothing needs to be routed through it.
+
+
+# =============================================================================
+# Members.
+#
+# One block per member organisation. Keep the AIVS organisation slug in the
+# comment so this file can be reconciled against the AIVS organisation table
+# during an access review -- the two lists drifting apart is the usual way a
+# departed member keeps its network access.
+#
+# Adding a member:
+#   1. The member runs `wg genkey | tee member.key | wg pubkey` and sends you
+#      ONLY the public key. Their private key never leaves them.
+#   2. Generate a pre-shared key for the pair:  wg genpsk
+#      Send it over a channel separate from the public key exchange.
+#   3. Add the block below, then `wg syncconf wg0 <(wg-quick strip wg0)` --
+#      which applies the change without dropping the other peers, unlike
+#      `wg-quick down && wg-quick up`.
+#
+# Removing a member: delete the block, `wg syncconf` as above, AND revoke their
+# certificate and disable the organisation in AIVS. Removing the peer alone
+# leaves a valid certificate in circulation.
+# =============================================================================
+
+# --- example-bank ------------------------------------------------------------
+[Peer]
+PublicKey = REPLACE_ME_example_bank_public_key
+
+# A pre-shared key adds a symmetric layer on top of the Curve25519 handshake.
+# Its purpose is post-quantum hedging: an adversary recording traffic today and
+# breaking Curve25519 with a future quantum computer still cannot decrypt it
+# without this key. Cheap to add now, impossible to add retroactively.
+#     wg genpsk
+PresharedKey = REPLACE_ME_example_bank_preshared_key
+
+# EXACTLY ONE /32. AllowedIPs is WireGuard's authorisation list as well as its
+# routing table: a packet arriving from this peer with a source address outside
+# this range is dropped. Widening it to 10.88.0.0/24 would let this member
+# spoof every other member's overlay address.
+AllowedIPs = 10.88.0.10/32
+
+# --- member-bank -------------------------------------------------------------
+[Peer]
+PublicKey = REPLACE_ME_member_bank_public_key
+PresharedKey = REPLACE_ME_member_bank_preshared_key
+AllowedIPs = 10.88.0.11/32

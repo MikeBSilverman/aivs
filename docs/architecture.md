@@ -186,9 +186,11 @@ must be correct for identity to be sound.
 
 Identity is keyed on the **SHA-256 fingerprint**, not the subject DN. DNs get
 reissued and reused; fingerprints do not. Revocation is a status flip on
-`client_certificates`, checked on every request, which is why v1 needs no CRL or
-OCSP responder — the authoritative answer is one indexed unique-constraint lookup
-away.
+`client_certificates`, checked on every request, so the enforcement path needs no
+CRL fetch and no OCSP responder — the authoritative answer is one indexed
+unique-constraint lookup away, and it cannot expire. (`deploy/ca/revoke.sh` does
+maintain CRLs, for relying parties outside AIVS; nginx's `ssl_crl` ships
+commented out, because enabling it makes an expired CRL reject every client.)
 
 ### 4.2 Human (analyst portal)
 

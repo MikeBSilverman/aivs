@@ -1,0 +1,107 @@
+# =============================================================================
+# Network-layer allowlist for the AIVS edge listener.
+#
+# Copy to deploy/nginx/allowlist.conf, edit for your deployment, and point the
+# proxy's bind mount at it in docker-compose.yml. The file shipped here is
+# mounted by default so that a fresh checkout starts, but a production ISAC
+# deployment MUST replace it -- see "Choosing a mode" below.
+#
+#   cp deploy/nginx/allowlist.conf.example deploy/nginx/allowlist.conf
+#   # then in docker-compose.yml change the proxy mount to:
+#   #   ./deploy/nginx/allowlist.conf:/etc/nginx/allowlist.conf:ro
+#
+# WHAT THIS IS AND IS NOT
+#
+# This is defence in depth, not the access control. Mutual TLS is the access
+# control: a member is authenticated by a certificate this CA issued, and
+# authorised against the AIVS database. Source addresses are spoofable at the
+# network layer, change when a member re-homes, and are useless for a member
+# behind carrier NAT.
+#
+# What an allowlist genuinely buys is a smaller attack surface for anything
+# that happens BEFORE certificate verification: the TLS stack itself, nginx's
+# HTTP parsing, and the connection-flood limits. A vulnerability in any of
+# those is reachable pre-authentication by anyone who can open a socket. That
+# is worth an IP restriction even though it is worth little on its own.
+#
+# The directives come from ngx_http_access_module. Rules are evaluated in
+# order and the first match wins, so `deny all` must be last.
+#
+# ---------------------------------------------------------------------------
+# CHOOSING A MODE
+# ---------------------------------------------------------------------------
+#
+# Mode A -- WireGuard overlay (RECOMMENDED, and the default for the
+# Aequora-managed hosting mode).
+#
+#   Every member peers into a WireGuard overlay (see deploy/wireguard/) and the
+#   AIVS listener is published only on the overlay interface. Members reach
+#   AIVS at its overlay address; nothing is exposed to the public internet at
+#   all. In that topology $remote_addr is always an overlay address, this file
+#   allows exactly the overlay subnet, and per-member revocation is done by
+#   removing the peer -- which takes effect immediately and does not depend on
+#   a member's public address staying put.
+#
+#   With WireGuard in front, the two controls compose: WireGuard authenticates
+#   the *host*, mTLS authenticates the *organisation*, and neither substitutes
+#   for the other.
+#
+#       allow 10.88.0.0/24;   # the AIVS WireGuard overlay
+#       deny  all;
+#
+# Mode B -- public listener with a member CIDR allowlist.
+#
+#   For an ISAC that must accept connections from member networks directly.
+#   Enumerate each member's egress ranges, one `allow` per line, with the
+#   organisation slug in a comment so the list can be reconciled against the
+#   AIVS organisation table during access reviews. Expect churn: an out-of-date
+#   entry here causes a member outage that looks like a TLS problem.
+#
+# Mode C -- no network restriction (`allow all;`).
+#
+#   Only defensible when a layer in front of nginx already performs the same
+#   filtering (a cloud load balancer security group, a corporate WAF). Write
+#   down which layer, so that the next reviewer does not find an unexplained
+#   `allow all` and assume the control was simply forgotten.
+#
+# ---------------------------------------------------------------------------
+# A DOCKER CAVEAT WORTH TESTING
+# ---------------------------------------------------------------------------
+#
+# $remote_addr must be the real client address for any of this to mean
+# anything. With Docker's default iptables DNAT the source address is
+# preserved, but connections arriving via the userland proxy (docker-proxy,
+# used for loopback publishing on some platforms) are rewritten to the bridge
+# gateway address. If that happens, every client appears to come from
+# 172.x.0.1 and this file silently allows everyone.
+#
+# Verify after deployment, from outside the host:
+#     curl --cert member.crt --key member.key https://aivs.example.org/healthz
+# then confirm the "remote_addr" field in the proxy's JSON access log is the
+# real source address and not a bridge gateway.
+#
+# ---------------------------------------------------------------------------
+# THE DEFAULT SHIPPED BELOW
+# ---------------------------------------------------------------------------
+#
+# Private and overlay ranges only. This is a deliberate middle ground: a fresh
+# checkout works for local and VPN-fronted deployments, and a deployment
+# exposed directly to the internet is blocked until an operator makes a
+# conscious decision. It is NOT a production allowlist for Mode B.
+# =============================================================================
+
+# WireGuard overlay used by deploy/wireguard/wg0.conf.example.
+allow  10.88.0.0/24;
+
+# RFC 1918 / RFC 4193 ranges, for ISAC-internal and VPN-fronted deployments.
+allow  10.0.0.0/8;
+allow  172.16.0.0/12;
+allow  192.168.0.0/16;
+allow  fc00::/7;
+
+# Loopback, for on-host smoke tests.
+allow  127.0.0.1/32;
+allow  ::1/128;
+
+# Everything else. Keep this last; the first matching rule wins.
+deny   all;

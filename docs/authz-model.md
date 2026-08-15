@@ -135,7 +135,7 @@ Revoking an organization's participation is therefore a single field update that
 takes effect on their **next request**. There is no cached grant to invalidate
 and no token to wait out. Certificate revocation (`client_certificates.status`)
 works the same way, checked per request against an indexed unique constraint,
-which is why v1 needs no CRL or OCSP responder.
+which is why the enforcement path needs no CRL fetch or OCSP responder.
 
 ### Circle membership governs collection visibility, even for the ISAC
 

@@ -22,7 +22,6 @@
       "type": "string",
       "pattern": "^[0-9]+\\.[0-9]+$"
     },
-
     "ai_discovery_method": {
       "description": "How the finding was discovered.",
       "type": "string",
@@ -60,13 +59,15 @@
       "description": "Whether the submitter holds a working reproduction. Deliberately a boolean and not the reproduction itself: AIVS distributes warning, not weaponised proof-of-concept.",
       "type": "boolean"
     },
-
     "discovery_scope": {
       "description": "The submitter's relationship to the affected system. AIVS accepts findings in the submitter's own products and estate, and findings about AI systems generally. It is not a channel for undisclosed vulnerabilities in uninvolved third parties' software.",
       "type": "string",
-      "enum": ["own_product", "own_estate", "ai_system"]
+      "enum": [
+        "own_product",
+        "own_estate",
+        "ai_system"
+      ]
     },
-
     "affected_products": {
       "type": "array",
       "minItems": 1,
@@ -74,11 +75,25 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["vendor", "product"],
+        "required": [
+          "vendor",
+          "product"
+        ],
         "properties": {
-          "vendor": { "type": "string", "minLength": 1, "maxLength": 200 },
-          "product": { "type": "string", "minLength": 1, "maxLength": 200 },
-          "version_range": { "type": "string", "maxLength": 200 },
+          "vendor": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "product": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "version_range": {
+            "type": "string",
+            "maxLength": 200
+          },
           "cpe": {
             "description": "CPE 2.3 formatted string, where the submitter can supply one.",
             "type": "string",
@@ -94,7 +109,6 @@
         }
       }
     },
-
     "cvss_v4_vector": {
       "type": "string",
       "pattern": "^CVSS:4\\.0/",
@@ -107,19 +121,27 @@
     },
     "cvss_v4_severity": {
       "type": "string",
-      "enum": ["none", "low", "medium", "high", "critical"]
+      "enum": [
+        "none",
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ]
     },
-
     "embargo_policy": {
       "type": "string",
-      "enum": ["timer", "coordinated", "manual"]
+      "enum": [
+        "timer",
+        "coordinated",
+        "manual"
+      ]
     },
     "embargo_release_at": {
       "description": "STIX timestamp at which the submitter intends this to become releasable. Advisory metadata for the consumer; the authoritative gate is server-side visibility.",
       "type": "string",
       "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?Z$"
     },
-
     "remediation_summary": {
       "type": "string",
       "maxLength": 5000
@@ -127,47 +149,181 @@
     "workaround_available": {
       "type": "boolean"
     },
-
     "cve_status": {
       "description": "Where the finding sits relative to public CVE issuance.",
       "type": "string",
-      "enum": ["pre-cve", "requested", "assigned", "published"]
+      "enum": [
+        "pre-cve",
+        "requested",
+        "assigned",
+        "published"
+      ]
     },
     "cve_id": {
       "type": "string",
       "pattern": "^CVE-[0-9]{4}-[0-9]{4,}$"
     },
-
     "exploit_chain_position": {
       "description": "1-based position of this vulnerability within an exploit chain. The chain itself is expressed with STIX relationships of type 'chains-to' and collected by a grouping with context 'exploit-chain'.",
       "type": "integer",
       "minimum": 1,
       "maximum": 100
+    },
+    "sealed_payload": {
+      "description": "RESERVED for end-to-end encrypted payloads (see docs/encryption-design.md). A JWE General JSON Serialization object (RFC 7516) whose plaintext is the sensitive portion of this finding, wrapped separately to each intended recipient's public key. AIVS infrastructure never holds the content key. Reserved ahead of implementation so that adding it is an additive 1.x change.",
+      "type": "object",
+      "required": [
+        "protected",
+        "recipients",
+        "iv",
+        "ciphertext",
+        "tag"
+      ],
+      "properties": {
+        "protected": {
+          "type": "string"
+        },
+        "unprotected": {
+          "type": "object"
+        },
+        "recipients": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": [
+              "header",
+              "encrypted_key"
+            ],
+            "properties": {
+              "header": {
+                "type": "object",
+                "required": [
+                  "kid"
+                ],
+                "properties": {
+                  "kid": {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  "alg": {
+                    "type": "string",
+                    "enum": [
+                      "ECDH-ES+A256KW"
+                    ]
+                  },
+                  "epk": {
+                    "type": "object"
+                  }
+                }
+              },
+              "encrypted_key": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "aad": {
+          "type": "string"
+        },
+        "iv": {
+          "type": "string"
+        },
+        "ciphertext": {
+          "type": "string"
+        },
+        "tag": {
+          "type": "string"
+        }
+      }
+    },
+    "sealed_payload_recipients": {
+      "description": "RESERVED. The key identifiers the sealed payload was wrapped for, duplicated outside the JWE so a consumer can audit the recipient set without parsing it. This is the transparency property that lets a submitter verify cryptographically, rather than trust, who can decrypt.",
+      "type": "array",
+      "maxItems": 500,
+      "items": {
+        "type": "string",
+        "maxLength": 200
+      }
+    },
+    "sealed_payload_content_type": {
+      "description": "RESERVED. Media type of the sealed payload's plaintext.",
+      "type": "string",
+      "maxLength": 120
     }
   },
-
   "allOf": [
     {
       "$comment": "A CVE identifier is required once the submitter says one has been assigned, and forbidden before that. Prevents a placeholder id being read as authoritative.",
       "if": {
-        "properties": { "cve_status": { "enum": ["assigned", "published"] } },
-        "required": ["cve_status"]
+        "properties": {
+          "cve_status": {
+            "enum": [
+              "assigned",
+              "published"
+            ]
+          }
+        },
+        "required": [
+          "cve_status"
+        ]
       },
-      "then": { "required": ["cve_id"] },
-      "else": { "not": { "required": ["cve_id"] } }
+      "then": {
+        "required": [
+          "cve_id"
+        ]
+      },
+      "else": {
+        "not": {
+          "required": [
+            "cve_id"
+          ]
+        }
+      }
     },
     {
       "$comment": "A timer embargo without a release time is not an embargo.",
       "if": {
-        "properties": { "embargo_policy": { "const": "timer" } },
-        "required": ["embargo_policy"]
+        "properties": {
+          "embargo_policy": {
+            "const": "timer"
+          }
+        },
+        "required": [
+          "embargo_policy"
+        ]
       },
-      "then": { "required": ["embargo_release_at"] }
+      "then": {
+        "required": [
+          "embargo_release_at"
+        ]
+      }
     },
     {
       "$comment": "A CVSS score without its vector cannot be audited or recomputed.",
-      "if": { "required": ["cvss_v4_base_score"] },
-      "then": { "required": ["cvss_v4_vector"] }
+      "if": {
+        "required": [
+          "cvss_v4_base_score"
+        ]
+      },
+      "then": {
+        "required": [
+          "cvss_v4_vector"
+        ]
+      }
+    },
+    {
+      "$comment": "A sealed payload must declare its recipients outside the envelope, so the recipient set is auditable without decrypting.",
+      "if": {
+        "required": [
+          "sealed_payload"
+        ]
+      },
+      "then": {
+        "required": [
+          "sealed_payload_recipients"
+        ]
+      }
     }
   ]
 }

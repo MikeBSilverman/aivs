@@ -1,0 +1,244 @@
+# =============================================================================
+# AIVS private certificate authority.
+#
+# Two tiers: an offline root that signs exactly one thing (the issuing
+# intermediate), and an online intermediate that issues member client
+# certificates and the edge proxy's server certificate.
+#
+# WHY NOT step-ca / Vault / EJBCA FOR THE MVP
+#
+# A CA daemon is another network service that must be patched, monitored,
+# backed up, access-controlled and included in the third-party risk review, and
+# it holds the issuing key in a long-running process. openssl(1) driven by the
+# scripts in this directory holds the issuing key only for the seconds it takes
+# to sign, has no listening socket, and its entire behaviour is auditable by
+# reading this file. AIVS issues on the order of tens of certificates per year;
+# that does not justify a server. Migrating to step-ca later is a matter of
+# importing this intermediate, and the scripts print the SHA-256 fingerprints
+# that AIVS actually keys on, which is the only thing the application cares
+# about.
+#
+# ALL PATHS ARE RELATIVE. Every script in this directory chdir()s to the
+# directory holding this file before invoking openssl. That avoids $ENV::
+# substitution, which OpenSSL expands eagerly when the config is loaded and
+# which therefore makes every command fail if any variable used anywhere in the
+# file happens to be unset.
+#
+# Layout (all mutable state is git-ignored; see the repository .gitignore):
+#
+#   private/              0700  intermediate.key, crlnumber
+#   private/root/         0700  root.key and the root CA's own database
+#   newcerts/                   copies of certificates issued by the intermediate
+#   index.txt, serial           the intermediate CA's database
+#   out/                        public material, mounted read-only into nginx
+#     root/root.crt
+#     intermediate/intermediate.crt
+#     ca-chain.pem              intermediate + root, the member trust anchor
+#     crl/                      root.crl.pem, intermediate.crl.pem, crl-chain.pem
+#     nginx/                    server.crt, server.key
+#     clients/<org-slug>/       member key, CSR, certificate, fingerprint
+# =============================================================================
+
+# Subject DNs are supplied on the command line with -subj by the scripts, which
+# validate their inputs first (see the slug and hostname checks in
+# issue-client.sh and server-cert.sh -- a DN component containing '/' or a
+# newline would otherwise let a caller inject additional RDNs).
+#
+# `prompt = no` with an empty DN section means openssl never falls back to
+# interactive prompting: a command that omitted -subj would produce an empty
+# subject, which the `commonName = supplied` policy then rejects at signing
+# time. The alternative, prompt = yes, hangs a non-interactive pipeline on
+# stdin instead.
+[ req ]
+default_bits        = 4096
+default_md          = sha384
+string_mask         = utf8only
+utf8                = yes
+prompt              = no
+distinguished_name  = req_distinguished_name
+
+[ req_distinguished_name ]
+
+
+# =============================================================================
+# CA sections
+# =============================================================================
+
+[ ca ]
+# `openssl ca` requires this, but every script passes an explicit -name, so the
+# default is never what actually gets used. It points at the issuing CA because
+# that is the less dangerous of the two to reach by accident.
+default_ca = CA_intermediate
+
+
+# -----------------------------------------------------------------------------
+# Root CA. Signs the intermediate and root CRLs. Nothing else, ever.
+#
+# Its private key belongs on offline media; init-ca.sh prints instructions for
+# moving it there. A root that stays on the issuing host provides no more
+# assurance than a single-tier CA would.
+# -----------------------------------------------------------------------------
+[ CA_root ]
+dir               = ./private/root
+certificate       = ./out/root/root.crt
+private_key       = $dir/root.key
+new_certs_dir     = $dir/newcerts
+database          = $dir/index.txt
+serial            = $dir/serial
+crlnumber         = $dir/crlnumber
+
+default_days      = 3650
+default_crl_days  = 180
+default_md        = sha384
+
+# Do not carry the CSR's subject through verbatim; apply the policy below.
+preserve          = no
+policy            = policy_strict
+email_in_dn       = no
+
+# 64+ bits of entropy in the serial number. A predictable sequential serial is
+# what made the SHA-1 chosen-prefix attacks against public CAs practical; there
+# is no reason to reproduce that here even with SHA-384.
+rand_serial       = yes
+
+name_opt          = ca_default
+cert_opt          = ca_default
+
+# NEVER `copy`. With copy_extensions = copy, whoever writes the CSR chooses its
+# own extensions -- including basicConstraints CA:TRUE, which would turn a
+# member certificate into a CA able to mint identities for every other member.
+# Extensions come from this file and from nowhere else.
+copy_extensions   = none
+
+x509_extensions   = v3_intermediate_ca
+crl_extensions    = crl_ext
+
+
+# -----------------------------------------------------------------------------
+# Issuing (intermediate) CA. Signs member client certificates and the edge
+# proxy's server certificate. Its key lives on the AIVS host, 0600, and is the
+# key an attacker with host access would steal -- which is why the root exists
+# and why re-issuing under a fresh intermediate is a recoverable event.
+# -----------------------------------------------------------------------------
+[ CA_intermediate ]
+dir               = .
+certificate       = ./out/intermediate/intermediate.crt
+private_key       = ./private/intermediate.key
+new_certs_dir     = ./newcerts
+database          = ./index.txt
+serial            = ./serial
+crlnumber         = ./private/crlnumber
+
+# One year for member certificates. Short enough that a lost certificate whose
+# revocation was somehow missed still ages out inside an annual access-review
+# cycle; long enough that an ISAC member is not renewing every quarter.
+default_days      = 365
+default_crl_days  = 30
+default_md        = sha384
+
+preserve          = no
+policy            = policy_member
+email_in_dn       = no
+rand_serial       = yes
+
+name_opt          = ca_default
+cert_opt          = ca_default
+copy_extensions   = none
+
+x509_extensions   = v3_client_cert
+crl_extensions    = crl_ext
+
+
+# =============================================================================
+# Naming policies
+# =============================================================================
+
+# Root signing the intermediate: country and organisation must be identical to
+# the root's own, so a stray CSR from elsewhere cannot be signed into a
+# subordinate CA by a mistyped command.
+[ policy_strict ]
+countryName             = match
+stateOrProvinceName     = optional
+localityName            = optional
+organizationName        = match
+organizationalUnitName  = optional
+commonName              = supplied
+emailAddress            = optional
+
+# Intermediate signing member and server certificates. Members are distinct
+# organisations, so organizationName cannot be `match`; it is `supplied` so that
+# every issued certificate carries an accountable organisation name.
+#
+# Note that AIVS does not authorise on any of these fields. Identity is the
+# SHA-256 fingerprint of the certificate, registered against an organisation in
+# the AIVS database. The DN exists for human legibility in audit logs and for
+# the operator reconciling a certificate to a member.
+[ policy_member ]
+countryName             = optional
+stateOrProvinceName     = optional
+localityName            = optional
+organizationName        = supplied
+organizationalUnitName  = optional
+commonName              = supplied
+emailAddress            = optional
+
+
+# =============================================================================
+# Certificate extensions
+# =============================================================================
+
+# Root CA self-signed certificate.
+[ v3_root_ca ]
+subjectKeyIdentifier    = hash
+authorityKeyIdentifier  = keyid:always,issuer
+# critical: a relying party that does not understand basicConstraints must
+# reject the certificate rather than treat it as an end-entity certificate.
+basicConstraints        = critical, CA:true
+# A CA key signs certificates and CRLs and does nothing else. Omitting
+# digitalSignature here means this key cannot be used to terminate a TLS
+# session even if it were somehow installed on a server.
+keyUsage                = critical, keyCertSign, cRLSign
+
+# Issuing CA, signed by the root.
+[ v3_intermediate_ca ]
+subjectKeyIdentifier    = hash
+authorityKeyIdentifier  = keyid:always,issuer
+# pathlen:0 -- this CA may issue end-entity certificates and may NOT issue
+# further CAs. Combined with nginx's ssl_verify_depth 2, there is no shape of
+# chain that a stolen intermediate could use to introduce a sub-CA.
+basicConstraints        = critical, CA:true, pathlen:0
+keyUsage                = critical, keyCertSign, cRLSign
+
+# Member client certificates.
+[ v3_client_cert ]
+basicConstraints        = critical, CA:FALSE
+# digitalSignature is what the TLS CertificateVerify message needs, and is the
+# only bit an ECDSA client certificate genuinely uses. keyEncipherment is
+# retained because members issuing RSA keys (see --key-alg rsa) need it for the
+# TLS 1.2 RSA key-transport suites some appliances still fall back to, and
+# because a number of enterprise validators reject client certificates that
+# lack it. It is inert for an ECDSA key rather than harmful.
+keyUsage                = critical, digitalSignature, keyEncipherment
+# clientAuth only. A member certificate must not be usable to stand up a server
+# that other members would then trust as AIVS.
+extendedKeyUsage        = clientAuth
+subjectKeyIdentifier    = hash
+authorityKeyIdentifier  = keyid,issuer
+# No subjectAltName: nothing performs name-based matching on a client
+# certificate here. AIVS matches the SHA-256 fingerprint, and adding a SAN
+# would create a second, weaker identifier for someone to key on later.
+
+# Edge proxy server certificate. subjectAltName is appended at signing time
+# from an -extfile generated by server-cert.sh, because it varies per
+# deployment and every modern client ignores the CN.
+[ v3_server_cert ]
+basicConstraints        = critical, CA:FALSE
+keyUsage                = critical, digitalSignature, keyEncipherment
+extendedKeyUsage        = serverAuth
+subjectKeyIdentifier    = hash
+authorityKeyIdentifier  = keyid,issuer
+
+# CRL extensions. authorityKeyIdentifier lets a relying party tie the CRL to
+# the issuing certificate even across a CA key rollover.
+[ crl_ext ]
+authorityKeyIdentifier  = keyid:always

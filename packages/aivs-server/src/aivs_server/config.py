@@ -51,8 +51,11 @@ class Settings(BaseSettings):
     #: Displayed in the portal and used as the STIX identity name for the
     #: hosting ISAC. Each ISAC instance sets its own.
     instance_name: str = Field(default="AIVS", min_length=1, max_length=120)
-    #: Public base URL, used to build TAXII resource URLs and the extension
-    #: definition's schema location. Must be https outside dev.
+    #: Public base URL, used to build TAXII resource URLs. Must be https
+    #: outside dev. Note this does NOT set the STIX extension definition's
+    #: schema location: that identifier is shared by every AIVS deployment, so
+    #: that one member's TIP recognises the extension regardless of which ISAC
+    #: instance the content came from.
     public_base_url: str = Field(default="https://localhost", min_length=1)
 
     # -- Database ---------------------------------------------------------

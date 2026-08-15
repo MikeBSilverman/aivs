@@ -1,0 +1,167 @@
+# =============================================================================
+#  ####################################################################
+#  #                                                                  #
+#  #   DEVELOPMENT OVERRIDE -- NEVER USE THIS IN PRODUCTION.           #
+#  #                                                                  #
+#  #   This file deliberately dismantles the controls that make AIVS   #
+#  #   safe. It publishes the application's port to the host, which    #
+#  #   means ANY process that can reach the host can set its own       #
+#  #   X-Client-Cert and X-Proxy-Auth headers and become any member    #
+#  #   organisation. It mounts source code over the image. It turns    #
+#  #   on error detail in HTTP responses and DEBUG logging, which      #
+#  #   records request bodies -- and in AIVS request bodies are        #
+#  #   embargoed pre-CVE advisories.                                   #
+#  #                                                                  #
+#  #   It is safe ONLY on a developer workstation, with test data.     #
+#  #                                                                  #
+#  ####################################################################
+#
+# Compose does NOT apply this automatically. It is used only when named:
+#
+#     docker compose --env-file deploy/.env \
+#       -f docker-compose.yml -f docker-compose.dev.yml up
+#
+# The base file alone is the production configuration. If you find a host that
+# has this file in its COMPOSE_FILE environment variable or in a systemd unit,
+# treat it as an incident: that host has no working identity boundary.
+#
+# The single strongest signal that this override is active is
+# AIVS_ENVIRONMENT=dev below. The application's validate_production_posture
+# only permits the bypasses set here when environment != production, so a
+# production deployment cannot accidentally inherit them without also
+# announcing itself as dev.
+# =============================================================================
+
+services:
+
+  proxy:
+    # 8443 rather than 443, so a dev stack does not need a privileged port and
+    # cannot collide with a real deployment on the same machine. Reach it at
+    # https://localhost:8443 with a client certificate issued by your local CA.
+    ports:
+      - "127.0.0.1:8443:8443"
+
+  app:
+    # ---------------------------------------------------------------------
+    # THE DANGEROUS PART.
+    #
+    # In production the app has no `ports:` key at all: it is reachable only
+    # from the proxy, over the compose-internal backend network. That is the
+    # first of the three controls that make header-derived identity safe.
+    # Publishing it here removes that control entirely -- anything that can
+    # reach 127.0.0.1:8000 can present whatever identity headers it likes and,
+    # with dev_trust_unauthenticated_proxy below, will be believed.
+    #
+    # Bound to 127.0.0.1 rather than 0.0.0.0 so it is at least not exposed to
+    # the developer's local network, coffee shop wifi included.
+    # ---------------------------------------------------------------------
+    ports:
+      - "127.0.0.1:8000:8000"
+
+    # Source mounted over the installed package for hot reload. The image's
+    # copy is non-editable and lives in site-packages, so PYTHONPATH has to put
+    # these first. Read-only mounts: the container has no business editing your
+    # working tree, and a container-created file would land in your checkout
+    # owned by the container's uid.
+    volumes:
+      - ./packages/aivs-server/src:/src/aivs-server:ro
+      - ./packages/aivs-schemas/src:/src/aivs-schemas:ro
+
+    # Overrides the image's CMD (`aivs-server`, which serves without a
+    # reloader). uvicorn --reload watches the mounted source and restarts on
+    # change; it needs a writable filesystem for its reloader bookkeeping,
+    # hence read_only: false below.
+    #
+    # `aivs_server.main:create_app` is a FACTORY, hence --factory below: it is
+    # called per worker so each one builds its own app from its own Settings.
+    # Interpolated from AIVS_DEV_ASGI_APP so a developer can follow it if the
+    # factory moves, without editing this file.
+    #
+    # AIVS_DEV_ASGI_APP is read by Compose only and is never passed into the
+    # container -- Settings has extra="forbid", so an unrecognised AIVS_*
+    # variable in the container's environment would stop the app from starting.
+    command:
+      - uvicorn
+      - ${AIVS_DEV_ASGI_APP:-aivs_server.main:create_app}
+      - --factory
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --reload
+      - --reload-dir
+      - /src/aivs-server
+      - --reload-dir
+      - /src/aivs-schemas
+
+    environment:
+      # Unlocks every bypass below. In production this is `production` and the
+      # application refuses to start with any of them enabled.
+      AIVS_ENVIRONMENT: dev
+
+      # Put the mounted source ahead of the installed package. PYTHONSAFEPATH=1
+      # in the image means the cwd is not on sys.path, so this is the only way
+      # the mounts take effect -- which is deliberate: hot reload has to be
+      # asked for explicitly.
+      PYTHONPATH: /src/aivs-server:/src/aivs-schemas
+
+      # Accept identity headers WITHOUT a valid X-Proxy-Auth, so you can curl
+      # the app directly on 127.0.0.1:8000 with a hand-written X-Client-Cert.
+      # This is the entire authentication boundary, switched off.
+      AIVS_DEV_TRUST_UNAUTHENTICATED_PROXY: "true"
+
+      # Return exception detail in HTTP responses. Leaks stack traces, SQL and
+      # internal paths to whoever asks.
+      AIVS_DEV_EXPOSE_ERROR_DETAIL: "true"
+
+      # Allow webhook delivery to private and loopback addresses so you can
+      # point a subscription at a local listener. In a real deployment this is
+      # an SSRF hole: it lets a member's webhook URL reach the cloud metadata
+      # service and the internal network.
+      AIVS_DEV_ALLOW_PRIVATE_WEBHOOK_TARGETS: "true"
+
+      # http, because a dev stack has no real certificate for the app's own
+      # base URL. Production validation requires https.
+      AIVS_PUBLIC_BASE_URL: http://localhost:8443
+
+      # Records request bodies. Fine for synthetic test advisories, unacceptable
+      # for real embargoed ones.
+      AIVS_LOG_LEVEL: DEBUG
+
+    # uvicorn's reloader writes state and the mounted source needs a writable
+    # /src for its import bookkeeping in some configurations. Relaxed here and
+    # ONLY here.
+    read_only: false
+
+    # Restart policy off: in development a crash should stay crashed and
+    # visible in `docker compose logs`, not disappear into a restart loop.
+    restart: "no"
+
+  db:
+    # Published so you can attach psql, pgAdmin or a migration tool from the
+    # host. Bound to loopback. In production the database is on an
+    # `internal: true` network with no published port and no route off the host
+    # at all -- do not copy this stanza anywhere.
+    ports:
+      - "127.0.0.1:5432:5432"
+
+    # Every statement, not just DDL. Extremely noisy and it logs parameter
+    # values, so it must never be enabled where real advisory content flows.
+    command:
+      - postgres
+      - -c
+      - password_encryption=scram-sha-256
+      - -c
+      - log_connections=on
+      - -c
+      - log_disconnections=on
+      - -c
+      - log_statement=all
+      - -c
+      - log_min_duration_statement=0
+      - -c
+      - max_connections=60
+      - -c
+      - shared_buffers=128MB
+
+    restart: "no"

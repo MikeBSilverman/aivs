@@ -37,10 +37,19 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from aivs_schemas.enums import CertStatus, CircleRole, OrgStatus, OrgType
+from aivs_schemas.enums import (
+    TLP,
+    CertStatus,
+    CircleRole,
+    DiscoveryScope,
+    OrgStatus,
+    OrgType,
+    SubmissionState,
+)
 from aivs_server.config import Settings
 from aivs_server.db import models
 from aivs_server.db.base import Base
+from aivs_server.taxii.resources import truncate_to_taxii_precision
 
 # ---------------------------------------------------------------------------
 # Test configuration
@@ -443,6 +452,114 @@ async def join_circle(session: AsyncSession):
         return membership
 
     return _join
+
+
+@pytest.fixture
+async def make_collection(session: AsyncSession):
+    """Factory creating a TAXII collection over a circle."""
+
+    async def _make(
+        circle: models.Circle,
+        *,
+        title: str | None = None,
+        can_read: bool = True,
+        can_write: bool = True,
+        is_active: bool = True,
+    ) -> models.TaxiiCollection:
+        collection = models.TaxiiCollection(
+            circle_id=circle.id,
+            title=title or f"{circle.name} feed",
+            description=f"Content shared into {circle.name}",
+            can_read=can_read,
+            can_write=can_write,
+            is_active=is_active,
+        )
+        session.add(collection)
+        await session.commit()
+        await session.refresh(collection)
+        return collection
+
+    return _make
+
+
+@pytest.fixture
+async def publish(session: AsyncSession):
+    """Factory that puts a STIX object into a circle, end to end.
+
+    Creates a submission, a STIX object, and the distribution row that makes it
+    visible -- the same three records the distribution service writes. Tests use
+    this rather than driving the workflow API so that a TAXII test fails for
+    TAXII reasons rather than for a change in the submission endpoints.
+
+    ``date_added`` is settable so a test can place content in the future, which
+    is exactly how an embargoed object is represented.
+    """
+
+    async def _publish(
+        org: models.Organization,
+        circle: models.Circle,
+        *,
+        stix_id: str | None = None,
+        stix_type: str = "vulnerability",
+        name: str = "Test finding",
+        modified: dt.datetime | None = None,
+        date_added: dt.datetime | None = None,
+        state: SubmissionState = SubmissionState.DISTRIBUTED,
+        submission: models.Submission | None = None,
+    ) -> tuple[models.Submission, models.StixObject, models.Distribution]:
+        now = dt.datetime.now(dt.UTC)
+        modified = modified or now
+        # Millisecond precision, matching what the distribution service must do.
+        date_added = truncate_to_taxii_precision(date_added or now)
+        stix_id = stix_id or f"{stix_type}--{uuid.uuid4()}"
+
+        if submission is None:
+            submission = models.Submission(
+                submitter_org_id=org.id,
+                state=state,
+                tlp=TLP.AMBER,
+                discovery_scope=DiscoveryScope.AI_SYSTEM,
+                title=name,
+                distributed_at=now if state is SubmissionState.DISTRIBUTED else None,
+            )
+            session.add(submission)
+            await session.commit()
+            await session.refresh(submission)
+
+        stix_object = models.StixObject(
+            stix_id=stix_id,
+            modified=modified,
+            created=modified,
+            type=stix_type,
+            spec_version="2.1",
+            submission_id=submission.id,
+            name=name,
+            raw={
+                "type": stix_type,
+                "spec_version": "2.1",
+                "id": stix_id,
+                "created": modified.isoformat().replace("+00:00", "Z"),
+                "modified": modified.isoformat().replace("+00:00", "Z"),
+                "name": name,
+            },
+        )
+        session.add(stix_object)
+        await session.commit()
+        await session.refresh(stix_object)
+
+        distribution = models.Distribution(
+            stix_object_id=stix_object.id,
+            circle_id=circle.id,
+            submission_id=submission.id,
+            date_added=date_added,
+        )
+        session.add(distribution)
+        await session.commit()
+        await session.refresh(distribution)
+
+        return submission, stix_object, distribution
+
+    return _publish
 
 
 @pytest.fixture(scope="session")

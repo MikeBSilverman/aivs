@@ -40,6 +40,7 @@ from aivs_server.middleware import (
     SecurityHeadersMiddleware,
     security_headers_for,
 )
+from aivs_server.notify.dispatcher import run_dispatcher
 from aivs_server.portal import routes as portal_routes
 from aivs_server.services.embargo import sweep_due_embargoes
 from aivs_server.taxii import router as taxii_router
@@ -100,13 +101,22 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # than on a member's first request.
     get_engine()
 
-    sweeper = asyncio.create_task(_embargo_sweeper(settings))
+    background = [
+        asyncio.create_task(_embargo_sweeper(settings)),
+        # Drains queued member notifications. Separate from the sweeper because
+        # they fail independently: a dispatcher that dies must not stop embargoes
+        # being marked released, and a sweeper that dies must not stop
+        # already-visible content being announced.
+        asyncio.create_task(run_dispatcher(settings)),
+    ]
     try:
         yield
     finally:
-        sweeper.cancel()
-        with suppress(asyncio.CancelledError):
-            await sweeper
+        for task in background:
+            task.cancel()
+        for task in background:
+            with suppress(asyncio.CancelledError):
+                await task
         await dispose_engine()
         logger.info("stopped AIVS")
 

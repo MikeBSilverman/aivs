@@ -11,6 +11,7 @@ of every target circle.
 
 from __future__ import annotations
 
+import datetime as dt
 import uuid
 from typing import Annotated
 
@@ -46,6 +47,10 @@ from aivs_server.db.models import (
     StixObject,
     Submission,
     SubmissionTransition,
+)
+from aivs_server.notify.events import (
+    circle_ids_for_submission,
+    queue_visibility_notifications,
 )
 from aivs_server.services.distribution import DistributionError, distribute_submission
 from aivs_server.services.embargo import EmbargoError, extend_embargo, release_embargo_now
@@ -324,10 +329,20 @@ async def distribute(
         await apply_transition(
             session, ctx, submission, SubmissionState.DISTRIBUTED, reason=payload.reason
         )
+        # Queued in the same transaction as the visibility rows. Nothing is
+        # queued for an embargoed distribution: the content is not readable yet,
+        # so the notification goes out when the embargo releases instead.
+        await queue_visibility_notifications(
+            session,
+            submission_id=submission.id,
+            circle_ids=list(payload.circle_ids),
+            visible_at=payload.release_at or dt.datetime.now(dt.UTC),
+        )
     except _CLIENT_ERRORS as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
-    # One commit for the visibility rows, the state change, and the audit trail.
+    # One commit for the visibility rows, the state change, the notifications,
+    # and the audit trail.
     await session.commit()
     await session.refresh(submission)
     return submission
@@ -350,6 +365,15 @@ async def release_embargo(
 
     try:
         await release_embargo_now(session, ctx, submission_id=submission.id, reason=payload.reason)
+        # Early release is the second moment content becomes visible, and the
+        # one where telling members promptly matters most: the reason to release
+        # early is that something is being exploited now.
+        await queue_visibility_notifications(
+            session,
+            submission_id=submission.id,
+            circle_ids=await circle_ids_for_submission(session, submission.id),
+            visible_at=dt.datetime.now(dt.UTC),
+        )
         await session.commit()
     except _CLIENT_ERRORS as exc:
         await session.rollback()

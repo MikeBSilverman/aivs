@@ -526,6 +526,11 @@ class WebhookRegister(BaseModel):
 
     url: str = Field(min_length=1, max_length=2000)
     #: Events to receive. Empty means all of them.
+    #:
+    #: One event exists today: ``submission.visible``, sent when content becomes
+    #: readable by this organisation. It is deliberately contentless -- it names
+    #: the submission and collection and nothing else, so the member polls TAXII
+    #: to collect. See ``notify.events`` for why.
     events: list[str] = Field(default_factory=list, max_length=32)
 
 

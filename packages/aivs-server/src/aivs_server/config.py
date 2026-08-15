@@ -127,6 +127,9 @@ class Settings(BaseSettings):
     #: Allow webhook delivery to private/loopback addresses. Test fixtures only;
     #: in any real deployment this being true is an SSRF hole.
     dev_allow_private_webhook_targets: bool = False
+    #: How often the dispatcher drains queued notifications. Short, because the
+    #: whole point of pushing is that a member hears sooner than their next poll.
+    webhook_dispatch_interval_seconds: int = Field(default=10, ge=1, le=600)
 
     # -- Embargo sweeper ----------------------------------------------------
     embargo_sweep_interval_seconds: int = Field(default=30, ge=5, le=3600)

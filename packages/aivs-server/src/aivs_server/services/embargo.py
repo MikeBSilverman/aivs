@@ -45,6 +45,10 @@ from aivs_schemas.enums import EmbargoPolicy, EmbargoStatus
 from aivs_server.audit.log import AuditAction, record
 from aivs_server.auth.context import AuthContext
 from aivs_server.db.models import Distribution, Embargo
+from aivs_server.notify.events import (
+    circle_ids_for_submission,
+    queue_visibility_notifications,
+)
 from aivs_server.taxii.resources import truncate_to_taxii_precision
 
 __all__ = [
@@ -283,6 +287,16 @@ async def sweep_due_embargoes(session: AsyncSession, *, now: dt.datetime | None 
     for embargo in due:
         embargo.status = EmbargoStatus.RELEASED
         embargo.released_at = embargo.release_at
+        # The third moment content becomes visible, and the one nobody is
+        # watching: a timed release happens without an operator present, so if
+        # the sweeper does not queue the notification, nothing does.
+        await queue_visibility_notifications(
+            session,
+            submission_id=embargo.submission_id,
+            circle_ids=await circle_ids_for_submission(session, embargo.submission_id),
+            visible_at=embargo.release_at or now,
+            now=now,
+        )
         await record(
             session,
             action=AuditAction.EMBARGO_RELEASED,

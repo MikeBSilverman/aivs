@@ -20,16 +20,20 @@ the ISAC.
 
 ---
 
-## 0. Why this agreement carries more weight than it used to
+## 0. Draft the protections expressly; do not inherit them
 
-The federal Cybersecurity Information Sharing Act of 2015 provided the liability
-protections, antitrust safe harbour, and FOIA exemptions that much of US private
-sector cyber threat sharing has been built on for a decade.
+The agreement should stand on its own terms rather than resting on statutory
+protection that may or may not apply to a given member, in a given jurisdiction,
+at a given time. That is ordinary drafting hygiene, and it is what makes the
+same outline usable by an ISAC outside the US.
 
-**Those protections lapsed on 30 September 2025.** Renewal legislation was
-pending as of early 2026. **Counsel must verify the current statutory status
-before this agreement is executed, and the agreement should be drafted so that it
-does not silently depend on protections that may not exist.**
+> **Statutory context, for counsel to verify rather than assume.** In the US, the
+> Cybersecurity Information Sharing Act of 2015 supplied the liability
+> protections, antitrust safe harbour, and FOIA exemptions much of the sector's
+> sharing was built on. Those protections lapsed on 30 September 2025 and
+> renewal was pending as of early 2026. Whether they are in force, and whether
+> they reach this arrangement, is a question for the hosting ISAC's counsel — not
+> an assumption the platform or this outline makes on their behalf.
 
 Practically, that means:
 

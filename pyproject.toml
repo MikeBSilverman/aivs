@@ -48,6 +48,10 @@ dev = [
     "pip-audit>=2.7",
     "types-python-dateutil",
     "types-jsonschema",
+    # Supply chain. A CycloneDX SBOM is what a member firm's third-party risk
+    # review asks for first, and generating it from the locked runtime
+    # environment is the only version of it that matches what actually ships.
+    "cyclonedx-bom>=7.3",
 ]
 
 # ---------------------------------------------------------------------------

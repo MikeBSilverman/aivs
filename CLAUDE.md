@@ -76,13 +76,32 @@ uv run ruff format --check .
 uv run ruff check .
 uv run mypy packages/aivs-schemas/src packages/aivs-server/src packages/aivs-client/src
 uv run bandit -c pyproject.toml -r packages/*/src
-uv run pip-audit --skip-editable --strict
+uv export --no-emit-workspace --format requirements-txt -o /tmp/audit.txt
+uv run pip-audit --strict --requirement /tmp/audit.txt
 uv run alembic -c packages/aivs-server/alembic.ini check     # no model/migration drift
 uv run pytest -q
 ```
 
 `azure-pipelines.yml` runs the same set in the same order. Fast checks first, so
 a formatting mistake fails in a minute rather than after the full suite.
+
+**Audit the lockfile, not the installed environment.** The gate was
+`pip-audit --skip-editable --strict`, which in a uv workspace can only ever
+fail: uv installs the three workspace members as editable, and `--strict` counts
+every skipped distribution as an error. It sat red without anyone noticing
+because the flags read as if they cooperated. Exporting with
+`--no-emit-workspace` drops our own packages — which have no advisories to check
+anyway — and audits every third-party pin, so `--strict` means what it says. It
+is also the same source of truth the SBOM is built from, so the set of
+dependencies the gate cleared is exactly the set the SBOM describes.
+
+**The SBOM is a release artifact, and it is reproducible.**
+`scripts/generate-sbom.sh` builds a runtime-only environment from the frozen
+lock and emits CycloneDX 1.6; an unchanged lockfile produces byte-identical
+output, so two releases can be diffed to see precisely which dependency moved.
+CI also scans the built image with syft, because a Python-environment scan
+cannot see the Debian base layer and that layer is most of what a member firm's
+scanner will flag. Neither document subsumes the other; publish both.
 
 **Coverage is instrumented for greenlet.** `[tool.coverage.run]` sets
 `concurrency = ["greenlet", "thread"]`. Without it coverage.py loses its trace

@@ -99,9 +99,20 @@ stages:
 
           - script: |
               set -euo pipefail
-              # Editable workspace members have no published advisories to check;
-              # everything else is audited against the advisory database.
-              uv run pip-audit --skip-editable --strict
+              # Audited from the lockfile, not from the installed environment.
+              #
+              # `--skip-editable --strict` was self-contradictory here: uv
+              # installs the three workspace members as editable, --strict
+              # treats every skipped distribution as a failure, and so the gate
+              # could only ever fail. Exporting with --no-emit-workspace drops
+              # our own packages -- which have no published advisories to check
+              # anyway -- and leaves every third-party pin, so --strict now
+              # means what it says: nothing went unaudited.
+              #
+              # Same source of truth as the SBOM, so the set of dependencies
+              # this gate cleared is exactly the set the SBOM describes.
+              uv export --no-emit-workspace --format requirements-txt -o /tmp/audit.txt
+              uv run pip-audit --strict --requirement /tmp/audit.txt
             displayName: Dependency advisories
 
           - script: |
@@ -189,3 +200,43 @@ stages:
               fi
               echo "confirmed: refuses to start unconfigured"
             displayName: Image fails closed without configuration
+
+          # -- Software bill of materials --------------------------------
+          #
+          # Two documents, because they answer different questions and neither
+          # subsumes the other:
+          #
+          #   * the Python SBOM is generated from the committed lockfile and is
+          #     byte-reproducible, so two releases can be diffed to see exactly
+          #     which dependency moved;
+          #   * the image SBOM is scanned from the built container and is the
+          #     only one that sees the Debian base layer -- which is most of
+          #     what a member firm's vulnerability scanner will actually flag.
+          #
+          # A hosting ISAC hands these to its own third-party risk function, and
+          # to any member firm that assesses the instance before joining.
+          - script: |
+              set -euo pipefail
+              ./scripts/generate-sbom.sh "$(Build.ArtifactStagingDirectory)/sbom"
+            displayName: SBOM (Python runtime, from the lockfile)
+
+          - script: |
+              set -euo pipefail
+              # Pinned: the tool that describes what shipped is itself part of
+              # the supply chain, and an unpinned installer would undo the point
+              # of the document it produces.
+              SYFT_VERSION=1.20.0
+              curl -sSfL \
+                "https://raw.githubusercontent.com/anchore/syft/v${SYFT_VERSION}/install.sh" \
+                | sh -s -- -b "$(Agent.TempDirectory)/bin" "v${SYFT_VERSION}"
+
+              "$(Agent.TempDirectory)/bin/syft" \
+                "aivs-server:$(Build.BuildNumber)" \
+                -o "cyclonedx-json=$(Build.ArtifactStagingDirectory)/sbom/aivs-server-image-sbom.cdx.json"
+            displayName: SBOM (container image, including the OS layer)
+
+          - task: PublishBuildArtifacts@1
+            inputs:
+              PathtoPublish: $(Build.ArtifactStagingDirectory)/sbom
+              ArtifactName: sbom
+            displayName: Publish SBOMs

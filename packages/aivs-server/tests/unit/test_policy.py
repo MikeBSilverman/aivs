@@ -32,7 +32,7 @@ from aivs_schemas.enums import (
     OrgType,
     SubmissionState,
 )
-from aivs_server.auth.context import AuthContext, AuthMethod
+from aivs_server.auth.context import AuthContext, AuthMethod, CircleGrant
 from aivs_server.auth.policy import (
     PolicyDeniedError,
     can_administer_circle,
@@ -78,11 +78,20 @@ def context(
         org_type=org_type,
         org_status=status,
         auth_method=(AuthMethod.PORTAL_SESSION if operator_role is not None else AuthMethod.MTLS),
-        circles=circles or {},
+        circles={
+            circle_id: (value if isinstance(value, CircleGrant) else CircleGrant(value, LONG_AGO))
+            for circle_id, value in (circles or {}).items()
+        },
         cert_fingerprint="a" * 64,
         operator_id=uuid.uuid4() if operator_role is not None else None,
         operator_role=operator_role,
     )
+
+
+#: Membership start for callers whose join time is not what the test is about.
+#: Early enough that every fixture's content was distributed after it, so a
+#: role-focused test keeps testing roles.
+LONG_AGO = dt.datetime(2020, 1, 1, tzinfo=dt.UTC)
 
 
 def submission(*, submitter: uuid.UUID = ORG, state: SubmissionState) -> Submission:
@@ -328,21 +337,39 @@ def test_receipts_are_visible_to_their_submitter_and_the_isac_only():
 # ---------------------------------------------------------------------------
 # The visibility clause
 # ---------------------------------------------------------------------------
-def test_the_visibility_clause_carries_all_three_gates():
-    """Circle, embargo, and submission state -- each one load-bearing."""
+def test_the_visibility_clause_carries_all_four_gates():
+    """Circle, membership start, embargo, and submission state -- each load-bearing."""
     rendered = str(
-        visible_content_clause([CIRCLE], dt.datetime.now(dt.UTC)).compile(
+        visible_content_clause({CIRCLE: LONG_AGO}, dt.datetime.now(dt.UTC)).compile(
             dialect=postgresql.dialect()
         )
     ).lower()
-    assert "circle_id in" in rendered
+    assert "circle_id =" in rendered
+    assert "date_added >=" in rendered, "membership start bounds the back catalogue"
     assert "date_added <=" in rendered
     assert "state in" in rendered
 
 
+def test_each_circle_carries_its_own_membership_start():
+    """A member joins different circles at different times.
+
+    Collapsing them to one floor would let the earliest join widen every other
+    circle, which is the same back-catalogue leak in a subtler form.
+    """
+    other = uuid.uuid4()
+    rendered = str(
+        visible_content_clause(
+            {CIRCLE: LONG_AGO, other: dt.datetime(2026, 1, 1, tzinfo=dt.UTC)},
+            dt.datetime.now(dt.UTC),
+        ).compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True})
+    ).lower()
+    assert "2020-01-01" in rendered
+    assert "2026-01-01" in rendered
+
+
 def test_an_empty_circle_set_matches_nothing():
     rendered = str(
-        visible_content_clause([], dt.datetime.now(dt.UTC)).compile(dialect=postgresql.dialect())
+        visible_content_clause({}, dt.datetime.now(dt.UTC)).compile(dialect=postgresql.dialect())
     )
     assert rendered.strip().lower() == "false"
 

@@ -245,7 +245,7 @@ async def test_administrative_routes_refuse_an_ordinary_member(app, make_org, ma
         (
             "POST",
             f"/api/v1/circles/{_PATH_VALUES['circle_id']}/members",
-            {"org_id": _PATH_VALUES["org_id"]},
+            {"org_ids": [_PATH_VALUES["org_id"]]},
         ),
     ]
 

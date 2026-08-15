@@ -50,6 +50,13 @@ from aivs_server.db.models import (
     Webhook,
 )
 from aivs_server.notify.webhooks import WebhookRejectedError, resolve_delivery_target
+from aivs_server.services.circles import (
+    CircleMembershipError,
+    add_circle_members,
+    reconcile_circle,
+    reconcile_circles_for_org,
+    resolve_organisations,
+)
 
 __all__ = ["router"]
 
@@ -150,13 +157,29 @@ async def activate_org(
 
     previous = organization.status
     organization.status = OrgStatus.ACTIVE
+    # Flushed before reconciling. The sessionmaker sets autoflush=False, so
+    # without this the reconcile query still reads the pre-change status and the
+    # organisation matches nothing.
+    await session.flush()
+
+    # Activation is the point a rule can start matching: an enrolled but
+    # unactivated organisation is not yet a participant. Reconciling here is
+    # what makes "every active Section 9 firm" true without anyone having to
+    # remember the second step -- and the membership starts now, so they receive
+    # what is shared from today rather than the circle's back catalogue.
+    touched = await reconcile_circles_for_org(session, ctx, organisation=organization)
+
     await record(
         session,
         action=AuditAction.ORG_STATUS_CHANGED,
         ctx=ctx,
         resource_type="organization",
         resource_id=str(org_id),
-        details={"from": previous.value, "to": OrgStatus.ACTIVE.value},
+        details={
+            "from": previous.value,
+            "to": OrgStatus.ACTIVE.value,
+            "circles_reconciled": [str(i) for i in touched],
+        },
     )
     await session.commit()
     await session.refresh(organization)
@@ -176,13 +199,29 @@ async def suspend_org(
 
     previous = organization.status
     organization.status = OrgStatus.SUSPENDED
+    # See activate_org: autoflush is off, so the status change has to reach the
+    # database before the rule is evaluated against it.
+    await session.flush()
+
+    # Withdraws rule-managed memberships, since the rule matches active
+    # organisations only. Hand-added memberships are left alone: an operator who
+    # named this firm explicitly should decide themselves whether suspension
+    # means removal. Either way the authorization path already refuses a
+    # suspended organisation on its next request -- this keeps the membership
+    # table honest rather than being the control.
+    touched = await reconcile_circles_for_org(session, ctx, organisation=organization)
+
     await record(
         session,
         action=AuditAction.ORG_STATUS_CHANGED,
         ctx=ctx,
         resource_type="organization",
         resource_id=str(org_id),
-        details={"from": previous.value, "to": OrgStatus.SUSPENDED.value},
+        details={
+            "from": previous.value,
+            "to": OrgStatus.SUSPENDED.value,
+            "circles_reconciled": [str(i) for i in touched],
+        },
     )
     await session.commit()
     await session.refresh(organization)
@@ -338,6 +377,7 @@ async def create_circle(
         name=payload.name,
         description=payload.description,
         minimum_tlp=payload.minimum_tlp,
+        auto_member_org_types=[org_type.value for org_type in payload.auto_member_org_types],
     )
     session.add(circle)
 
@@ -372,8 +412,16 @@ async def create_circle(
         ctx=ctx,
         resource_type="circle",
         resource_id=payload.slug,
-        details={"minimum_tlp": payload.minimum_tlp.value},
+        details={
+            "minimum_tlp": payload.minimum_tlp.value,
+            "auto_member_org_types": circle.auto_member_org_types,
+        },
     )
+
+    # Populate from the rule immediately, so a circle created with one is not
+    # empty until the next organisation happens to be enrolled.
+    await reconcile_circle(session, ctx, circle=circle)
+
     await session.commit()
     await session.refresh(circle)
     return circle
@@ -400,31 +448,37 @@ async def add_circle_member(
     ctx: AuthenticatedContext,
     session: SessionDep,
 ) -> None:
-    """Add an organisation to a circle."""
+    """Add one or more organisations to a circle.
+
+    Organisations already in the circle are skipped rather than refused:
+    re-applying a roster is a normal operator action, and failing the batch on
+    the one firm already present teaches people to add members one at a time.
+    """
     require(can_administer_circle(ctx, circle_id), "circle_membership_manage")
 
     circle = await session.get(Circle, circle_id)
     if circle is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Circle not found")
-    if await session.get(Organization, payload.org_id) is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Organisation not found")
 
-    session.add(CircleMembership(circle_id=circle_id, org_id=payload.org_id, role=payload.role))
-    await record(
-        session,
-        action=AuditAction.CIRCLE_MEMBER_ADDED,
-        ctx=ctx,
-        resource_type="circle",
-        resource_id=str(circle_id),
-        details={"org_id": str(payload.org_id), "role": payload.role.value},
-    )
     try:
+        organisations = await resolve_organisations(
+            session, org_ids=payload.org_ids, org_slugs=payload.org_slugs
+        )
+        await add_circle_members(
+            session,
+            ctx,
+            circle=circle,
+            organisations=organisations,
+            role=payload.role,
+            joined_at=payload.joined_at,
+        )
         await session.commit()
+    except CircleMembershipError as exc:
+        await session.rollback()
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except IntegrityError as exc:
         await session.rollback()
-        raise HTTPException(
-            status.HTTP_409_CONFLICT, detail="That organisation is already a member"
-        ) from exc
+        raise HTTPException(status.HTTP_409_CONFLICT, detail="Membership conflict") from exc
 
 
 @router.delete("/circles/{circle_id}/members/{org_id}", status_code=status.HTTP_204_NO_CONTENT)

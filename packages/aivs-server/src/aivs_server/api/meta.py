@@ -84,8 +84,15 @@ async def whoami(ctx: AuthenticatedContext, settings: SettingsDep) -> dict[str, 
             "certificate_fingerprint": ctx.cert_fingerprint,
         },
         "circles": [
-            {"id": str(circle_id), "role": role.value}
-            for circle_id, role in sorted(ctx.circles.items(), key=lambda item: str(item[0]))
+            {
+                "id": str(circle_id),
+                "role": grant.role.value,
+                # Surfaced so a member can see for themselves from when their
+                # access to each circle runs, rather than inferring it from what
+                # their feed does and does not contain.
+                "member_since": grant.joined_at.isoformat(),
+            }
+            for circle_id, grant in sorted(ctx.circles.items(), key=lambda item: str(item[0]))
         ],
         "server_time": dt.datetime.now(dt.UTC).isoformat(),
     }

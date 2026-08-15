@@ -341,6 +341,26 @@ milliseconds and `modified` was not, so the manifest advertised a version string
 that `match[version]` — which compares for exact equality — then matched nothing.
 Two descriptions of one timestamp will drift; make them one.
 
+**Adding someone to a group grants participation, not the archive.**
+`visible_content_clause` bounds visibility by `circle_memberships.joined_at` as
+well as by circle. Without that term, adding an organisation to a circle handed
+them every object ever distributed there — years of other firms' embargoed
+content, retroactively, in one call. `joined_at` is a column of its own rather
+than a reading of `created_at`, because it is settable: an organisation re-added
+after an administrative mistake must be able to keep the history it legitimately
+had, and a column that always means "now" would push operators into editing the
+database. This is also what made rule-based membership safe to build at all.
+
+**`autoflush=False`, so flush before you query what you just changed.** The
+sessionmaker disables autoflush deliberately. `activate_org` set a status and
+then reconciled circle rules against it; the reconcile query read the *old*
+status and matched nothing, silently. Any read that depends on a pending write
+in the same transaction needs an explicit `await session.flush()`.
+
+**An empty `ARRAY[]` has no inferable element type.** `Column != []` compiles to
+an untyped `ARRAY[]` that Postgres cannot compare, so the filter matches nothing
+and says nothing. Use `func.cardinality(col) > 0`.
+
 **Tell the operator when the thing they clicked did not happen.** Every portal
 workflow failure redirected to the same page as a success, with no message. An
 operator whose distribution was refused by a circle's TLP floor had no way to

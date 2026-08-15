@@ -249,6 +249,111 @@ async def test_a_peer_cannot_take_over_the_default_feed_for_a_shared_stix_id(
     assert "Rival overwrite" in names
 
 
+# ---------------------------------------------------------------------------
+# Joining a circle grants participation, not the archive
+# ---------------------------------------------------------------------------
+@pytest.mark.db
+async def test_a_new_member_does_not_receive_the_circles_back_catalogue(
+    client, make_org, make_cert, make_circle, make_collection, join_circle, publish
+):
+    """Membership start bounds visibility.
+
+    Without it, adding an organisation to a circle handed them every object ever
+    distributed there -- years of other firms' embargoed intelligence, at that
+    circle's TLP floor, retroactively and in one call. "Add them to the group"
+    must not silently mean "give them the archive".
+    """
+    incumbent = await make_org("incumbent-firm", org_type=OrgType.GSIB)
+    newcomer = await make_org("newcomer-firm", org_type=OrgType.GSIB)
+    newcomer_pem, _ = await make_cert(newcomer)
+
+    circle = await make_circle("section9")
+    collection = await make_collection(circle)
+    await join_circle(incumbent, circle)
+
+    # History, then the moment the newcomer joins, then new content.
+    await publish(
+        incumbent,
+        circle,
+        name="Historic warning",
+        date_added=dt.datetime(2026, 1, 1, tzinfo=dt.UTC),
+    )
+    joined = dt.datetime(2026, 6, 1, tzinfo=dt.UTC)
+    await join_circle(newcomer, circle, joined_at=joined)
+    await publish(
+        incumbent,
+        circle,
+        name="Current warning",
+        date_added=dt.datetime(2026, 7, 1, tzinfo=dt.UTC),
+    )
+
+    feed = await client.get(
+        f"/taxii2/aivs/collections/{collection.id}/objects/", headers=proxy_headers(newcomer_pem)
+    )
+    assert feed.status_code == 200, feed.text
+    names = {obj.get("name") for obj in feed.json()["objects"]}
+
+    assert "Current warning" in names, "content shared after they joined"
+    assert "Historic warning" not in names, "the back catalogue is not theirs"
+
+
+@pytest.mark.db
+async def test_content_distributed_exactly_at_the_join_moment_is_included(
+    client, make_org, make_cert, make_circle, make_collection, join_circle, publish
+):
+    """The bound is inclusive, so a member does not miss the batch they joined for.
+
+    An organisation is often added to a circle precisely so it receives
+    something being distributed right then; an exclusive bound would drop it.
+    """
+    org = await make_org("meridian-global", org_type=OrgType.GSIB)
+    pem, _ = await make_cert(org)
+    circle = await make_circle("section9")
+    collection = await make_collection(circle)
+
+    moment = dt.datetime(2026, 6, 1, tzinfo=dt.UTC)
+    await join_circle(org, circle, joined_at=moment)
+    await publish(org, circle, name="Joined for this", date_added=moment)
+
+    feed = await client.get(
+        f"/taxii2/aivs/collections/{collection.id}/objects/", headers=proxy_headers(pem)
+    )
+    assert [obj["name"] for obj in feed.json()["objects"]] == ["Joined for this"]
+
+
+@pytest.mark.db
+async def test_each_circle_is_bounded_by_its_own_join_time(
+    client, make_org, make_cert, make_circle, make_collection, join_circle, publish
+):
+    """An early membership in one circle must not unlock another's history."""
+    org = await make_org("meridian-global", org_type=OrgType.GSIB)
+    pem, _ = await make_cert(org)
+
+    old_circle = await make_circle("gsib")
+    new_circle = await make_circle("section9")
+    old_collection = await make_collection(old_circle)
+    new_collection = await make_collection(new_circle)
+
+    await join_circle(org, old_circle, joined_at=dt.datetime(2020, 1, 1, tzinfo=dt.UTC))
+    await join_circle(org, new_circle, joined_at=dt.datetime(2026, 6, 1, tzinfo=dt.UTC))
+
+    old_content = dt.datetime(2026, 1, 1, tzinfo=dt.UTC)
+    await publish(org, old_circle, name="Long-standing circle", date_added=old_content)
+    await publish(org, new_circle, name="Newly joined circle", date_added=old_content)
+
+    long_standing = await client.get(
+        f"/taxii2/aivs/collections/{old_collection.id}/objects/", headers=proxy_headers(pem)
+    )
+    assert [o["name"] for o in long_standing.json()["objects"]] == ["Long-standing circle"]
+
+    newly_joined = await client.get(
+        f"/taxii2/aivs/collections/{new_collection.id}/objects/", headers=proxy_headers(pem)
+    )
+    assert newly_joined.json().get("objects", []) == [], (
+        "the earlier membership must not widen this circle"
+    )
+
+
 @pytest.mark.db
 async def test_a_collection_marked_unreadable_serves_nothing(
     client, make_org, make_cert, make_circle, make_collection, join_circle, publish

@@ -305,6 +305,10 @@ class CircleCreate(_In):
     name: DisplayName
     description: Annotated[str, Field(max_length=2000)] | None = None
     minimum_tlp: TLP = TLP.AMBER
+    #: Organisation types whose active members join automatically. Empty means
+    #: membership is entirely manual. Members added by the rule receive content
+    #: shared from the moment they join, never the circle's back catalogue.
+    auto_member_org_types: Annotated[list[OrgType], Field(max_length=8)] = []
 
 
 class CircleOut(_Out):
@@ -314,11 +318,42 @@ class CircleOut(_Out):
     description: str | None
     minimum_tlp: TLP
     is_active: bool
+    auto_member_org_types: list[str] = []
 
 
 class CircleMemberAdd(_In):
-    org_id: uuid.UUID
+    """Add one or more organisations to a circle.
+
+    Accepts identifiers, slugs, or both. Slugs are here because that is the form
+    the list already exists in wherever the operator is copying it from -- a
+    regulator's roster, an existing community-of-interest sheet -- and making
+    them resolve thirty UUIDs first is how a bulk endpoint goes unused.
+    """
+
+    org_ids: Annotated[list[uuid.UUID], Field(max_length=500)] = []
+    org_slugs: Annotated[list[Slug], Field(max_length=500)] = []
     role: CircleRole = CircleRole.MEMBER
+    #: Backdate the membership start. For restoration only -- an organisation
+    #: re-added after an administrative mistake, or moved during a certificate
+    #: rotation, keeping the history it legitimately had. It grants access to
+    #: content shared before the row existed, so it is recorded in the audit
+    #: trail as the deliberate act it is.
+    joined_at: dt.datetime | None = None
+
+    @model_validator(mode="after")
+    def _names_at_least_one(self) -> CircleMemberAdd:
+        if not self.org_ids and not self.org_slugs:
+            msg = "name at least one organisation, by org_ids or org_slugs"
+            raise ValueError(msg)
+        return self
+
+    @field_validator("joined_at")
+    @classmethod
+    def _joined_at_is_aware(cls, value: dt.datetime | None) -> dt.datetime | None:
+        if value is not None and value.tzinfo is None:
+            msg = "joined_at must include a timezone offset"
+            raise ValueError(msg)
+        return value
 
 
 class OrganizationCreate(_In):

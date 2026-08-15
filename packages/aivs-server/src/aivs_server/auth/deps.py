@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from aivs_schemas.enums import CertStatus, CircleRole, OrgStatus
 from aivs_server.audit.log import AuditAction, record_independently
-from aivs_server.auth.context import AuthContext, AuthMethod
+from aivs_server.auth.context import AuthContext, AuthMethod, CircleGrant
 from aivs_server.auth.mtls import CertificateRejectedError, extract_client_certificate
 from aivs_server.config import Settings, get_settings
 from aivs_server.db.engine import get_session
@@ -137,7 +137,7 @@ async def get_auth_context(
         raise await _reject(f"org_{organization.status.value}", request, source_ip)
 
     membership_rows = await session.execute(
-        select(CircleMembership.circle_id, CircleMembership.role)
+        select(CircleMembership.circle_id, CircleMembership.role, CircleMembership.joined_at)
         .join(Circle, Circle.id == CircleMembership.circle_id)
         .where(
             CircleMembership.org_id == organization.id,
@@ -147,8 +147,9 @@ async def get_auth_context(
             Circle.is_active.is_(True),
         )
     )
-    circles: dict[uuid.UUID, CircleRole] = {
-        row.circle_id: row.role for row in membership_rows.all()
+    circles: dict[uuid.UUID, CircleGrant] = {
+        row.circle_id: CircleGrant(role=row.role, joined_at=row.joined_at)
+        for row in membership_rows.all()
     }
 
     return AuthContext(

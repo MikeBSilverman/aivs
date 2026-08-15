@@ -460,16 +460,35 @@ async def make_circle(session: AsyncSession):
     return _make
 
 
+#: Default membership start for test fixtures: earlier than any content a test
+#: publishes, so an organisation joined this way sees everything in its circles.
+#:
+#: Explicit rather than "now" because content visibility is bounded by when a
+#: membership began -- a test whose subject is paging or embargo should not have
+#: to think about join times, but it must not accidentally depend on the bound
+#: being absent either. Tests that *are* about the bound pass joined_at.
+FOUNDING_MEMBER_SINCE = dt.datetime(2020, 1, 1, tzinfo=dt.UTC)
+
+
 @pytest.fixture
 async def join_circle(session: AsyncSession):
-    """Factory adding an organisation to a circle."""
+    """Factory adding an organisation to a circle.
+
+    ``joined_at`` defaults to :data:`FOUNDING_MEMBER_SINCE`.
+    """
 
     async def _join(
         org: models.Organization,
         circle: models.Circle,
         role: CircleRole = CircleRole.MEMBER,
+        joined_at: dt.datetime | None = None,
     ) -> models.CircleMembership:
-        membership = models.CircleMembership(circle_id=circle.id, org_id=org.id, role=role)
+        membership = models.CircleMembership(
+            circle_id=circle.id,
+            org_id=org.id,
+            role=role,
+            joined_at=joined_at or FOUNDING_MEMBER_SINCE,
+        )
         session.add(membership)
         await session.commit()
         await session.refresh(membership)

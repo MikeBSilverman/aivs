@@ -34,7 +34,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aivs_schemas.enums import CertStatus, OrgStatus
-from aivs_server.auth.context import AuthContext, AuthMethod
+from aivs_server.auth.context import AuthContext, AuthMethod, CircleGrant
 from aivs_server.auth.passwords import (
     constant_time_equals,
     decode_secret,
@@ -297,7 +297,7 @@ async def resolve_session(
         raise SessionRejectedError("org_inactive")
 
     circles = {
-        membership.circle_id: membership.role
+        membership.circle_id: CircleGrant(role=membership.role, joined_at=membership.joined_at)
         for membership in (
             await session.execute(
                 select(CircleMembership)

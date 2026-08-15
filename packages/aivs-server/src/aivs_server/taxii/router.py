@@ -91,8 +91,13 @@ def _taxii_response(payload: dict[str, Any], status_code: int = 200) -> Response
 # ---------------------------------------------------------------------------
 async def _load_readable_collection(
     session: AsyncSession, ctx: AuthContext, collection_id: uuid.UUID
-) -> tuple[TaxiiCollection, Circle]:
-    """Return a collection the caller may read, or raise 404.
+) -> tuple[TaxiiCollection, Circle, dt.datetime]:
+    """Return a collection the caller may read, with the caller's join time.
+
+    The join time comes back with the collection because every query built from
+    it needs both: the circle says *what* may be read, and the join time says
+    *from when*. Returning them together means a caller cannot pick up one and
+    forget the other.
 
     A collection the caller cannot read is reported as 404 rather than 403. That
     is deliberate and TAXII permits it: distinguishing "exists but forbidden"
@@ -121,9 +126,10 @@ async def _load_readable_collection(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Collection not found")
 
     collection, circle = row
-    if not can_read_circle(ctx, circle.id):
+    grant = ctx.circles.get(circle.id)
+    if grant is None or not can_read_circle(ctx, circle.id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Collection not found")
-    return collection, circle
+    return collection, circle, grant.joined_at
 
 
 def _collection_payload(collection: TaxiiCollection, ctx: AuthContext) -> dict[str, Any]:
@@ -231,7 +237,7 @@ async def get_collection(
     session: SessionDep,
 ) -> Response:
     """Fetch one collection (section 5.2)."""
-    collection, _circle = await _load_readable_collection(session, ctx, collection_id)
+    collection, _circle, _joined_at = await _load_readable_collection(session, ctx, collection_id)
     return _taxii_response(_collection_payload(collection, ctx))
 
 
@@ -298,7 +304,7 @@ async def list_objects(
     Every successful retrieval writes receipts recording that this organisation
     collected this content -- see ``services.receipts``.
     """
-    _collection, circle = await _load_readable_collection(session, ctx, collection_id)
+    _collection, circle, joined_at = await _load_readable_collection(session, ctx, collection_id)
     filters = _parse_request_filters(request, settings)
     cursor = _resolve_cursor(settings, filters.next_cursor, collection_id)
     limit = filters.limit or settings.taxii_default_page_size
@@ -309,6 +315,7 @@ async def list_objects(
             await session.execute(
                 build_object_listing_query(
                     circle_id=circle.id,
+                    joined_at=joined_at,
                     filters=filters,
                     now=now,
                     cursor=cursor,
@@ -375,7 +382,7 @@ async def get_object(
     Returns an envelope, not a bare object: TAXII requires STIX content to be
     enveloped even when there is exactly one of it.
     """
-    _collection, circle = await _load_readable_collection(session, ctx, collection_id)
+    _collection, circle, joined_at = await _load_readable_collection(session, ctx, collection_id)
     filters = _parse_request_filters(request, settings)
     # The cursor was parsed and then discarded here, so an object with more
     # visible versions than one page was reported as `more: true` with no `next`
@@ -391,6 +398,7 @@ async def get_object(
             await session.execute(
                 build_object_listing_query(
                     circle_id=circle.id,
+                    joined_at=joined_at,
                     filters=filters,
                     now=now,
                     cursor=cursor,
@@ -454,7 +462,7 @@ async def get_object_versions(
     versions received exactly one default page, with no ``next`` to follow and
     nothing to indicate the list had been truncated.
     """
-    _collection, circle = await _load_readable_collection(session, ctx, collection_id)
+    _collection, circle, joined_at = await _load_readable_collection(session, ctx, collection_id)
     filters = _parse_request_filters(request, settings)
     limit = filters.limit or settings.taxii_default_page_size
     now = dt.datetime.now(dt.UTC)
@@ -464,6 +472,7 @@ async def get_object_versions(
             await session.execute(
                 build_version_listing_query(
                     circle_id=circle.id,
+                    joined_at=joined_at,
                     stix_id=object_id,
                     now=now,
                     limit=limit,
@@ -504,7 +513,7 @@ async def get_manifest(
     an ISAC should not be able to tell a regulator a firm "received" a warning
     on the strength of a metadata listing.
     """
-    _collection, circle = await _load_readable_collection(session, ctx, collection_id)
+    _collection, circle, joined_at = await _load_readable_collection(session, ctx, collection_id)
     filters = _parse_request_filters(request, settings)
     cursor = _resolve_cursor(settings, filters.next_cursor, collection_id)
     limit = filters.limit or settings.taxii_default_page_size
@@ -515,6 +524,7 @@ async def get_manifest(
             await session.execute(
                 build_object_listing_query(
                     circle_id=circle.id,
+                    joined_at=joined_at,
                     filters=filters,
                     now=now,
                     cursor=cursor,

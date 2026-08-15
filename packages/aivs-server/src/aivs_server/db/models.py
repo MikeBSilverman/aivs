@@ -222,6 +222,17 @@ class Circle(TimestampMixin, Base):
     #: AMBER+STRICT or tighter" once, structurally, instead of per submission.
     minimum_tlp: Mapped[TLP] = mapped_column(pg_enum(TLP, "tlp"), nullable=False, default=TLP.AMBER)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    #: Organisation types whose active members belong here automatically, e.g.
+    #: ``["section9"]``. Empty means membership is entirely manual.
+    #:
+    #: The rule is *materialised* into ordinary ``circle_memberships`` rows
+    #: rather than evaluated at read time. That costs a reconciliation step, and
+    #: buys the thing an ISAC actually needs: "who could see this on 3 March?"
+    #: stays a query against stored rows with a join date, rather than a
+    #: reconstruction of what every organisation's attributes used to be.
+    auto_member_org_types: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), nullable=False, default=list, server_default=text("'{}'::text[]")
+    )
 
     __table_args__ = (
         CheckConstraint("slug ~ '^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$'", name="slug_format"),
@@ -246,6 +257,29 @@ class CircleMembership(TimestampMixin, Base):
     )
     role: Mapped[CircleRole] = mapped_column(
         pg_enum(CircleRole, "circle_role"), nullable=False, default=CircleRole.MEMBER
+    )
+    #: When this organisation's access to the circle begins. Content distributed
+    #: before it is not readable by them -- see ``visible_content_clause``.
+    #:
+    #: Deliberately a column of its own rather than a reading of ``created_at``.
+    #: This one is load-bearing for authorization, and it is settable: an
+    #: organisation re-added after an administrative mistake, or migrated during
+    #: a certificate rotation, must be able to keep the history it legitimately
+    #: had. ``created_at`` records when the row was written and must go on
+    #: meaning only that.
+    joined_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    #: True when this row was created by the circle's ``auto_member_org_types``
+    #: rule rather than by an operator naming this organisation.
+    #:
+    #: Reconciliation only ever adds or removes rows it owns. An organisation an
+    #: operator added by hand is never withdrawn because a rule stopped matching
+    #: it, and one an operator deliberately removed is not silently reinstated on
+    #: the next reconcile -- which is the behaviour that would make an operator
+    #: stop trusting the feature.
+    managed_by_rule: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
     )
 
     __table_args__ = (

@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import datetime as dt
 import uuid
-from collections.abc import Collection
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Final
 
 from sqlalchemy import ColumnElement, and_, or_
@@ -59,6 +59,7 @@ __all__ = [
     "is_active",
     "is_org_admin",
     "is_system_admin",
+    "readable_circle_grants",
     "readable_circle_ids",
     "require",
     "visible_content_clause",
@@ -149,8 +150,8 @@ def can_submit_to_circle(ctx: AuthContext, circle_id: uuid.UUID) -> bool:
     """Return whether the caller may contribute content into ``circle_id``."""
     if not is_active(ctx):
         return False
-    role = ctx.circles.get(circle_id)
-    return role in _WRITING_CIRCLE_ROLES
+    grant = ctx.circles.get(circle_id)
+    return grant is not None and grant.role in _WRITING_CIRCLE_ROLES
 
 
 def can_administer_circle(ctx: AuthContext, circle_id: uuid.UUID) -> bool:
@@ -159,7 +160,8 @@ def can_administer_circle(ctx: AuthContext, circle_id: uuid.UUID) -> bool:
         return False
     if is_system_admin(ctx):
         return True
-    return ctx.circles.get(circle_id) is CircleRole.CIRCLE_ADMIN
+    grant = ctx.circles.get(circle_id)
+    return grant is not None and grant.role is CircleRole.CIRCLE_ADMIN
 
 
 def readable_circle_ids(ctx: AuthContext) -> frozenset[uuid.UUID]:
@@ -168,10 +170,25 @@ def readable_circle_ids(ctx: AuthContext) -> frozenset[uuid.UUID]:
     Returns the empty set for an inactive organisation, which makes the
     visibility clause below match nothing rather than everything -- the failure
     mode of an empty ``IN ()`` is the safe one here, and is asserted in tests.
+
+    For *content* visibility use :func:`readable_circle_grants` instead: the set
+    of circles alone omits when each membership began, which is half the
+    predicate.
     """
     if not is_active(ctx):
         return frozenset()
     return ctx.circle_ids
+
+
+def readable_circle_grants(ctx: AuthContext) -> Mapping[uuid.UUID, dt.datetime]:
+    """Return each readable circle with the moment the caller's access began.
+
+    The input to :func:`visible_content_clause`. Empty for an inactive
+    organisation, which that function maps to an explicit false.
+    """
+    if not is_active(ctx):
+        return {}
+    return {circle_id: grant.joined_at for circle_id, grant in ctx.circles.items()}
 
 
 def writable_circle_ids(ctx: AuthContext) -> frozenset[uuid.UUID]:
@@ -179,7 +196,7 @@ def writable_circle_ids(ctx: AuthContext) -> frozenset[uuid.UUID]:
     if not is_active(ctx):
         return frozenset()
     return frozenset(
-        circle_id for circle_id, role in ctx.circles.items() if role in _WRITING_CIRCLE_ROLES
+        circle_id for circle_id, grant in ctx.circles.items() if grant.role in _WRITING_CIRCLE_ROLES
     )
 
 
@@ -269,20 +286,31 @@ def can_manage_org(ctx: AuthContext, target_org_id: uuid.UUID) -> bool:
 # The visibility clause
 # ---------------------------------------------------------------------------
 def visible_content_clause(
-    circle_ids: Collection[uuid.UUID], now: dt.datetime
+    grants: Mapping[uuid.UUID, dt.datetime], now: dt.datetime
 ) -> ColumnElement[bool]:
     """Return the SQL predicate selecting distributed content readable right now.
 
     **The read-side enforcement point, and the authoritative embargo gate.**
-    Three conditions, all required:
+    ``grants`` maps each circle the caller belongs to to the moment their access
+    to it began. Four conditions, all required:
 
-    1. the object was distributed into one of ``circle_ids``,
-    2. its ``date_added`` for that circle has arrived -- which is what makes
-       embargo enforcement safe even when the release scheduler is not running,
-       since an unreleased object simply has a future ``date_added``, and
-    3. the owning submission is in a state whose content is visible.
+    1. the object was distributed into one of the caller's circles,
+    2. its ``date_added`` for that circle is **at or after** the caller joined,
+    3. its ``date_added`` has arrived -- which is what makes embargo enforcement
+       safe even when the release scheduler is not running, since an unreleased
+       object simply has a future ``date_added``, and
+    4. the owning submission is in a state whose content is visible.
 
-    Callers must join ``Submission`` for condition 3 to resolve.
+    Callers must join ``Submission`` for condition 4 to resolve.
+
+    Condition 2 is the one that is easy to leave out, and it was. Without it,
+    adding an organisation to a circle handed them **every object ever
+    distributed there** -- years of other firms' embargoed intelligence, at that
+    circle's TLP floor, retroactively and in one call. "Add them to the group"
+    reads like a grant of participation; it must not silently be a grant of the
+    archive. It is expressed per circle rather than as one global floor because
+    a member typically joins different circles at different times, and the
+    earliest of those must not widen the others.
 
     Both readers go through here -- ``taxii.queries`` for a single collection and
     :func:`distribution_visibility_clause` for everything a caller may read --
@@ -290,14 +318,24 @@ def visible_content_clause(
     a duplicated security condition is one refactor away from being two
     different security conditions.
     """
-    if not circle_ids:
+    if not grants:
         # An explicit false, rather than `IN ()`, which some dialects treat
         # inconsistently and which reads ambiguously in a query log. The failure
         # mode of an empty set must be "match nothing", never "match everything".
         return or_(False)
 
+    # Sorted so the emitted SQL is deterministic for a given membership set,
+    # which keeps query logs diffable and plan caches warm.
+    per_circle = [
+        and_(
+            Distribution.circle_id == circle_id,
+            Distribution.date_added >= joined_at,
+        )
+        for circle_id, joined_at in sorted(grants.items(), key=lambda item: str(item[0]))
+    ]
+
     return and_(
-        Distribution.circle_id.in_(tuple(circle_ids)),
+        or_(*per_circle),
         Distribution.date_added <= now,
         Submission.state.in_(tuple(VISIBLE_SUBMISSION_STATES)),
     )
@@ -309,4 +347,4 @@ def distribution_visibility_clause(ctx: AuthContext, now: dt.datetime) -> Column
     An inactive organisation yields an empty circle set and therefore a clause
     that matches no rows.
     """
-    return visible_content_clause(readable_circle_ids(ctx), now)
+    return visible_content_clause(readable_circle_grants(ctx), now)

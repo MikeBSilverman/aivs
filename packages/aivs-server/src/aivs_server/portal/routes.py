@@ -39,7 +39,7 @@ from aivs_server.auth.policy import (
     can_view_submission,
     can_view_submission_receipts,
     is_system_admin,
-    readable_circle_ids,
+    readable_circle_grants,
     require,
     visible_content_clause,
 )
@@ -457,11 +457,11 @@ async def dashboard(request: Request, settings: SettingsDep, session: SessionDep
     """What this analyst's firm can see, and what it has filed."""
     ctx, _csrf_hash = await _current_session(request, settings, session)
     now = dt.datetime.now(dt.UTC)
-    circle_ids = readable_circle_ids(ctx)
+    circle_grants = readable_circle_grants(ctx)
 
     available = 0
     recent: list[dict[str, Any]] = []
-    if circle_ids:
+    if circle_grants:
         rows = (
             await session.execute(
                 select(Distribution.date_added, StixObject.name, Submission.tlp)
@@ -472,7 +472,7 @@ async def dashboard(request: Request, settings: SettingsDep, session: SessionDep
                 # submission-state term -- the portal and the TAXII feed would
                 # have disagreed about what a member can see the moment a state
                 # outside VISIBLE_SUBMISSION_STATES became reachable.
-                .where(visible_content_clause(circle_ids, now))
+                .where(visible_content_clause(circle_grants, now))
                 .order_by(Distribution.date_added.desc())
                 .limit(10)
             )
@@ -490,7 +490,7 @@ async def dashboard(request: Request, settings: SettingsDep, session: SessionDep
             await session.scalar(
                 select(func.count(func.distinct(Distribution.submission_id)))
                 .join(Submission, Submission.id == Distribution.submission_id)
-                .where(visible_content_clause(circle_ids, now))
+                .where(visible_content_clause(circle_grants, now))
             )
         ) or 0
 
@@ -520,7 +520,7 @@ async def dashboard(request: Request, settings: SettingsDep, session: SessionDep
             "stats": {
                 "available": available,
                 "ours": ours,
-                "circles": len(circle_ids),
+                "circles": len(circle_grants),
                 "awaiting_review": awaiting,
             },
             "recent": recent,

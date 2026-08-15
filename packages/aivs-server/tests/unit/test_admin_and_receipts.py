@@ -261,7 +261,7 @@ async def test_isac_can_add_and_remove_circle_members(client, isac, member, make
 
     added = await client.post(
         f"{API}/circles/{circle.id}/members",
-        json={"org_id": str(org.id), "role": "contributor"},
+        json={"org_ids": [str(org.id)], "role": "contributor"},
         headers=proxy_headers(isac_pem),
     )
     assert added.status_code == 204
@@ -278,11 +278,20 @@ async def test_isac_can_add_and_remove_circle_members(client, isac, member, make
     assert after.json()["circles"] == []
 
 
-async def test_duplicate_membership_is_a_conflict(client, isac, member, make_circle):
+async def test_re_applying_a_roster_is_idempotent(client, isac, member, make_circle, session):
+    """Already-a-member is skipped, not refused.
+
+    Re-running a roster is a normal operator action -- someone pastes the
+    Section 9 list again after adding one firm to it. Failing the whole batch on
+    the members already present is what teaches people to add organisations one
+    at a time, which is the friction this endpoint exists to remove.
+    """
+    from aivs_server.db.models import CircleMembership  # noqa: PLC0415 - local to this test
+
     org, _pem = await member()
     _isac_org, isac_pem = isac
     circle = await make_circle("section9")
-    body = {"org_id": str(org.id)}
+    body = {"org_ids": [str(org.id)]}
 
     first = await client.post(
         f"{API}/circles/{circle.id}/members", json=body, headers=proxy_headers(isac_pem)
@@ -291,7 +300,18 @@ async def test_duplicate_membership_is_a_conflict(client, isac, member, make_cir
     second = await client.post(
         f"{API}/circles/{circle.id}/members", json=body, headers=proxy_headers(isac_pem)
     )
-    assert second.status_code == 409
+    assert second.status_code == 204, "re-applying a roster must not fail"
+
+    rows = (
+        (
+            await session.execute(
+                select(CircleMembership).where(CircleMembership.circle_id == circle.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(rows) == 1, "and must not duplicate the membership"
 
 
 # ---------------------------------------------------------------------------

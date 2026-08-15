@@ -11,6 +11,7 @@ mutating it, accidentally or otherwise.
 
 from __future__ import annotations
 
+import datetime as dt
 import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -19,7 +20,7 @@ from types import MappingProxyType
 
 from aivs_schemas.enums import CircleRole, OperatorRole, OrgStatus, OrgType
 
-__all__ = ["AuthContext", "AuthMethod"]
+__all__ = ["AuthContext", "AuthMethod", "CircleGrant"]
 
 
 class AuthMethod(StrEnum):
@@ -33,6 +34,22 @@ class AuthMethod(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
+class CircleGrant:
+    """What a caller holds in one circle: a role, and when it started.
+
+    One value rather than two parallel mappings on ``AuthContext``. Both are
+    read on the authorization path -- the role decides what may be written, the
+    start decides what may be read -- and two mappings keyed the same way are
+    exactly the shape that drifts apart under a later edit.
+    """
+
+    role: CircleRole
+    #: Content distributed to the circle before this moment is not readable by
+    #: this caller. See ``policy.visible_content_clause``.
+    joined_at: dt.datetime
+
+
+@dataclass(frozen=True, slots=True)
 class AuthContext:
     """Identity and memberships of the current caller."""
 
@@ -42,9 +59,9 @@ class AuthContext:
     org_status: OrgStatus
     auth_method: AuthMethod
 
-    #: Circle membership with the role held in each. Empty is normal: a newly
-    #: enrolled org belongs to no circle and must therefore see nothing.
-    circles: Mapping[uuid.UUID, CircleRole] = field(default_factory=lambda: MappingProxyType({}))
+    #: Circle membership: what is held in each, and since when. Empty is normal:
+    #: a newly enrolled org belongs to no circle and must therefore see nothing.
+    circles: Mapping[uuid.UUID, CircleGrant] = field(default_factory=lambda: MappingProxyType({}))
 
     #: Present for MTLS callers; also present for portal sessions, which are
     #: bound to the certificate that established the network path.

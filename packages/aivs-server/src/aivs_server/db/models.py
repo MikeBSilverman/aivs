@@ -405,7 +405,18 @@ class StixObject(Base):
     cvss_score: Mapped[float | None] = mapped_column(Numeric(3, 1), nullable=True)
 
     __table_args__ = (
-        UniqueConstraint("stix_id", "modified", name="uq_stix_objects_stix_id_modified"),
+        # Uniqueness is per submission, not global. A STIX object version is
+        # globally unique by STIX semantics, so a global constraint looks right
+        # -- but it would make one organisation's submission fail because
+        # *another* organisation had already submitted an object with the same
+        # id, disclosing across the member boundary that they had. Producer-
+        # generated UUIDs make accidental collision negligible; a deliberate one
+        # is probing, and it must not be answered. Duplicate delivery into a
+        # single circle is prevented at distribution time instead, which is where
+        # it actually matters.
+        UniqueConstraint(
+            "submission_id", "stix_id", "modified", name="uq_stix_objects_submission_version"
+        ),
         CheckConstraint("spec_version = '2.1'", name="spec_version_supported"),
         CheckConstraint(
             "cvss_score IS NULL OR (cvss_score >= 0 AND cvss_score <= 10)",

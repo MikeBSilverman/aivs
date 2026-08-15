@@ -1,0 +1,294 @@
+"""Native API: the submission workflow.
+
+Transitions are exposed as explicit verbs -- ``/submit``, ``/validate``,
+``/distribute``, ``/withdraw`` -- rather than as a generic
+``PATCH {"state": ...}``. Each carries different authority and different side
+effects, and a single endpoint taking a target state makes that impossible to
+see at the routing layer and easy to get wrong at the policy layer. Distribution
+in particular is not a state change; it writes visibility rows for every member
+of every target circle.
+"""
+
+from __future__ import annotations
+
+import uuid
+from typing import Annotated
+
+from fastapi import APIRouter, HTTPException, Query, status
+from sqlalchemy import select
+
+from aivs_schemas.enums import SubmissionState
+from aivs_schemas.extension.builders import (
+    BundleValidationError,
+    ExtensionValidationError,
+    UnknownExtensionError,
+)
+from aivs_schemas.models import (
+    DistributeRequest,
+    SubmissionCreate,
+    SubmissionDetail,
+    SubmissionOut,
+    SubmissionUpdate,
+    TransitionOut,
+    TransitionRequest,
+)
+from aivs_server.auth.deps import AuthenticatedContext, SessionDep
+from aivs_server.auth.policy import (
+    can_view_submission,
+    is_system_admin,
+    require,
+)
+from aivs_server.db.models import Distribution, StixObject, Submission, SubmissionTransition
+from aivs_server.services.distribution import DistributionError, distribute_submission
+from aivs_server.services.submissions import (
+    SubmissionError,
+    apply_transition,
+    create_submission,
+    load_submission,
+    update_submission,
+)
+
+__all__ = ["router"]
+
+router = APIRouter(prefix="/api/v1/submissions", tags=["submissions"])
+
+#: Validation failures a submitter can act on. All derive from ValueError; they
+#: are surfaced as 400 with their message, which describes their own content
+#: back to them and discloses nothing about anyone else's.
+_CLIENT_ERRORS = (
+    SubmissionError,
+    DistributionError,
+    BundleValidationError,
+    ExtensionValidationError,
+    UnknownExtensionError,
+)
+
+
+async def _require_visible_submission(
+    session: SessionDep, ctx: AuthenticatedContext, submission_id: uuid.UUID
+) -> Submission:
+    """Load a submission the caller may see, or 404.
+
+    A submission the caller may not see is reported as absent rather than
+    forbidden, so that identifiers cannot be probed to learn which other firms
+    have filed what.
+    """
+    submission = await load_submission(session, submission_id)
+    if submission is None or not can_view_submission(ctx, submission):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Submission not found")
+    return submission
+
+
+@router.post("", status_code=status.HTTP_201_CREATED, response_model=SubmissionOut)
+async def create(
+    payload: SubmissionCreate, ctx: AuthenticatedContext, session: SessionDep
+) -> Submission:
+    """Create a draft submission owned by the caller's organisation."""
+    try:
+        submission = await create_submission(
+            session,
+            ctx,
+            title=payload.title,
+            summary=payload.summary,
+            tlp=payload.tlp,
+            discovery_scope=payload.discovery_scope,
+            distribute_anonymously=payload.distribute_anonymously,
+            bundle=payload.bundle,
+        )
+    except _CLIENT_ERRORS as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    await session.commit()
+    await session.refresh(submission)
+    return submission
+
+
+@router.get("", response_model=list[SubmissionOut])
+async def list_submissions(
+    ctx: AuthenticatedContext,
+    session: SessionDep,
+    state: Annotated[SubmissionState | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+) -> list[Submission]:
+    """List submissions the caller may see.
+
+    A member sees their own organisation's submissions; the hosting ISAC sees
+    all of them, which is what lets it work a validation queue.
+    """
+    query = select(Submission).order_by(Submission.created_at.desc()).limit(limit)
+    if not is_system_admin(ctx):
+        query = query.where(Submission.submitter_org_id == ctx.org_id)
+    if state is not None:
+        query = query.where(Submission.state == state)
+    return list((await session.execute(query)).scalars().all())
+
+
+@router.get("/{submission_id}", response_model=SubmissionDetail)
+async def get_submission(
+    submission_id: uuid.UUID, ctx: AuthenticatedContext, session: SessionDep
+) -> SubmissionDetail:
+    """Full view of one submission, including its workflow history."""
+    submission = await _require_visible_submission(session, ctx, submission_id)
+
+    stix_ids = list(
+        (
+            await session.execute(
+                select(StixObject.stix_id)
+                .where(StixObject.submission_id == submission.id)
+                .order_by(StixObject.stix_id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    circle_ids = list(
+        (
+            await session.execute(
+                select(Distribution.circle_id)
+                .where(Distribution.submission_id == submission.id)
+                .distinct()
+            )
+        )
+        .scalars()
+        .all()
+    )
+    transitions = list(
+        (
+            await session.execute(
+                select(SubmissionTransition)
+                .where(SubmissionTransition.submission_id == submission.id)
+                .order_by(SubmissionTransition.at)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    return SubmissionDetail(
+        **SubmissionOut.model_validate(submission).model_dump(),
+        object_count=len(stix_ids),
+        stix_ids=stix_ids,
+        circle_ids=circle_ids,
+        transitions=[TransitionOut.model_validate(t) for t in transitions],
+        embargo=None,
+    )
+
+
+@router.patch("/{submission_id}", response_model=SubmissionOut)
+async def amend(
+    submission_id: uuid.UUID,
+    payload: SubmissionUpdate,
+    ctx: AuthenticatedContext,
+    session: SessionDep,
+) -> Submission:
+    """Amend a draft. Refused once the submission has left the submitter."""
+    submission = await _require_visible_submission(session, ctx, submission_id)
+    try:
+        await update_submission(
+            session, ctx, submission, changes=payload.model_dump(exclude_none=True)
+        )
+    except _CLIENT_ERRORS as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    await session.commit()
+    await session.refresh(submission)
+    return submission
+
+
+async def _transition(
+    session: SessionDep,
+    ctx: AuthenticatedContext,
+    submission_id: uuid.UUID,
+    target: SubmissionState,
+    reason: str | None,
+) -> Submission:
+    submission = await _require_visible_submission(session, ctx, submission_id)
+    try:
+        await apply_transition(session, ctx, submission, target, reason=reason)
+    except _CLIENT_ERRORS as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    await session.commit()
+    await session.refresh(submission)
+    return submission
+
+
+@router.post("/{submission_id}/submit", response_model=SubmissionOut)
+async def submit(
+    submission_id: uuid.UUID,
+    payload: TransitionRequest,
+    ctx: AuthenticatedContext,
+    session: SessionDep,
+) -> Submission:
+    """Hand a draft to the hosting ISAC for review."""
+    return await _transition(session, ctx, submission_id, SubmissionState.SUBMITTED, payload.reason)
+
+
+@router.post("/{submission_id}/validate", response_model=SubmissionOut)
+async def validate(
+    submission_id: uuid.UUID,
+    payload: TransitionRequest,
+    ctx: AuthenticatedContext,
+    session: SessionDep,
+) -> Submission:
+    """Accept a submission as fit to share. Hosting ISAC only.
+
+    This is the human checkpoint that keeps AIVS clear of the
+    coordinated-disclosure consent problem: content reaches members because the
+    ISAC decided it should, never merely because a member uploaded it.
+    """
+    return await _transition(session, ctx, submission_id, SubmissionState.VALIDATED, payload.reason)
+
+
+@router.post("/{submission_id}/withdraw", response_model=SubmissionOut)
+async def withdraw(
+    submission_id: uuid.UUID,
+    payload: TransitionRequest,
+    ctx: AuthenticatedContext,
+    session: SessionDep,
+) -> Submission:
+    """Withdraw a submission that has not yet been distributed.
+
+    Distributed content cannot be withdrawn: members already hold it, and
+    pretending otherwise would be a false promise.
+    """
+    return await _transition(session, ctx, submission_id, SubmissionState.WITHDRAWN, payload.reason)
+
+
+@router.post("/{submission_id}/distribute", response_model=SubmissionOut)
+async def distribute(
+    submission_id: uuid.UUID,
+    payload: DistributeRequest,
+    ctx: AuthenticatedContext,
+    session: SessionDep,
+) -> Submission:
+    """Release a validated submission into circles. Hosting ISAC only.
+
+    Writes visibility rows and the state change in one transaction, so a member
+    polling concurrently sees the whole batch or none of it. A ``release_at`` in
+    the future produces an embargo that holds without any scheduler running.
+    """
+    submission = await _require_visible_submission(session, ctx, submission_id)
+
+    require(
+        is_system_admin(ctx),
+        "distribute_requires_system_admin",
+    )
+
+    try:
+        await distribute_submission(
+            session,
+            ctx,
+            submission,
+            circle_ids=payload.circle_ids,
+            release_at=payload.release_at,
+        )
+        await apply_transition(
+            session, ctx, submission, SubmissionState.DISTRIBUTED, reason=payload.reason
+        )
+    except _CLIENT_ERRORS as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+    # One commit for the visibility rows, the state change, and the audit trail.
+    await session.commit()
+    await session.refresh(submission)
+    return submission

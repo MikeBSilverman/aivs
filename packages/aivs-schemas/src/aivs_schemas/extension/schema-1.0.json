@@ -171,7 +171,9 @@
     },
     "sealed_payload": {
       "description": "RESERVED for end-to-end encrypted payloads (see docs/encryption-design.md). A JWE General JSON Serialization object (RFC 7516) whose plaintext is the sensitive portion of this finding, wrapped separately to each intended recipient's public key. AIVS infrastructure never holds the content key. Reserved ahead of implementation so that adding it is an additive 1.x change.",
+      "$comment": "additionalProperties is false at every level here. These are the complete member sets defined by RFC 7516 for the General JSON Serialization and by the JOSE header for ECDH-ES+A256KW; anything else is unrecognised. AIVS redistributes what it accepts, so an unconstrained sub-object would let unvalidated content ride along inside an object every circle member receives.",
       "type": "object",
+      "additionalProperties": false,
       "required": [
         "protected",
         "recipients",
@@ -181,7 +183,8 @@
       ],
       "properties": {
         "protected": {
-          "type": "string"
+          "type": "string",
+          "maxLength": 8192
         },
         "unprotected": {
           "type": "object"
@@ -189,8 +192,10 @@
         "recipients": {
           "type": "array",
           "minItems": 1,
+          "maxItems": 500,
           "items": {
             "type": "object",
+            "additionalProperties": false,
             "required": [
               "header",
               "encrypted_key"
@@ -198,6 +203,7 @@
             "properties": {
               "header": {
                 "type": "object",
+                "additionalProperties": false,
                 "required": [
                   "kid"
                 ],
@@ -214,26 +220,38 @@
                   },
                   "epk": {
                     "type": "object"
+                  },
+                  "apu": {
+                    "type": "string",
+                    "maxLength": 512
+                  },
+                  "apv": {
+                    "type": "string",
+                    "maxLength": 512
                   }
                 }
               },
               "encrypted_key": {
-                "type": "string"
+                "type": "string",
+                "maxLength": 4096
               }
             }
           }
         },
         "aad": {
-          "type": "string"
+          "type": "string",
+          "maxLength": 8192
         },
         "iv": {
-          "type": "string"
+          "type": "string",
+          "maxLength": 512
         },
         "ciphertext": {
           "type": "string"
         },
         "tag": {
-          "type": "string"
+          "type": "string",
+          "maxLength": 512
         }
       }
     },

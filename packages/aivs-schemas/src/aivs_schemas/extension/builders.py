@@ -52,14 +52,17 @@ __all__ = [
     "AIVS_PROJECT_IDENTITY_ID",
     "ALLOWED_EXTENSION_IDS",
     "EXPLOIT_CHAIN_GROUPING_CONTEXT",
+    "MAX_BUNDLE_OBJECTS",
     "RELATIONSHIP_CHAINS_TO",
     "AivsPreCveExtension",
+    "BundleValidationError",
     "ExtensionValidationError",
     "UnknownExtensionError",
     "assert_extensions_allowed",
     "build_extension_body",
     "extension_definition_sdo",
     "extension_json_schema",
+    "validate_bundle",
     "validate_stix_object",
 ]
 
@@ -90,9 +93,25 @@ EXPLOIT_CHAIN_GROUPING_CONTEXT: Final[str] = "exploit-chain"
 _SCHEMA_DIR: Final[Path] = Path(__file__).parent
 _CURRENT_SCHEMA_VERSION: Final[str] = "1.0"
 
+#: Upper bound on objects in one inbound bundle. A submission is a finding and
+#: its supporting objects -- a chain of a few dozen at most. The bound exists so
+#: that validation cost stays proportional to something a reviewer can reason
+#: about, rather than to whatever a client chose to send.
+MAX_BUNDLE_OBJECTS: Final[int] = 5000
+
 
 class ExtensionValidationError(ValueError):
     """An object's AIVS extension body failed schema validation."""
+
+
+class BundleValidationError(ValueError):
+    """An inbound bundle was structurally malformed.
+
+    Distinct from the per-object errors below, and a ``ValueError`` subclass so
+    that a caller translating validation failures into HTTP 400 catches one
+    family rather than having to enumerate ``ValueError`` and ``TypeError``
+    separately.
+    """
 
 
 class UnknownExtensionError(ValueError):
@@ -139,6 +158,16 @@ class UnknownExtensionError(ValueError):
         ("cve_status", EnumProperty(allowed=[s.value for s in CVEStatus], required=True)),
         ("cve_id", StringProperty()),
         ("exploit_chain_position", IntegerProperty(min=1, max=100)),
+        # Reserved for end-to-end encrypted payloads; see docs/encryption-design.md.
+        # Declared here as well as in the JSON Schema because these are two
+        # independent descriptions of the same extension, and content valid under
+        # one but not the other round-trips inconsistently: an object carrying a
+        # sealed payload would pass schema validation and then fail stix2 parsing
+        # with a custom-content error. The shapes are enforced by the JSON Schema;
+        # these declarations exist so stix2 recognises the properties at all.
+        ("sealed_payload", DictionaryProperty(spec_version="2.1")),
+        ("sealed_payload_recipients", ListProperty(StringProperty)),
+        ("sealed_payload_content_type", StringProperty()),
     ],
 )
 class AivsPreCveExtension:
@@ -239,6 +268,46 @@ def validate_stix_object(obj: Mapping[str, Any]) -> None:
         )
         msg = f"AIVS extension on {obj.get('id', '<no id>')} failed validation: {detail}"
         raise ExtensionValidationError(msg)
+
+
+def validate_bundle(bundle: Mapping[str, Any]) -> int:
+    """Validate every object in an inbound STIX bundle. Returns the object count.
+
+    Exists so that no caller has to remember to loop. :func:`validate_stix_object`
+    is per-object, and the instruction to apply it to *every* object -- not only
+    the ones the caller intends to read -- is exactly the kind of requirement that
+    survives in a docstring and dies in a code path. AIVS redistributes whole
+    bundles, so an object nobody looked at is still an object every member of the
+    circle receives.
+
+    Raises :class:`UnknownExtensionError` or :class:`ExtensionValidationError` on
+    the first object that fails, and :class:`BundleValidationError` if the bundle
+    itself is malformed. All three derive from ``ValueError``, so a caller
+    translating validation failure into HTTP 400 can catch that one family.
+    """
+    if bundle.get("type") != "bundle":
+        msg = f"expected a STIX bundle, got type={bundle.get('type')!r}"
+        raise BundleValidationError(msg)
+
+    objects = bundle.get("objects")
+    if objects is None:
+        # A bundle with no objects is legal in STIX 2.1 and simply carries
+        # nothing; it is not an error, but there is nothing to validate.
+        return 0
+    if not isinstance(objects, list):
+        msg = f"bundle 'objects' must be a list, got {type(objects).__name__}"
+        raise BundleValidationError(msg)
+    if len(objects) > MAX_BUNDLE_OBJECTS:
+        msg = f"bundle carries {len(objects)} objects, limit is {MAX_BUNDLE_OBJECTS}"
+        raise BundleValidationError(msg)
+
+    for index, obj in enumerate(objects):
+        if not isinstance(obj, Mapping):
+            msg = f"bundle object at index {index} is not an object"
+            raise BundleValidationError(msg)
+        validate_stix_object(obj)
+
+    return len(objects)
 
 
 def build_extension_body(

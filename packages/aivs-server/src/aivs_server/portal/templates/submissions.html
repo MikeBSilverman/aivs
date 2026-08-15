@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Submissions &middot; {{ instance_name }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <h1>{{ heading }}</h1>
+  <p>{{ subheading }}</p>
+</div>
+
+<div class="card">
+  {% if submissions %}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Filed</th><th>State</th><th>Marking</th>
+            <th>Title</th><th>Scope</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in submissions %}
+            <tr>
+              <td class="nowrap muted mono">{{ item.created_at }}</td>
+              <td><span class="badge state-{{ item.state }}">{{ item.state }}</span></td>
+              <td><span class="badge tlp tlp-{{ item.tlp }}">{{ item.tlp_label }}</span></td>
+              <td><a href="/portal/submissions/{{ item.id }}">{{ item.title }}</a></td>
+              <td class="muted nowrap">{{ item.scope }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="empty">{{ empty_message }}</div>
+  {% endif %}
+</div>
+{% endblock %}

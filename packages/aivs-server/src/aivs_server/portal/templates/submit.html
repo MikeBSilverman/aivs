@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}New finding &middot; {{ instance_name }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <h1>File a finding</h1>
+  <p>Creates a draft. Nothing reaches other members until {{ instance_name }} reviews and releases it.</p>
+</div>
+
+{% if error %}<div class="notice notice-error">{{ error }}</div>{% endif %}
+
+<div class="card">
+  <form method="post" action="/portal/submit">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+    <div class="field">
+      <label for="title">Title</label>
+      <input type="text" id="title" name="title" required minlength="3" maxlength="300"
+             value="{{ form.title or '' }}">
+    </div>
+
+    <div class="field">
+      <label for="summary">Summary</label>
+      <textarea id="summary" name="summary" maxlength="5000">{{ form.summary or '' }}</textarea>
+      <div class="hint">What a peer needs to know in one paragraph.</div>
+    </div>
+
+    <div class="field">
+      <label for="discovery_scope">Discovery scope</label>
+      <select id="discovery_scope" name="discovery_scope" required>
+        <option value="own_product">Our own product</option>
+        <option value="own_estate">Our own estate</option>
+        <option value="ai_system">An AI system</option>
+      </select>
+      <div class="hint">
+        AIVS carries findings in your own products and estate, and findings about
+        AI systems. It is not a channel for undisclosed vulnerabilities in
+        uninvolved third parties' software.
+      </div>
+    </div>
+
+    <div class="field">
+      <label for="tlp">Marking</label>
+      <select id="tlp" name="tlp" required>
+        <option value="amber_strict">TLP:AMBER+STRICT — recipient organisation only</option>
+        <option value="amber" selected>TLP:AMBER — organisation and its clients</option>
+        <option value="green">TLP:GREEN — community</option>
+        <option value="red">TLP:RED — named recipients only</option>
+        <option value="clear">TLP:CLEAR — unrestricted</option>
+      </select>
+    </div>
+
+    <div class="field">
+      <label>
+        <input type="checkbox" name="distribute_anonymously" value="1">
+        Withhold our identity from other members
+      </label>
+      <div class="hint">
+        {{ instance_name }} still knows it came from you. Your bundle must not
+        contain identity objects — those are redistributed verbatim and would
+        name you anyway, so they are refused.
+      </div>
+    </div>
+
+    <div class="field">
+      <label for="bundle">STIX 2.1 bundle</label>
+      <textarea id="bundle" name="bundle" required spellcheck="false">{{ form.bundle or '' }}</textarea>
+      <div class="hint">
+        Every object is validated on submission, including ones AIVS does not
+        read itself.
+      </div>
+    </div>
+
+    <button type="submit">Create draft</button>
+  </form>
+</div>
+{% endblock %}

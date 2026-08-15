@@ -1,0 +1,55 @@
+{# Portal layout.
+
+   No inline script and no inline style anywhere in these templates: the
+   Content-Security-Policy is `script-src 'self'; style-src 'self'`, with no
+   'unsafe-inline'. That is a deliberate constraint rather than an inconvenience
+   — it means a stored-content injection has nothing to execute even if one ever
+   reaches a rendered page.
+
+   Autoescaping is on for all of these (Jinja's select_autoescape by extension).
+   Anything that must render as markup has to say so explicitly, and nothing
+   here does. #}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>{% block title %}{{ instance_name }}{% endblock %}</title>
+  <link rel="stylesheet" href="/portal/static/theme.css">
+</head>
+<body>
+{% block shell %}
+  <header class="masthead">
+    <div class="masthead-inner">
+      <span class="instance">{{ instance_name }}</span>
+      <nav>
+        <a href="/portal/" {% if active == 'dashboard' %}aria-current="page"{% endif %}>Dashboard</a>
+        <a href="/portal/submissions" {% if active == 'submissions' %}aria-current="page"{% endif %}>Submissions</a>
+        <a href="/portal/submit" {% if active == 'submit' %}aria-current="page"{% endif %}>New finding</a>
+        {% if is_admin %}
+          <a href="/portal/review" {% if active == 'review' %}aria-current="page"{% endif %}>Review queue</a>
+        {% endif %}
+      </nav>
+      <span class="whoami">
+        {{ operator_name }} &middot; {{ org_slug }}
+        &middot; <a href="/portal/logout">Sign out</a>
+      </span>
+    </div>
+  </header>
+
+  <main>
+    {% for notice in notices %}
+      <div class="notice notice-{{ notice.level }}">{{ notice.message }}</div>
+    {% endfor %}
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer>
+    {{ instance_name }} &middot; pre-CVE sharing.
+    Content here is shared under its Traffic Light Protocol marking; handle
+    accordingly.
+  </footer>
+{% endblock %}
+</body>
+</html>

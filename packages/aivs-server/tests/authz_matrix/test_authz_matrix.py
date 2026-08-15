@@ -21,8 +21,10 @@ from typing import Any
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import func, select
 
 from aivs_schemas.enums import OrgStatus, OrgType
+from aivs_server.db.models import SubmissionTransition
 from tests.conftest import TEST_PROXY_SECRET, proxy_headers
 
 pytestmark = [pytest.mark.db, pytest.mark.authz]
@@ -72,6 +74,36 @@ EXPECTED_PUBLIC: frozenset[tuple[str, str]] = frozenset(
     }
 )
 
+#: The portal is a browser surface and refuses differently from the machine
+#: surface: an unauthenticated GET redirects to the sign-in page rather than
+#: returning 401, because a 401 in a browser is a dead end rather than a
+#: recovery. That difference is asserted explicitly further down rather than
+#: exempted here, so "the portal is allowed to behave differently" cannot
+#: quietly become "the portal is not checked".
+PORTAL_PREFIX = "/portal"
+
+
+def machine_routes(app: Any) -> list[tuple[str, str]]:
+    """Every route on the machine-facing surface: API and TAXII."""
+    return sorted(
+        {
+            (path, method)
+            for path, method in walk_routes(app.routes)
+            if not path.startswith(PORTAL_PREFIX) and (path, method) not in EXPECTED_PUBLIC
+        }
+    )
+
+
+def portal_routes(app: Any) -> list[tuple[str, str]]:
+    return sorted(
+        {
+            (path, method)
+            for path, method in walk_routes(app.routes)
+            if path.startswith(PORTAL_PREFIX)
+        }
+    )
+
+
 #: Placeholder values for path parameters. The identifiers do not resolve, which
 #: is the point: an unauthenticated caller must be refused before the server ever
 #: looks anything up, so a 404 here would mean the lookup happened first.
@@ -118,9 +150,7 @@ async def test_every_route_requires_authentication(app):
     reachable: list[str] = []
 
     async with AsyncClient(transport=transport, base_url="https://aivs.test") as anonymous:
-        for path, method in sorted(set(walk_routes(app.routes))):
-            if (path, method) in EXPECTED_PUBLIC:
-                continue
+        for path, method in machine_routes(app):
             response = await anonymous.request(method, concrete(path), json={})
             if response.status_code != 401:
                 reachable.append(f"{method} {path} -> {response.status_code}")
@@ -145,6 +175,8 @@ async def test_public_routes_are_exactly_the_intended_set(app):
 
     async with AsyncClient(transport=transport, base_url="https://aivs.test") as anonymous:
         for path, method in sorted(set(walk_routes(app.routes))):
+            if path.startswith(PORTAL_PREFIX):
+                continue
             response = await anonymous.request(method, concrete(path), json={})
             if response.status_code != 401:
                 actually_public.add((path, method))
@@ -180,9 +212,7 @@ async def test_a_valid_certificate_from_a_suspended_org_reaches_nothing(app, mak
     reachable: list[str] = []
 
     async with AsyncClient(transport=transport, base_url="https://aivs.test") as suspended:
-        for path, method in sorted(set(walk_routes(app.routes))):
-            if (path, method) in EXPECTED_PUBLIC:
-                continue
+        for path, method in machine_routes(app):
             response = await suspended.request(
                 method, concrete(path), json={}, headers=proxy_headers(pem)
             )
@@ -247,9 +277,7 @@ async def test_forged_proxy_secret_reaches_nothing(app, make_org, make_cert):
     reachable: list[str] = []
 
     async with AsyncClient(transport=transport, base_url="https://aivs.test") as forger:
-        for path, method in sorted(set(walk_routes(app.routes))):
-            if (path, method) in EXPECTED_PUBLIC:
-                continue
+        for path, method in machine_routes(app):
             response = await forger.request(
                 method,
                 concrete(path),
@@ -260,3 +288,80 @@ async def test_forged_proxy_secret_reaches_nothing(app, make_org, make_cert):
                 reachable.append(f"{method} {path} -> {response.status_code}")
 
     assert not reachable, "requests without the proxy secret reached:\n  " + "\n  ".join(reachable)
+
+
+# ---------------------------------------------------------------------------
+# The portal surface
+# ---------------------------------------------------------------------------
+async def test_no_portal_route_serves_content_without_a_session(app):
+    """The portal refuses differently, but it does refuse.
+
+    A browser gets a redirect to the sign-in page rather than a 401, because a
+    401 leaves a person with nowhere to go. What must hold either way is that
+    nothing renders authenticated content and nothing performs an action. The
+    only page that may return 200 is the sign-in form itself.
+    """
+    transport = ASGITransport(app=app, client=("127.0.0.1", 0))
+    served: list[str] = []
+
+    async with AsyncClient(
+        transport=transport, base_url="https://aivs.test", follow_redirects=False
+    ) as anonymous:
+        for path, method in portal_routes(app):
+            response = await anonymous.request(method, concrete(path), data={})
+
+            if path == "/portal/login":
+                # GET renders the form; POST is refused for want of credentials.
+                if method == "GET" and response.status_code != 200:
+                    served.append(f"{method} {path} -> {response.status_code}")
+                if method == "POST" and response.status_code < 400:
+                    served.append(f"{method} {path} -> {response.status_code}")
+                continue
+
+            # Everything else: a redirect to sign in, or a refusal. Never 2xx.
+            if response.status_code < 300:
+                served.append(f"{method} {path} -> {response.status_code}")
+            if 300 <= response.status_code < 400:
+                target = response.headers.get("location", "")
+                if not target.startswith("/portal/login"):
+                    served.append(f"{method} {path} redirected to {target!r}")
+
+    assert not served, (
+        "these portal routes served content or acted without a session:\n  " + "\n  ".join(served)
+    )
+
+
+async def test_the_sign_in_page_leaks_nothing_about_members(app):
+    """The one anonymous-reachable portal page must be inert.
+
+    It names the instance, which the caller already reached, and nothing else.
+    """
+    transport = ASGITransport(app=app, client=("127.0.0.1", 0))
+    async with AsyncClient(transport=transport, base_url="https://aivs.test") as anonymous:
+        response = await anonymous.get("/portal/login")
+
+    assert response.status_code == 200
+    body = response.text.lower()
+    for leaked in ("meridian", "section9", "submission--", "vulnerability--", "circle"):
+        assert leaked not in body, f"the sign-in page mentions {leaked!r}"
+
+
+async def test_a_portal_action_without_a_session_changes_nothing(app, session):
+    """A POST to a workflow verb with no session must not act.
+
+    The redirect is the visible behaviour; the property that matters is the
+    absence of a write.
+    """
+    before = await session.scalar(select(func.count()).select_from(SubmissionTransition))
+
+    transport = ASGITransport(app=app, client=("127.0.0.1", 0))
+    async with AsyncClient(
+        transport=transport, base_url="https://aivs.test", follow_redirects=False
+    ) as anonymous:
+        await anonymous.post(
+            f"/portal/submissions/{_PATH_VALUES['submission_id']}/validate",
+            data={"csrf_token": "forged"},
+        )
+
+    after = await session.scalar(select(func.count()).select_from(SubmissionTransition))
+    assert after == before

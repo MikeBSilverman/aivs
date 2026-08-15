@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Sign in &middot; {{ instance_name }}{% endblock %}
+
+{# The login page deliberately does not extend the authenticated shell: there is
+   no navigation to show, and rendering a masthead that implies a session would
+   be misleading. #}
+{% block shell %}
+<div class="login-shell">
+  <div class="login-card">
+    <h1>{{ instance_name }}</h1>
+    <p class="lede">Sign in with your analyst credentials.</p>
+
+    {% if error %}
+      {# One message for every failure. Telling a caller whether the address,
+         the password, or the second factor was wrong hands them half the
+         credential. #}
+      <div class="notice notice-error">{{ error }}</div>
+    {% endif %}
+
+    <form method="post" action="/portal/login">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="field">
+        <label for="email">Work email</label>
+        <input type="email" id="email" name="email" required autocomplete="username"
+               autofocus value="{{ email or '' }}">
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" required
+               autocomplete="current-password">
+      </div>
+      <div class="field">
+        <label for="totp_code">Authenticator code</label>
+        <input type="text" id="totp_code" name="totp_code" required inputmode="numeric"
+               autocomplete="one-time-code" pattern="[0-9]*" maxlength="8">
+      </div>
+      <button type="submit">Sign in</button>
+    </form>
+
+    <p class="login-foot">
+      Your organisation is identified by the certificate on this connection.
+      Credentials issued by another member firm will not work here.
+    </p>
+  </div>
+</div>
+{% endblock %}

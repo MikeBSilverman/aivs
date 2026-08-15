@@ -1,0 +1,388 @@
+/* AIVS portal theme.
+ *
+ * Everything visual is a custom property in :root, so a hosting ISAC rebrands
+ * the portal by replacing this one file — no template changes, no rebuild. The
+ * values shipped here are the Aequora palette, which serves as the reference
+ * theme.
+ *
+ * Two constraints shape this file:
+ *
+ * 1. No external requests. AIVS runs on a closed network behind mTLS, and the
+ *    Content-Security-Policy is `default-src 'none'` plus same-origin styles
+ *    and scripts. A CDN font or an @import would simply fail to load.
+ * 2. TLP colours are NOT themeable. They are defined by FIRST and are how an
+ *    analyst reads handling instructions at a glance; restyling them to fit a
+ *    brand would make a TLP:RED badge look like whatever the brand's red is,
+ *    which is exactly the mistake that gets embargoed content forwarded.
+ */
+
+:root {
+  /* Brand — replace these to rebrand. */
+  --brand: #2e5984;
+  --brand-deep: #214467;
+  --brand-dark: #16304a;
+  --accent: #7ba7ce;
+
+  /* Neutrals */
+  --ink: #1a2a36;
+  --muted: #586b78;
+  --line: #dbe4ec;
+  --mist: #f3f6fa;
+  --white: #ffffff;
+
+  /* Status */
+  --ok: #1f7a4d;
+  --warn: #a8620a;
+  --danger: #9d2235;
+
+  --radius: 14px;
+  --radius-sm: 8px;
+  --maxw: 1120px;
+
+  --serif: "Spectral", Georgia, "Times New Roman", serif;
+  --sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, monospace;
+
+  --shadow: 0 1px 2px rgba(22, 48, 74, 0.06), 0 4px 16px rgba(22, 48, 74, 0.06);
+}
+
+/* Self-hosted fonts. Drop the woff2 files into this directory to enable them;
+ * the stacks above degrade cleanly to system fonts if they are absent, which is
+ * why no @font-face is required for the portal to look right. */
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url("/portal/static/fonts/inter.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Spectral";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("/portal/static/fonts/spectral-600.woff2") format("woff2");
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: var(--sans);
+  color: var(--ink);
+  background: var(--mist);
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--serif);
+  color: var(--brand-dark);
+  line-height: 1.25;
+  margin: 0 0 0.5rem;
+}
+
+h1 { font-size: 1.6rem; }
+h2 { font-size: 1.25rem; }
+h3 { font-size: 1.05rem; }
+
+a {
+  color: var(--brand);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+a:hover { color: var(--brand-deep); }
+
+/* ---------------------------------------------------------------- layout - */
+.masthead {
+  background: linear-gradient(180deg, var(--brand-deep), var(--brand-dark));
+  color: var(--white);
+  padding: 0.85rem 1.25rem;
+}
+
+.masthead-inner {
+  max-width: var(--maxw);
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+}
+
+.masthead .instance {
+  font-family: var(--serif);
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin-right: auto;
+}
+
+.masthead nav {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.masthead nav a {
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 0.92rem;
+}
+.masthead nav a:hover,
+.masthead nav a[aria-current="page"] {
+  color: var(--white);
+  text-decoration: underline;
+}
+
+.whoami {
+  font-size: 0.82rem;
+  color: var(--accent);
+}
+
+main {
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: 1.75rem 1.25rem 4rem;
+}
+
+.page-head {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.25rem;
+}
+.page-head p { color: var(--muted); margin: 0; }
+
+/* ----------------------------------------------------------------- cards - */
+.card {
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+  box-shadow: var(--shadow);
+  margin-bottom: 1.25rem;
+}
+
+.card > h2:first-child,
+.card > h3:first-child { margin-top: 0; }
+
+.grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.stat {
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 1rem 1.15rem;
+}
+.stat .value {
+  font-family: var(--serif);
+  font-size: 1.9rem;
+  color: var(--brand);
+  line-height: 1.1;
+}
+.stat .label {
+  font-size: 0.8rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* ---------------------------------------------------------------- tables - */
+.table-wrap { overflow-x: auto; }
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.93rem;
+}
+
+th {
+  text-align: left;
+  font-weight: 600;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
+  padding: 0.55rem 0.75rem;
+  white-space: nowrap;
+}
+
+td {
+  padding: 0.7rem 0.75rem;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+
+tbody tr:last-child td { border-bottom: none; }
+tbody tr:hover { background: var(--mist); }
+
+.mono { font-family: var(--mono); font-size: 0.85em; }
+.muted { color: var(--muted); }
+.nowrap { white-space: nowrap; }
+
+/* ---------------------------------------------------------------- badges - */
+.badge {
+  display: inline-block;
+  padding: 0.12rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.state-draft       { background: var(--mist);        color: var(--muted); border: 1px solid var(--line); }
+.state-submitted   { background: #eaf1f8;            color: var(--brand-deep); }
+.state-validated   { background: #e6f2ec;            color: var(--ok); }
+.state-distributed { background: var(--brand);       color: var(--white); }
+.state-superseded  { background: var(--mist);        color: var(--muted); border: 1px solid var(--line); }
+.state-withdrawn   { background: #f7e9eb;            color: var(--danger); }
+
+/* TLP 2.0 — FIRST's colours. Do not rebrand these. An analyst reads handling
+ * instructions from this badge, and a TLP:RED that looks like a house red is
+ * how embargoed content gets forwarded. */
+.tlp { font-family: var(--sans); }
+.tlp-red          { background: #000000; color: #ff2b2b; }
+.tlp-amber,
+.tlp-amber_strict { background: #000000; color: #ffc000; }
+.tlp-green        { background: #000000; color: #33ff00; }
+.tlp-clear        { background: #000000; color: #ffffff; }
+
+/* ----------------------------------------------------------------- forms - */
+label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--brand-dark);
+  margin-bottom: 0.3rem;
+}
+
+.field { margin-bottom: 1rem; }
+.field .hint {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-top: 0.25rem;
+}
+
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="datetime-local"],
+select,
+textarea {
+  width: 100%;
+  padding: 0.55rem 0.7rem;
+  font: inherit;
+  font-size: 0.95rem;
+  color: var(--ink);
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+button:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+textarea { min-height: 7rem; resize: vertical; font-family: var(--mono); font-size: 0.85rem; }
+
+button,
+.button {
+  display: inline-block;
+  padding: 0.55rem 1.1rem;
+  font: inherit;
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--white);
+  background: var(--brand);
+  border: 1px solid var(--brand);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  text-decoration: none;
+}
+button:hover, .button:hover { background: var(--brand-deep); border-color: var(--brand-deep); }
+
+.button-secondary {
+  background: var(--white);
+  color: var(--brand);
+}
+.button-secondary:hover { background: var(--mist); color: var(--brand-deep); }
+
+.actions { display: flex; gap: 0.6rem; flex-wrap: wrap; align-items: center; }
+
+/* --------------------------------------------------------------- notices - */
+.notice {
+  border-radius: var(--radius-sm);
+  padding: 0.75rem 1rem;
+  margin-bottom: 1.25rem;
+  font-size: 0.92rem;
+  border: 1px solid;
+}
+.notice-error  { background: #fdf2f3; border-color: #e9c2c8; color: var(--danger); }
+.notice-ok     { background: #eef7f2; border-color: #bfe0ce; color: var(--ok); }
+.notice-info   { background: #eef4fa; border-color: #cadcee; color: var(--brand-deep); }
+
+.empty {
+  text-align: center;
+  padding: 2.5rem 1rem;
+  color: var(--muted);
+}
+
+/* ----------------------------------------------------------------- login - */
+.login-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(160deg, var(--brand-deep), var(--brand-dark));
+  padding: 1.25rem;
+}
+
+.login-card {
+  width: min(26rem, 100%);
+  background: var(--white);
+  border-radius: var(--radius);
+  padding: 2rem;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+}
+
+.login-card h1 { margin-bottom: 0.25rem; }
+.login-card .lede { color: var(--muted); font-size: 0.9rem; margin: 0 0 1.5rem; }
+.login-card button { width: 100%; margin-top: 0.5rem; }
+
+.login-foot {
+  margin-top: 1.25rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+  text-align: center;
+}
+
+/* ---------------------------------------------------------------- footer - */
+footer {
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: 1.5rem 1.25rem 3rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+  border-top: 1px solid var(--line);
+}
+
+/* Respect a reader's stated preference rather than animating regardless. */
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}

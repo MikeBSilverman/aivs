@@ -19,11 +19,13 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any, Final
 
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from aivs_server.api import acknowledgments, admin, meta, submissions
 from aivs_server.audit.log import AuditAction, record_denial
@@ -36,6 +38,7 @@ from aivs_server.middleware import (
     RequestContextMiddleware,
     SecurityHeadersMiddleware,
 )
+from aivs_server.portal import routes as portal_routes
 from aivs_server.taxii import router as taxii_router
 
 __all__ = ["create_app"]
@@ -115,7 +118,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(submissions.router)
     app.include_router(acknowledgments.router)
     app.include_router(admin.router)
+    app.include_router(portal_routes.router)
     app.include_router(taxii_router.router)
+
+    # Served from the package so a deployment needs no separate asset step.
+    app.mount(
+        "/portal/static",
+        StaticFiles(directory=str(Path(portal_routes.__file__).parent / "static")),
+        name="portal-static",
+    )
 
     return app
 

@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block title %}{{ submission.title }} &middot; {{ instance_name }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <h1>{{ submission.title }}</h1>
+  <p>
+    <span class="badge state-{{ submission.state }}">{{ submission.state }}</span>
+    <span class="badge tlp tlp-{{ submission.tlp }}">{{ submission.tlp_label }}</span>
+  </p>
+</div>
+
+<div class="card">
+  <h2>Summary</h2>
+  <p>{{ submission.summary or "No summary supplied." }}</p>
+  <table>
+    <tbody>
+      <tr><th>Discovery scope</th><td>{{ submission.scope }}</td></tr>
+      <tr><th>Objects</th><td>{{ submission.object_count }}</td></tr>
+      <tr><th>Filed</th><td class="mono">{{ submission.created_at }}</td></tr>
+      {% if submission.distributed_at %}
+        <tr><th>Distributed</th><td class="mono">{{ submission.distributed_at }}</td></tr>
+      {% endif %}
+      <tr>
+        <th>Attribution</th>
+        <td>{% if submission.anonymous %}Withheld from consumers{% else %}Attributed{% endif %}</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+{% if actions %}
+<div class="card">
+  <h2>Actions</h2>
+  <div class="actions">
+    {% for action in actions %}
+      <form method="post" action="/portal/submissions/{{ submission.id }}/{{ action.verb }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button type="submit" {% if not action.primary %}class="button-secondary"{% endif %}>
+          {{ action.label }}
+        </button>
+      </form>
+    {% endfor %}
+  </div>
+  {% if distribute_circles %}
+    <h3>Distribute to circles</h3>
+    <form method="post" action="/portal/submissions/{{ submission.id }}/distribute">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="field">
+        {% for circle in distribute_circles %}
+          <label>
+            <input type="checkbox" name="circle_ids" value="{{ circle.id }}">
+            {{ circle.name }} <span class="muted">(floor {{ circle.minimum_tlp }})</span>
+          </label>
+        {% endfor %}
+      </div>
+      <div class="field">
+        <label for="release_at">Hold until (optional)</label>
+        <input type="datetime-local" id="release_at" name="release_at">
+        <div class="hint">
+          Leave empty to release immediately. A time in the past is refused —
+          it would hide the content from members who have already polled past it.
+        </div>
+      </div>
+      <button type="submit">Distribute</button>
+    </form>
+  {% endif %}
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>History</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>When</th><th>Change</th><th>Reason</th></tr></thead>
+      <tbody>
+        {% for entry in transitions %}
+          <tr>
+            <td class="nowrap muted mono">{{ entry.at }}</td>
+            <td>{{ entry.from_state or "created" }} &rarr; {{ entry.to_state }}</td>
+            <td class="muted">{{ entry.reason or "" }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% if receipts is not none %}
+<div class="card">
+  <h2>Receipts</h2>
+  <p class="muted">
+    Who received this and what they did about it. Visible to you as the
+    submitter, and to the hosting ISAC — not to other members.
+  </p>
+  {% if receipts %}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Organisation</th><th>Engagement</th><th>Via</th><th>First</th><th>Times</th></tr>
+        </thead>
+        <tbody>
+          {% for row in receipts %}
+            <tr>
+              <td>{{ row.org_slug }}</td>
+              <td>{{ row.ack_type }}</td>
+              <td class="muted">{{ row.via }}</td>
+              <td class="nowrap muted mono">{{ row.first_at }}</td>
+              <td>{{ row.occurrences }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="empty">No-one has collected this yet.</div>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

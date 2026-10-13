@@ -113,13 +113,30 @@ unauthenticated and came back 401, and the only configuration that worked was
 the one that dropped the pin and fell back to the system trust store. The
 context is now built explicitly, and the CA bundle is a required setting.
 
-**Open and documented, not hidden.** `totp_secret_encrypted` and
-`hmac_secret_encrypted` are **base64, not encryption**. `auth/passwords.encode_secret`
-has always said so; the column comments now say so too **[fixed]**. A database
-read yields every operator's working second factor and every member's webhook
-signing key. Real envelope encryption is designed in `docs/encryption-design.md`
-and scheduled after Phase 5. Until it ships, the column names are wrong and the
-comments are right.
+**Closed.** `totp_secret_encrypted` and `hmac_secret_encrypted` were **base64,
+not encryption**, for as long as they existed: a database read yielded every
+operator's working second factor and every member's webhook signing key. They
+are now sealed by `auth/secretbox.py` — an AEAD under a key held in the process
+environment, bound by additional authenticated data to the id of the row they
+belong to, so a sealed value cannot be moved between rows or reused for another
+purpose. AES-256-GCM by default, ChaCha20-Poly1305 also registered; **every
+stored value names the algorithm and key it was written with**, so replacing
+either is a re-wrap performed at leisure rather than a migration performed under
+whatever pressure made it necessary. Migration `a1c7e2b93d45` re-seals existing rows and requires the
+key to be present, so the base64 read path is gone from the codebase rather than
+retained as a fallback nobody would ever remove.
+
+Note that `docs/threat-model.md` asserted "encrypted at rest by the application"
+for both columns while this was still base64. The claim is true as of this
+change; it was not before, and a claim in a threat model is exactly the kind
+that gets believed rather than checked.
+
+**Residual, stated rather than implied.** The key lives beside the database
+credentials, so a full host compromise defeats it. What it defeats is the
+realistic set — a stolen backup, a read replica, a SQL-level disclosure, a
+support engineer with `SELECT` and no access to the application's environment —
+which is the category that appears in incident reports. Moving the key into an
+HSM or cloud KMS is a provider swap behind the same interface, not a redesign.
 
 ---
 
@@ -127,7 +144,7 @@ comments are right.
 
 | Vector | Status |
 |---|---|
-| SQL | No raw SQL anywhere in application source. Every query is SQLAlchemy Core/ORM with bound parameters; the only `text()` is `SELECT 1` in the readiness probe. Verified by grep and by semgrep's `p/python` and `p/owasp-top-ten` rulesets. |
+| SQL | No raw SQL anywhere in application source. Every query is SQLAlchemy Core/ORM with bound parameters; the only `text()` is `SELECT 1` in the readiness probe. Verified by grep and by semgrep's `p/python` and `p/owasp-top-ten` rulesets, which now run as a build gate rather than as the one-off local scan this line originally described **[fixed]**. |
 | Command | No `subprocess`, `os.system`, `os.popen`, `eval`, `exec`, or `__import__` in any package. |
 | Deserialisation | No `pickle`, `marshal`, `shelve`, or `yaml.load`. STIX ingest is `json.loads` plus a JSON Schema validator and an explicit extension allowlist. |
 | XXE | No XML parsing. |
@@ -274,7 +291,7 @@ conclude the members had been warned.
 | A02 Security Misconfiguration | Strong after this review. Placeholders and the issuer pin now fail closed. |
 | A03 Supply Chain | Strong. Reproducible SBOM for the app and the image; signed provenance is the remaining gap. |
 | A04 Cryptographic Failures | Strong in transit and for passwords. Secrets at rest are base64 and honestly labelled; envelope encryption is designed, not built. |
-| A05 Injection | No known vector. Verified by inspection and by semgrep. |
+| A05 Injection | No known vector. Verified by inspection and by semgrep, in CI. |
 | A06 Insecure Design | Strong. Two features described by the schema and not implemented. |
 | A07 Authentication Failures | Strong after this review. |
 | A08 Integrity Failures | Strong after this review. |

@@ -76,10 +76,14 @@ uv run ruff format --check .
 uv run ruff check .
 uv run mypy packages/aivs-schemas/src packages/aivs-server/src packages/aivs-client/src
 uv run bandit -c pyproject.toml -r packages/*/src
+uvx semgrep==1.173.0 scan --config p/python --config p/owasp-top-ten \
+  --exclude-rule generic.nginx.security.request-host-used.request-host-used \
+  --no-git-ignore --metrics=off --error packages/ demo/ scripts/ deploy/
 uv export --no-emit-workspace --format requirements-txt -o /tmp/audit.txt
 uv run pip-audit --strict --requirement /tmp/audit.txt
 uv run alembic -c packages/aivs-server/alembic.ini check     # no model/migration drift
 uv run pytest -q
+gitleaks dir . --config .gitleaks.toml    # before any commit that adds files
 ```
 
 `azure-pipelines.yml` runs the same set in the same order. Fast checks first, so
@@ -103,6 +107,13 @@ CI also scans the built image with syft, because a Python-environment scan
 cannot see the Debian base layer and that layer is most of what a member firm's
 scanner will flag. Neither document subsumes the other; publish both.
 
+**Semgrep defaults to git-tracked files only.** Run locally over a working tree
+with new files in it, it skips exactly the code you just wrote and reports
+clean -- which reads as "reviewed" and is not. `--no-git-ignore` is in the gate
+so a local run means what a CI run means. The same shape as the `pip-audit`
+flags above: an option whose default quietly narrows what a security gate
+covers, while the output still says "completed successfully".
+
 **Coverage is instrumented for greenlet.** `[tool.coverage.run]` sets
 `concurrency = ["greenlet", "thread"]`. Without it coverage.py loses its trace
 function across SQLAlchemy's greenlet switches and records only statements
@@ -111,6 +122,15 @@ whole loops never ran in tests that demonstrably exercise them. It put CI below
 its own `fail_under` gate for a reason nobody would have guessed from the
 report, and the natural response to a gate that is red for an invisible reason
 is to lower the gate. Do not remove it.
+
+**Scan for secrets before the commit, not after.** Committed history is forever
+once the repository is public; a key-shaped string in it is flagged by every
+scanner that ever runs, whatever the comment beside it says. The CI migration
+key was a base64 literal until gitleaks found it — it is minted in-step now.
+False positives go in `.gitleaks.toml` as a *rule-level* allowlist matching the
+call shape, with the argument written beside it. A top-level `[[allowlists]]`
+with `targetRules` parsed cleanly in gitleaks 8.28 and was silently not
+applied, which is the same shape as the semgrep and pip-audit defaults above.
 
 **Suppressions are arguments, not annotations.** A `noqa`, `nosec`, or
 `type: ignore` needs a comment saying why the rule does not apply here. If the
@@ -361,6 +381,31 @@ in the same transaction needs an explicit `await session.flush()`.
 an untyped `ARRAY[]` that Postgres cannot compare, so the filter matches nothing
 and says nothing. Use `func.cardinality(col) > 0`.
 
+**Stored ciphertext says how it was made.** Every value `auth/secretbox.py`
+writes carries a format version, an algorithm id and a key fingerprint. That is
+what makes changing the cipher or the key a re-wrap run at leisure
+(`rewrap_secrets`) instead of a migration run on the day something forced the
+change. A format that omits them makes the first choice permanent, and the cost
+is invisible until it is urgent. The same applies to anything else durable we
+sign, wrap, or derive: name the parameters in the artefact. Algorithm ids are on
+disk in deployments we do not control — never renumber or reuse one.
+
+**A Pydantic "after" validator's return value is not re-validated.** The
+key-encryption-key check started as one validator over both the required key and
+the optional previous one, mapping an empty string to `None` because that is how
+compose and Kubernetes spell "unset". For the *required* field that would have
+silently stored `None` — pydantic accepts an after-validator's return without
+re-checking the declared type — turning a startup failure into an
+`AttributeError` at first use. Never let a shared validator widen a required
+field's domain; split it, and let the strict field stay strict.
+
+**A value bound to a row id must be built after the id exists.** SQLAlchemy
+applies `default=uuid.uuid4` at INSERT, not at construction, so `obj.id` is
+`None` while the object is being populated. Anything sealed, signed, or hashed
+against the row's identity therefore has to generate the id explicitly and pass
+it in. This is invisible until the seal fails to open, which happens on a later
+request, in a different module.
+
 **Tell the operator when the thing they clicked did not happen.** Every portal
 workflow failure redirected to the same page as a success, with no message. An
 operator whose distribution was refused by a circle's TLP floor had no way to
@@ -396,7 +441,131 @@ follow. A reviewer should not have to reconstruct why a column exists.
 
 ---
 
-## 8. Comments and commit messages
+## 8. Code structure
+
+This codebase gets read far more than it gets written. Reviewers, auditors at
+member firms, and whoever is on call when something breaks all read it, and they
+are usually reading it to answer one question: is this right? Every rule in
+section 5 was a defect that sat in code someone had already read. Code that
+takes effort to follow gets skimmed, and skimmed code is where defects hide.
+The bar for every function: **a professional programmer new to the repository
+can read it once, top to bottom, and say what it does and why it is correct.**
+
+**One function, one job.** The single responsibility principle: a function has
+one reason to change. If describing it takes "and" (validates the bundle *and*
+rewrites attribution *and* records the audit row), split it. The orchestrating
+function that is left should read as a list of named steps. Many of the defects
+in section 5 lived in a branch nobody was looking at because it shared a
+function with the branch they were looking at. Attribution was rewritten on one
+path and not on the other; failure bookkeeping was committed and success
+bookkeeping was not. A function with one job has fewer branches to forget.
+
+**One level of abstraction per function.** A function either says *what*
+happens (`check_tlp_floor`, `record_visibility`, `commit`) or *how* (building
+the query, walking the bundle, formatting the header). It should not do both. If
+a policy decision sits next to string slicing or raw SQL construction, move the
+mechanics into a named helper. The reader can then check the policy without
+parsing the mechanics, and check the mechanics without keeping the policy in
+mind.
+
+**Keep nesting shallow. Three levels is the ceiling.** Use guard clauses and
+return early. Pull loop bodies out into functions, and replace `if` ladders
+with lookups. Every level of nesting is another condition the reader has to
+keep in mind to know when a line runs, and the line nested five levels deep is
+the one nobody checks. In a fail-closed codebase this matters even more: a guard
+clause at the top (`if not caller_can_see(obj): raise NotFound`) can be checked
+at a glance, while the same refusal buried in an `else` four levels down cannot.
+
+**Keep cyclomatic complexity at 10 or below per function.** That is
+mccabe's default, and the point past which a function cannot be covered by a
+readable set of tests. Branch count, statement count and return count are already
+gated by ruff's `PL` rules. A function that needs a suppression to pass them
+needs splitting, not a suppression (section 2: suppressions are arguments). The
+one documented exception is type-dispatch and state-machine functions, for
+which `max-returns` is raised in `pyproject.toml` with its reason.
+
+The complexity and nesting limits are *not yet gated*. Turning on `C901`
+(max 10) and `PLR1702` (max 3 nested blocks, a preview rule) found seven
+functions over the limit as of 2026-10-13. A gate that starts out red gets
+ignored, so these should be refactored first and the gate turned on in the same
+commit. Until then, these are review rules, and new code must not add to the
+list.
+
+**Name things positively.** Use `is_visible`, `has_session`, `allow_docs`,
+`include_withdrawn`. Do not use `is_not_visible`, `no_session`,
+`disable_docs`, `skip_withdrawn`. Negation belongs at the use site, where it
+reads once (`if not is_visible`), and not in the name, where it reads twice
+(`if not is_not_visible`). This is not just style. `show_docs = not
+settings.is_production` was a negative condition that read as "development only"
+and actually meant "everything except production". That served the staging
+instance's admin surface to anyone who asked (section 5). A positive allow-list
+name (`docs_enabled = settings.is_dev`) states the condition that grants access,
+which is the only condition a fail-closed reader needs to check. The same
+applies to booleans in configuration, database columns and function parameters.
+
+**Names say what, at the level the caller works at.** A function is named for
+its effect (`distribute_submission`, `resolve_latest_visible_version`), not its
+mechanism (`process`, `handle`, `do_update`). A variable is named for what it
+holds, not its type (`embargoed_ids`, not `id_set`). If a name needs a comment
+to explain it, rename it.
+
+**Write for the person debugging it.**
+
+- Bind intermediate results to named variables rather than nesting calls three
+  deep, so a breakpoint or a log line has something to show.
+- Raise as close to the cause as possible, with an exception that says which
+  object and which rule. "TLP floor AMBER refused RED content in circle X" can
+  be acted on; "invalid submission" cannot.
+- Log decisions, not just events. "distribution refused: TLP floor" is worth
+  more at 3 a.m. than "distribute called". Carry the correlation id, and keep
+  content out of logs (see section 5 on what the server can keep private).
+- Prefer pure functions for logic, with I/O at the edges. A function that takes
+  values and returns a value can be tested and debugged in a REPL. A function
+  that takes a session and commits cannot.
+
+**Refactoring is not a licence to change behaviour.** Splitting a function that
+enforces a section 5 rule is exactly when the rule gets lost: the lock moves
+into a helper that one caller no longer calls, or the commit ends up outside the
+`try`. Refactor with the tests green before and after, and keep the security
+property's check in one place that the new structure obviously routes through.
+
+**Practices, each with the failure it prevents.**
+
+- **Parse, don't validate.** Turn input into a typed object once, at the
+  boundary, and pass the object. A function that re-checks a string it was
+  handed will one day be called from the one place that forgot to.
+  `DiscoveryScope` is the model.
+- **Make illegal states unrepresentable.** A state machine is an enum plus a
+  transition table in `aivs-schemas`, never a set of booleans that can both be
+  true. The submission machine is the model.
+- **Immutable by default.** `frozen=True` for values; never mutate an argument.
+  `AuthContext` being frozen is why the authorization matrix means anything.
+- **Dependencies point inward.** `services/` import `db/` and `auth/`; routers
+  import `services/`; nothing in `services/` imports FastAPI. A service that
+  takes a `Request` cannot be tested without one.
+- **Take what you need, not where to find it.** Pass the setting, not
+  `settings`; pass the org, not a session plus an id to look it up — except
+  where the row lock is the point, and then say so.
+- **Explicit over implicit for anything security-relevant.** No default values
+  for `for_update`, `anonymous`, `expires_at`; the caller states the choice
+  where a reviewer reads it.
+- **Exceptions are typed and raised near the cause.** `except Exception` only in
+  the one handler that owns the response headers (section 5).
+- **Time is injected.** A function that reads the clock takes `now` from its
+  caller, so embargo and membership tests are exact.
+- **Tests state the property.** One behaviour per test, named for it. Prove the
+  test can fail by re-applying the defect; a test that passes either way
+  asserts nothing, and this suite has contained several.
+- **No speculative generality.** No base class with one subclass, no registry
+  with one entry, no helper or column "for later" — section 5 records what each
+  of those cost.
+- **Delete, don't comment out.** Ruff's `ERA` is on; git holds the history.
+- **A commit does one thing.** Refactor, fix and feature are separate commits,
+  so a security fix can be read alone and reverted alone.
+
+---
+
+## 9. Comments and commit messages
 
 Comments say **why**, never what. The bar: would this sentence still be worth
 reading in a year, to someone who can already read the code? If it restates the

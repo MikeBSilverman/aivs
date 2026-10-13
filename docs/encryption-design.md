@@ -248,3 +248,92 @@ Stated plainly, because a threat model that oversells is worse than none:
   infrastructure. Confidentiality is protected; availability is not.
 - **Traffic analysis.** Retrieval receipts, which are a deliberate product
   feature, reveal which firms are paying attention to which findings.
+
+Whether *metadata* could also be sealed while keeping the server able to route
+and filter on it — the encrypted-search question — is assessed in
+`docs/open-decisions.md`. The short version is that it is not adopted, and the
+reasons are in that entry rather than duplicated here.
+
+---
+
+## 10. How members open sealed content
+
+A sealed payload is worthless to a member who cannot get it into the tool they
+already triage in. This section decides how that happens, because the obvious
+answer — extend a STIX/TAXII client to understand the extension — is the wrong
+one and would be discovered to be wrong only after the work was done.
+
+### The reference client is not the integration path, and must not become it
+
+Almost no member firm collects with an open-source Python TAXII client. They
+collect with Anomali, EclecticIQ, ThreatQ, Microsoft Sentinel, Splunk, OpenCTI
+or MISP. A fork of `cti-taxii-client` reaches tooling authors, not the firms
+whose adoption decides whether AIVS exists — while creating a permanent
+maintenance obligation and a diligence question ("you run a fork of the
+reference client?") that costs exactly the trust the encryption was bought to
+earn.
+
+This is why section 4 chose a published multi-recipient format over anything
+bespoke, and section 8 made an unaware consumer degrade to valid, triage-able
+STIX. Both were chosen so that *no client anywhere is required to change*. The
+integration work is therefore a written format plus a small unwrap helper, not a
+client anyone has to adopt.
+
+### `aivs proxy`: a decrypting sidecar on loopback
+
+The member points their existing TAXII connector at the sidecar instead of at
+the instance. It holds the mTLS identity and the organisation's private key,
+polls upstream, unwraps `sealed_payload`, splices the plaintext back into the
+object, and serves ordinary TAXII 2.1. The TIP is unchanged, which is what makes
+this work for the commercial products that can never be modified — one
+implementation covers all of them.
+
+It shares the poll path with `aivs poll`, so the cursor discipline and the
+stdout/stderr separation that already make `aivs poll | ingest` safe are not
+reimplemented.
+
+Four constraints, each of which undoes the design if dropped:
+
+- **Loopback bind only.** A network-reachable decrypting proxy is a keyless
+  decryption oracle for everyone inside the firm's perimeter, and it collapses
+  `TLP:AMBER+STRICT` back into "whoever can reach the box". Not configurable to
+  a routable address.
+- **No plaintext at rest.** No response cache, no spool file, no debug dump.
+- **It verifies the recipient set before submitting**, against the registry in
+  section 5. The transparency property is a promise the reference client has to
+  actually keep; a `kid` list nobody checks is section 5 written in a response
+  body and enforced nowhere.
+- **It refuses `TLP:RED`, and says why.** See below — this is correct behaviour,
+  and the error message is the documentation most members will read.
+
+### `TLP:RED` is deliberately not a collector path
+
+Section 3 makes `TLP:RED` wrap only to named operator keys. A firm's shared
+collector being able to open one would destroy the single property that makes
+`TLP:RED` a cryptographic fact rather than a coloured label — so RED decrypts in
+the portal via WebCrypto, with the operator's private key never leaving their
+browser or OS keystore, or with `aivs open` on that analyst's own workstation.
+
+"Why can't my SIEM see the RED ones" is the first support question this feature
+will generate. Answered in advance it is the strongest thing about the design;
+answered after the fact it reads as a defect.
+
+### What is offered to other implementers
+
+A vendor-neutral format note and a reference unwrap of roughly fifty lines using
+standard JOSE tooling — enough for a connector author to implement without
+reading this codebase. OpenCTI and MISP are the two where contributing an actual
+connector is worthwhile, and only once a member asks for one: a connector nobody
+requested is maintenance acquired without adoption.
+
+### Order of work, and one prerequisite
+
+Secrets at rest first — BYOK does not close that hole and it is the live one.
+Then the format note and unwrap in the reference client, then the sidecar, then
+portal RED decryption, then connectors on demand.
+
+**`packages/aivs-client` needs its own test suite before the sidecar, not
+after.** It has none today, which is how a client that pinned the CA and then
+connected anonymously survived review. A component whose entire job is holding a
+private key and terminating one TLS connection in order to open another is the
+worst possible place to add untested surface.

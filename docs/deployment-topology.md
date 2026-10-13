@@ -443,6 +443,11 @@ in every authorization predicate.
 - Issuing CA in an HSM or KMS.
 - `AIVS_PROXY_SHARED_SECRET` — ≥ 32 characters, validated at startup.
 - `AIVS_SESSION_SECRET` — ≥ 32 characters, validated at startup.
+- `AIVS_SECRET_ENCRYPTION_KEY` — base64, of the length the configured algorithm
+  takes (32 bytes for either current option), validated at startup. Encrypts operator TOTP seeds and members' webhook signing keys.
+  **Back it up separately from the database.** Held together, they are one
+  artefact with no encryption at rest; lost entirely, every operator re-enrols
+  their second factor and every member re-registers their webhook.
 - Database credentials for a **non-superuser role that does not own
   `audit_log` or `submission_transitions`**. Set `AIVS_APP_DB_ROLE` to that role
   name when running the append-only migration so it receives `INSERT, SELECT`
@@ -472,6 +477,8 @@ AIVS_PUBLIC_BASE_URL=https://aivs.example.org
 AIVS_DATABASE_URL=postgresql+psycopg://aivs_app:...@db:5432/aivs
 AIVS_PROXY_SHARED_SECRET=<32+ chars>
 AIVS_SESSION_SECRET=<32+ chars>
+AIVS_SECRET_ENCRYPTION_KEY=<openssl rand -base64 32>
+# AIVS_SECRET_ENCRYPTION_ALGORITHM=aes-256-gcm   # or chacha20-poly1305
 AIVS_TRUSTED_PROXY_CIDRS=["10.20.0.2/32"]   # the nginx container address
 AIVS_LOG_LEVEL=INFO
 ```

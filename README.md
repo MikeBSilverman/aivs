@@ -211,6 +211,7 @@ uv run ruff check . && uv run mypy . && uv run bandit -c pyproject.toml -r packa
 | [Deployment topology](docs/deployment-topology.md) | Both hosting modes, network layers, PKI and certificate lifecycle |
 | [Onboarding](docs/onboarding.md) | Member-firm-facing: enrolment through first successful poll |
 | [Operator runbook](docs/operator-runbook.md) | ISAC staff: first run, review and distribution, embargoes, backup, incidents |
+| [Identity federation](docs/identity-federation.md) | Two ISAC-operated IdP tenants, OIDC, JIT provisioning, passkeys — design, unbuilt |
 | [Sharing agreement outline](docs/sharing-agreement-outline.md) | A non-lawyer's skeleton for counsel to draft from |
 
 ---

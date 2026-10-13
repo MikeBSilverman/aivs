@@ -394,6 +394,16 @@ nothing else is allowed to.
 | Audit stream | **Ship `audit_log` rows off-box, append-only, to a system the AIVS operators cannot alter** | Continuous |
 | CA material | Offline, encrypted media, two locations | On change |
 | Configuration and secrets | Secret manager, versioned | On change |
+| `AIVS_SECRET_ENCRYPTION_KEY` | Secret manager or offline media, **not beside the database backup** | On rotation |
+
+**The key-encryption key is not part of the database backup, and must not be
+stored with it.** A backup that contains both the sealed columns and the key
+that opens them is a backup with no encryption at rest -- which is precisely the
+threat the key exists to answer, since the realistic disclosure is a stolen
+backup rather than a live host. Lose it entirely and every operator re-enrols
+their second factor and every member re-registers their webhook; neither failure
+announces itself, because both columns keep working right up until someone tries
+to sign in.
 
 **WAL archiving is not optional.** Nightly dumps alone mean a failure at 23:00
 loses a day of audit rows, and you cannot regenerate them. PITR bounds the loss
@@ -416,10 +426,14 @@ is organisational, not technical.
    it does not have.
 3. Verify the append-only triggers survived the restore (§1.1). A dump/restore
    cycle does not necessarily carry triggers and grants — check, do not assume.
-4. Verify `distributions.date_added` values for pending embargoes are intact.
+4. Verify the sealed secrets open under the configured key:
+   `python -m aivs_server.rewrap_secrets` reports `unopenable=0`. A database
+   restored beside the wrong environment's key looks entirely healthy until the
+   first sign-in, and then fails as if the operator's code were wrong.
+5. Verify `distributions.date_added` values for pending embargoes are intact.
    These are the enforcement gate; a restore that loses a future `date_added`
    could make embargoed content visible.
-5. Reconcile with members: has anything become visible that should not have, or
+6. Reconcile with members: has anything become visible that should not have, or
    stayed hidden that should have released?
 
 **Test restores on a schedule you actually keep.** A backup regime discovered to
@@ -463,7 +477,49 @@ The worst case, and the one to have thought about in advance.
    effect on their next request and stops everything, not just that certificate.
 5. Issue a replacement once the member has generated a fresh key.
 
-### 7.3 Instance compromise
+### 7.3 Rotating the secret-encryption key, or changing its algorithm
+
+Rotate on suspected disclosure of the key itself, on the departure of anyone who
+held it, and otherwise on the ISAC's own schedule. Both keys open during a
+rotation; only the active one seals, so there is no flag day and no downtime.
+
+**Changing the algorithm is the same procedure.** Every stored value records the
+algorithm and the key it was written with, so setting
+`AIVS_SECRET_ENCRYPTION_ALGORITHM` to another supported name (`aes-256-gcm`,
+`chacha20-poly1305`) leaves existing values readable and moves new writes across;
+the same re-wrap below then migrates the rest. Substitute "the algorithm" for
+"the key" in the steps, and there is no previous-key variable to remove at the
+end.
+
+1. Generate the new key: `openssl rand -base64 32`.
+2. Set `AIVS_SECRET_ENCRYPTION_KEY` to it, and
+   `AIVS_SECRET_ENCRYPTION_KEY_PREVIOUS` to the value it replaces. Restart.
+   Everything continues to work at this point: existing rows open under the
+   previous key, new writes seal under the new one.
+3. Re-seal what is still on the old key:
+
+   ```bash
+   python -m aivs_server.rewrap_secrets            # report
+   python -m aivs_server.rewrap_secrets --apply    # re-seal
+   ```
+
+4. Re-run the report. **Only when it shows `stale=0` and `unopenable=0`** remove
+   `AIVS_SECRET_ENCRYPTION_KEY_PREVIOUS` and restart.
+
+Dropping the previous key before step 4 is clean is the one way to lose these
+secrets, and it does not fail loudly: the rows remain, the application starts,
+and the loss surfaces as operators being told their authenticator code is wrong.
+A value that cannot be opened is reported and left untouched -- never
+overwritten -- so a mistaken run is recoverable as long as the old key still
+exists somewhere.
+
+**A rotation is not a remediation for a database disclosure.** If the sealed
+columns and the key were disclosed together, treat every TOTP seed and every
+webhook signing key as known: re-enrol the operators and have members
+re-register their webhooks. Re-sealing already-disclosed plaintext under a new
+key protects nothing.
+
+### 7.4 Instance compromise
 
 Assume every piece of content is disclosed. That is the honest starting
 assumption for a database holding embargoed, unpatched vulnerabilities affecting
@@ -480,7 +536,7 @@ GSIBs.
    certificates. This is why the root is offline and why the hierarchy has two
    levels.
 
-### 7.4 Audit write failures
+### 7.5 Audit write failures
 
 `record_independently` **swallows its own failures** — deliberately, so that an
 audit outage does not turn a clean 403 into a 500 and tell a caller their denied

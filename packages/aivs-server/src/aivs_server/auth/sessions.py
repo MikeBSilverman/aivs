@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import datetime as dt
 import hashlib
+import logging
 import uuid
 from dataclasses import dataclass
 from typing import Final
@@ -52,6 +53,8 @@ from aivs_server.db.models import (
     Organization,
     PortalSession,
 )
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "LOCKOUT_THRESHOLD",
@@ -157,14 +160,26 @@ async def authenticate_operator(
         # organisation's certificate path.
         raise SessionRejectedError("operator_org_mismatch")
 
-    second_factor_ok = verify_totp(
-        secret_box.unseal(
-            operator.totp_secret_encrypted,
-            purpose=SecretPurpose.TOTP,
-            subject=operator.id,
-        ),
-        totp_code,
+    seed = secret_box.unseal(
+        operator.totp_secret_encrypted, purpose=SecretPurpose.TOTP, subject=operator.id
     )
+    if seed is None and password_ok:
+        # The server cannot open its own copy of the seed: a key-encryption key
+        # missing, rotated away, or misconfigured. That is our fault, not the
+        # operator's, so it must not count towards their lockout -- charging it
+        # did, and progressively locked out every operator who tried to sign in,
+        # with lockouts that outlived the fix and an audit trail that read
+        # exactly like a password-guessing attack. The webhook dispatcher made
+        # the same call for the same cause and wrote down why.
+        #
+        # Only when the password was right: a wrong password is still a failed
+        # guess and still counts, so this cannot be used to guess for free.
+        logger.error(
+            "operator TOTP seed could not be opened; check AIVS_SECRET_ENCRYPTION_KEY",
+            extra={"operator_id": str(operator.id)},
+        )
+        raise SessionRejectedError("totp_seed_unavailable")
+    second_factor_ok = seed is not None and verify_totp(seed, totp_code)
 
     if not (password_ok and second_factor_ok):
         operator.failed_login_count += 1

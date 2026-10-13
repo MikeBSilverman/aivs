@@ -13,12 +13,15 @@ certificate has to lock out the humans using it, not only the machines.
 from __future__ import annotations
 
 import asyncio
+import base64
 import contextlib
 import datetime as dt
+import os
 import uuid
 
 import pyotp
 import pytest
+from pydantic import SecretStr
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
@@ -30,7 +33,7 @@ from aivs_server.auth.passwords import (
     verify_password,
     verify_totp,
 )
-from aivs_server.auth.secretbox import SecretPurpose
+from aivs_server.auth.secretbox import SecretBox, SecretPurpose
 from aivs_server.auth.sessions import (
     LOCKOUT_THRESHOLD,
     SessionRejectedError,
@@ -517,3 +520,73 @@ async def test_concurrent_failures_all_count_against_the_lockout(
         f"{attempts} concurrent failures did not reach the threshold: "
         "the increment is racing and the lockout bounds nothing"
     )
+
+
+async def test_an_unopenable_seed_is_a_server_fault_not_a_failed_login(
+    session, settings, operator_setup
+):
+    """Finding #5: a key misconfiguration progressively locked out every operator.
+
+    ``unseal`` returning ``None`` made the second factor simply false, which
+    counted towards lockout and was audited as ``bad_credentials`` -- lockouts
+    that outlived the fix, in an audit trail indistinguishable from an attack.
+    The pair: the same attempt with a box that *can* open the seed succeeds,
+    and the failure count is untouched by the server's fault.
+    """
+    org, operator, secret, _cert, _pem = operator_setup
+    wrong_key = SecretBox.from_settings(
+        settings.model_copy(
+            update={"secret_encryption_key": SecretStr(base64.b64encode(os.urandom(32)).decode())}
+        )
+    )
+
+    for _ in range(LOCKOUT_THRESHOLD + 1):
+        with pytest.raises(SessionRejectedError) as caught:
+            await authenticate_operator(
+                session,
+                secret_box=wrong_key,
+                email=operator.email,
+                password=PASSWORD,
+                totp_code=current_code(secret),
+                org_id=org.id,
+            )
+        assert caught.value.reason == "totp_seed_unavailable"
+
+    await session.refresh(operator)
+    assert operator.failed_login_count == 0
+    assert operator.locked_until is None
+
+    recovered = await authenticate_operator(
+        session,
+        secret_box=SecretBox.from_settings(settings),
+        email=operator.email,
+        password=PASSWORD,
+        totp_code=current_code(secret),
+        org_id=org.id,
+    )
+    assert recovered.id == operator.id
+
+
+async def test_a_wrong_password_still_counts_when_the_seed_cannot_be_opened(
+    session, settings, operator_setup
+):
+    """The exemption is for the server's fault only; it must not be a free guess."""
+    org, operator, _secret, _cert, _pem = operator_setup
+    wrong_key = SecretBox.from_settings(
+        settings.model_copy(
+            update={"secret_encryption_key": SecretStr(base64.b64encode(os.urandom(32)).decode())}
+        )
+    )
+
+    with pytest.raises(SessionRejectedError) as caught:
+        await authenticate_operator(
+            session,
+            secret_box=wrong_key,
+            email=operator.email,
+            password="a wrong guess",
+            totp_code="000000",
+            org_id=org.id,
+        )
+    assert caught.value.reason == "bad_credentials"
+    await session.refresh(operator)
+    assert operator.failed_login_count == 1

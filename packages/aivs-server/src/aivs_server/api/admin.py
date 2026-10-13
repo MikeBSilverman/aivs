@@ -44,7 +44,6 @@ from aivs_server.auth.secretbox import SecretBox, SecretPurpose
 from aivs_server.auth.sessions import revoke_sessions_for_certificate
 from aivs_server.db.models import (
     Circle,
-    CircleMembership,
     ClientCertificate,
     Organization,
     TaxiiCollection,
@@ -56,6 +55,7 @@ from aivs_server.services.circles import (
     add_circle_members,
     reconcile_circle,
     reconcile_circles_for_org,
+    remove_circle_member,
     resolve_organisations,
 )
 
@@ -485,37 +485,21 @@ async def add_circle_member(
 
 
 @router.delete("/circles/{circle_id}/members/{org_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def remove_circle_member(
+async def delete_circle_member(
     circle_id: uuid.UUID, org_id: uuid.UUID, ctx: AuthenticatedContext, session: SessionDep
 ) -> None:
-    """Remove an organisation from a circle.
+    """Remove an organisation from a circle: closes its membership interval.
 
-    Content they already collected is theirs; this stops future delivery. The
-    receipts recording what they did collect are untouched, because that record
-    outlives the membership.
+    Content they already collected is theirs; this stops future delivery. See
+    ``services.circles.remove_circle_member``.
     """
     require(can_administer_circle(ctx, circle_id), "circle_membership_manage")
 
-    membership = (
-        await session.execute(
-            select(CircleMembership).where(
-                CircleMembership.circle_id == circle_id,
-                CircleMembership.org_id == org_id,
-            )
-        )
-    ).scalar_one_or_none()
-    if membership is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Membership not found")
-
-    await session.delete(membership)
-    await record(
-        session,
-        action=AuditAction.CIRCLE_MEMBER_REMOVED,
-        ctx=ctx,
-        resource_type="circle",
-        resource_id=str(circle_id),
-        details={"org_id": str(org_id)},
+    closed = await remove_circle_member(
+        session, ctx, circle_id=circle_id, org_id=org_id, now=dt.datetime.now(dt.UTC), via="api"
     )
+    if not closed:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Membership not found")
     await session.commit()
 
 

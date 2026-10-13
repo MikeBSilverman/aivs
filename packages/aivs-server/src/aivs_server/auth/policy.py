@@ -29,7 +29,7 @@ import uuid
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Final
 
-from sqlalchemy import ColumnElement, and_, or_
+from sqlalchemy import ColumnElement, and_, false, or_, true
 
 from aivs_schemas.enums import (
     VISIBLE_SUBMISSION_STATES,
@@ -40,11 +40,14 @@ from aivs_schemas.enums import (
     SubmissionState,
     is_transition_allowed,
 )
-from aivs_server.auth.context import AuthContext, AuthMethod
+from aivs_server.auth.context import AuthContext, AuthMethod, MembershipInterval
 from aivs_server.db.models import Distribution, Submission
 
 if TYPE_CHECKING:  # pragma: no cover
     pass
+
+#: A circle membership's history, oldest first. See ``auth.context.MembershipInterval``.
+Intervals = tuple[MembershipInterval, ...]
 
 __all__ = [
     "PolicyDeniedError",
@@ -197,15 +200,15 @@ def readable_circle_ids(ctx: AuthContext) -> frozenset[uuid.UUID]:
     return ctx.circle_ids
 
 
-def readable_circle_grants(ctx: AuthContext) -> Mapping[uuid.UUID, dt.datetime]:
-    """Return each readable circle with the moment the caller's access began.
+def readable_circle_grants(ctx: AuthContext) -> Mapping[uuid.UUID, Intervals]:
+    """Return each readable circle with the intervals the caller belonged to it.
 
     The input to :func:`visible_content_clause`. Empty for an inactive
     organisation, which that function maps to an explicit false.
     """
     if not is_active(ctx):
         return {}
-    return {circle_id: grant.joined_at for circle_id, grant in ctx.circles.items()}
+    return {circle_id: grant.intervals for circle_id, grant in ctx.circles.items()}
 
 
 def writable_circle_ids(ctx: AuthContext) -> frozenset[uuid.UUID]:
@@ -302,17 +305,35 @@ def can_manage_org(ctx: AuthContext, target_org_id: uuid.UUID) -> bool:
 # ---------------------------------------------------------------------------
 # The visibility clause
 # ---------------------------------------------------------------------------
+def _within_any(intervals: Intervals) -> ColumnElement[bool]:
+    """``date_added`` falls inside at least one membership interval."""
+    return or_(
+        *(
+            and_(
+                Distribution.date_added >= interval.joined_at,
+                Distribution.date_added < interval.left_at
+                if interval.left_at is not None
+                else true(),
+            )
+            for interval in intervals
+        ),
+        false(),
+    )
+
+
 def visible_content_clause(
-    grants: Mapping[uuid.UUID, dt.datetime], now: dt.datetime
+    grants: Mapping[uuid.UUID, Intervals], now: dt.datetime
 ) -> ColumnElement[bool]:
     """Return the SQL predicate selecting distributed content readable right now.
 
     **The read-side enforcement point, and the authoritative embargo gate.**
-    ``grants`` maps each circle the caller belongs to to the moment their access
-    to it began. Four conditions, all required:
+    ``grants`` maps each circle the caller belongs to to the intervals during
+    which it belonged. Four conditions, all required:
 
     1. the object was distributed into one of the caller's circles,
-    2. its ``date_added`` for that circle is **at or after** the caller joined,
+    2. its ``date_added`` for that circle falls **within one of the caller's
+       membership intervals** -- at or after a ``joined_at``, and before that
+       interval's ``left_at`` if it has closed,
     3. its ``date_added`` has arrived -- which is what makes embargo enforcement
        safe even when the release scheduler is not running, since an unreleased
        object simply has a future ``date_added``, and
@@ -327,7 +348,9 @@ def visible_content_clause(
     reads like a grant of participation; it must not silently be a grant of the
     archive. It is expressed per circle rather than as one global floor because
     a member typically joins different circles at different times, and the
-    earliest of those must not widen the others.
+    earliest of those must not widen the others. It is a union of intervals
+    rather than one start time because a member that leaves and rejoins must
+    keep what it had and must not receive what was shared while it was out.
 
     Both readers go through here -- ``taxii.queries`` for a single collection and
     :func:`distribution_visibility_clause` for everything a caller may read --
@@ -344,11 +367,8 @@ def visible_content_clause(
     # Sorted so the emitted SQL is deterministic for a given membership set,
     # which keeps query logs diffable and plan caches warm.
     per_circle = [
-        and_(
-            Distribution.circle_id == circle_id,
-            Distribution.date_added >= joined_at,
-        )
-        for circle_id, joined_at in sorted(grants.items(), key=lambda item: str(item[0]))
+        and_(Distribution.circle_id == circle_id, _within_any(intervals))
+        for circle_id, intervals in sorted(grants.items(), key=lambda item: str(item[0]))
     ]
 
     return and_(

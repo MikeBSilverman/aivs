@@ -38,7 +38,7 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import ARRAY, INET, JSONB
+from sqlalchemy.dialects.postgresql import ARRAY, INET, JSONB, ExcludeConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from aivs_schemas.enums import (
@@ -279,9 +279,45 @@ class CircleMembership(TimestampMixin, Base):
     managed_by_rule: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
     )
+    #: When this interval of membership ended; ``None`` while it is open.
+    #:
+    #: A membership is an interval, not a row that exists or does not. Leaving
+    #: closes it; rejoining opens a new one, so the gap between is never
+    #: readable and the earlier interval's content is not lost. Suspension and
+    #: quarantine do not touch it at all -- they are organisation *status*,
+    #: refused on every request -- which is what keeps a lapsed renewal from
+    #: silently costing a member years of a circle's back catalogue.
+    left_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    #: Who closed the interval: ``operator`` or ``rule``. A rule never reopens a
+    #: membership an operator closed; without this the next reconcile quietly
+    #: reinstated a firm an operator had removed by hand.
+    ended_by: Mapped[str | None] = mapped_column(Text)
 
     __table_args__ = (
-        UniqueConstraint("circle_id", "org_id", name="uq_circle_memberships_circle_id_org_id"),
+        # One open interval per organisation per circle ...
+        Index(
+            "uq_circle_memberships_open_interval",
+            "circle_id",
+            "org_id",
+            unique=True,
+            postgresql_where=text("left_at IS NULL"),
+        ),
+        # ... and no two intervals that overlap. Without this an audited
+        # joined_at repair could backdate a new interval over the gap of an
+        # earlier one and hand that gap's content over after all.
+        ExcludeConstraint(
+            ("circle_id", "="),
+            ("org_id", "="),
+            (func.tstzrange(text("joined_at"), text("left_at"), "[)"), "&&"),
+            name="ex_circle_memberships_no_overlap",
+            using="gist",
+        ),
+        CheckConstraint("left_at IS NULL OR left_at > joined_at", name="interval_ordered"),
+        CheckConstraint("(left_at IS NULL) = (ended_by IS NULL)", name="ended_by_with_left_at"),
+        CheckConstraint(
+            "ended_by IS NULL OR ended_by IN ('operator', 'rule')",
+            name="ended_by_known",
+        ),
         Index("ix_circle_memberships_org_id_circle_id", "org_id", "circle_id"),
     )
 

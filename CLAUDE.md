@@ -114,6 +114,12 @@ so a local run means what a CI run means. The same shape as the `pip-audit`
 flags above: an option whose default quietly narrows what a security gate
 covers, while the output still says "completed successfully".
 
+**Render the compose file.** `docker-compose.yml` was invalid under Compose
+2.40 (`pids_limit` beside `deploy.resources.limits` is refused) for as long as
+nobody here could run Docker, so every claim about the deployment stack was
+untested. `docker compose config` with dummy values for the required variables
+is cheap and belongs with every change to a compose file.
+
 **Coverage is instrumented for greenlet.** `[tool.coverage.run]` sets
 `concurrency = ["greenlet", "thread"]`. Without it coverage.py loses its trace
 function across SQLAlchemy's greenlet switches and records only statements
@@ -371,6 +377,18 @@ after an administrative mistake must be able to keep the history it legitimately
 had, and a column that always means "now" would push operators into editing the
 database. This is also what made rule-based membership safe to build at all.
 
+**A membership is an interval, and status is not membership.** Suspension used
+to delete rule-managed rows; reactivation re-created them with `joined_at =
+now()`, so a lapsed renewal silently cost a member years of a circle's back
+catalogue. Removal deleted the row too, so the rule quietly reinstated firms an
+operator had taken out. Now leaving closes `[joined_at, left_at)` and records
+`ended_by`; rejoining opens a new interval; visibility is the union of the
+intervals; a GiST exclusion constraint forbids overlap, so a `joined_at` repair
+cannot reach into a gap. Suspension and quarantine touch none of it — they are
+refused per request. Anything that reads membership filters on the *open*
+interval (notifications got this wrong: a former member was told about content
+released after it left).
+
 **`autoflush=False`, so flush before you query what you just changed.** The
 sessionmaker disables autoflush deliberately. `activate_org` set a status and
 then reconciled circle rules against it; the reconcile query read the *old*
@@ -438,6 +456,13 @@ locally fails the build.
 Replace the generated docstring with the reasoning when a migration exists for a
 non-obvious correctness reason — `6439704af276` (the paging key) is the model to
 follow. A reviewer should not have to reconstruct why a column exists.
+
+**`alembic check` cannot see triggers or exclusion constraints**, and
+autogenerate does not emit `ExcludeConstraint` at all. The test suite builds
+its schema with `create_all` plus hand-written triggers, so tests of those
+protections prove the fixture, not the migration. `tests/migrations/` migrates
+a scratch database to head and asks Postgres what exists; any protection that
+lives only in a migration gets an assertion there.
 
 ---
 

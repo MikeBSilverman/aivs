@@ -34,7 +34,8 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aivs_schemas.enums import CertStatus, OrgStatus
-from aivs_server.auth.context import AuthContext, AuthMethod, CircleGrant
+from aivs_server.auth.context import AuthContext, AuthMethod
+from aivs_server.auth.memberships import load_circle_grants
 from aivs_server.auth.passwords import (
     constant_time_equals,
     generate_session_token,
@@ -46,8 +47,6 @@ from aivs_server.auth.passwords import (
 from aivs_server.auth.secretbox import SecretBox, SecretPurpose
 from aivs_server.config import Settings
 from aivs_server.db.models import (
-    Circle,
-    CircleMembership,
     ClientCertificate,
     Operator,
     Organization,
@@ -320,21 +319,7 @@ async def resolve_session(
     if organization is None or organization.status is not OrgStatus.ACTIVE:
         raise SessionRejectedError("org_inactive")
 
-    circles = {
-        membership.circle_id: CircleGrant(role=membership.role, joined_at=membership.joined_at)
-        for membership in (
-            await session.execute(
-                select(CircleMembership)
-                .join(Circle, Circle.id == CircleMembership.circle_id)
-                .where(
-                    CircleMembership.org_id == organization.id,
-                    Circle.is_active.is_(True),
-                )
-            )
-        )
-        .scalars()
-        .all()
-    }
+    circles = await load_circle_grants(session, organization.id)
 
     row.last_seen_at = now
     await session.commit()

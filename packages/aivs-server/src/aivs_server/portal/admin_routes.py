@@ -24,6 +24,7 @@ moment to make that group concrete.
 
 from __future__ import annotations
 
+import datetime as dt
 import uuid
 from typing import Annotated
 
@@ -55,6 +56,7 @@ from aivs_server.services.circles import (
     CircleMembershipError,
     add_circle_members,
     reconcile_circle,
+    remove_circle_member,
     resolve_organisations,
 )
 
@@ -245,7 +247,9 @@ async def circles_screen(request: Request, settings: SettingsDep, session: Sessi
                 select(
                     CircleMembership.circle_id,
                     func.count().label("total"),
-                ).group_by(CircleMembership.circle_id)
+                )
+                .where(CircleMembership.left_at.is_(None))
+                .group_by(CircleMembership.circle_id)
             )
         ).all()
     }
@@ -357,7 +361,10 @@ async def circle_detail(
         await session.execute(
             select(CircleMembership, Organization)
             .join(Organization, Organization.id == CircleMembership.org_id)
-            .where(CircleMembership.circle_id == circle_id)
+            .where(
+                CircleMembership.circle_id == circle_id,
+                CircleMembership.left_at.is_(None),
+            )
             .order_by(Organization.slug)
         )
     ).all()
@@ -393,6 +400,19 @@ async def circle_detail(
     return render(request, "admin_circle_detail.html", context)
 
 
+def _parse_joined_at(value: str) -> dt.datetime | None:
+    """Parse the optional repair date (YYYY-MM-DD, UTC midnight). Empty means none."""
+    value = value.strip()
+    if not value:
+        return None
+    try:
+        day = dt.date.fromisoformat(value)
+    except ValueError as exc:
+        msg = "membership start must be a date, YYYY-MM-DD"
+        raise ValueError(msg) from exc
+    return dt.datetime.combine(day, dt.time(), tzinfo=dt.UTC)
+
+
 @router.post("/circles/{circle_id}/members")
 async def add_members_screen(
     circle_id: uuid.UUID,
@@ -402,8 +422,13 @@ async def add_members_screen(
     csrf_token: Annotated[str, Form()],
     roster: Annotated[str, Form()],
     role: Annotated[str, Form()] = "member",
+    joined_at: Annotated[str, Form()] = "",
 ) -> Response:
-    """Add a pasted roster of organisations to a circle."""
+    """Add a pasted roster of organisations to a circle.
+
+    ``joined_at`` is the audited repair for an administrative mistake -- a firm
+    removed in error, restored with the history it had. Empty means "from now".
+    """
     ctx, csrf_hash = await current_session(request, settings, session)
     require_csrf(csrf_token, csrf_hash)
     require(is_system_admin(ctx), "portal_admin_circles")
@@ -416,6 +441,7 @@ async def add_members_screen(
     org_ids, org_slugs = _parse_names(roster)
 
     try:
+        backdate = _parse_joined_at(joined_at)
         organisations = await resolve_organisations(session, org_ids=org_ids, org_slugs=org_slugs)
         added = await add_circle_members(
             session,
@@ -423,11 +449,25 @@ async def add_members_screen(
             circle=circle,
             organisations=organisations,
             role=CircleRole(role),
+            joined_at=backdate,
         )
         await session.commit()
     except (CircleMembershipError, ValueError) as exc:
         await session.rollback()
         set_notice(response, settings, "error", str(exc))
+        return response
+    except IntegrityError:
+        # The exclusion constraint: a start date reaching into a period when
+        # the organisation was out of the circle. Refused by the database, so
+        # the gap cannot be handed over by a typo.
+        await session.rollback()
+        set_notice(
+            response,
+            settings,
+            "error",
+            "That start date overlaps an earlier period of membership; it cannot "
+            "reach back past the date the organisation last left.",
+        )
         return response
 
     skipped = len(organisations) - len(added)
@@ -452,29 +492,13 @@ async def remove_member_screen(
     require_csrf(csrf_token, csrf_hash)
     require(is_system_admin(ctx), "portal_admin_circles")
 
-    membership = (
-        await session.execute(
-            select(CircleMembership).where(
-                CircleMembership.circle_id == circle_id,
-                CircleMembership.org_id == org_id,
-            )
-        )
-    ).scalar_one_or_none()
-
+    closed = await remove_circle_member(
+        session, ctx, circle_id=circle_id, org_id=org_id, now=dt.datetime.now(dt.UTC), via="portal"
+    )
     response = _redirect(f"/portal/admin/circles/{circle_id}")
-    if membership is None:
+    if not closed:
         set_notice(response, settings, "error", "That organisation is not a member.")
         return response
-
-    await session.delete(membership)
-    await record(
-        session,
-        action=AuditAction.CIRCLE_MEMBER_REMOVED,
-        ctx=ctx,
-        resource_type="circle",
-        resource_id=str(circle_id),
-        details={"org_id": str(org_id), "via": "portal"},
-    )
     await session.commit()
 
     set_notice(

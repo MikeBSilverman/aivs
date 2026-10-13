@@ -13,7 +13,7 @@ import uuid
 from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import DateTime, MetaData, func
+from sqlalchemy import Connection, DateTime, MetaData, event, func, text
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -32,6 +32,14 @@ class Base(DeclarativeBase):
     """Base for all ORM models."""
 
     metadata = MetaData(naming_convention=NAMING_CONVENTION)
+
+
+# circle_memberships' exclusion constraint compares UUIDs for equality inside a
+# GiST index, which needs btree_gist. Declared on the metadata so create_all --
+# the test schema -- and the migration both get it from one statement of need.
+@event.listens_for(Base.metadata, "before_create")
+def _require_btree_gist(_target: MetaData, connection: Connection, **_kw: object) -> None:
+    connection.execute(text("CREATE EXTENSION IF NOT EXISTS btree_gist"))
 
 
 def utc_now() -> dt.datetime:

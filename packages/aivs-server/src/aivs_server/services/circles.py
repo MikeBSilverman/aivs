@@ -42,7 +42,7 @@ import datetime as dt
 import uuid
 from dataclasses import dataclass
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aivs_schemas.enums import CircleRole, OrgStatus
@@ -56,6 +56,7 @@ __all__ = [
     "add_circle_members",
     "reconcile_circle",
     "reconcile_circles_for_org",
+    "remove_circle_member",
     "resolve_organisations",
 ]
 
@@ -124,6 +125,25 @@ async def resolve_organisations(
     return sorted(found.values(), key=lambda org: org.slug)
 
 
+async def _open_memberships(
+    session: AsyncSession, circle_id: uuid.UUID
+) -> dict[uuid.UUID, CircleMembership]:
+    """Return each organisation's open membership interval in a circle."""
+    rows = (
+        (
+            await session.execute(
+                select(CircleMembership).where(
+                    CircleMembership.circle_id == circle_id,
+                    CircleMembership.left_at.is_(None),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return {row.org_id: row for row in rows}
+
+
 async def add_circle_members(
     session: AsyncSession,
     ctx: AuthContext,
@@ -133,40 +153,38 @@ async def add_circle_members(
     role: CircleRole,
     joined_at: dt.datetime | None = None,
 ) -> list[uuid.UUID]:
-    """Add organisations to a circle, skipping any already in it.
+    """Open a membership interval for each organisation not already in the circle.
 
-    Returns the identifiers actually added. Already-a-member is not an error
-    here: re-running a roster is a normal thing for an operator to do, and
-    failing the whole batch on the one firm already present would train them to
-    apply rosters one at a time.
+    Returns the identifiers actually added. Already-a-member is not an error:
+    re-running a roster is a normal thing for an operator to do, and failing the
+    whole batch on the one firm already present would train them to apply
+    rosters one at a time.
 
-    ``joined_at`` exists for restoration — an organisation re-added after an
-    administrative mistake, or moved during a certificate rotation, keeps the
-    history it legitimately had. It is a deliberate act with an audit record,
-    because backdating it grants access to content shared before the row
-    existed.
+    ``joined_at`` is the audited repair for an administrative mistake: it sets
+    the start of the *open* interval, for new members and existing ones alike.
+    It used to be ignored for an organisation already present -- the skip ran
+    first -- so the one repair the docs described could not reach the case it
+    existed for. Backdating grants access to content shared before the row was
+    written, which is why it is recorded. It cannot reach into the gap before a
+    previous interval ended: the exclusion constraint refuses an overlap.
     """
-    existing = set(
-        (
-            await session.execute(
-                select(CircleMembership.org_id).where(CircleMembership.circle_id == circle.id)
-            )
-        )
-        .scalars()
-        .all()
-    )
+    existing = await _open_memberships(session, circle.id)
 
     added: list[uuid.UUID] = []
+    repaired: list[uuid.UUID] = []
     for org in organisations:
-        if org.id in existing:
-            continue
-        membership = CircleMembership(circle_id=circle.id, org_id=org.id, role=role)
-        if joined_at is not None:
-            membership.joined_at = joined_at
-        session.add(membership)
-        added.append(org.id)
+        current = existing.get(org.id)
+        if current is None:
+            membership = CircleMembership(circle_id=circle.id, org_id=org.id, role=role)
+            if joined_at is not None:
+                membership.joined_at = joined_at
+            session.add(membership)
+            added.append(org.id)
+        elif joined_at is not None and current.joined_at != joined_at:
+            current.joined_at = joined_at
+            repaired.append(org.id)
 
-    if added:
+    if added or repaired:
         await record(
             session,
             action=AuditAction.CIRCLE_MEMBER_ADDED,
@@ -175,6 +193,7 @@ async def add_circle_members(
             resource_id=str(circle.id),
             details={
                 "org_ids": [str(org_id) for org_id in added],
+                "joined_at_repaired": [str(org_id) for org_id in repaired],
                 "role": role.value,
                 "backdated_to": joined_at.isoformat() if joined_at else None,
             },
@@ -183,30 +202,59 @@ async def add_circle_members(
     return added
 
 
-async def reconcile_circle(
-    session: AsyncSession, ctx: AuthContext | None, *, circle: Circle
-) -> ReconcileResult:
-    """Bring a circle's rule-managed membership in line with its rule.
+async def remove_circle_member(
+    session: AsyncSession,
+    ctx: AuthContext,
+    *,
+    circle_id: uuid.UUID,
+    org_id: uuid.UUID,
+    now: dt.datetime,
+    via: str,
+) -> bool:
+    """Close an organisation's open membership interval. Returns whether one was open.
 
-    Adds every active organisation the rule matches and that is not already a
-    member; removes rule-managed rows whose organisation no longer matches.
-    Hand-added rows are left alone in both directions -- see the module
-    docstring.
-
-    Does not commit. The caller owns the transaction, so a reconciliation
-    triggered by enrolment lands atomically with the enrolment itself.
+    Closed, never deleted. Content they collected is theirs and their receipts
+    outlive the membership; if they rejoin, the new interval starts then, so the
+    gap stays unreadable while the earlier interval's content does not vanish.
+    Recorded as an operator's act, which the rule will not undo.
     """
-    if not circle.auto_member_org_types:
-        return ReconcileResult()
+    membership = (
+        await session.execute(
+            select(CircleMembership)
+            .where(
+                CircleMembership.circle_id == circle_id,
+                CircleMembership.org_id == org_id,
+                CircleMembership.left_at.is_(None),
+            )
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
+    if membership is None:
+        return False
 
-    matching = set(
+    membership.left_at = now
+    membership.ended_by = "operator"
+    await record(
+        session,
+        action=AuditAction.CIRCLE_MEMBER_REMOVED,
+        ctx=ctx,
+        resource_type="circle",
+        resource_id=str(circle_id),
+        details={"org_id": str(org_id), "via": via},
+    )
+    return True
+
+
+async def _orgs_matching_rule(session: AsyncSession, circle: Circle) -> set[uuid.UUID]:
+    """Active organisations of the rule's types: the ones a rule may add."""
+    return set(
         (
             await session.execute(
                 select(Organization.id).where(
                     Organization.org_type.in_(circle.auto_member_org_types),
-                    # Only active organisations. A pending enrolment has not been
-                    # accepted yet and a suspended one has been switched off;
-                    # neither should be handed a circle by a rule.
+                    # A pending enrolment has not been accepted, and a suspended
+                    # or quarantined one is switched off; a rule hands none of
+                    # them a circle. That is about *adding* only -- see below.
                     Organization.status == OrgStatus.ACTIVE,
                 )
             )
@@ -215,18 +263,85 @@ async def reconcile_circle(
         .all()
     )
 
-    current = {
-        row.org_id: row.managed_by_rule
-        for row in (
+
+async def _orgs_of_rule_type(session: AsyncSession, circle: Circle) -> set[uuid.UUID]:
+    """Every organisation of the rule's types, whatever its status."""
+    return set(
+        (
             await session.execute(
-                select(CircleMembership.org_id, CircleMembership.managed_by_rule).where(
-                    CircleMembership.circle_id == circle.id
+                select(Organization.id).where(
+                    Organization.org_type.in_(circle.auto_member_org_types)
                 )
             )
-        ).all()
-    }
+        )
+        .scalars()
+        .all()
+    )
 
-    added = sorted(matching - set(current), key=str)
+
+async def _orgs_removed_by_operator(session: AsyncSession, circle: Circle) -> set[uuid.UUID]:
+    """Organisations whose most recent interval an operator closed."""
+    latest = (
+        select(
+            CircleMembership.org_id,
+            func.max(CircleMembership.joined_at).label("joined_at"),
+        )
+        .where(CircleMembership.circle_id == circle.id)
+        .group_by(CircleMembership.org_id)
+        .subquery()
+    )
+    return set(
+        (
+            await session.execute(
+                select(CircleMembership.org_id)
+                .join(
+                    latest,
+                    (latest.c.org_id == CircleMembership.org_id)
+                    & (latest.c.joined_at == CircleMembership.joined_at),
+                )
+                .where(
+                    CircleMembership.circle_id == circle.id,
+                    CircleMembership.ended_by == "operator",
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+
+async def reconcile_circle(
+    session: AsyncSession,
+    ctx: AuthContext | None,
+    *,
+    circle: Circle,
+    now: dt.datetime | None = None,
+) -> ReconcileResult:
+    """Bring a circle's rule-managed membership in line with its rule.
+
+    Opens an interval for every active organisation the rule matches that has
+    none open and that an operator has not removed; closes rule-managed
+    intervals whose organisation's *type* no longer matches. Hand-added
+    intervals are left alone in both directions -- see the module docstring.
+
+    Status is deliberately not a reason to close. Closing on suspension (as
+    this did) meant reactivation opened a fresh interval at reactivation time,
+    and visibility then started there: years of the circle's history gone from
+    a member's feed after a lapsed renewal, with no warning. A suspended or
+    quarantined organisation is refused on every request already; its
+    membership interval has nothing to add to that.
+
+    Does not commit. The caller owns the transaction.
+    """
+    if not circle.auto_member_org_types:
+        return ReconcileResult()
+    now = now or dt.datetime.now(dt.UTC)
+
+    open_rows = await _open_memberships(session, circle.id)
+    excluded = await _orgs_removed_by_operator(session, circle)
+    eligible = await _orgs_matching_rule(session, circle)
+
+    added = sorted(eligible - set(open_rows) - excluded, key=str)
     for org_id in added:
         session.add(
             CircleMembership(
@@ -237,20 +352,18 @@ async def reconcile_circle(
             )
         )
 
-    # Only rows this rule created, and only where the organisation no longer
-    # qualifies. A hand-added member is not the rule's to withdraw.
+    of_type = await _orgs_of_rule_type(session, circle)
     removed = sorted(
-        (org_id for org_id, by_rule in current.items() if by_rule and org_id not in matching),
+        (
+            org_id
+            for org_id, row in open_rows.items()
+            if row.managed_by_rule and org_id not in of_type
+        ),
         key=str,
     )
-    if removed:
-        await session.execute(
-            delete(CircleMembership).where(
-                CircleMembership.circle_id == circle.id,
-                CircleMembership.org_id.in_(removed),
-                CircleMembership.managed_by_rule.is_(True),
-            )
-        )
+    for org_id in removed:
+        open_rows[org_id].left_at = now
+        open_rows[org_id].ended_by = "rule"
 
     result = ReconcileResult(added=tuple(added), removed=tuple(removed))
 

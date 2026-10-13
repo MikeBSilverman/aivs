@@ -21,7 +21,7 @@ from typing import Any
 
 from sqlalchemy import Select, func, literal, select, tuple_
 
-from aivs_server.auth.policy import visible_content_clause
+from aivs_server.auth.policy import Intervals, visible_content_clause
 from aivs_server.db.models import Distribution, StixObject, Submission
 from aivs_server.taxii.filters import TaxiiFilters, VersionSelector
 from aivs_server.taxii.paging import Cursor
@@ -29,12 +29,13 @@ from aivs_server.taxii.paging import Cursor
 __all__ = ["build_object_listing_query", "build_version_listing_query"]
 
 
-def _visible_rows(circle_id: uuid.UUID, joined_at: dt.datetime, now: dt.datetime) -> Select[Any]:
+def _visible_rows(circle_id: uuid.UUID, intervals: Intervals, now: dt.datetime) -> Select[Any]:
     """Return a subquery selecting every distribution row visible right now.
 
     Four conditions, all required, and this is the authoritative embargo gate:
-    the row belongs to the requested circle, its ``date_added`` is at or after
-    ``joined_at`` so the caller does not receive the circle's back catalogue,
+    the row belongs to the requested circle, its ``date_added`` falls within one
+    of the caller's membership ``intervals`` so the caller receives neither the
+    circle's back catalogue nor what was shared while it was out,
     its ``date_added`` has arrived, and the owning submission is in a state
     whose content is visible. An embargoed object simply has a future
     ``date_added``, so nothing leaks early even if the release scheduler is not
@@ -58,7 +59,7 @@ def _visible_rows(circle_id: uuid.UUID, joined_at: dt.datetime, now: dt.datetime
         .join(Submission, Submission.id == Distribution.submission_id)
         # The visibility conditions come from auth.policy so there is one
         # definition of them; see visible_content_clause.
-        .where(visible_content_clause({circle_id: joined_at}, now))
+        .where(visible_content_clause({circle_id: intervals}, now))
     )
 
 
@@ -139,7 +140,7 @@ def _apply_version_filter(
 def build_object_listing_query(
     *,
     circle_id: uuid.UUID,
-    joined_at: dt.datetime,
+    intervals: Intervals,
     filters: TaxiiFilters,
     now: dt.datetime,
     cursor: Cursor | None,
@@ -159,8 +160,8 @@ def build_object_listing_query(
     ``limit + 1`` rows are fetched so the caller can set the envelope's ``more``
     flag without a second counting query.
     """
-    visible = _visible_rows(circle_id, joined_at, now).subquery("visible")
-    peers = _visible_rows(circle_id, joined_at, now).subquery("visible_peers")
+    visible = _visible_rows(circle_id, intervals, now).subquery("visible")
+    peers = _visible_rows(circle_id, intervals, now).subquery("visible_peers")
 
     query = select(
         visible.c.distribution_id,
@@ -201,7 +202,7 @@ def build_object_listing_query(
 def build_version_listing_query(
     *,
     circle_id: uuid.UUID,
-    joined_at: dt.datetime,
+    intervals: Intervals,
     stix_id: str,
     now: dt.datetime,
     limit: int,
@@ -217,7 +218,7 @@ def build_version_listing_query(
     ``stix_id`` at the same ``modified``; without it the same version string
     appeared once per distribution row.
     """
-    visible = _visible_rows(circle_id, joined_at, now).subquery("visible")
+    visible = _visible_rows(circle_id, intervals, now).subquery("visible")
     query = (
         select(visible.c.modified, visible.c.date_added)
         .distinct()

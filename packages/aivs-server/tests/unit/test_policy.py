@@ -32,7 +32,7 @@ from aivs_schemas.enums import (
     OrgType,
     SubmissionState,
 )
-from aivs_server.auth.context import AuthContext, AuthMethod, CircleGrant
+from aivs_server.auth.context import AuthContext, AuthMethod, CircleGrant, MembershipInterval
 from aivs_server.auth.policy import (
     PolicyDeniedError,
     can_administer_circle,
@@ -79,7 +79,11 @@ def context(
         org_status=status,
         auth_method=(AuthMethod.PORTAL_SESSION if operator_role is not None else AuthMethod.MTLS),
         circles={
-            circle_id: (value if isinstance(value, CircleGrant) else CircleGrant(value, LONG_AGO))
+            circle_id: (
+                value
+                if isinstance(value, CircleGrant)
+                else CircleGrant(value, (MembershipInterval(LONG_AGO),))
+            )
             for circle_id, value in (circles or {}).items()
         },
         cert_fingerprint="a" * 64,
@@ -368,14 +372,29 @@ def test_receipts_are_visible_to_their_submitter_and_the_isac_only():
 def test_the_visibility_clause_carries_all_four_gates():
     """Circle, membership start, embargo, and submission state -- each load-bearing."""
     rendered = str(
-        visible_content_clause({CIRCLE: LONG_AGO}, dt.datetime.now(dt.UTC)).compile(
-            dialect=postgresql.dialect()
-        )
+        visible_content_clause(
+            {CIRCLE: (MembershipInterval(LONG_AGO),)}, dt.datetime.now(dt.UTC)
+        ).compile(dialect=postgresql.dialect())
     ).lower()
     assert "circle_id =" in rendered
     assert "date_added >=" in rendered, "membership start bounds the back catalogue"
     assert "date_added <=" in rendered
     assert "state in" in rendered
+
+
+def test_a_closed_interval_bounds_its_end_and_an_open_one_does_not():
+    """Leaving ends what is readable from that interval; the open one has no end."""
+    left = dt.datetime(2024, 6, 1, tzinfo=dt.UTC)
+    rejoined = dt.datetime(2025, 3, 1, tzinfo=dt.UTC)
+    rendered = str(
+        visible_content_clause(
+            {CIRCLE: (MembershipInterval(LONG_AGO, left), MembershipInterval(rejoined))},
+            dt.datetime.now(dt.UTC),
+        ).compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True})
+    ).lower()
+    assert "date_added < '2024-06-01" in rendered, "the gap must be excluded"
+    assert "2025-03-01" in rendered
+    assert rendered.count("date_added < '") == 1, "an open interval has no upper bound"
 
 
 def test_each_circle_carries_its_own_membership_start():
@@ -387,7 +406,10 @@ def test_each_circle_carries_its_own_membership_start():
     other = uuid.uuid4()
     rendered = str(
         visible_content_clause(
-            {CIRCLE: LONG_AGO, other: dt.datetime(2026, 1, 1, tzinfo=dt.UTC)},
+            {
+                CIRCLE: (MembershipInterval(LONG_AGO),),
+                other: (MembershipInterval(dt.datetime(2026, 1, 1, tzinfo=dt.UTC)),),
+            },
             dt.datetime.now(dt.UTC),
         ).compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True})
     ).lower()

@@ -15,7 +15,7 @@ from sqlalchemy import select
 
 from aivs_schemas.enums import OrgType
 from aivs_server.auth.secretbox import SecretBox, SecretPurpose
-from aivs_server.db.models import Webhook, WebhookDelivery
+from aivs_server.db.models import CircleMembership, Webhook, WebhookDelivery
 from aivs_server.notify.events import EVENT_SUBMISSION_VISIBLE
 from tests.conftest import proxy_headers
 
@@ -403,3 +403,51 @@ async def test_a_queued_notification_starts_undelivered(
     assert queued.delivered_at is None
     assert queued.attempts == 0
     assert queued.next_attempt_at is None, "due immediately"
+
+
+async def test_a_former_member_is_not_notified_and_a_current_one_is(
+    client, isac, make_circle, make_collection, make_org, make_cert, subscriber, session, secret_box
+):
+    """SF-61: a released embargo used to notify an organisation that had left.
+
+    The notification query bounded by ``joined_at`` alone, so any interval that
+    had ever covered the moment of release qualified -- and a former member was
+    told what was shared after it went. The current subscriber is the control.
+    """
+    _isac_org, isac_pem = isac
+    circle = await make_circle("section9")
+    await make_collection(circle)
+    _current_org, _pem, current_hook = await subscriber(circle)
+
+    submitter = await make_org("submitting-firm", org_type=OrgType.GSIB)
+    submitter_pem, _ = await make_cert(submitter)
+    session.add(CircleMembership(circle_id=circle.id, org_id=submitter.id))
+
+    former = await make_org("former-member", org_type=OrgType.GSIB)
+    now = dt.datetime.now(dt.UTC)
+    session.add(
+        CircleMembership(
+            circle_id=circle.id,
+            org_id=former.id,
+            joined_at=now - dt.timedelta(days=30),
+            left_at=now - dt.timedelta(days=1),
+            ended_by="operator",
+        )
+    )
+    former_hook_id = uuid.uuid4()
+    session.add(
+        Webhook(
+            id=former_hook_id,
+            org_id=former.id,
+            url="https://former.example/hook",
+            hmac_secret_encrypted=_seal(secret_box, former_hook_id),
+            events=[],
+        )
+    )
+    await session.commit()
+
+    await distribute(client, isac_pem, submitter_pem, circle)
+
+    notified = {delivery.webhook_id for delivery in await deliveries(session)}
+    assert former_hook_id not in notified
+    assert current_hook.id in notified

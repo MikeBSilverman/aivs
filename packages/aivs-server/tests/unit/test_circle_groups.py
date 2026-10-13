@@ -37,10 +37,13 @@ async def isac(make_org, make_cert):
 
 
 async def members_of(session, circle_id: uuid.UUID) -> list[CircleMembership]:
+    """Current members: open intervals only."""
     return list(
         (
             await session.execute(
-                select(CircleMembership).where(CircleMembership.circle_id == circle_id)
+                select(CircleMembership).where(
+                    CircleMembership.circle_id == circle_id, CircleMembership.left_at.is_(None)
+                )
             )
         )
         .scalars()
@@ -292,7 +295,16 @@ async def test_a_rule_added_member_starts_now_not_at_the_beginning(
     assert feed.json().get("objects", []) == [], "a rule must not grant the back catalogue"
 
 
-async def test_suspension_withdraws_a_rule_managed_membership(client, isac, make_org, session):
+async def test_suspension_and_reactivation_keep_the_membership_and_its_start(
+    client, isac, make_org, session
+):
+    """Finding #3: suspension used to delete rule-managed rows.
+
+    Reactivation then re-created them with ``joined_at = now``, and visibility is
+    bounded by ``joined_at`` -- so a lapsed renewal silently cost the member the
+    circle's whole back catalogue. Suspension is status, refused on every
+    request; it does not touch the membership.
+    """
     _isac_org, isac_pem = isac
     created = await client.post(
         f"{API}/circles",
@@ -303,10 +315,56 @@ async def test_suspension_withdraws_a_rule_managed_membership(client, isac, make
 
     org = await make_org("temporarily-in", org_type=OrgType.SECTION9)
     await client.post(f"{API}/orgs/{org.id}/activate", headers=proxy_headers(isac_pem))
-    assert len(await members_of(session, circle_id)) == 1
+    org_id = org.id
+    [before] = await members_of(session, circle_id)
+    before_id, before_joined = before.id, before.joined_at
 
-    await client.post(f"{API}/orgs/{org.id}/suspend", headers=proxy_headers(isac_pem))
-    assert await members_of(session, circle_id) == []
+    await client.post(f"{API}/orgs/{org_id}/suspend", headers=proxy_headers(isac_pem))
+    session.expire_all()
+    during_ids = [membership.id for membership in await members_of(session, circle_id)]
+    await client.post(f"{API}/orgs/{org_id}/activate", headers=proxy_headers(isac_pem))
+    session.expire_all()
+    [after] = await members_of(session, circle_id)
+
+    assert during_ids == [before_id]
+    assert after.id == before_id
+    assert after.joined_at == before_joined
+
+
+async def test_a_rule_never_reinstates_a_member_an_operator_removed(
+    client, isac, make_org, session
+):
+    """The rule's documentation always promised this; deleting the row broke it.
+
+    Removal deleted the row, so the next reconcile -- any suspension or
+    reactivation anywhere -- quietly re-added the firm an operator had taken out.
+    The control is a firm of the same type that was not removed: it stays in.
+    """
+    _isac_org, isac_pem = isac
+    created = await client.post(
+        f"{API}/circles",
+        json={"slug": "section9", "name": "Section 9", "auto_member_org_types": ["section9"]},
+        headers=proxy_headers(isac_pem),
+    )
+    circle_id = uuid.UUID(created.json()["id"])
+    removed_id = (await make_org("taken-out", org_type=OrgType.SECTION9)).id
+    kept_id = (await make_org("left-alone", org_type=OrgType.SECTION9)).id
+    for org_id in (removed_id, kept_id):
+        await client.post(f"{API}/orgs/{org_id}/activate", headers=proxy_headers(isac_pem))
+
+    response = await client.delete(
+        f"{API}/circles/{circle_id}/members/{removed_id}", headers=proxy_headers(isac_pem)
+    )
+    assert response.status_code == 204
+
+    # Anything that triggers a reconcile of this circle.
+    trigger_id = (await make_org("newcomer", org_type=OrgType.SECTION9)).id
+    await client.post(f"{API}/orgs/{trigger_id}/activate", headers=proxy_headers(isac_pem))
+
+    session.expire_all()
+    current = {membership.org_id for membership in await members_of(session, circle_id)}
+    assert removed_id not in current
+    assert kept_id in current
 
 
 async def test_a_rule_never_removes_a_hand_added_member(client, isac, make_org, session):

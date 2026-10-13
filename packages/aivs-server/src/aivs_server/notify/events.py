@@ -130,6 +130,11 @@ async def queue_visibility_notifications(
             .join(TaxiiCollection, TaxiiCollection.circle_id == CircleMembership.circle_id)
             .where(
                 CircleMembership.circle_id.in_(circle_ids),
+                # The open interval only. A member that has left cannot read the
+                # content, so announcing it would tell a former member what was
+                # shared after it went -- an embargo releasing after a firm left
+                # did exactly that.
+                CircleMembership.left_at.is_(None),
                 CircleMembership.joined_at <= visible_at,
                 Webhook.is_active.is_(True),
                 TaxiiCollection.is_active.is_(True),

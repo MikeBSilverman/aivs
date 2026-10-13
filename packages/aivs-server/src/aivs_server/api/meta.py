@@ -90,7 +90,7 @@ async def whoami(ctx: AuthenticatedContext, settings: SettingsDep) -> dict[str, 
                 # Surfaced so a member can see for themselves from when their
                 # access to each circle runs, rather than inferring it from what
                 # their feed does and does not contain.
-                "member_since": grant.joined_at.isoformat(),
+                "member_since": grant.member_since.isoformat(),
             }
             for circle_id, grant in sorted(ctx.circles.items(), key=lambda item: str(item[0]))
         ],

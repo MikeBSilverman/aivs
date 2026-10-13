@@ -34,19 +34,41 @@ class AuthMethod(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
-class CircleGrant:
-    """What a caller holds in one circle: a role, and when it started.
+class MembershipInterval:
+    """One period during which an organisation belonged to a circle.
 
-    One value rather than two parallel mappings on ``AuthContext``. Both are
-    read on the authorization path -- the role decides what may be written, the
-    start decides what may be read -- and two mappings keyed the same way are
-    exactly the shape that drifts apart under a later edit.
+    ``left_at`` is ``None`` while the interval is open. Content distributed
+    within an interval is readable; content distributed in a gap between two is
+    not, which is what stops a rejoining member from receiving what was shared
+    while it was out.
+    """
+
+    joined_at: dt.datetime
+    left_at: dt.datetime | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class CircleGrant:
+    """What a caller holds in one circle: a role, and the periods it held it.
+
+    Present on ``AuthContext`` only for circles where the caller has an *open*
+    interval: an organisation that has left a circle reads nothing from it, and
+    one that rejoins reads its current interval and its earlier ones, never the
+    gap.
+
+    One value rather than parallel mappings on ``AuthContext``. The role decides
+    what may be written, the intervals what may be read, and two mappings keyed
+    the same way are exactly the shape that drifts apart under a later edit.
     """
 
     role: CircleRole
-    #: Content distributed to the circle before this moment is not readable by
-    #: this caller. See ``policy.visible_content_clause``.
-    joined_at: dt.datetime
+    #: Every interval, oldest first; the last one is open.
+    intervals: tuple[MembershipInterval, ...]
+
+    @property
+    def member_since(self) -> dt.datetime:
+        """When the current, open interval began."""
+        return self.intervals[-1].joined_at
 
 
 @dataclass(frozen=True, slots=True)

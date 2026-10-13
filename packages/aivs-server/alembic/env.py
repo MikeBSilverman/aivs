@@ -25,7 +25,12 @@ from aivs_server.db.base import Base
 config = context.config
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # disable_existing_loggers defaults to True, which silently switches off
+    # every logger already created -- the application's included -- for the
+    # rest of the process. Run in-process (the migration test, any tool that
+    # migrates before serving), that left security warnings unlogged with no
+    # sign anything had changed.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 target_metadata = Base.metadata
 

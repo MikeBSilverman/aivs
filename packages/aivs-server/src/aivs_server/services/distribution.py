@@ -48,7 +48,7 @@ from aivs_server.db.models import (
 )
 from aivs_server.services.embargo import record_embargo
 from aivs_server.services.publication import hold_publication_lock
-from aivs_server.services.submissions import identity_object_ids
+from aivs_server.services.submissions import foreign_identity_ids, identity_object_ids
 from aivs_server.taxii.resources import truncate_to_taxii_precision
 
 __all__ = ["DistributionError", "DistributionResult", "distribute_submission"]
@@ -135,6 +135,19 @@ async def _apply_attribution(
     Reassigned rather than deleted: an object with no attribution at all is more
     suspicious to a consumer than one attributed to whoever vouched for it.
     """
+    # Checked again here, not only at ingest: an organisation can be enrolled
+    # with that identifier after the bundle was stored, and distribution is the
+    # last point at which the bundle can still be refused.
+    impersonated = await foreign_identity_ids(
+        session, (stored.raw for stored in objects), submitter_org_id=submission.submitter_org_id
+    )
+    if impersonated:
+        msg = (
+            "identity objects may not use an identifier registered to another "
+            f"organisation: {', '.join(impersonated)}"
+        )
+        raise DistributionError(msg)
+
     if submission.distribute_anonymously:
         # Checked again here, not only at ingest. Distribution is the last point
         # at which the anonymity promise can still be kept, and the flag can be

@@ -31,13 +31,14 @@ from aivs_schemas.extension.builders import AIVS_EXTENSION_ID, validate_bundle
 from aivs_server.audit.log import AuditAction, record
 from aivs_server.auth.context import AuthContext
 from aivs_server.auth.policy import PolicyDeniedError, can_transition_submission, require
-from aivs_server.db.models import StixObject, Submission, SubmissionTransition
+from aivs_server.db.models import Organization, StixObject, Submission, SubmissionTransition
 from aivs_server.taxii.resources import truncate_to_taxii_precision
 
 __all__ = [
     "SubmissionError",
     "apply_transition",
     "create_submission",
+    "foreign_identity_ids",
     "replace_submission_objects",
     "update_submission",
 ]
@@ -172,6 +173,37 @@ def reject_self_identifying_content(objects: Iterable[Any]) -> None:
         raise SubmissionError(msg)
 
 
+async def foreign_identity_ids(
+    session: AsyncSession, objects: Iterable[Any], *, submitter_org_id: uuid.UUID
+) -> list[str]:
+    """Identity SDOs that use an identifier registered to a different organisation.
+
+    Distribution rewrites ``created_by_ref`` and serves the rest of the bundle
+    verbatim, so an ``identity`` object carrying a peer's registered
+    ``stix_identity_id`` reaches every recipient's TIP as that peer's identity
+    -- whatever name and sector the submitter wrote into it -- and the peer can
+    neither see nor contest it. The same reasoning already refused inbound
+    extension definitions and forged TLP markings; it had not been applied to
+    identities. Identities that are not registered here (a vendor's, say) are
+    left alone: they claim nothing about a member.
+
+    A registered identifier is a random UUID a member only learns from content
+    shared with it, so refusing one discloses nothing the caller lacked.
+    """
+    claimed = set(identity_object_ids(objects))
+    if not claimed:
+        return []
+    owners = (
+        await session.execute(
+            select(Organization.stix_identity_id).where(
+                Organization.stix_identity_id.in_(claimed),
+                Organization.id != submitter_org_id,
+            )
+        )
+    ).scalars()
+    return sorted(owners)
+
+
 async def _reject_stored_self_identifying_content(
     session: AsyncSession, submission: Submission
 ) -> None:
@@ -211,6 +243,16 @@ async def replace_submission_objects(
 
     if submission.distribute_anonymously:
         reject_self_identifying_content(bundle.get("objects") or [])
+
+    impersonated = await foreign_identity_ids(
+        session, bundle.get("objects") or [], submitter_org_id=submission.submitter_org_id
+    )
+    if impersonated:
+        msg = (
+            "identity objects may not use an identifier registered to another "
+            f"organisation: {', '.join(impersonated)}"
+        )
+        raise SubmissionError(msg)
 
     await session.execute(delete(StixObject).where(StixObject.submission_id == submission.id))
 

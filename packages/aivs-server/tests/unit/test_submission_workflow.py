@@ -771,3 +771,109 @@ async def test_distribution_refuses_an_anonymous_submission_that_names_its_submi
         .where(Distribution.submission_id == submission_id)
     )
     assert delivered == 0, "nothing may be delivered when the gate refuses"
+
+
+def _identity(identity_id: str, name: str) -> dict:
+    return {
+        "type": "identity",
+        "spec_version": "2.1",
+        "id": identity_id,
+        "created": "2026-08-01T00:00:00.000Z",
+        "modified": "2026-08-01T00:00:00.000Z",
+        "name": name,
+    }
+
+
+async def test_an_identity_object_cannot_use_a_peers_registered_identifier(
+    client, member, make_org
+):
+    """Finding #4: a member could publish an object as another firm.
+
+    Distribution rewrites only ``created_by_ref``; the rest of the bundle is
+    served verbatim, so an identity SDO carrying a peer's registered
+    ``stix_identity_id`` reached every recipient's TIP as that peer. A
+    third party's identity that is not registered here -- a vendor's -- is the
+    control, and is still accepted.
+    """
+    _org, pem = await member()
+    peer = await make_org("peer-bank")
+
+    impersonating = bundle()
+    impersonating["objects"].append(_identity(peer.stix_identity_id, "Peer Bank, says us"))
+    vendor = bundle()
+    vendor["objects"].append(_identity(f"identity--{uuid.uuid4()}", "Example Vendor"))
+
+    refused = await client.post(
+        API,
+        json={"title": "As someone else", "discovery_scope": "ai_system", "bundle": impersonating},
+        headers=proxy_headers(pem),
+    )
+    accepted = await client.post(
+        API,
+        json={"title": "Naming a vendor", "discovery_scope": "ai_system", "bundle": vendor},
+        headers=proxy_headers(pem),
+    )
+
+    assert refused.status_code == 400
+    assert peer.stix_identity_id in refused.text
+    assert accepted.status_code == 201
+
+
+async def test_distribution_refuses_an_identity_registered_after_ingest(
+    client, member, isac, circle, make_org, session
+):
+    """Checked again at distribution: an organisation can be enrolled with that
+    identifier after the bundle was stored, and distribution is the last point at
+    which the bundle can still be refused. The submission is otherwise identical
+    to one that distributes, which is the control below.
+    """
+    _org, pem = await member()
+    _isac_org, isac_pem = isac
+    target, _collection = await circle()
+    later_identity = f"identity--{uuid.uuid4()}"
+
+    staged = bundle()
+    staged["objects"].append(_identity(later_identity, "Enrolled later"))
+    held = await create_draft(client, pem, bundle=staged)
+    clean = await create_draft(client, pem)
+
+    peer = await make_org("enrolled-later")
+    peer.stix_identity_id = later_identity
+    await session.commit()
+
+    for submission in (held, clean):
+        for verb in ("submit", "validate"):
+            who = pem if verb == "submit" else isac_pem
+            response = await client.post(
+                f"{API}/{submission['id']}/{verb}", json={}, headers=proxy_headers(who)
+            )
+            assert response.status_code == 200, response.text
+
+    refused = await client.post(
+        f"{API}/{held['id']}/distribute",
+        json={"circle_ids": [str(target.id)]},
+        headers=proxy_headers(isac_pem),
+    )
+    distributed = await client.post(
+        f"{API}/{clean['id']}/distribute",
+        json={"circle_ids": [str(target.id)]},
+        headers=proxy_headers(isac_pem),
+    )
+
+    assert refused.status_code in (400, 409, 422)
+    assert later_identity in refused.text
+    assert distributed.status_code == 200
+
+
+async def test_a_member_may_carry_its_own_identity(client, member):
+    """The refusal is for someone else's identifier, never your own."""
+    org, pem = await member()
+    own = bundle()
+    own["objects"].append(_identity(org.stix_identity_id, "Meridian Global Bank"))
+
+    response = await client.post(
+        API,
+        json={"title": "Signed as ourselves", "discovery_scope": "ai_system", "bundle": own},
+        headers=proxy_headers(pem),
+    )
+    assert response.status_code == 201

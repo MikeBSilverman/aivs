@@ -99,11 +99,13 @@ services:
     # work. The stock image starts its master as root to bind port 80/443 and
     # only then drops to the nginx user.
     #
-    # Pin by digest for a reviewed deployment:
-    #   docker buildx imagetools inspect nginxinc/nginx-unprivileged:1.27-alpine \
+    # 1.29 because it is built with OpenSSL 3.5, the first with ML-KEM; 1.27 was
+    # built with 3.3 and silently could not offer the hybrid post-quantum group
+    # nginx.conf asks for. Pin by digest for a reviewed deployment:
+    #   docker buildx imagetools inspect nginxinc/nginx-unprivileged:1.29-alpine \
     #     --format '{{.Manifest.Digest}}'
     # then set AIVS_PROXY_IMAGE in deploy/.env to the image@sha256:... form.
-    image: ${AIVS_PROXY_IMAGE:-nginxinc/nginx-unprivileged:1.27-alpine}
+    image: ${AIVS_PROXY_IMAGE:-nginxinc/nginx-unprivileged:1.29-alpine}
     container_name: aivs-proxy
     user: "101:101"
 

@@ -737,6 +737,27 @@ and `/metrics` (`aivs_component_up`, `aivs_webhook_deliveries_pending`,
 `backend` network and alert on `aivs_component_up == 0`. That alert is the
 one that still works when this process's own loops do not.
 
+### 9.2 What your SIEM or MSP receives
+
+Run the stack with `docker-compose.log-forward.yml` (deployment topology §7)
+and the collector receives, as RFC 5424 syslog over TLS, one stream per
+container, tagged with the container name:
+
+- **app**: one JSON object per line. `logger` names the source.
+  `aivs_server.access` is the per-request access log (method, path, status,
+  duration, request id, never the query string).
+  `aivs_server.security` carries detections: parse the `ocsf` field as an
+  OCSF Detection Finding (class 2004), or take the `cef` field as-is for a
+  CEF consumer. Every line from one request shares its `request_id`.
+- **proxy**: nginx's JSON access log, keyed by the same request id.
+- **db**: Postgres's own log.
+
+None of it carries intelligence content: identifiers, counts, addresses and
+times. An MSP watching the ISAC is not a recipient of its intelligence.
+
+The forwarder is non-blocking. A collector outage drops lines and never stops
+the platform, so alert on the collector's side when the stream goes quiet.
+
 ---
 
 ## 10. Things that will bite you

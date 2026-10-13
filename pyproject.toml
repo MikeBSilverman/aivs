@@ -41,6 +41,7 @@ dev = [
     "hypothesis>=6.120",         # property-based tests for parsers/validators
     "httpx>=0.28",
     "freezegun>=1.5",            # deterministic embargo/expiry tests
+    "pyyaml>=6.0",               # reads the compose files in deployment tests
     # Lint / type / security
     "ruff>=0.8",
     "mypy>=1.13",

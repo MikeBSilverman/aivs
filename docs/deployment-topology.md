@@ -553,6 +553,24 @@ restore test on a schedule you actually keep.
 
 ## 7. Monitoring
 
+Three ways in, all reading the same health registry
+(`aivs_server/observability.py`), so they cannot disagree:
+
+- **`/readyz`** for the orchestrator: 503 only when the database is
+  unreachable; a degraded background component is named in `components`
+  while the probe stays 200.
+- **`/metrics`** in Prometheus text format, scraped from the `backend` network.
+  Alert on `aivs_component_up == 0`; that alert still works when the
+  application's own detection loop has died.
+- **`docker-compose.log-forward.yml`** forwards every container's output to
+  the ISAC's collector as RFC 5424 syslog over TLS, including detections as
+  OCSF and CEF (runbook §9.1–9.2). Set `AIVS_LOG_FORWARD_ADDRESS` and
+  `AIVS_LOG_FORWARD_CA_CERT` on the host. The Docker daemon sends the stream,
+  so the allow-list for it is the host firewall, not the compose networks.
+
+The platform's own detection rules cover several rows below (runbook §9.1).
+The table remains what to alert on in the ISAC's monitoring.
+
 | Signal | Why | Threshold |
 | --- | --- | --- |
 | `failed to write independent audit record` in application logs | `record_independently` swallows its own failures by design, so an audit-write outage is otherwise **silent**. | Any occurrence — page. |

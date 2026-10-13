@@ -1,0 +1,56 @@
+# =============================================================================
+# Forward every container's logs to the ISAC's collector over syslog/TLS.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.log-forward.yml up -d
+#
+# An ISAC is monitored by its TIP and often by an MSP. A platform whose alerts
+# live only in its own audit table and in `docker logs` on one host is
+# unmonitored. With this file, the application's JSON lines (including each
+# detection as OCSF and CEF, on the `aivs_server.security` logger), nginx's
+# JSON access log and Postgres's log reach the collector as RFC 5424 syslog
+# over TLS. Runbook section 9.2 has what the collector receives.
+#
+# The Docker daemon sends these, not the containers. Container network rules
+# therefore do not apply. Allow the daemon host to reach the collector, and
+# nothing else, in the host firewall.
+#
+# Both variables are host-side. The CA path is read by the daemon from the
+# host's filesystem, never mounted into a container.
+#   AIVS_LOG_FORWARD_ADDRESS   tcp+tls://collector.example:6514
+#   AIVS_LOG_FORWARD_CA_CERT   /etc/aivs/log-forward-ca.pem
+#
+# `logging: !override` replaces the base file's json-file policy instead of
+# merging into it. A merge would hand the syslog driver json-file's max-size
+# and max-file options, which it refuses at container start. That is the same
+# trap as `ports:` (CLAUDE.md section 5). Docker's dual logging keeps
+# `docker logs` working from a local cache.
+#
+# The forwarded stream carries identifiers and counts, never intelligence
+# content (NFR-S5), so the collector and an MSP reading it are not recipients
+# of the ISAC's intelligence.
+# =============================================================================
+
+# The tag sits on the anchored node, so every service that aliases it replaces
+# its logging mapping rather than merging into it.
+x-forward: &forward !override
+  driver: syslog
+  options:
+    syslog-address: "${AIVS_LOG_FORWARD_ADDRESS:?set AIVS_LOG_FORWARD_ADDRESS to tcp+tls://collector:port}"
+    syslog-tls-ca-cert: "${AIVS_LOG_FORWARD_CA_CERT:?set AIVS_LOG_FORWARD_CA_CERT to the collector CA certificate}"
+    syslog-format: rfc5424micro
+    syslog-facility: local0
+    # The container name, so the collector can tell the proxy from the app.
+    tag: "{{.Name}}"
+    # Starting a container must not depend on the collector being up. The
+    # driver buffers and reconnects. A collector outage loses lines and never
+    # takes the platform down.
+    mode: non-blocking
+    max-buffer-size: 8m
+
+services:
+  proxy:
+    logging: *forward
+  app:
+    logging: *forward
+  db:
+    logging: *forward

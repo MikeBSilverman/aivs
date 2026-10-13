@@ -33,10 +33,11 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from aivs_schemas.enums import OrgStatus, OrgType
 from aivs_server.audit.log import AuditAction, record
 from aivs_server.auth.secretbox import SecretBox, SecretPurpose
 from aivs_server.config import Settings
-from aivs_server.db.models import Webhook, WebhookDelivery
+from aivs_server.db.models import InstanceControl, Organization, Webhook, WebhookDelivery
 from aivs_server.notify.webhooks import (
     SIGNATURE_HEADER,
     WebhookRejectedError,
@@ -80,12 +81,26 @@ async def dispatch_pending(
     delivery that was attempted is never left looking un-attempted.
     """
     now = now or dt.datetime.now(dt.UTC)
+    # While paused, members' deliveries are held, not dropped: a pause means
+    # members are told nothing exists, and their queue resumes with
+    # distribution. The ISAC's own endpoints still hear -- among other things,
+    # the detection alert that someone pressed the stop button.
+    recipients = (
+        Organization.org_type == OrgType.ADMIN
+        if await _distribution_paused(session)
+        else Organization.org_type.is_not(None)
+    )
 
     due = (
         await session.execute(
             select(WebhookDelivery, Webhook)
             .join(Webhook, Webhook.id == WebhookDelivery.webhook_id)
+            .join(Organization, Organization.id == Webhook.org_id)
             .where(
+                # Queued before a quarantine or suspension, held until the
+                # organisation is active again.
+                Organization.status == OrgStatus.ACTIVE,
+                recipients,
                 WebhookDelivery.delivered_at.is_(None),
                 WebhookDelivery.attempts < settings.webhook_max_attempts,
                 Webhook.is_active.is_(True),
@@ -115,6 +130,13 @@ async def dispatch_pending(
 
     await session.commit()
     return delivered
+
+
+async def _distribution_paused(session: AsyncSession) -> bool:
+    paused = await session.scalar(
+        select(InstanceControl.distribution_paused).where(InstanceControl.id == 1)
+    )
+    return bool(paused)
 
 
 async def _attempt(

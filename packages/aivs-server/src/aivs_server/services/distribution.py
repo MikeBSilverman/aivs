@@ -47,7 +47,7 @@ from aivs_server.db.models import (
     Submission,
 )
 from aivs_server.services.embargo import record_embargo
-from aivs_server.services.publication import hold_publication_lock
+from aivs_server.services.publication import earliest_publication_instant, hold_publication_lock
 from aivs_server.services.submissions import foreign_identity_ids, identity_object_ids
 from aivs_server.taxii.resources import truncate_to_taxii_precision
 
@@ -275,8 +275,11 @@ async def distribute_submission(
 
     # Truncated because TAXII timestamps carry milliseconds. Without this a
     # member echoing X-TAXII-Date-Added-Last back as added_after receives the
-    # last object again on every poll.
-    date_added = truncate_to_taxii_precision(release_at or now)
+    # last object again on every poll. Never earlier than the next millisecond:
+    # see earliest_publication_instant.
+    earliest = earliest_publication_instant(now)
+    requested = truncate_to_taxii_precision(release_at) if release_at else earliest
+    date_added = max(requested, earliest)
 
     circles = await _resolve_target_circles(session, submission, circle_ids)
     found = {circle.id for circle in circles}

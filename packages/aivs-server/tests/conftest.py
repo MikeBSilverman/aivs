@@ -20,6 +20,7 @@ any test that accidentally relies on mutating audit history fails loudly.
 
 from __future__ import annotations
 
+import asyncio
 import atexit
 import base64
 import datetime as dt
@@ -28,11 +29,12 @@ import os
 import shutil
 import tempfile
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
+import httpx
 import pyotp
 import pytest
 from cryptography import x509
@@ -54,6 +56,7 @@ from aivs_schemas.enums import (
     OrgType,
     SubmissionState,
 )
+from aivs_server.auth.context import AuthContext, AuthMethod
 from aivs_server.auth.passwords import hash_password
 from aivs_server.auth.secretbox import SecretBox, SecretPurpose
 from aivs_server.auth.sessions import establish_session
@@ -755,3 +758,113 @@ async def isac_machine(make_org, make_cert):
     org = await make_org("hosting-isac-machine", org_type=OrgType.ADMIN)
     pem, _ = await make_cert(org)
     return org, proxy_headers(pem)
+
+
+# ---------------------------------------------------------------------------
+# Concurrency and outbound-delivery helpers, shared across modules
+# ---------------------------------------------------------------------------
+#: Long enough that a writer which is *not* blocked has certainly finished, short
+#: enough to keep the suite fast. A blocked writer stays blocked indefinitely, so
+#: the margin only has to cover the unblocked case.
+_SETTLE_SECONDS = 0.5
+
+
+@pytest.fixture
+async def open_session(engine: Any) -> AsyncIterator[Any]:
+    """Factory for extra sessions, each rolled back and closed at teardown."""
+    factory = async_sessionmaker(bind=engine, expire_on_commit=False, autoflush=False)
+    opened: list[AsyncSession] = []
+
+    def _open() -> AsyncSession:
+        session = factory()
+        opened.append(session)
+        return session
+
+    yield _open
+    for session in opened:
+        await session.rollback()
+        await session.close()
+
+
+@pytest.fixture
+async def isac_ctx(make_org) -> AuthContext:
+    org = await make_org("the-isac", org_type=OrgType.ADMIN)
+    return AuthContext(
+        org_id=org.id,
+        org_slug=org.slug,
+        org_type=OrgType.ADMIN,
+        org_status=OrgStatus.ACTIVE,
+        auth_method=AuthMethod.MTLS,
+    )
+
+
+@pytest.fixture
+async def make_validated(session: AsyncSession, make_org):
+    """Factory for a validated submission carrying one STIX object."""
+    member = await make_org("member-bank")
+
+    async def _make(name: str) -> uuid.UUID:
+        submission = models.Submission(
+            submitter_org_id=member.id,
+            state=SubmissionState.VALIDATED,
+            tlp=TLP.AMBER,
+            discovery_scope=DiscoveryScope.AI_SYSTEM,
+            title=name,
+        )
+        session.add(submission)
+        await session.flush()
+        stix_id = f"vulnerability--{uuid.uuid4()}"
+        session.add(
+            models.StixObject(
+                stix_id=stix_id,
+                modified=submission.created_at,
+                created=submission.created_at,
+                type="vulnerability",
+                spec_version="2.1",
+                submission_id=submission.id,
+                name=name,
+                raw={"type": "vulnerability", "spec_version": "2.1", "id": stix_id, "name": name},
+            )
+        )
+        await session.commit()
+        return submission.id
+
+    return _make
+
+
+async def is_blocked(operation: Awaitable[Any]) -> tuple[bool, asyncio.Task[Any]]:
+    task = asyncio.ensure_future(operation)
+    done, _ = await asyncio.wait({task}, timeout=_SETTLE_SECONDS)
+    return task not in done, task
+
+
+class StubEndpoint(httpx.AsyncBaseTransport):
+    """Stands in for a member's endpoint."""
+
+    def __init__(self, *, status_code: int = 204, raises: Exception | None = None) -> None:
+        self.status_code = status_code
+        self.raises = raises
+        self.requests: list[httpx.Request] = []
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        self.requests.append(request)
+        if self.raises is not None:
+            raise self.raises
+        return httpx.Response(self.status_code, request=request)
+
+
+@pytest.fixture
+def member_endpoint(monkeypatch):
+    """Point the dispatcher's client at a stand-in endpoint."""
+
+    def _install(transport: StubEndpoint) -> StubEndpoint:
+        real = httpx.AsyncClient
+
+        def _factory(*args: object, **kwargs: object) -> httpx.AsyncClient:
+            kwargs["transport"] = transport
+            return real(*args, **kwargs)
+
+        monkeypatch.setattr("aivs_server.notify.dispatcher.httpx.AsyncClient", _factory)
+        return transport
+
+    return _install

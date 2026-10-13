@@ -576,7 +576,10 @@ GSIBs.
 
    Every publication is refused and nothing is served, including embargoes
    whose time arrives during the pause -- those would otherwise become visible
-   by the clock. Members' polling cursors do not move on an empty page, so
+   by the clock. No member is told anything either: the embargo sweeper does
+   nothing and members' webhook deliveries are held, then sent on resume. The
+   ISAC's own endpoints still receive their alerts, including the one raised by
+   the pause itself. Members' polling cursors do not move on an empty page, so
    nothing is skipped when you resume. An ISAC editor or system admin may
    pause; only an editor may resume.
 2. Isolate: stop the overlay or the allowlist. Members will notice; that is fine.

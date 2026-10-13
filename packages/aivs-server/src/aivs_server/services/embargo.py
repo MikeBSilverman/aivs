@@ -36,7 +36,6 @@ from __future__ import annotations
 import datetime as dt
 import logging
 import uuid
-from typing import Final
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -49,7 +48,11 @@ from aivs_server.notify.events import (
     circle_ids_for_submission,
     queue_visibility_notifications,
 )
-from aivs_server.services.publication import hold_publication_lock
+from aivs_server.services.publication import (
+    PublicationPausedError,
+    earliest_publication_instant,
+    hold_publication_lock,
+)
 from aivs_server.taxii.resources import truncate_to_taxii_precision
 
 __all__ = [
@@ -64,7 +67,6 @@ logger = logging.getLogger(__name__)
 
 #: One tick of the precision TAXII timestamps carry. Used to place an
 #: early-released row strictly ahead of every cursor that can already exist.
-_ONE_MILLISECOND: Final[dt.timedelta] = dt.timedelta(milliseconds=1)
 
 
 class EmbargoError(ValueError):
@@ -140,7 +142,7 @@ async def release_embargo_now(
     # being computed while this transaction is open. Without the lock that claim
     # was false -- a distribution committing after this one could still land
     # its rows below a cursor issued in between.
-    released_at = truncate_to_taxii_precision(now) + _ONE_MILLISECOND
+    released_at = earliest_publication_instant(now)
 
     embargo = (
         await session.execute(select(Embargo).where(Embargo.submission_id == submission_id))
@@ -151,6 +153,11 @@ async def release_embargo_now(
     if embargo.status in (EmbargoStatus.RELEASED, EmbargoStatus.LIFTED_EARLY):
         msg = "this embargo has already been released"
         raise EmbargoError(msg)
+    if embargo.release_at is not None and embargo.release_at <= now:
+        # Due but not yet swept: members have been able to read it since
+        # release_at. Recording an *early* release now would misstate when they
+        # could, in the record that exists to say exactly that.
+        return await _record_elapsed_release(session, ctx, embargo, reason=reason)
 
     # Only rows still in the future move; anything already visible keeps the
     # timestamp members have been polling against.
@@ -176,6 +183,31 @@ async def release_embargo_now(
             "released_at": released_at.isoformat(),
             "originally_due": embargo.release_at.isoformat() if embargo.release_at else None,
             "early": True,
+            "reason": reason,
+        },
+    )
+    return embargo
+
+
+async def _record_elapsed_release(
+    session: AsyncSession, ctx: AuthContext, embargo: Embargo, *, reason: str | None
+) -> Embargo:
+    """Record, on the operator's request, a release that already happened.
+
+    Nothing about visibility changes. The sweeper would have written this row;
+    once the status says released it never will, so it is written here.
+    """
+    embargo.status = EmbargoStatus.RELEASED
+    embargo.released_at = embargo.release_at
+    await record(
+        session,
+        action=AuditAction.EMBARGO_RELEASED,
+        ctx=ctx,
+        resource_type="submission",
+        resource_id=str(embargo.submission_id),
+        details={
+            "released_at": embargo.release_at.isoformat() if embargo.release_at else None,
+            "early": False,
             "reason": reason,
         },
     )
@@ -276,18 +308,33 @@ async def sweep_due_embargoes(session: AsyncSession, *, now: dt.datetime | None 
     a week leaks nothing, and catches up in one pass when it returns.
 
     It exists so the operator console and the audit trail say ``released``
-    rather than ``pending`` for content members can already read.
+    rather than ``pending`` for content members can already read, and so the
+    release is announced.
+
+    It takes the publication lock and the rows' locks, like every other writer
+    of an embargo. Without them an extension committing between this read and
+    its write was overwritten: the embargo said released, members were told to
+    poll for content still held, and both operator controls then refused it as
+    already released. While distribution is paused it does nothing at all, so
+    no member is told that anything exists; it catches up on resume.
     """
+    try:
+        await hold_publication_lock(session)
+    except PublicationPausedError:
+        await session.rollback()
+        return 0
     now = now or dt.datetime.now(dt.UTC)
 
     due = (
         (
             await session.execute(
-                select(Embargo).where(
+                select(Embargo)
+                .where(
                     Embargo.status.in_((EmbargoStatus.PENDING, EmbargoStatus.EXTENDED)),
                     Embargo.release_at.is_not(None),
                     Embargo.release_at <= now,
                 )
+                .with_for_update()
             )
         )
         .scalars()
@@ -319,8 +366,9 @@ async def sweep_due_embargoes(session: AsyncSession, *, now: dt.datetime | None 
             },
         )
 
+    # Always: the commit is also what releases the publication lock.
+    await session.commit()
     if due:
-        await session.commit()
         logger.info("embargo sweep released %d submission(s)", len(due))
 
     return len(due)

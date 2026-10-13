@@ -246,6 +246,19 @@ never looks backwards. The row is then never delivered — a warning a member
 would swear they never received. Relatedly, `release_at` may not be backdated,
 for exactly the same reason.
 
+**Stamp the next millisecond, never the current one.** `added_after` is a
+strict comparison at TAXII's millisecond precision, and a reader in the current
+millisecond may already have reported it as `X-TAXII-Date-Added-Last`. The
+publication lock orders commits; it cannot separate two stamps that truncate to
+the same value. Early release learned this first and distribution did not, so
+both now go through `earliest_publication_instant`.
+
+**A stop button stops the announcements too.** Pause hid content from every
+reader, while the embargo sweeper went on releasing and the dispatcher went on
+telling members "poll for submission X". Contentless still says that something
+exists. Anything that acts unattended (sweepers, dispatchers, schedulers)
+checks the pause itself.
+
 **Distribution is one transaction.** `distribute_submission` deliberately does
 not commit; the router commits once, covering the visibility rows, the state
 change, and the audit record. A member paging concurrently must see the whole

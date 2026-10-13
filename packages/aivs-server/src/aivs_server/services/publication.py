@@ -38,14 +38,23 @@ A new writer or reader of ``distributions.date_added`` belongs on that list.
 
 from __future__ import annotations
 
+import datetime as dt
 from typing import Final
 
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aivs_server.db.models import InstanceControl
+from aivs_server.taxii.resources import truncate_to_taxii_precision
 
-__all__ = ["PublicationPausedError", "hold_publication_lock", "wait_for_publications"]
+__all__ = [
+    "PublicationPausedError",
+    "earliest_publication_instant",
+    "hold_publication_lock",
+    "wait_for_publications",
+]
+
+_ONE_MILLISECOND: Final[dt.timedelta] = dt.timedelta(milliseconds=1)
 
 
 class PublicationPausedError(RuntimeError):
@@ -89,3 +98,18 @@ async def wait_for_publications(session: AsyncSession) -> None:
     await session.execute(
         text("SELECT pg_advisory_xact_lock_shared(:key)"), {"key": _PUBLICATION_LOCK_KEY}
     )
+
+
+def earliest_publication_instant(now: dt.datetime) -> dt.datetime:
+    """The earliest ``date_added`` a publication may be stamped with now.
+
+    The next TAXII millisecond, never the current one. ``added_after`` is a
+    strict comparison at millisecond precision: a reader in this millisecond
+    can already have handed out ``X-TAXII-Date-Added-Last`` equal to it (for a
+    row distributed earlier in it, or an embargo whose time has just arrived),
+    and a row stamped with the same millisecond is then never delivered to that
+    poller. The lock orders commits; it cannot separate two stamps that
+    truncate to the same value. Early release learned this first; distribution
+    did not, until review found the same tie there.
+    """
+    return truncate_to_taxii_precision(now) + _ONE_MILLISECOND

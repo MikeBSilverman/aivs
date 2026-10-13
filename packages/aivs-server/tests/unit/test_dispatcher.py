@@ -25,7 +25,7 @@ from aivs_server.auth.secretbox import SecretPurpose
 from aivs_server.db.models import Webhook, WebhookDelivery
 from aivs_server.notify.dispatcher import _next_attempt_delay, dispatch_pending
 from aivs_server.notify.webhooks import SIGNATURE_HEADER, sign_payload
-from tests.conftest import proxy_headers
+from tests.conftest import StubEndpoint, proxy_headers
 
 pytestmark = pytest.mark.db
 
@@ -72,41 +72,9 @@ async def queued(make_org, session, secret_box):
     return _build
 
 
-class _Transport(httpx.AsyncBaseTransport):
-    """Stands in for a member's endpoint."""
-
-    def __init__(self, *, status_code: int = 204, raises: Exception | None = None) -> None:
-        self.status_code = status_code
-        self.raises = raises
-        self.requests: list[httpx.Request] = []
-
-    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
-        self.requests.append(request)
-        if self.raises is not None:
-            raise self.raises
-        return httpx.Response(self.status_code, request=request)
-
-
-@pytest.fixture
-def member_endpoint(monkeypatch):
-    """Point the dispatcher's client at a stand-in endpoint."""
-
-    def _install(transport: _Transport) -> _Transport:
-        real = httpx.AsyncClient
-
-        def _factory(*args: object, **kwargs: object) -> httpx.AsyncClient:
-            kwargs["transport"] = transport
-            return real(*args, **kwargs)
-
-        monkeypatch.setattr("aivs_server.notify.dispatcher.httpx.AsyncClient", _factory)
-        return transport
-
-    return _install
-
-
 async def test_a_successful_delivery_is_recorded_once(session, settings, queued, member_endpoint):
     _webhook, delivery = await queued()
-    endpoint = member_endpoint(_Transport(status_code=204))
+    endpoint = member_endpoint(StubEndpoint(status_code=204))
 
     assert await dispatch_pending(session, settings) == 1
 
@@ -130,7 +98,7 @@ async def test_the_payload_is_signed_and_the_host_is_preserved(
     are what keep TLS verification meaningful.
     """
     _webhook, _delivery = await queued()
-    endpoint = member_endpoint(_Transport(status_code=200))
+    endpoint = member_endpoint(StubEndpoint(status_code=200))
 
     await dispatch_pending(session, settings)
 
@@ -146,7 +114,7 @@ async def test_a_failing_endpoint_is_retried_with_backoff(
 ):
     """Not delivered, not given up on, and not retried immediately."""
     _webhook, delivery = await queued()
-    member_endpoint(_Transport(status_code=503))
+    member_endpoint(StubEndpoint(status_code=503))
 
     assert await dispatch_pending(session, settings) == 0
 
@@ -167,7 +135,7 @@ async def test_a_connection_failure_is_recorded_not_raised(
 ):
     """One member's unreachable endpoint must not end the loop for everyone."""
     _webhook, delivery = await queued()
-    member_endpoint(_Transport(raises=httpx.ConnectError("refused")))
+    member_endpoint(StubEndpoint(raises=httpx.ConnectError("refused")))
 
     assert await dispatch_pending(session, settings) == 0
 
@@ -179,7 +147,7 @@ async def test_a_connection_failure_is_recorded_not_raised(
 async def test_attempts_are_bounded(session, settings, queued, member_endpoint):
     """A member down for a week does not accumulate an unbounded backlog."""
     _webhook, delivery = await queued()
-    member_endpoint(_Transport(status_code=500))
+    member_endpoint(StubEndpoint(status_code=500))
 
     now = dt.datetime.now(dt.UTC)
     for attempt in range(settings.webhook_max_attempts):
@@ -202,7 +170,7 @@ async def test_an_unroutable_target_is_spent_immediately(
 ):
     """A URL that now resolves inside the network is not retryable by waiting."""
     _webhook, delivery = await queued(url="https://127.0.0.1/hook")
-    endpoint = member_endpoint(_Transport(status_code=204))
+    endpoint = member_endpoint(StubEndpoint(status_code=204))
 
     assert await dispatch_pending(session, settings) == 0
 
@@ -217,7 +185,7 @@ async def test_a_deactivated_webhook_is_not_delivered_to(
     session, settings, queued, member_endpoint
 ):
     webhook, _delivery = await queued()
-    endpoint = member_endpoint(_Transport(status_code=204))
+    endpoint = member_endpoint(StubEndpoint(status_code=204))
 
     webhook.is_active = False
     await session.commit()
@@ -235,7 +203,7 @@ def test_backoff_grows_and_is_capped():
 
 
 async def test_nothing_due_is_a_cheap_no_op(session, settings, member_endpoint):
-    endpoint = member_endpoint(_Transport(status_code=204))
+    endpoint = member_endpoint(StubEndpoint(status_code=204))
     assert await dispatch_pending(session, settings) == 0
     assert endpoint.requests == []
 
@@ -272,7 +240,7 @@ async def test_an_unopenable_signing_key_defers_the_delivery_until_it_is_fixed(
     # previous key too early leaves behind.
     webhook.hmac_secret_encrypted = b"AIVS" + bytes((1, 1)) + b"\xde\xad\xbe\xef" + b"\x00" * 28
     await session.commit()
-    endpoint = member_endpoint(_Transport(status_code=204))
+    endpoint = member_endpoint(StubEndpoint(status_code=204))
     now = dt.datetime.now(dt.UTC)
 
     assert await dispatch_pending(session, settings, now=now) == 0
@@ -334,7 +302,7 @@ async def test_the_signature_verifies_against_the_secret_the_member_was_given(
     )
     await session.commit()
 
-    endpoint = member_endpoint(_Transport(status_code=204))
+    endpoint = member_endpoint(StubEndpoint(status_code=204))
     assert await dispatch_pending(session, settings) == 1
 
     request = endpoint.requests[0]

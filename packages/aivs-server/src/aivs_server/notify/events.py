@@ -46,9 +46,12 @@ from typing import Final
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from aivs_schemas.enums import OrgStatus
 from aivs_server.db.models import (
+    Circle,
     CircleMembership,
     Distribution,
+    Organization,
     Submission,
     TaxiiCollection,
     Webhook,
@@ -128,7 +131,15 @@ async def queue_visibility_notifications(
             select(Webhook, TaxiiCollection.id)
             .join(CircleMembership, CircleMembership.org_id == Webhook.org_id)
             .join(TaxiiCollection, TaxiiCollection.circle_id == CircleMembership.circle_id)
+            .join(Circle, Circle.id == CircleMembership.circle_id)
+            .join(Organization, Organization.id == Webhook.org_id)
             .where(
+                # Only organisations that could read it. A quarantined member's
+                # endpoint is the one whose credentials may be in someone
+                # else's hands; a suspended one has no access to announce; and a
+                # deactivated circle grants no read.
+                Organization.status == OrgStatus.ACTIVE,
+                Circle.is_active.is_(True),
                 CircleMembership.circle_id.in_(circle_ids),
                 # The open interval only. A member that has left cannot read the
                 # content, so announcing it would tell a former member what was

@@ -57,6 +57,11 @@ _BATCH_SIZE: Final[int] = 50
 #: member endpoint that is down is retried over hours rather than seconds.
 _BACKOFF_BASE: Final[int] = 5
 
+#: How long a delivery waits when the signing key cannot be opened. Fixed
+#: rather than backed off: the cause is a configuration on our side, and the
+#: retry should pick up the fix promptly without hammering the log meanwhile.
+_KEY_UNAVAILABLE_RETRY: Final[dt.timedelta] = dt.timedelta(minutes=5)
+
 _SUCCESS_FLOOR: Final[int] = 200
 _SUCCESS_CEILING: Final[int] = 300
 
@@ -123,7 +128,6 @@ async def _attempt(
     now: dt.datetime,
 ) -> bool:
     """Make one delivery attempt, recording the outcome either way."""
-    delivery.attempts += 1
     timestamp = now.isoformat()
     body = json.dumps(delivery.payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
 
@@ -150,21 +154,26 @@ async def _attempt(
         or ""
     )
     if not secret:
-        # Signing with an empty key delivers a notification the member's
-        # receiver is obliged to reject, and burns an attempt doing it. The
-        # cause is on our side -- a key rotated away without keeping the old one
-        # configured -- so waiting will not fix it either.
+        # Our fault, not the member's: a key rotated away without keeping the
+        # old one configured, or the key-encryption key missing. This used to
+        # spend every remaining attempt on the reasoning that waiting would not
+        # fix it -- true of waiting, false of the remedy: fixing the key makes the
+        # delivery sendable, and spending it had already discarded it, along
+        # with a further batch on every pass until someone noticed. So the
+        # attempt is not counted, the delivery is deferred and retried, and it
+        # goes out on its own once the key is right.
         #
-        # `consecutive_failures` is deliberately NOT incremented, unlike every
-        # other failure branch: it describes the health of the member's
-        # endpoint, and holding a member's webhook against them for our own
-        # misconfiguration would eventually have them re-registering an endpoint
-        # that was never broken.
+        # `consecutive_failures` is not incremented either: it describes the
+        # member's endpoint, which was never at fault.
         delivery.error = "signing key could not be opened"
-        delivery.attempts = settings.webhook_max_attempts
-        await _record_failure(session, webhook, delivery, reason="signing_key_unavailable")
+        delivery.next_attempt_at = now + _KEY_UNAVAILABLE_RETRY
+        logger.error(
+            "webhook signing key could not be opened; check AIVS_SECRET_ENCRYPTION_KEY",
+            extra={"webhook_id": str(webhook.id), "delivery_id": delivery.id},
+        )
         return False
 
+    delivery.attempts += 1
     headers = {
         "content-type": "application/json",
         SIGNATURE_HEADER: sign_payload(secret.encode("utf-8"), body, timestamp),

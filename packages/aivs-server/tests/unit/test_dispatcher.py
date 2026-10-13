@@ -251,36 +251,47 @@ async def test_a_delivery_for_a_removed_webhook_is_ignored(session, settings, qu
     assert remaining == [], "cascade removes the deliveries with the registration"
 
 
-async def test_an_unopenable_signing_key_is_not_delivered_unsigned(
+async def test_an_unopenable_signing_key_defers_the_delivery_until_it_is_fixed(
     session, settings, queued, member_endpoint
 ):
-    """A key we cannot open spends the delivery instead of signing with nothing.
+    """Finding #6: a key we cannot open used to spend the delivery outright.
 
     The realistic cause is our own misconfiguration -- a key-encryption key
-    rotated away without keeping the previous one -- so the member's endpoint
-    must not be contacted with a signature it is obliged to reject, and the
-    member's `consecutive_failures` must not be charged for it.
+    rotated away without keeping the previous one. The member's endpoint must
+    not be contacted with a signature it is obliged to reject, nor charged a
+    failure for it. But the delivery must not be discarded either: fixing the
+    key makes it sendable, and spending it (as this test used to require)
+    meant each pass discarded another batch of warnings members were owed.
+    The pair: not sent and not spent while the key is broken; sent, on its own,
+    once it is fixed.
     """
     webhook, delivery = await queued()
-    # A well-formed envelope -- current magic, current version, current
-    # algorithm -- sealed under a key fingerprint nothing matches: the shape a
-    # rotation that dropped the previous key too early leaves behind.
-    #
-    # This previously read b"AIVS1" + zeros, where the "1" is the *version*
-    # byte, so it exercised the unsupported-envelope-version branch instead and
-    # the named scenario went untested.
+    sealed = webhook.hmac_secret_encrypted
+    # A well-formed envelope -- current magic, version and algorithm -- sealed
+    # under a key fingerprint nothing matches: what a rotation that dropped the
+    # previous key too early leaves behind.
     webhook.hmac_secret_encrypted = b"AIVS" + bytes((1, 1)) + b"\xde\xad\xbe\xef" + b"\x00" * 28
     await session.commit()
     endpoint = member_endpoint(_Transport(status_code=204))
+    now = dt.datetime.now(dt.UTC)
 
-    assert await dispatch_pending(session, settings) == 0, "nothing was delivered"
-
+    assert await dispatch_pending(session, settings, now=now) == 0
     await session.refresh(delivery)
     await session.refresh(webhook)
-    assert endpoint.requests == [], "the endpoint was never contacted"
-    assert delivery.delivered_at is None
-    assert delivery.attempts >= settings.webhook_max_attempts, "spent, not retried forever"
+    assert endpoint.requests == [], "never sent unsigned"
+    assert delivery.attempts == 0, "the attempt is not charged"
+    assert delivery.next_attempt_at is not None
+    assert delivery.next_attempt_at > now, "deferred, to be retried"
     assert webhook.consecutive_failures == 0, "not held against the member's endpoint"
+
+    webhook.hmac_secret_encrypted = sealed
+    await session.commit()
+    later = delivery.next_attempt_at + dt.timedelta(seconds=1)
+
+    assert await dispatch_pending(session, settings, now=later) == 1
+    await session.refresh(delivery)
+    assert delivery.delivered_at is not None
+    assert len(endpoint.requests) == 1
 
 
 # ---------------------------------------------------------------------------

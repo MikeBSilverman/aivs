@@ -192,9 +192,11 @@ services:
         limits:
           cpus: "1.0"
           memory: 256M
+          # Here, not as a top-level pids_limit: Compose 2.40 refuses both
+          # forms together, and an unvalidated file is how that went unnoticed.
+          pids: 256
         reservations:
           memory: 64M
-    pids_limit: 256
 
   # ===========================================================================
   # Application.
@@ -232,15 +234,11 @@ services:
       # from an accepted address.
       AIVS_TRUSTED_PROXY_CIDRS: '["172.29.10.2/32"]'
 
-      # RFC 4514 subject DN of the issuing CA. Certificate registration refuses
-      # anything not chaining from it. Without this the proxy's handshake verdict
-      # is the only thing between a self-signed certificate and a registered AIVS
-      # identity -- and the application deliberately does not treat the proxy as
-      # the sole authority on identity anywhere else. Read it with:
-      #
-      #   openssl x509 -in deploy/ca/out/intermediate/intermediate.crt \
-      #     -noout -subject -nameopt rfc2253
-      AIVS_EXPECTED_CERTIFICATE_ISSUER_DN: ${AIVS_EXPECTED_CERTIFICATE_ISSUER_DN:?set AIVS_EXPECTED_CERTIFICATE_ISSUER_DN in deploy/.env to the issuing CA subject DN}
+      # The issuing CA's certificate, mounted as a single file below. Every
+      # presented and registered member certificate must carry its signature,
+      # verified in the application, so the proxy's handshake verdict is not the
+      # only thing between a self-signed certificate and a member identity.
+      AIVS_ISSUING_CA_CERTIFICATE_FILE: /etc/aivs/issuing-ca.pem
 
       # -- Sessions ---------------------------------------------------------
       AIVS_SESSION_SECRET: ${AIVS_SESSION_SECRET:?set AIVS_SESSION_SECRET in deploy/.env (>= 32 chars)}
@@ -261,6 +259,15 @@ services:
       # because debug logging can record request bodies -- which here are
       # embargoed pre-CVE advisories.
       AIVS_LOG_LEVEL: ${AIVS_LOG_LEVEL:-INFO}
+
+    volumes:
+      # The issuing CA's *certificate* only, as one read-only file. The proxy
+      # mounts the whole CA output directory; the application must not, because
+      # that directory is where init-ca.sh writes the issuing key.
+      - type: bind
+        source: ${AIVS_CA_DIR:?set AIVS_CA_DIR in deploy/.env to the ABSOLUTE path of deploy/ca/out}/intermediate/intermediate.crt
+        target: /etc/aivs/issuing-ca.pem
+        read_only: true
 
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=64m,uid=10001,gid=10001,mode=0700
@@ -294,9 +301,11 @@ services:
         limits:
           cpus: "2.0"
           memory: 1G
+          # Here, not as a top-level pids_limit: Compose 2.40 refuses both
+          # forms together, and an unvalidated file is how that went unnoticed.
+          pids: 512
         reservations:
           memory: 256M
-    pids_limit: 512
 
   # ===========================================================================
   # Database.
@@ -391,9 +400,11 @@ services:
         limits:
           cpus: "2.0"
           memory: 2G
+          # Here, not as a top-level pids_limit: Compose 2.40 refuses both
+          # forms together, and an unvalidated file is how that went unnoticed.
+          pids: 256
         reservations:
           memory: 512M
-    pids_limit: 256
 
 
 # =============================================================================

@@ -23,8 +23,10 @@ import binascii
 import ipaddress
 import sys
 from functools import lru_cache
+from pathlib import Path
 from typing import Final, Literal, Self
 
+from cryptography import x509
 from pydantic import Field, SecretStr, ValidationError, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -78,6 +80,30 @@ def _decode_kek(value: SecretStr) -> bytes:
     return base64.b64decode(value.get_secret_value())
 
 
+@lru_cache(maxsize=4)
+def load_ca_certificate(path: Path) -> x509.Certificate:
+    """Read and check the issuing CA certificate. Cached: it is read on every request.
+
+    Refuses a certificate that is not a CA, because verifying member
+    certificates against a leaf would accept nothing -- or, if someone
+    configured a member's own certificate here, would accept its forgeries.
+    """
+    try:
+        certificate = x509.load_pem_x509_certificate(path.read_bytes())
+    except (OSError, ValueError) as exc:
+        msg = f"issuing CA certificate at {path} could not be read as PEM: {exc}"
+        raise ValueError(msg) from exc
+
+    try:
+        constraints = certificate.extensions.get_extension_for_class(x509.BasicConstraints)
+    except x509.ExtensionNotFound:
+        constraints = None
+    if constraints is None or not constraints.value.ca:
+        msg = f"the certificate at {path} is not a CA (basicConstraints CA:TRUE is required)"
+        raise ValueError(msg)
+    return certificate
+
+
 class Settings(BaseSettings):
     """Process configuration, read once from the environment at startup."""
 
@@ -128,15 +154,20 @@ class Settings(BaseSettings):
     header_proxy_auth: str = "x-proxy-auth"
     header_request_id: str = "x-request-id"
 
-    #: RFC 4514 subject DN of the issuing CA that certificates must chain from,
-    #: e.g. "CN=AIVS Issuing CA,O=Global FS-ISAC,C=US".
+    #: Path to the PEM certificate of the CA that issues member certificates --
+    #: the *issuing* (intermediate) CA, not the root.
     #:
-    #: Registration refuses any certificate whose issuer does not match. Without
-    #: it, the only thing preventing a registered self-signed certificate from
-    #: authenticating is the proxy's verdict -- and this application deliberately
-    #: does not treat the proxy as the sole authority on identity anywhere else.
-    #: Empty disables the check, which is appropriate only before a CA exists.
-    expected_certificate_issuer_dn: str = ""
+    #: Every presented and every registered certificate must be signed by it,
+    #: verified here by signature, not by comparing issuer names. An issuer DN
+    #: is attacker-chosen data inside the certificate: a self-signed certificate
+    #: carrying the right DN passed the old string comparison exactly as a
+    #: genuinely issued one did, which left the proxy as the sole authority on
+    #: identity while three comments said it was not. The DN pre-filter is
+    #: derived from this certificate's subject, so the two cannot disagree.
+    #:
+    #: Unset is permitted in ``dev`` alone, where no issuer check runs at all;
+    #: that is why the e2e tests go through nginx rather than trusting dev.
+    issuing_ca_certificate_file: Path | None = None
 
     # -- Development-only escape hatches (refused in production) -----------
     #: Accept identity headers without a valid ``X-Proxy-Auth``. NEVER in prod.
@@ -342,6 +373,14 @@ class Settings(BaseSettings):
             raise ValueError(msg)
         return self
 
+    @field_validator("issuing_ca_certificate_file")
+    @classmethod
+    def _issuing_ca_must_load(cls, path: Path | None) -> Path | None:
+        """Load the CA at startup, so a wrong path fails the healthcheck, not a login."""
+        if path is not None:
+            load_ca_certificate(path)
+        return path
+
     @model_validator(mode="after")
     def validate_production_posture(self) -> Self:
         """Refuse to start if a hardened deployment has a dev bypass enabled.
@@ -383,12 +422,10 @@ class Settings(BaseSettings):
             # client that sends no `limit` gets the larger page and one that asks
             # for a limit gets capped at the smaller.
             violations.append("taxii_default_page_size (must not exceed taxii_max_page_size)")
-        if not self.expected_certificate_issuer_dn:
-            # Certificate registration is the one place the application would
-            # otherwise trust the proxy's verdict alone. Every other identity
-            # decision re-derives from the certificate, so leaving this empty
-            # outside dev contradicts the model the rest of the code is built on.
-            violations.append("expected_certificate_issuer_dn (must pin the issuing CA)")
+        if self.issuing_ca_certificate_file is None:
+            # Without it the proxy's handshake verdict is the only thing between a
+            # self-signed certificate and an authenticated member identity.
+            violations.append("issuing_ca_certificate_file (must pin the issuing CA)")
 
         if violations:
             msg = (
@@ -401,6 +438,13 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------
     # Derived helpers
     # ------------------------------------------------------------------
+    @property
+    def issuing_ca_certificate(self) -> x509.Certificate | None:
+        """The issuing CA certificate, or ``None`` in dev when none is configured."""
+        if self.issuing_ca_certificate_file is None:
+            return None
+        return load_ca_certificate(self.issuing_ca_certificate_file)
+
     @property
     def trusted_proxy_networks(self) -> tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...]:
         return tuple(ipaddress.ip_network(c, strict=False) for c in self.trusted_proxy_cidrs)

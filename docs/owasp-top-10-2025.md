@@ -56,7 +56,7 @@ The category the deployment layer answers to.
 | Startup refuses an unsafe posture | `Settings.validate_production_posture` — allow-listed to `dev`, never "deny only production" |
 | Dev bypasses inert everywhere else | `dev_trust_unauthenticated_proxy`, `dev_expose_error_detail`, `dev_allow_private_webhook_targets` |
 | Placeholder secrets fail closed **[fixed]** | `_secret_is_not_a_placeholder` refuses any secret still containing `REPLACE_ME` |
-| Issuer pin required outside dev **[fixed]** | `expected_certificate_issuer_dn` is now a production-posture violation when empty |
+| Issuer pin required outside dev, by signature **[fixed]** | `issuing_ca_certificate_file` is a production-posture violation when unset; every presented and registered certificate must be *signed* by that CA, with `CA:FALSE` and `clientAuth` -- an earlier issuer-name comparison accepted a self-signed certificate carrying the right name |
 | Proxy allowlist cannot be `/0` **[fixed]** | `trusted_proxy_cidrs` rejects a prefix length of 0 |
 | Interactive docs only in dev **[fixed]** | `/docs` and `/openapi.json` mounted only when `environment == "dev"` |
 | Security headers on every response **[fixed]** | `middleware.security_headers_for`, reapplied by the 500 handler that does not traverse the middleware stack |

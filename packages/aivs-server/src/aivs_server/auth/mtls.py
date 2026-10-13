@@ -19,9 +19,13 @@ enforced here or in the deployment topology:
 The certificate itself is re-parsed here rather than trusting the proxy's
 summary of it. nginx's ``$ssl_client_fingerprint`` is **SHA-1**, which we will
 not key identity on; instead the proxy forwards the full escaped PEM and the
-application computes the SHA-256 itself and independently re-checks the validity
-window. That costs a few hundred microseconds per request and removes the proxy
-from the set of components that must be correct for identity to be sound.
+application computes the SHA-256 itself, verifies that the configured issuing
+CA signed it as a client certificate, and re-checks the validity window. That
+costs well under a millisecond per request and removes the proxy from the set
+of components that must be correct for identity to be sound. Until the
+signature check existed this paragraph overstated it: the only issuer check was
+a name comparison at registration, and a name is chosen by whoever writes the
+certificate.
 """
 
 from __future__ import annotations
@@ -34,8 +38,9 @@ from typing import Final
 from urllib.parse import unquote
 
 from cryptography import x509
+from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes
-from cryptography.x509.oid import NameOID
+from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 
 from aivs_server.config import Settings
 
@@ -44,6 +49,7 @@ __all__ = [
     "ClientCertificateIdentity",
     "MtlsError",
     "extract_client_certificate",
+    "verify_issued_by",
 ]
 
 logger = logging.getLogger(__name__)
@@ -157,6 +163,42 @@ def _parse_certificate(raw_header: str) -> x509.Certificate:
         raise CertificateRejectedError("certificate_unparseable") from exc
 
 
+def verify_issued_by(certificate: x509.Certificate, issuing_ca: x509.Certificate) -> None:
+    """Refuse a certificate the configured issuing CA did not sign for a client.
+
+    The name comparison is only a cheap pre-filter: an issuer DN is data the
+    certificate's author chose, so a self-signed certificate carrying the right
+    DN matched exactly as a genuine one did. The signature is the check. nginx
+    forwards the leaf alone, so this verifies *direct* issuance; a leaf signed
+    by the root passes nginx (``ssl_verify_depth 2``) and is refused here, which
+    is intended -- members are issued from the issuing CA only.
+
+    Written against the generic verify rather than an RSA or ECDSA branch, so a
+    post-quantum signature algorithm is a key-type the library supports, not a
+    rewrite here.
+    """
+    if certificate.issuer != issuing_ca.subject:
+        raise CertificateRejectedError("issuer_mismatch")
+    try:
+        certificate.verify_directly_issued_by(issuing_ca)
+    except (InvalidSignature, ValueError, TypeError) as exc:
+        raise CertificateRejectedError("issuer_signature_invalid") from exc
+
+    try:
+        is_ca = certificate.extensions.get_extension_for_class(x509.BasicConstraints).value.ca
+    except x509.ExtensionNotFound:
+        is_ca = False
+    if is_ca:
+        raise CertificateRejectedError("certificate_is_a_ca")
+
+    try:
+        usages = certificate.extensions.get_extension_for_class(x509.ExtendedKeyUsage).value
+    except x509.ExtensionNotFound:
+        usages = None
+    if usages is None or ExtendedKeyUsageOID.CLIENT_AUTH not in usages:
+        raise CertificateRejectedError("not_a_client_certificate")
+
+
 def _check_validity_window(certificate: x509.Certificate, now: dt.datetime) -> None:
     """Re-check the certificate's validity window.
 
@@ -202,6 +244,11 @@ def extract_client_certificate(
         raise CertificateRejectedError("certificate_header_missing")
 
     certificate = _parse_certificate(raw_certificate)
+    # Before any database lookup: a certificate this instance did not issue
+    # never reaches a query, whatever the proxy said about it.
+    issuing_ca = settings.issuing_ca_certificate
+    if issuing_ca is not None:
+        verify_issued_by(certificate, issuing_ca)
     _check_validity_window(certificate, now)
 
     fingerprint = certificate.fingerprint(hashes.SHA256()).hex()

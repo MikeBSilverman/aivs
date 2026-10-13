@@ -20,9 +20,12 @@ any test that accidentally relies on mutating audit history fails loudly.
 
 from __future__ import annotations
 
+import atexit
 import base64
 import datetime as dt
 import os
+import shutil
+import tempfile
 import uuid
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -74,12 +77,6 @@ TEST_SESSION_SECRET = "test-session-signing-secret-not-a-real-secret-0123456789"
 #: ``Settings`` refuses anything else.
 TEST_SECRET_KEY = base64.b64encode(b"aivs-test-kek-not-a-real-key-32b").decode("ascii")
 
-#: Subject DN of :class:`TestCertificateAuthority`, in the RFC 4514 form the
-#: application compares against. Set on ``Settings`` so the suite runs with the
-#: issuer pin *on*, exercising the same registration path a real deployment
-#: takes rather than the disabled-check path.
-TEST_CA_ISSUER_DN = "CN=AIVS Test Root,O=AIVS Test CA,C=US"
-
 
 @pytest.fixture(scope="session")
 def settings() -> Settings:
@@ -98,7 +95,7 @@ def settings() -> Settings:
         session_secret=TEST_SESSION_SECRET,  # type: ignore[arg-type]
         secret_encryption_key=TEST_SECRET_KEY,  # type: ignore[arg-type]
         trusted_proxy_cidrs=["127.0.0.1/32"],
-        expected_certificate_issuer_dn=TEST_CA_ISSUER_DN,
+        issuing_ca_certificate_file=TEST_CA_CERT_FILE,
         log_level="WARNING",
     )
 
@@ -204,9 +201,19 @@ class TestCertificateAuthority:
         return pem, fingerprint, certificate
 
 
+#: One CA for the whole run, written to a file before any ``Settings`` exists, so
+#: the suite runs with the issuance check *on* and exercises the path a real
+#: deployment takes. Generated at test time, never committed (CLAUDE.md section 6).
+TEST_CA = TestCertificateAuthority()
+_ca_directory = Path(tempfile.mkdtemp(prefix="aivs-test-ca-"))
+TEST_CA_CERT_FILE = _ca_directory / "issuing-ca.pem"
+TEST_CA_CERT_FILE.write_bytes(TEST_CA.certificate.public_bytes(serialization.Encoding.PEM))
+atexit.register(shutil.rmtree, _ca_directory, ignore_errors=True)
+
+
 @pytest.fixture(scope="session")
 def ca() -> TestCertificateAuthority:
-    return TestCertificateAuthority()
+    return TEST_CA
 
 
 def proxy_headers(

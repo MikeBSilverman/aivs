@@ -33,6 +33,7 @@ from aivs_schemas.models import (
 )
 from aivs_server.audit.log import AuditAction, record
 from aivs_server.auth.deps import AuthenticatedContext, SessionDep, SettingsDep
+from aivs_server.auth.mtls import CertificateRejectedError, verify_issued_by
 from aivs_server.auth.policy import (
     can_administer_circle,
     can_manage_org,
@@ -265,17 +266,19 @@ async def register_certificate(
     if certificate.not_valid_after_utc <= dt.datetime.now(dt.UTC):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Certificate has already expired")
 
-    # The issuer must be the CA this instance trusts. Registration is what binds
-    # a fingerprint to an organisation, so without this the application would
-    # accept a self-signed certificate and rely entirely on the proxy refusing
-    # it at handshake time -- making the proxy the single point of failure for
-    # identity, which is exactly what auth/mtls.py declines to do elsewhere.
-    expected_issuer = settings.expected_certificate_issuer_dn.strip()
-    if expected_issuer and certificate.issuer.rfc4514_string() != expected_issuer:
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST,
-            detail="Certificate was not issued by this instance's certificate authority",
-        )
+    # Signed by this instance's issuing CA, checked by signature. Registration
+    # binds a fingerprint to an organisation, so a certificate this CA did not
+    # issue must never get that far, whatever the proxy would later say.
+    issuing_ca = settings.issuing_ca_certificate
+    if issuing_ca is not None:
+        try:
+            verify_issued_by(certificate, issuing_ca)
+        except CertificateRejectedError as exc:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                detail="Certificate was not issued by this instance's certificate authority "
+                "as a client certificate",
+            ) from exc
 
     row = ClientCertificate(
         org_id=org_id,

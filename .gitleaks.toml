@@ -1,0 +1,22 @@
+# Extends gitleaks' default rules; narrows exactly one false positive.
+[extend]
+useDefault = true
+
+# `generic-api-key` fires on `purpose=SecretPurpose.TOTP, subject=operator_id`
+# because "Secret" is one of its keywords and the next token is long enough.
+# Those lines are calls into auth/secretbox.py that *produce* ciphertext at
+# runtime; nothing on them is a credential. Restructuring code to dodge a regex
+# would be worse than a scoped exception, and a fingerprint would rot on the
+# next edit. The exception matches only that call shape, so a real key still
+# needs the surrounding call text to slip through.
+#
+# This has to be a rule-level allowlist. A top-level `[[allowlists]]` with
+# `targetRules = ["generic-api-key"]` parsed without error in gitleaks 8.28 and
+# was silently not applied -- the scan still reported every hit.
+[[rules]]
+id = "generic-api-key"
+
+[[rules.allowlists]]
+description = "secretbox seal/unseal call sites"
+regexTarget = "match"
+regexes = ['''SecretPurpose\.[A-Z_]+,\s*subject=[\w.]+''']

@@ -99,6 +99,45 @@ stages:
 
           - script: |
               set -euo pipefail
+              # Pattern-based SAST, covering what bandit does not: the taint
+              # rules in p/python and p/owasp-top-ten, plus the nginx rules that
+              # apply to deploy/.
+              #
+              # `docs/owasp-top-10-2025.md` claimed semgrep verification for
+              # months while semgrep ran nowhere -- it had been a one-off local
+              # run. A control that exists only in a document reads as enforced,
+              # so it is either a gate or it is not a claim.
+              #
+              # Version pinned for the same reason uv and syft are: a scanner
+              # that changes under the build turns an unrelated commit red.
+              #
+              # NOTE ON SCOPE: semgrep defaults to git-tracked files only, so a
+              # local run over a working tree silently skips new files and
+              # reports clean on code it never read. `--no-git-ignore` is here
+              # so this gate means the same thing locally as it does in CI.
+              #
+              # The excluded id must be the FULL rule id, including the repeated
+              # final segment. `--exclude-rule` accepts the short form printed
+              # in the human-readable output, silently matches nothing, and the
+              # gate stays red for a reason that looks like a config typo.
+              #
+              # generic.nginx.security.request-host-used is excluded, with the
+              # argument rather than an annotation because all six hits share
+              # one cause: three match inside comments, `map $host
+              # $proxy_shared_secret` has only a `default` entry so its result
+              # cannot depend on its input, and the two `proxy_set_header ...
+              # $host` lines forward a header the application never reads --
+              # every URL it emits is built from AIVS_PUBLIC_BASE_URL. Revisit
+              # if the app ever derives anything from Host.
+              uvx semgrep==1.173.0 scan \
+                --config p/python --config p/owasp-top-ten \
+                --exclude-rule generic.nginx.security.request-host-used.request-host-used \
+                --no-git-ignore --metrics=off --error \
+                packages/ demo/ scripts/ deploy/
+            displayName: Pattern-based SAST
+
+          - script: |
+              set -euo pipefail
               # Audited from the lockfile, not from the installed environment.
               #
               # `--skip-editable --strict` was self-contradictory here: uv
@@ -139,6 +178,17 @@ stages:
 
           - script: |
               set -euo pipefail
+              # a1c7e2b93d45 re-encrypts the stored TOTP seeds and webhook
+              # signing keys, and refuses to run without a key rather than
+              # leaving a "read the legacy base64 format" branch in the
+              # application forever. Without one the migration aborts and the
+              # failure reads as a schema problem -- red for an invisible
+              # reason, the shape that gets a gate lowered. The key is minted
+              # here because the database is empty and dies with the agent;
+              # a literal in this file would be a key-shaped string in history
+              # that every secret scanner flags forever.
+              AIVS_SECRET_ENCRYPTION_KEY="$(python3 -c 'import base64, os; print(base64.b64encode(os.urandom(32)).decode())')"
+              export AIVS_SECRET_ENCRYPTION_KEY
               # Migrations must apply cleanly from empty, and must leave no
               # difference against the models. A schema that only exists because
               # someone ran create_all locally would fail here.

@@ -179,6 +179,9 @@ class Settings(BaseSettings):
     header_client_cert: str = "x-client-cert"
     header_proxy_auth: str = "x-proxy-auth"
     header_request_id: str = "x-request-id"
+    #: The member's address as the proxy saw it. Read only when the proxy check
+    #: passes; see ``auth.mtls.client_address``.
+    header_real_ip: str = "x-real-ip"
 
     #: Path to the PEM certificate of the CA that issues member certificates --
     #: the *issuing* (intermediate) CA, not the root.
@@ -349,7 +352,11 @@ class Settings(BaseSettings):
         return value
 
     @field_validator(
-        "header_client_verify", "header_client_cert", "header_proxy_auth", "header_request_id"
+        "header_client_verify",
+        "header_client_cert",
+        "header_proxy_auth",
+        "header_request_id",
+        "header_real_ip",
     )
     @classmethod
     def _header_names_lowercase(cls, value: str) -> str:

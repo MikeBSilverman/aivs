@@ -29,7 +29,7 @@ from aivs_schemas.enums import TLP, CertStatus, DiscoveryScope, OrgStatus, Submi
 from aivs_schemas.models import SubmissionCreate
 from aivs_server.audit.log import AuditAction, account_reference, record_independently
 from aivs_server.auth.context import AuthContext
-from aivs_server.auth.deps import SessionDep, SettingsDep
+from aivs_server.auth.deps import SessionDep, SettingsDep, request_source_ip
 from aivs_server.auth.policy import (
     can_review_submissions,
     can_transition_submission,
@@ -181,7 +181,7 @@ async def login(
         settings,
         operator=operator,
         cert_fingerprint=fingerprint,
-        source_ip=request.client.host if request.client else None,
+        source_ip=request_source_ip(request, settings),
         user_agent=request.headers.get("user-agent"),
     )
     await record_independently(
@@ -191,7 +191,7 @@ async def login(
         org_id=org.id,
         outcome="success",
         request_id=request.scope.get("aivs_request_id"),
-        source_ip=request.client.host if request.client else None,
+        source_ip=request_source_ip(request, settings),
     )
 
     response = RedirectResponse("/portal/", status_code=status.HTTP_303_SEE_OTHER)
@@ -224,7 +224,7 @@ async def _login_failure(request: Request, settings: Settings, email: str, reaso
         actor_type="anonymous",
         outcome="failure",
         request_id=request.scope.get("aivs_request_id"),
-        source_ip=request.client.host if request.client else None,
+        source_ip=request_source_ip(request, settings),
         details={"reason": reason, "account": account_reference(email, settings)},
     )
     token = uuid.uuid4().hex
@@ -280,7 +280,7 @@ async def logout(
             action=AuditAction.LOGOUT,
             outcome="success",
             request_id=request.scope.get("aivs_request_id"),
-            source_ip=request.client.host if request.client else None,
+            source_ip=request_source_ip(request, settings),
         )
     response = RedirectResponse("/portal/login", status_code=status.HTTP_303_SEE_OTHER)
     response.delete_cookie(settings.session_cookie_name, path="/portal")

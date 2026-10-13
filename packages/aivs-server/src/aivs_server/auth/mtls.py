@@ -32,7 +32,9 @@ from __future__ import annotations
 
 import datetime as dt
 import hmac
+import ipaddress
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Final
 from urllib.parse import unquote
@@ -48,6 +50,7 @@ __all__ = [
     "CertificateRejectedError",
     "ClientCertificateIdentity",
     "MtlsError",
+    "client_address",
     "extract_client_certificate",
     "verify_issued_by",
 ]
@@ -143,6 +146,30 @@ def _require_trusted_proxy(
         raise CertificateRejectedError("untrusted_proxy_peer")
     if not secret_ok:
         raise CertificateRejectedError("proxy_auth_mismatch")
+
+
+def client_address(
+    settings: Settings, headers: Mapping[str, str], peer_ip: str | None
+) -> str | None:
+    """The address to record for a request: the member's, when the proxy vouches for it.
+
+    The TCP peer is always the proxy, so recording it put nginx's address on
+    every audit row and made per-address detection count every member's
+    failures as one prober. nginx overwrites ``X-Real-IP`` with its own
+    ``$remote_addr`` on every request (``snippets/aivs-identity-headers.conf``),
+    so behind the proxy the header is a fact. Without the proxy's credentials
+    anyone could have set it, and the peer -- the address actually talking to
+    us -- is the honest answer. Informational only: no decision reads it.
+    """
+    try:
+        _require_trusted_proxy(settings, peer_ip, headers.get(settings.header_proxy_auth))
+    except CertificateRejectedError:
+        return peer_ip
+    forwarded = headers.get(settings.header_real_ip, "").strip()
+    try:
+        return str(ipaddress.ip_address(forwarded))
+    except ValueError:
+        return peer_ip
 
 
 def _parse_certificate(raw_header: str) -> x509.Certificate:

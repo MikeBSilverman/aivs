@@ -25,7 +25,7 @@ from aivs_schemas.enums import TLP
 from aivs_schemas.tlp import TLP_NAMES
 from aivs_server.audit.log import AuditAction, record_independently
 from aivs_server.auth.context import AuthContext
-from aivs_server.auth.deps import SessionDep
+from aivs_server.auth.deps import SessionDep, request_source_ip
 from aivs_server.auth.mtls import CertificateRejectedError, extract_client_certificate
 from aivs_server.auth.passwords import constant_time_equals
 from aivs_server.auth.policy import can_view_instance_status, is_isac_staff
@@ -84,14 +84,14 @@ async def current_session(
             token=token,
             cert_fingerprint=client_fingerprint(request, settings),
             request_id=request.scope.get("aivs_request_id", ""),
-            source_ip=request.client.host if request.client else None,
+            source_ip=request_source_ip(request, settings),
         )
     except SessionRejectedError as exc:
         await record_independently(
             action=AuditAction.SESSION_REJECTED,
             outcome="denied",
             request_id=request.scope.get("aivs_request_id"),
-            source_ip=request.client.host if request.client else None,
+            source_ip=request_source_ip(request, settings),
             details={"reason": exc.reason, "path": request.url.path},
         )
         raise redirect_to_login() from exc

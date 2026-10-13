@@ -211,6 +211,7 @@ markers = [
     "slow: migrates a scratch database or similar; deselect with '-m \"not slow\"'",
     "authz: authorization matrix test -- the deny-by-default proof",
     "conformance: TAXII 2.1 / STIX 2.1 specification conformance test",
+    "abuse: an adversary's sequence of requests, asserting the step at which it is noticed or refused",
 ]
 filterwarnings = [
     "error",                     # warnings are failures; we do not accumulate debt

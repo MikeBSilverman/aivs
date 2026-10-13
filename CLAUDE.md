@@ -364,6 +364,14 @@ ISAC mirrors production and holds real embargoed intelligence, served an
 unauthenticated `/openapi.json` enumerating the whole admin surface. The rule
 already governed the `dev_*` flags; it governs every environment branch.
 
+**Record the address the proxy saw, not the TCP peer.** Behind nginx the peer
+is always nginx, so `audit_log.source_ip` held the proxy's address on every
+row, and the `auth_failure_burst` detection grouped every member's failures as
+one "prober" named after our own proxy. `request_source_ip` reads `X-Real-IP`
+only when the proxy check passes; the peer is for the proxy check and nothing
+else. An abuse test written as the attacker's sequence found it. The unit
+tests for the rule had used synthetic audit rows and could not.
+
 **Responses that skip the middleware stack still need its headers.** Starlette
 routes the `Exception` handler to `ServerErrorMiddleware`, *outside* the user
 middleware — so 500s carried no CSP, no `no-store`, and no correlation id. If a

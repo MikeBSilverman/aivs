@@ -23,7 +23,11 @@ from aivs_schemas.enums import CertStatus, CircleRole, OrgStatus
 from aivs_server.audit.log import AuditAction, record_independently
 from aivs_server.auth.context import AuthContext, AuthMethod
 from aivs_server.auth.memberships import load_circle_grants
-from aivs_server.auth.mtls import CertificateRejectedError, extract_client_certificate
+from aivs_server.auth.mtls import (
+    CertificateRejectedError,
+    client_address,
+    extract_client_certificate,
+)
 from aivs_server.auth.sessions import SessionRejectedError, resolve_session
 from aivs_server.config import Settings, get_settings
 from aivs_server.db.engine import get_session
@@ -34,6 +38,7 @@ __all__ = [
     "SessionDep",
     "SettingsDep",
     "get_auth_context",
+    "request_source_ip",
 ]
 
 #: Returned for every authentication failure, regardless of cause.
@@ -61,11 +66,19 @@ def _client_ip(request: Request) -> str | None:
     """Return the peer address of the TCP connection.
 
     This is the *proxy's* address, not the member's -- which is exactly what the
-    trusted-proxy allowlist needs to check. The member's own address, where it
-    matters, comes from the proxy's forwarded headers and is treated as
-    informational only.
+    trusted-proxy allowlist needs to check, and nothing else should use it.
     """
     return request.client.host if request.client else None
+
+
+def request_source_ip(request: Request, settings: Settings) -> str | None:
+    """The address to record on audit rows and sessions for this request.
+
+    The member's, when the proxy vouches for it (``auth.mtls.client_address``);
+    the peer otherwise. Informational: no authorization decision reads it.
+    """
+    headers = {key.lower(): value for key, value in request.headers.items()}
+    return client_address(settings, headers, _client_ip(request))
 
 
 async def _reject(
@@ -141,11 +154,11 @@ async def get_auth_context(
     within its validity window, that certificate is registered and not revoked,
     and its organisation is active.
     """
-    source_ip = _client_ip(request)
+    source_ip = request_source_ip(request, settings)
     headers = {key.lower(): value for key, value in request.headers.items()}
 
     try:
-        certificate = extract_client_certificate(settings, headers, source_ip)
+        certificate = extract_client_certificate(settings, headers, _client_ip(request))
     except CertificateRejectedError as rejection:
         raise await _reject(rejection.reason, request, source_ip) from rejection
 

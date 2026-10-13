@@ -31,6 +31,7 @@ from fastapi.staticfiles import StaticFiles
 
 from aivs_server.api import acknowledgments, admin, meta, submissions
 from aivs_server.audit.log import AuditAction, record_denial
+from aivs_server.auth.deps import request_source_ip
 from aivs_server.auth.policy import PolicyDeniedError
 from aivs_server.config import Settings, get_settings
 from aivs_server.db.engine import dispose_engine, get_engine, session_scope
@@ -234,7 +235,7 @@ def _register_exception_handlers(app: FastAPI, settings: Settings) -> None:
             action=AuditAction.ACCESS_DENIED,
             ctx=getattr(request.state, "auth_context", None),
             request_id=request.scope.get("aivs_request_id"),
-            source_ip=request.client.host if request.client else None,
+            source_ip=request_source_ip(request, request.app.state.settings),
             route=request.url.path,
         )
         return _error_response(status.HTTP_403_FORBIDDEN, "Forbidden")

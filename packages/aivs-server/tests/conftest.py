@@ -82,6 +82,15 @@ TEST_SESSION_SECRET = "test-session-signing-secret-not-a-real-secret-0123456789"
 #: ``Settings`` refuses anything else.
 TEST_SECRET_KEY = base64.b64encode(b"aivs-test-kek-not-a-real-key-32b").decode("ascii")
 
+#: The same key as a file, because outside dev the application reads it from a
+#: file only its owner can read and refuses the environment form. The suite runs
+#: as "test", which is held to that posture.
+_secrets_directory = Path(tempfile.mkdtemp(prefix="aivs-test-secrets-"))
+TEST_SECRET_KEY_FILE = _secrets_directory / "secret-encryption-key"
+TEST_SECRET_KEY_FILE.write_text(TEST_SECRET_KEY + "\n", encoding="utf-8")
+TEST_SECRET_KEY_FILE.chmod(0o600)
+atexit.register(shutil.rmtree, _secrets_directory, ignore_errors=True)
+
 
 @pytest.fixture(scope="session")
 def settings() -> Settings:
@@ -98,7 +107,7 @@ def settings() -> Settings:
         database_url=TEST_DATABASE_URL,  # type: ignore[arg-type]
         proxy_shared_secret=TEST_PROXY_SECRET,  # type: ignore[arg-type]
         session_secret=TEST_SESSION_SECRET,  # type: ignore[arg-type]
-        secret_encryption_key=TEST_SECRET_KEY,  # type: ignore[arg-type]
+        secret_encryption_key_file=TEST_SECRET_KEY_FILE,
         trusted_proxy_cidrs=["127.0.0.1/32"],
         issuing_ca_certificate_file=TEST_CA_CERT_FILE,
         log_level="WARNING",

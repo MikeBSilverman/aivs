@@ -20,7 +20,7 @@ from aivs_server.db.models import Distribution, TaxiiCollection
 from tests.conftest import (
     TEST_CA_CERT_FILE,
     TEST_PROXY_SECRET,
-    TEST_SECRET_KEY,
+    TEST_SECRET_KEY_FILE,
     TEST_SESSION_SECRET,
     proxy_headers,
 )
@@ -36,7 +36,7 @@ def _settings(**overrides: object) -> dict[str, object]:
         "database_url": "postgresql+psycopg://aivs@127.0.0.1:55432/aivs_test",
         "proxy_shared_secret": TEST_PROXY_SECRET,
         "session_secret": TEST_SESSION_SECRET,
-        "secret_encryption_key": TEST_SECRET_KEY,
+        "secret_encryption_key_file": TEST_SECRET_KEY_FILE,
         "issuing_ca_certificate_file": TEST_CA_CERT_FILE,
     }
     return {**base, **overrides}
@@ -219,7 +219,7 @@ def test_a_rejected_configuration_never_prints_the_values(monkeypatch):
         "AIVS_DATABASE_URL": f"postgresql+psycopg://aivs:{db_password}@127.0.0.1/aivs",
         "AIVS_PROXY_SHARED_SECRET": TEST_PROXY_SECRET,
         "AIVS_SESSION_SECRET": TEST_SESSION_SECRET,
-        "AIVS_SECRET_ENCRYPTION_KEY": TEST_SECRET_KEY,
+        "AIVS_SECRET_ENCRYPTION_KEY_FILE": str(TEST_SECRET_KEY_FILE),
         "AIVS_ISSUING_CA_CERTIFICATE_FILE": str(TEST_CA_CERT_FILE),
         # Malformed: not base64. A trailing newline from a file-backed secret
         # is enough to land here.

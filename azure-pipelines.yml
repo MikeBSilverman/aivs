@@ -187,8 +187,10 @@ stages:
               # here because the database is empty and dies with the agent;
               # a literal in this file would be a key-shaped string in history
               # that every secret scanner flags forever.
-              AIVS_SECRET_ENCRYPTION_KEY="$(python3 -c 'import base64, os; print(base64.b64encode(os.urandom(32)).decode())')"
-              export AIVS_SECRET_ENCRYPTION_KEY
+              # The file form, as a deployment outside dev must use.
+              umask 077
+              python3 -c 'import base64, os; print(base64.b64encode(os.urandom(32)).decode())' > "$(Agent.TempDirectory)/kek"
+              export AIVS_SECRET_ENCRYPTION_KEY_FILE="$(Agent.TempDirectory)/kek"
               # Migrations must apply cleanly from empty, and must leave no
               # difference against the models. A schema that only exists because
               # someone ran create_all locally would fail here.

@@ -16,7 +16,6 @@ the test database URL, so a concurrent run against ``aivs_ci`` migrates into
 
 from __future__ import annotations
 
-import base64
 import os
 from collections.abc import Iterator
 from pathlib import Path
@@ -27,7 +26,7 @@ from alembic.config import Config
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
 
-from tests.conftest import TEST_DATABASE_URL
+from tests.conftest import TEST_DATABASE_URL, TEST_SECRET_KEY_FILE
 
 pytestmark = [pytest.mark.db, pytest.mark.slow]
 
@@ -45,13 +44,13 @@ def migrated_url() -> Iterator[str]:
         connection.execute(text(f'CREATE DATABASE "{scratch}"'))
 
     url = test_url.set(database=scratch).render_as_string(hide_password=False)
-    saved = {
-        name: os.environ.get(name) for name in ("AIVS_DATABASE_URL", "AIVS_SECRET_ENCRYPTION_KEY")
-    }
+    names = ("AIVS_DATABASE_URL", "AIVS_SECRET_ENCRYPTION_KEY", "AIVS_SECRET_ENCRYPTION_KEY_FILE")
+    saved = {name: os.environ.get(name) for name in names}
     os.environ["AIVS_DATABASE_URL"] = url
-    # The secrets migration refuses to run without a key; this database is empty
-    # and dropped below, so a random one is enough.
-    os.environ["AIVS_SECRET_ENCRYPTION_KEY"] = base64.b64encode(os.urandom(32)).decode()
+    # The secrets migration refuses to run without a key. The file form, because
+    # that is what a deployment outside dev uses, so what the migration must read.
+    os.environ.pop("AIVS_SECRET_ENCRYPTION_KEY", None)
+    os.environ["AIVS_SECRET_ENCRYPTION_KEY_FILE"] = str(TEST_SECRET_KEY_FILE)
     try:
         command.upgrade(Config(str(ALEMBIC_INI)), "head")
         yield url

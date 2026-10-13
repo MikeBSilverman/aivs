@@ -184,8 +184,11 @@ def test_an_absent_value_does_not_need_rewrap(box):
 # Configuration
 # ---------------------------------------------------------------------------
 def _settings(**overrides: object) -> Settings:
+    # "dev": these tests are about the key's *format*, which is checked in every
+    # environment. Outside dev the key must also come from a file, which
+    # test_security_regressions covers; here the value is passed directly.
     base = {
-        "environment": "test",
+        "environment": "dev",
         "public_base_url": "https://aivs.test",
         "database_url": TEST_DATABASE_URL,
         "proxy_shared_secret": TEST_PROXY_SECRET,

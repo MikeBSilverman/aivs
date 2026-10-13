@@ -34,11 +34,13 @@ from __future__ import annotations
 
 import base64
 import os
+from pathlib import Path
 import uuid
 
 import sqlalchemy as sa
 from alembic import op
 
+from aivs_server.config import read_secret_file
 from aivs_server.auth.secretbox import (
     DEFAULT_ALGORITHM_NAME,
     SecretBox,
@@ -67,7 +69,11 @@ _WEBHOOKS = sa.table(
 
 
 def _box() -> SecretBox:
-    configured = os.environ.get(_KEY_VAR)
+    # The same two forms the application accepts; the file form is required
+    # outside dev, so a migration that read only the variable could not run
+    # against a correctly configured deployment.
+    key_file = os.environ.get(f"{_KEY_VAR}_FILE")
+    configured = read_secret_file(Path(key_file)) if key_file else os.environ.get(_KEY_VAR)
     if not configured:
         msg = (
             f"{_KEY_VAR} must be set to run this migration: it re-encrypts the "

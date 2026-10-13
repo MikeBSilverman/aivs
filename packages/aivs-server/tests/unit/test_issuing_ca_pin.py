@@ -28,7 +28,7 @@ from tests.conftest import (
     TEST_CA_CERT_FILE,
     TEST_DATABASE_URL,
     TEST_PROXY_SECRET,
-    TEST_SECRET_KEY,
+    TEST_SECRET_KEY_FILE,
     TEST_SESSION_SECRET,
     proxy_headers,
 )
@@ -193,7 +193,7 @@ def _settings(**overrides: object) -> Settings:
         "database_url": TEST_DATABASE_URL,
         "proxy_shared_secret": TEST_PROXY_SECRET,
         "session_secret": TEST_SESSION_SECRET,
-        "secret_encryption_key": TEST_SECRET_KEY,
+        "secret_encryption_key_file": TEST_SECRET_KEY_FILE,
         "issuing_ca_certificate_file": TEST_CA_CERT_FILE,
     }
     return Settings(**(base | overrides))  # type: ignore[arg-type]

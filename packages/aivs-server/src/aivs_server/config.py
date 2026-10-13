@@ -11,8 +11,11 @@ cross-checked in :meth:`Settings.validate_production_posture`, which refuses to
 construct a production ``Settings`` with any of them enabled.
 
 **Secrets never round-trip.** Anything sensitive is a ``SecretStr`` so that an
-accidental ``repr``, log line, or error page prints ``**********``. Values come
-from the environment (Docker/Kubernetes secrets mount there); there is
+accidental ``repr``, log line, or error page prints ``**********``. Most values
+come from the environment; the key-encryption key, outside dev, comes from a
+file only its owner can read (``AIVS_SECRET_ENCRYPTION_KEY_FILE``), because the
+environment is shown by ``docker inspect``, ``/proc/<pid>/environ``, crash dumps
+and orchestration dashboards, and that key opens every sealed secret. There is
 deliberately no ``.env`` file support in production.
 """
 
@@ -24,7 +27,7 @@ import ipaddress
 import sys
 from functools import lru_cache
 from pathlib import Path
-from typing import Final, Literal, Self
+from typing import Any, Final, Literal, Self
 
 from cryptography import x509
 from pydantic import Field, SecretStr, ValidationError, field_validator, model_validator
@@ -78,6 +81,29 @@ def _check_kek(value: SecretStr | None) -> None:
 def _decode_kek(value: SecretStr) -> bytes:
     """Decode a key-encryption key that :func:`_check_kek` has already accepted."""
     return base64.b64decode(value.get_secret_value())
+
+
+def read_secret_file(path: Path) -> str:
+    """Read a secret from a file only its owner can read, without the trailing newline.
+
+    The ``_FILE`` convention Docker and Kubernetes secrets use. A key that
+    group or others can read is refused: the point of moving it out of the
+    environment -- where ``docker inspect``, ``/proc/<pid>/environ``, crash
+    dumps and orchestration dashboards all show it -- is lost if the file is
+    world-readable instead. Errors name the path and the mode, never content.
+    """
+    try:
+        mode = path.stat().st_mode
+    except OSError as exc:
+        msg = f"secret file {path} cannot be read: {exc.strerror}"
+        raise ValueError(msg) from exc
+    if mode & 0o077:
+        msg = (
+            f"secret file {path} is readable by group or others (mode {oct(mode & 0o777)}); "
+            "chmod 600 it"
+        )
+        raise ValueError(msg)
+    return path.read_text(encoding="utf-8").rstrip("\r\n")
 
 
 @lru_cache(maxsize=4)
@@ -201,10 +227,15 @@ class Settings(BaseSettings):
     #: invents for itself would have to be stored somewhere it can read
     #: unattended, which is the database it is meant to be protecting.
     secret_encryption_key: SecretStr
+    #: Where the key above was read from, when it came from a file
+    #: (``AIVS_SECRET_ENCRYPTION_KEY_FILE``). Outside dev the key must come from
+    #: one: see :meth:`validate_production_posture`.
+    secret_encryption_key_file: Path | None = None
     #: The key being rotated away from. Set during a rotation so existing rows
     #: still open; drop it once ``python -m aivs_server.rewrap_secrets`` reports
     #: nothing stale.
     secret_encryption_key_previous: SecretStr | None = None
+    secret_encryption_key_previous_file: Path | None = None
     #: AEAD used for *new* values. Existing values name their own algorithm in
     #: their header and keep opening regardless, so changing this is a migration
     #: run at leisure rather than a flag day -- see ``auth.secretbox``.
@@ -373,6 +404,28 @@ class Settings(BaseSettings):
             raise ValueError(msg)
         return self
 
+    @model_validator(mode="before")
+    @classmethod
+    def _read_key_files(cls, data: Any) -> Any:
+        """Fill each key from its ``_FILE`` path, so the key never sits in the environment.
+
+        Setting both forms is refused rather than resolved: two sources for one
+        key is the shape that drifts, and the operator would not know which was
+        live.
+        """
+        if not isinstance(data, dict):
+            return data
+        resolved = dict(data)
+        for field in ("secret_encryption_key", "secret_encryption_key_previous"):
+            path = resolved.get(f"{field}_file")
+            if not path:
+                continue
+            if resolved.get(field):
+                msg = f"set {field} or {field}_file, not both"
+                raise ValueError(msg)
+            resolved[field] = read_secret_file(Path(path))
+        return resolved
+
     @field_validator("issuing_ca_certificate_file")
     @classmethod
     def _issuing_ca_must_load(cls, path: Path | None) -> Path | None:
@@ -397,36 +450,12 @@ class Settings(BaseSettings):
         if self.environment == "dev":
             return self
 
-        violations: list[str] = []
-        if self.dev_trust_unauthenticated_proxy:
-            violations.append("dev_trust_unauthenticated_proxy")
-        if self.dev_expose_error_detail:
-            violations.append("dev_expose_error_detail")
-        if self.dev_allow_private_webhook_targets:
-            violations.append("dev_allow_private_webhook_targets")
-        if not self.trusted_proxy_cidrs:
-            violations.append("trusted_proxy_cidrs (must not be empty)")
-        if any(network.prefixlen == 0 for network in self.trusted_proxy_networks):
-            # A non-empty allowlist that matches every address is not an
-            # allowlist. "0.0.0.0/0" passes the emptiness check above, and
-            # strict=False means a typo'd prefix length such as "10.0.0.1/0"
-            # normalises to exactly that rather than erroring.
-            violations.append("trusted_proxy_cidrs (must not contain a /0 network)")
-        if not self.public_base_url.startswith("https://"):
-            violations.append("public_base_url (must be https)")
-        if self.log_level == "DEBUG":
-            violations.append("log_level (DEBUG may record request bodies)")
-        if self.taxii_default_page_size > self.taxii_max_page_size:
-            # Both are bounded independently, so this pair passes field
-            # validation while meaning the opposite of what the names say: a
-            # client that sends no `limit` gets the larger page and one that asks
-            # for a limit gets capped at the smaller.
-            violations.append("taxii_default_page_size (must not exceed taxii_max_page_size)")
-        if self.issuing_ca_certificate_file is None:
-            # Without it the proxy's handshake verdict is the only thing between a
-            # self-signed certificate and an authenticated member identity.
-            violations.append("issuing_ca_certificate_file (must pin the issuing CA)")
-
+        violations = [
+            *self._dev_bypasses_enabled(),
+            *self._proxy_trust_violations(),
+            *self._output_violations(),
+            *self._key_and_identity_violations(),
+        ]
         if violations:
             msg = (
                 f"refusing to start in environment={self.environment!r} with unsafe "
@@ -434,6 +463,68 @@ class Settings(BaseSettings):
             )
             raise ValueError(msg)
         return self
+
+    def _dev_bypasses_enabled(self) -> list[str]:
+        """Conveniences that are safe on an engineer's laptop and nowhere else."""
+        flags = {
+            "dev_trust_unauthenticated_proxy": self.dev_trust_unauthenticated_proxy,
+            "dev_expose_error_detail": self.dev_expose_error_detail,
+            "dev_allow_private_webhook_targets": self.dev_allow_private_webhook_targets,
+        }
+        return [name for name, enabled in flags.items() if enabled]
+
+    def _proxy_trust_violations(self) -> list[str]:
+        """The allow-list of addresses the mTLS proxy may connect from."""
+        if not self.trusted_proxy_cidrs:
+            return ["trusted_proxy_cidrs (must not be empty)"]
+        if any(network.prefixlen == 0 for network in self.trusted_proxy_networks):
+            # A non-empty allowlist that matches every address is not an
+            # allowlist. "0.0.0.0/0" passes the emptiness check, and
+            # strict=False means a typo'd prefix length such as "10.0.0.1/0"
+            # normalises to exactly that rather than erroring.
+            return ["trusted_proxy_cidrs (must not contain a /0 network)"]
+        return []
+
+    def _output_violations(self) -> list[str]:
+        """What the service tells the world: its URL, its logs, its page sizes."""
+        violations: list[str] = []
+        if not self.public_base_url.startswith("https://"):
+            violations.append("public_base_url (must be https)")
+        if self.log_level == "DEBUG":
+            violations.append("log_level (DEBUG may record request bodies)")
+        if self.taxii_default_page_size > self.taxii_max_page_size:
+            # Both are bounded independently, so this pair passes field
+            # validation while meaning the opposite of what the names say: a
+            # client that sends no `limit` gets the larger page and one that
+            # asks for a limit gets capped at the smaller.
+            violations.append("taxii_default_page_size (must not exceed taxii_max_page_size)")
+        return violations
+
+    def _key_and_identity_violations(self) -> list[str]:
+        """Where the keys come from, and what anchors member identity."""
+        violations: list[str] = []
+        if self.secret_encryption_key_file is None:
+            # Read from the environment, where docker inspect,
+            # /proc/<pid>/environ, crash dumps and orchestration dashboards all
+            # show it.
+            violations.append(
+                "secret_encryption_key_file (outside dev the key comes from a 0600 file)"
+            )
+        if (
+            self.secret_encryption_key_previous is not None
+            and self.secret_encryption_key_previous_file is None
+        ):
+            # The key being rotated away from still opens every row not yet
+            # re-wrapped; it leaks through the environment exactly as the
+            # active one would.
+            violations.append(
+                "secret_encryption_key_previous_file (a rotation's old key is a file too)"
+            )
+        if self.issuing_ca_certificate_file is None:
+            # Without it the proxy's handshake verdict is the only thing
+            # between a self-signed certificate and a member identity.
+            violations.append("issuing_ca_certificate_file (must pin the issuing CA)")
+        return violations
 
     # ------------------------------------------------------------------
     # Derived helpers

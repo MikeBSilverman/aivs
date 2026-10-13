@@ -19,8 +19,9 @@ from __future__ import annotations
 import asyncio
 import datetime as dt
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager, suppress
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final
 
@@ -107,32 +108,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # than on a member's first request.
     get_engine()
 
-    # Each through run_periodically, so every one reports into the same health
-    # registry that /readyz, /metrics and the status page read. They are
-    # separate tasks because they fail independently: a dead dispatcher must not
-    # stop embargoes being marked released, nor a dead sweeper stop alerts.
     background = [
-        asyncio.create_task(
-            run_periodically(
-                "embargo_sweeper",
-                dt.timedelta(seconds=settings.embargo_sweep_interval_seconds),
-                _sweep_embargoes,
-            )
-        ),
-        asyncio.create_task(
-            run_periodically(
-                "webhook_dispatcher",
-                dt.timedelta(seconds=settings.webhook_dispatch_interval_seconds),
-                lambda: _dispatch_webhooks(settings),
-            )
-        ),
-        asyncio.create_task(
-            run_periodically(
-                "detections",
-                dt.timedelta(seconds=settings.detection_interval_seconds),
-                _run_detections,
-            )
-        ),
+        asyncio.create_task(run_periodically(component.name, component.interval, component.work))
+        for component in background_components(settings)
     ]
     try:
         yield
@@ -144,6 +122,41 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 await task
         await dispose_engine()
         logger.info("stopped AIVS")
+
+
+@dataclass(frozen=True, slots=True)
+class BackgroundComponent:
+    name: str
+    interval: dt.timedelta
+    work: Callable[[], Awaitable[object]]
+
+
+def background_components(settings: Settings) -> list[BackgroundComponent]:
+    """Every job the process runs unattended.
+
+    Each goes through run_periodically, so each reports into the health
+    registry /readyz, /metrics and the status page read. Separate tasks
+    because they fail independently: a dead dispatcher must not stop embargoes
+    being marked released, nor a dead sweeper stop alerts. Named here, not
+    inline in the lifespan, so a test can see the list.
+    """
+    return [
+        BackgroundComponent(
+            "embargo_sweeper",
+            dt.timedelta(seconds=settings.embargo_sweep_interval_seconds),
+            _sweep_embargoes,
+        ),
+        BackgroundComponent(
+            "webhook_dispatcher",
+            dt.timedelta(seconds=settings.webhook_dispatch_interval_seconds),
+            lambda: _dispatch_webhooks(settings),
+        ),
+        BackgroundComponent(
+            "detections",
+            dt.timedelta(seconds=settings.detection_interval_seconds),
+            _run_detections,
+        ),
+    ]
 
 
 async def _sweep_embargoes() -> None:

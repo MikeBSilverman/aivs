@@ -139,6 +139,14 @@ call shape, with the argument written beside it. A top-level `[[allowlists]]`
 with `targetRules` parsed cleanly in gitleaks 8.28 and was silently not
 applied, which is the same shape as the semgrep and pip-audit defaults above.
 
+**Test a reader against the rows its writer produces.** The detection rules
+read audit `details` by key and were tested on hand-built rows, so renaming
+`circles` in the distribution audit row would have silenced a rule with the
+suite green. The same review found the heartbeat tests registering names by
+hand (deleting a background job changed nothing), and migration tests that
+checked a trigger's *name* (a trigger that raised a NOTICE passed). Drive the
+real write, then read; attempt the operation the control refuses.
+
 **`caplog.text` is only the messages.** A test that asserts "no content in the
 logs" against `caplog.text` passes while content sits in a structured field
 (`extra=`), which is where this codebase puts everything. Assert over the
@@ -431,7 +439,8 @@ catalogue. Removal deleted the row too, so the rule quietly reinstated firms an
 operator had taken out. Now leaving closes `[joined_at, left_at)` and records
 `ended_by`; rejoining opens a new interval; visibility is the union of the
 intervals; a GiST exclusion constraint forbids overlap, so a `joined_at` repair
-cannot reach into a gap. Suspension and quarantine touch none of it — they are
+cannot overlap an earlier interval. (It can move a start later, into a gap; that
+is the audited repair, recorded with what it backdated to.) Suspension and quarantine touch none of it — they are
 refused per request. Anything that reads membership filters on the *open*
 interval (notifications got this wrong: a former member was told about content
 released after it left).

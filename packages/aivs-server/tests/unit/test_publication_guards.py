@@ -25,7 +25,7 @@ from aivs_server.services.distribution import distribute_submission
 from aivs_server.services.embargo import release_embargo_now, sweep_due_embargoes
 from aivs_server.services.publication import hold_publication_lock
 from aivs_server.taxii.resources import truncate_to_taxii_precision
-from tests.conftest import StubEndpoint, is_blocked
+from tests.conftest import StubEndpoint, is_blocked, proxy_headers
 
 pytestmark = pytest.mark.db
 
@@ -252,3 +252,53 @@ async def test_a_pause_holds_members_deliveries_but_not_the_isacs(
     assert sent_while_paused == 1
     assert sent_after == 1
     assert len(endpoint.requests) == 2
+
+
+# ---------------------------------------------------------------------------
+# The lock at the call sites (Phase A review: tested only by calling the helper)
+# ---------------------------------------------------------------------------
+async def test_a_taxii_page_waits_for_an_open_publication_and_not_otherwise(
+    client, open_session, make_org, make_cert, make_circle, make_collection, join_circle
+):
+    member = await make_org("poller", org_type=OrgType.GSIB)
+    pem, _ = await make_cert(member)
+    circle = await make_circle("sector")
+    collection = await make_collection(circle)
+    await join_circle(member, circle)
+    objects = f"/taxii2/aivs/collections/{collection.id}/objects/"
+    headers = proxy_headers(pem)
+
+    idle, _task = await is_blocked(client.get(objects, headers=headers))
+    holder = open_session()
+    await hold_publication_lock(holder)
+    blocked, task = await is_blocked(client.get(objects, headers=headers))
+    await holder.rollback()
+    page = await asyncio.wait_for(task, timeout=5)
+
+    assert idle is False
+    assert blocked is True, "a cursor-issuing read must wait for the publication"
+    assert page.status_code == 200
+
+
+async def test_extending_an_embargo_waits_for_an_open_publication(
+    open_session, session, isac_ctx, make_validated
+):
+    from aivs_server.services.embargo import extend_embargo  # noqa: PLC0415 - one test
+
+    submission_id = await make_validated("held")
+    await _embargoed(session, submission_id, dt.datetime.now(dt.UTC) + dt.timedelta(days=1))
+    holder, extender = open_session(), open_session()
+
+    await hold_publication_lock(holder)
+    blocked, task = await is_blocked(
+        extend_embargo(
+            extender,
+            isac_ctx,
+            submission_id=submission_id,
+            release_at=dt.datetime.now(dt.UTC) + dt.timedelta(days=2),
+        )
+    )
+    await holder.rollback()
+    await asyncio.wait_for(task, timeout=5)
+
+    assert blocked is True

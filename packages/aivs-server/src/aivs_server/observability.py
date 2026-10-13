@@ -122,7 +122,7 @@ async def run_periodically(
     work: Callable[[], Awaitable[object]],
     *,
     heartbeats: Heartbeats = HEARTBEATS,
-) -> None:  # pragma: no cover - the loop; its parts are tested
+) -> None:
     """Run ``work`` every ``interval`` forever, reporting each outcome.
 
     A failure is logged and recorded and the loop continues: a background job

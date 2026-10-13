@@ -124,15 +124,20 @@ def test_a_legacy_base64_value_does_not_open_and_says_so(box, caplog):
     assert "not in a recognised format" in caplog.text
 
 
-def test_a_failure_never_logs_the_secret(box, caplog):
+def test_a_failure_never_logs_the_secret_or_its_ciphertext(box, caplog):
+    """Over the records' fields, not caplog.text: everything here is logged
+    through ``extra=``, which caplog.text omits (CLAUDE.md section 2)."""
     subject = uuid.uuid4()
     sealed = box.seal("JBSWY3DPEHPK3PXP", purpose=SecretPurpose.TOTP, subject=subject)
 
     with caplog.at_level(logging.WARNING):
         box.unseal(sealed, purpose=SecretPurpose.TOTP, subject=uuid.uuid4())
 
-    assert caplog.text  # it did complain
-    assert "JBSWY3DPEHPK3PXP" not in caplog.text
+    logged = " ".join(str(vars(record)) for record in caplog.records)
+    assert caplog.records, "it did complain"
+    assert "JBSWY3DPEHPK3PXP" not in logged
+    assert sealed.hex() not in logged
+    assert repr(sealed) not in logged
 
 
 # ---------------------------------------------------------------------------

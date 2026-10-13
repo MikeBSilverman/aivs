@@ -236,58 +236,21 @@ def test_metrics_report_each_component_and_the_backlogs():
 
 async def test_readyz_names_a_degraded_component_without_failing_the_probe(client):
     """Degraded background work keeps the instance serving; it is reported by
-    name, so "up" and "every part working" are never the same answer."""
-    HEARTBEATS.register("webhook_dispatcher", dt.timedelta(seconds=10), now=NOW)
+    name, so "up" and "every part working" are never the same answer. Times are
+    relative to the real clock, which /readyz reads."""
+    now = dt.datetime.now(dt.UTC)
+    HEARTBEATS.register("embargo_sweeper", dt.timedelta(seconds=10), now=now)
+    HEARTBEATS.success("embargo_sweeper", now=now)
+    healthy = (await client.get("/readyz")).json()
 
+    HEARTBEATS.register(
+        "webhook_dispatcher", dt.timedelta(seconds=10), now=now - dt.timedelta(minutes=5)
+    )
     response = await client.get("/readyz")
 
+    assert healthy["status"] == "ready"
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "degraded"
     assert body["components"]["webhook_dispatcher"]["state"] == "degraded"
-
-
-async def test_walking_the_identifier_space_raises_for_that_org_only(session, make_org):
-    walker = await make_org("walker", org_type=OrgType.GSIB)
-    clumsy = await make_org("clumsy", org_type=OrgType.GSIB)
-    session.add_all(
-        [_audit(AuditAction.ACCESS_NOT_FOUND, org_id=walker.id) for _ in range(3)]
-        + [_audit(AuditAction.ACCESS_NOT_FOUND, org_id=clumsy.id) for _ in range(2)]
-    )
-    await session.commit()
-
-    raised = await run_detections(session, now=NOW, rules=[_rule("not_found_burst", 3)])
-
-    assert [f.subject for f in raised] == [str(walker.id)]
-
-
-async def test_a_first_distribution_to_a_circle_raises_and_a_routine_one_does_not(session):
-    """Maker/checker: a new path for content to take gets a second look."""
-    editor, other = "op-editor", "op-other"
-    usual, new = "circle-usual", "circle-new"
-
-    def distributed(actor: str, circles: list[str], at: dt.datetime) -> AuditLog:
-        return AuditLog(
-            actor_type="operator",
-            actor_id=actor,
-            action=AuditAction.SUBMISSION_DISTRIBUTED,
-            at=at,
-            outcome="success",
-            details={"circles": circles},
-        )
-
-    session.add_all(
-        [
-            distributed(editor, [usual], NOW - dt.timedelta(days=3)),
-            distributed(editor, [usual], NOW - dt.timedelta(minutes=5)),
-            distributed(editor, [new], NOW - dt.timedelta(minutes=4)),
-            distributed(other, [usual], NOW - dt.timedelta(minutes=3)),
-        ]
-    )
-    await session.commit()
-
-    raised = await run_detections(
-        session, now=NOW, rules=[_rule("first_distribution_to_circle", 1)]
-    )
-
-    assert sorted(f.subject for f in raised) == [f"{editor}:{new}", f"{other}:{usual}"]
+    assert body["components"]["embargo_sweeper"]["state"] == "ok"

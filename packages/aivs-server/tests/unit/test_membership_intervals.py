@@ -125,7 +125,7 @@ async def test_joined_at_repairs_an_existing_member(
     assert membership.joined_at == restored_to
 
 
-async def test_a_repair_cannot_reach_back_into_a_gap(
+async def test_a_repair_cannot_overlap_an_earlier_interval(
     client, isac_headers, make_org, make_circle, session
 ):
     """The exclusion constraint refuses an interval overlapping an earlier one.

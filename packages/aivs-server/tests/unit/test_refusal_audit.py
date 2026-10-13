@@ -35,13 +35,12 @@ async def test_a_forbidden_request_is_recorded_against_the_caller(
     member_id = member.id
     pem, _ = await make_cert(member)
 
-    response = await client.post(
-        "/api/v1/orgs",
-        json={"slug": "not-allowed", "name": "Not Allowed", "org_type": "gsib"},
-        headers=proxy_headers(pem),
-    )
+    enrolment = {"slug": "not-allowed", "name": "Not Allowed", "org_type": "gsib"}
+    response = await client.post("/api/v1/orgs", json=enrolment, headers=proxy_headers(pem))
+    anonymous = await client.post("/api/v1/orgs", json=enrolment)
 
     assert response.status_code == 403
+    assert anonymous.status_code == 401, "refused before policy: no actor to record"
     [row] = await _rows(session, AuditAction.ACCESS_DENIED)
     assert row.org_id == member_id
 

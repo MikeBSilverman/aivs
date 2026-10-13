@@ -152,6 +152,15 @@ async def test_attention_lists_name_what_needs_it_and_leave_out_what_does_not(
             details={"rule": "bulk_retrieval", "severity": "high", "summary": "s"},
         )
     )
+    session.add(
+        AuditLog(
+            actor_type="system",
+            action=AuditAction.DETECTION_RAISED,
+            outcome="success",
+            at=now - dt.timedelta(days=2),
+            details={"rule": "stale_rule", "severity": "high", "summary": "s"},
+        )
+    )
     await session.commit()
     org = await session.get(Organization, quarantined_id)
     org.status, org.quarantined_at = OrgStatus.QUARANTINED, now
@@ -167,7 +176,9 @@ async def test_attention_lists_name_what_needs_it_and_leave_out_what_does_not(
     assert 'data-failing="healthy-member"' not in page
     assert "routing-token" not in page, "a webhook's host only; its path can carry a token"
     assert 'data-quarantined="cut-off"' in page
+    assert 'data-quarantined="healthy-member"' not in page
     assert 'data-detection="bulk_retrieval"' in page
+    assert 'data-detection="stale_rule"' not in page, "only the last 24 hours"
 
 
 async def test_a_pause_and_an_unrotated_secret_are_shown(open_status, session, isac_org):

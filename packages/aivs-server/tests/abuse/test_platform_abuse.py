@@ -17,6 +17,7 @@ import pytest
 from aivs_schemas.enums import OrgType
 from aivs_server.services.detections import RULES, Rule, run_detections
 from tests.conftest import TEST_PROXY_SECRET, proxy_headers
+from tests.unit.test_submission_workflow import create_draft
 
 pytestmark = [pytest.mark.db, pytest.mark.abuse]
 
@@ -131,14 +132,19 @@ async def test_walking_submission_ids_is_noticed_without_becoming_an_oracle(
     walker = await make_org("meridian-global", org_type=OrgType.GSIB)
     walker_id = walker.id
     pem, _ = await make_cert(walker)
+    peer = await make_org("atlantic-clearing", org_type=OrgType.GSIB)
+    peer_pem, _ = await make_cert(peer)
+    hidden = (await create_draft(client, peer_pem))["id"]
 
-    responses = [
+    absent = [
         await client.get(f"{API}/submissions/{uuid.uuid4()}", headers=proxy_headers(pem))
-        for _ in range(5)
+        for _ in range(4)
     ]
+    existing = await client.get(f"{API}/submissions/{hidden}", headers=proxy_headers(pem))
+    responses = [*absent, existing]
 
     assert {r.status_code for r in responses} == {404}
-    assert len({r.text for r in responses}) == 1, "every miss reads the same"
+    assert {r.text for r in absent} == {existing.text}, "a hidden id reads exactly as an absent one"
     raised = await run_detections(
         session, now=dt.datetime.now(dt.UTC), rules=[_rule("not_found_burst", 5)]
     )

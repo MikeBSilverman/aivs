@@ -25,6 +25,7 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
+from sqlalchemy.exc import DBAPIError
 
 from tests.conftest import TEST_DATABASE_URL, TEST_SECRET_KEY_FILE
 
@@ -83,13 +84,76 @@ def test_membership_intervals_cannot_overlap(migrated_url: str):
     assert "ex_circle_memberships_no_overlap" in constraints
 
 
+_SEED_ORG = "00000000-0000-4000-8000-000000000001"
+_SEED_SUBMISSION = "00000000-0000-4000-8000-000000000002"
+_SEED_STATEMENTS = (
+    "INSERT INTO organizations (id, name, slug, org_type, status, stix_identity_id) "
+    "VALUES (:org, 'Seed', 'seed-org', 'gsib', 'active', :identity)",
+    "INSERT INTO submissions (id, submitter_org_id, state, tlp, discovery_scope, "
+    "distribute_anonymously, title) "
+    "VALUES (:submission, :org, 'draft', 'amber', 'ai_system', false, 's')",
+    "INSERT INTO submission_transitions (submission_id, to_state) VALUES (:submission, 'draft')",
+    "INSERT INTO audit_log (actor_type, action, outcome, details) "
+    "VALUES ('system', 'seed', 'success', '{}')",
+)
+
+
+def _seed_append_only_rows(url: str) -> None:
+    """One row in each append-only table: a row-level trigger never fires on an
+    empty table, so a refusal test against one proves nothing."""
+    engine = create_engine(url)
+    try:
+        with engine.begin() as connection:
+            for statement in _SEED_STATEMENTS:
+                connection.execute(
+                    text(statement),
+                    {
+                        "org": _SEED_ORG,
+                        "submission": _SEED_SUBMISSION,
+                        "identity": f"identity--{_SEED_ORG}",
+                    },
+                )
+    finally:
+        engine.dispose()
+
+
+@pytest.fixture(scope="module")
+def seeded_url(migrated_url: str) -> str:
+    _seed_append_only_rows(migrated_url)
+    return migrated_url
+
+
 @pytest.mark.parametrize("table", ["audit_log", "submission_transitions"])
-def test_append_only_tables_refuse_update_delete_truncate(migrated_url: str, table: str):
-    triggers = _scalars(
-        migrated_url,
-        "SELECT t.tgname FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid "
-        "WHERE c.relname = :table AND NOT t.tgisinternal",
-        table=table,
+@pytest.mark.parametrize(
+    "statement",
+    ["UPDATE {table} SET id = id", "DELETE FROM {table}", "TRUNCATE {table} CASCADE"],
+)
+def test_append_only_tables_refuse_to_change_and_still_accept_inserts(
+    seeded_url: str, table: str, statement: str
+):
+    """Attempted, not looked up by name: a trigger of the right name that fires
+    BEFORE INSERT, or calls a no-op, passed the name check."""
+    engine = create_engine(seeded_url)
+    try:
+        with engine.connect() as connection:
+            with pytest.raises(DBAPIError, match="append-only"):
+                connection.execute(text(statement.format(table=table)))
+            connection.rollback()
+            count = connection.execute(text(f"SELECT count(*) FROM {table}")).scalar_one()  # noqa: S608 - table from the parametrize list
+    finally:
+        engine.dispose()
+    assert count >= 1
+
+
+def test_one_hosting_isac_and_rule_eligibility_exist_in_the_migrated_schema(migrated_url: str):
+    """Neither is compared by alembic check, so a migration that lost one would
+    pass every other gate."""
+    indexes = _scalars(
+        migrated_url, "SELECT indexname FROM pg_indexes WHERE tablename = 'organizations'"
     )
-    for operation in ("update", "delete", "truncate"):
-        assert any(operation in name for name in triggers), (table, operation, triggers)
+    checks = _scalars(
+        migrated_url,
+        "SELECT conname FROM pg_constraint WHERE conrelid = 'circles'::regclass AND contype = 'c'",
+    )
+    assert "uq_organizations_one_admin" in indexes
+    assert any("rule_admits_eligible_types" in name for name in checks), checks

@@ -42,6 +42,7 @@ from sqlalchemy.dialects.postgresql import ARRAY, INET, JSONB, ExcludeConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from aivs_schemas.enums import (
+    RULE_ELIGIBLE_ORG_TYPES,
     TLP,
     AckType,
     AckVia,
@@ -209,6 +210,12 @@ class ClientCertificate(TimestampMixin, Base):
     organization: Mapped[Organization] = relationship(back_populates="certificates")
 
 
+#: RULE_ELIGIBLE_ORG_TYPES as a SQL array literal, sorted so the constraint text is stable.
+_RULE_ELIGIBLE_SQL = ", ".join(
+    f"'{org_type.value}'" for org_type in sorted(RULE_ELIGIBLE_ORG_TYPES)
+)
+
+
 class Circle(TimestampMixin, Base):
     """A sharing circle -- the unit of trust tiering (e.g. Section 9, GSIB)."""
 
@@ -239,6 +246,12 @@ class Circle(TimestampMixin, Base):
 
     __table_args__ = (
         CheckConstraint("slug ~ '^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$'", name="slug_format"),
+        # The last of three enforcements of RULE_ELIGIBLE_ORG_TYPES, for writes
+        # that do not come through the request model -- a migration, a repair.
+        CheckConstraint(
+            f"auto_member_org_types <@ ARRAY[{_RULE_ELIGIBLE_SQL}]::text[]",
+            name="rule_admits_eligible_types",
+        ),
     )
 
     memberships: Mapped[list[CircleMembership]] = relationship(back_populates="circle")

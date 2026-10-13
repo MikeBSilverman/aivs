@@ -45,7 +45,7 @@ from dataclasses import dataclass
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from aivs_schemas.enums import CircleRole, OrgStatus
+from aivs_schemas.enums import RULE_ELIGIBLE_ORG_TYPES, CircleRole, OrgStatus
 from aivs_server.audit.log import AuditAction, record
 from aivs_server.auth.context import AuthContext
 from aivs_server.db.models import Circle, CircleMembership, Organization
@@ -245,13 +245,24 @@ async def remove_circle_member(
     return True
 
 
+def _eligible_rule_types(circle: Circle) -> list[str]:
+    """The rule's types, intersected with the ones a rule may ever admit.
+
+    The request model and a database check already refuse anything else; this
+    is the guard at the point of use, so a row that predates both cannot hand
+    the ISAC's own organisation -- or anyone added by name only -- a circle.
+    """
+    eligible = {org_type.value for org_type in RULE_ELIGIBLE_ORG_TYPES}
+    return sorted(set(circle.auto_member_org_types) & eligible)
+
+
 async def _orgs_matching_rule(session: AsyncSession, circle: Circle) -> set[uuid.UUID]:
     """Active organisations of the rule's types: the ones a rule may add."""
     return set(
         (
             await session.execute(
                 select(Organization.id).where(
-                    Organization.org_type.in_(circle.auto_member_org_types),
+                    Organization.org_type.in_(_eligible_rule_types(circle)),
                     # A pending enrolment has not been accepted, and a suspended
                     # or quarantined one is switched off; a rule hands none of
                     # them a circle. That is about *adding* only -- see below.
@@ -270,7 +281,7 @@ async def _orgs_of_rule_type(session: AsyncSession, circle: Circle) -> set[uuid.
         (
             await session.execute(
                 select(Organization.id).where(
-                    Organization.org_type.in_(circle.auto_member_org_types)
+                    Organization.org_type.in_(_eligible_rule_types(circle))
                 )
             )
         )

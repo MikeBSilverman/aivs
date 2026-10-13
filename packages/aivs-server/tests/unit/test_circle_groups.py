@@ -403,3 +403,50 @@ async def test_a_circle_without_a_rule_is_untouched(client, isac, make_org, make
     await client.post(f"{API}/orgs/{org.id}/activate", headers=isac_headers)
 
     assert await members_of(session, circle.id) == []
+
+
+@pytest.mark.parametrize("surface", ["api", "model"])
+async def test_a_rule_may_admit_only_sector_member_types(client, isac, surface, session):
+    """The ISAC's own type -- and, as the plan adds them, vendors, researchers,
+    government bodies, providers and automation -- are admitted by name or not
+    at all. A rule naming a sector type is the control."""
+    _isac_org, isac_headers = isac
+
+    if surface == "api":
+        refused = await client.post(
+            f"{API}/circles",
+            json={"slug": "everyone", "name": "Everyone", "auto_member_org_types": ["admin"]},
+            headers=isac_headers,
+        )
+        accepted = await client.post(
+            f"{API}/circles",
+            json={"slug": "section9", "name": "Section 9", "auto_member_org_types": ["section9"]},
+            headers=isac_headers,
+        )
+        assert refused.status_code in (400, 422)
+        assert accepted.status_code == 201
+        return
+
+    from pydantic import ValidationError  # noqa: PLC0415 - local to this branch
+
+    from aivs_schemas.models import CircleCreate  # noqa: PLC0415 - local to this branch
+
+    with pytest.raises(ValidationError, match="may not admit admin"):
+        CircleCreate(slug="everyone", name="Everyone", auto_member_org_types=[OrgType.ADMIN])
+    assert CircleCreate(
+        slug="gsibs", name="GSIBs", auto_member_org_types=[OrgType.GSIB]
+    ).auto_member_org_types == [OrgType.GSIB]
+
+
+async def test_the_database_refuses_an_ineligible_rule_written_directly(session, make_circle):
+    """The last of the three enforcements, for writes that bypass the model."""
+    from sqlalchemy.exc import IntegrityError  # noqa: PLC0415 - local to this test
+
+    circle = await make_circle("direct-write")
+    circle.auto_member_org_types = ["gsib"]
+    await session.commit()
+
+    circle.auto_member_org_types = ["admin"]
+    with pytest.raises(IntegrityError, match="rule_admits_eligible_types"):
+        await session.commit()
+    await session.rollback()

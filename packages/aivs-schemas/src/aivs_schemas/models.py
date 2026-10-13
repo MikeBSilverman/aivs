@@ -24,6 +24,7 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from aivs_schemas.enums import (
+    RULE_ELIGIBLE_ORG_TYPES,
     TLP,
     AckType,
     AckVia,
@@ -320,6 +321,9 @@ class ReceiptOut(_Out):
 # ---------------------------------------------------------------------------
 # Circles and organisations
 # ---------------------------------------------------------------------------
+_RULE_ELIGIBLE: frozenset[str] = frozenset(org_type.value for org_type in RULE_ELIGIBLE_ORG_TYPES)
+
+
 class CircleCreate(_In):
     slug: Slug
     name: DisplayName
@@ -329,6 +333,18 @@ class CircleCreate(_In):
     #: membership is entirely manual. Members added by the rule receive content
     #: shared from the moment they join, never the circle's back catalogue.
     auto_member_org_types: Annotated[list[OrgType], Field(max_length=8)] = []
+
+    @field_validator("auto_member_org_types")
+    @classmethod
+    def _rule_admits_only_eligible_types(cls, value: list[OrgType]) -> list[OrgType]:
+        refused = sorted({org_type.value for org_type in value} - _RULE_ELIGIBLE)
+        if refused:
+            msg = (
+                f"a membership rule may not admit {', '.join(refused)}; those are added "
+                "to a circle by name, never by rule"
+            )
+            raise ValueError(msg)
+        return value
 
 
 class CircleOut(_Out):

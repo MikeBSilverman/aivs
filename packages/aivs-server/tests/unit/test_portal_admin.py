@@ -316,3 +316,28 @@ async def test_the_circle_screen_shows_membership_start(
     assert page.status_code == 200
     assert "meridian-global" in page.text
     assert "Member since" in page.text
+
+
+async def test_the_portal_refuses_a_rule_naming_an_ineligible_type(
+    client, signed_in_admin, session
+):
+    """The portal took raw form strings straight into the column, including the
+    ISAC's own ``admin`` type. It now uses the API's request model; a sector
+    type in the same form is the control."""
+    _org, pem = signed_in_admin
+    for slug, org_type in (("everyone", "admin"), ("section9", "section9")):
+        await client.post(
+            "/portal/admin/circles",
+            data={
+                "csrf_token": csrf(client),
+                "slug": slug,
+                "name": slug.title(),
+                "minimum_tlp": "amber",
+                "auto_member_org_types": [org_type],
+            },
+            headers=proxy_headers(pem),
+        )
+
+    slugs = set((await session.execute(select(Circle.slug))).scalars().all())
+    assert "everyone" not in slugs
+    assert "section9" in slugs

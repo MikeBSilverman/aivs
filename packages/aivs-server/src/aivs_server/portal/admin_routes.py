@@ -30,10 +30,12 @@ from typing import Annotated
 
 from fastapi import APIRouter, Form, HTTPException, Request, Response, status
 from fastapi.responses import HTMLResponse, RedirectResponse
+from pydantic import ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
 from aivs_schemas.enums import CertStatus, CircleRole, OrgStatus, OrgType
+from aivs_schemas.models import CircleCreate
 from aivs_server.audit.log import AuditAction, record
 from aivs_server.auth.deps import SessionDep, SettingsDep
 from aivs_server.auth.policy import is_isac_editor, is_isac_membership, require
@@ -294,15 +296,30 @@ async def create_circle_screen(
     require_csrf(csrf_token, csrf_hash)
     require(is_isac_editor(ctx), "portal_admin_circles")
 
-    from aivs_schemas.enums import TLP  # noqa: PLC0415 - local to this handler
-
     response = _redirect("/portal/admin/circles")
     try:
+        # The API's request model, so the portal cannot store a rule the API
+        # would refuse. It took raw form strings straight into the column,
+        # including the ISAC's own `admin` type.
+        payload = CircleCreate.model_validate(
+            {
+                "slug": slug.strip(),
+                "name": name.strip(),
+                "minimum_tlp": minimum_tlp,
+                "auto_member_org_types": list(auto_member_org_types),
+            }
+        )
+    except ValidationError as exc:
+        error = exc.errors(include_input=False)[0]
+        set_notice(response, settings, "error", f"Could not create {slug}: {error['msg']}")
+        return response
+
+    try:
         circle = Circle(
-            slug=slug.strip(),
-            name=name.strip(),
-            minimum_tlp=TLP(minimum_tlp),
-            auto_member_org_types=list(auto_member_org_types),
+            slug=payload.slug,
+            name=payload.name,
+            minimum_tlp=payload.minimum_tlp,
+            auto_member_org_types=[org_type.value for org_type in payload.auto_member_org_types],
         )
         session.add(circle)
         await session.flush()

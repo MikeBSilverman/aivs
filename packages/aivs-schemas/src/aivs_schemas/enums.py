@@ -60,6 +60,20 @@ class OrgStatus(StrEnum):
     SUSPENDED = "suspended"
 
 
+#: Organisation types a circle's membership *rule* may admit automatically.
+#:
+#: A rule makes enrolment an access grant, so it is limited to the sector
+#: member types whose eligibility the ISAC decides at enrolment. Never the ISAC's
+#: own organisation (which reads by joining visibly, like anyone), and -- as the
+#: plan adds them -- never vendors, researchers, government bodies, service
+#: providers or automation identities: each of those is admitted to a circle by
+#: a deliberate, named act or not at all. Enforced by the request model both
+#: surfaces use, a database check, and reconciliation itself.
+RULE_ELIGIBLE_ORG_TYPES: frozenset[OrgType] = frozenset(
+    {OrgType.GSIB, OrgType.SECTION9, OrgType.CRIT_INFRA}
+)
+
+
 class OperatorRole(StrEnum):
     """A role a human operator holds. An operator may hold several.
 

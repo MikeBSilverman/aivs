@@ -103,6 +103,7 @@ class AuditAction:
 
     # Organisation and certificate lifecycle
     ORG_CREATED = "org.created"
+    OPERATOR_CREATED = "operator.created"
     ORG_STATUS_CHANGED = "org.status_changed"
     CERT_REGISTERED = "cert.registered"
     CERT_REVOKED = "cert.revoked"

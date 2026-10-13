@@ -16,8 +16,6 @@ import datetime as dt
 import secrets
 import uuid
 
-from cryptography import x509
-from cryptography.hazmat.primitives import hashes
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
@@ -33,7 +31,6 @@ from aivs_schemas.models import (
 )
 from aivs_server.audit.log import AuditAction, record
 from aivs_server.auth.deps import AuthenticatedContext, SessionDep, SettingsDep
-from aivs_server.auth.mtls import CertificateRejectedError, verify_issued_by
 from aivs_server.auth.policy import (
     can_administer_circle,
     can_manage_org,
@@ -52,6 +49,8 @@ from aivs_server.db.models import (
     Webhook,
 )
 from aivs_server.notify.webhooks import WebhookRejectedError, resolve_delivery_target
+from aivs_server.services.certificates import CertificateRegistrationError
+from aivs_server.services.certificates import register_certificate as register_certificate_for
 from aivs_server.services.circles import (
     CircleMembershipError,
     add_circle_members,
@@ -259,49 +258,17 @@ async def register_certificate(
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Organisation not found")
 
     try:
-        certificate = x509.load_pem_x509_certificate(payload.certificate_pem.encode("utf-8"))
-    except (ValueError, TypeError) as exc:
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST, detail="Certificate could not be parsed"
-        ) from exc
-
-    if certificate.not_valid_after_utc <= dt.datetime.now(dt.UTC):
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Certificate has already expired")
-
-    # Signed by this instance's issuing CA, checked by signature. Registration
-    # binds a fingerprint to an organisation, so a certificate this CA did not
-    # issue must never get that far, whatever the proxy would later say.
-    issuing_ca = settings.issuing_ca_certificate
-    if issuing_ca is not None:
-        try:
-            verify_issued_by(certificate, issuing_ca)
-        except CertificateRejectedError as exc:
-            raise HTTPException(
-                status.HTTP_400_BAD_REQUEST,
-                detail="Certificate was not issued by this instance's certificate authority "
-                "as a client certificate",
-            ) from exc
-
-    row = ClientCertificate(
-        org_id=org_id,
-        fingerprint_sha256=certificate.fingerprint(hashes.SHA256()).hex(),
-        subject_dn=certificate.subject.rfc4514_string(),
-        issuer_dn=certificate.issuer.rfc4514_string(),
-        serial_hex=format(certificate.serial_number, "x"),
-        not_before=certificate.not_valid_before_utc,
-        not_after=certificate.not_valid_after_utc,
-        status=CertStatus.ACTIVE,
-        label=payload.label,
-    )
-    session.add(row)
-    await record(
-        session,
-        action=AuditAction.CERT_REGISTERED,
-        ctx=ctx,
-        resource_type="organization",
-        resource_id=str(org_id),
-        details={"fingerprint": row.fingerprint_sha256, "subject": row.subject_dn},
-    )
+        row = await register_certificate_for(
+            session,
+            ctx,
+            organisation=organization,
+            certificate_pem=payload.certificate_pem,
+            label=payload.label,
+            issuing_ca=settings.issuing_ca_certificate,
+            now=dt.datetime.now(dt.UTC),
+        )
+    except CertificateRegistrationError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     try:
         await session.commit()
     except IntegrityError as exc:

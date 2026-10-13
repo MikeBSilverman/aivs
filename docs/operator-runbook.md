@@ -70,8 +70,26 @@ members' TIPs forever.
 
 An operator in the admin org holding `system_admin`, TOTP enrolled, and operators
 holding `isac_editor` -- at least two, because a single editor is a single point
-of failure for distributing time-sensitive warnings. (The bootstrap command that
-creates the first operator is the next change; this section will name it.)
+of failure for distributing time-sensitive warnings.
+
+On a fresh instance nobody can enrol an organisation or create an operator --
+those are ISAC powers, and they need a signed-in human. The first of each comes
+from the bootstrap command, run on the host with the application's environment:
+
+```bash
+python -m aivs_server.bootstrap_operator \
+    --org-slug example-isac --org-name "Example ISAC" \
+    --email ops@example-isac.org --name "Ops Lead" \
+    --role system_admin --role isac_editor --role isac_membership \
+    --certificate deploy/ca/out/clients/example-isac/client.crt
+```
+
+It creates the ISAC's organisation if none exists, registers the certificate
+(which must be signed by the issuing CA), and creates the operator. The password
+is prompted for, never passed on the command line. The TOTP provisioning URI is
+printed **once** -- scan it, then clear the terminal. Run it again, without
+`--org-name`, for each further ISAC operator until operator management exists in
+the portal. It refuses a member organisation and a second ISAC organisation.
 
 Do not create more than about five. This role can distribute embargoed content to
 GSIBs; the accountability should stay legible.

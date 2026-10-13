@@ -24,6 +24,8 @@ append.
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import logging
 import uuid
 from collections.abc import Mapping
@@ -33,11 +35,13 @@ from sqlalchemy import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aivs_server.auth.context import AuthContext
+from aivs_server.config import Settings
 from aivs_server.db.engine import get_sessionmaker
 from aivs_server.db.models import AuditLog
 
 __all__ = [
     "AuditAction",
+    "account_reference",
     "record",
     "record_denial",
     "record_independently",
@@ -191,6 +195,24 @@ def _build_row(
         "source_ip": source_ip,
         "details": redact(dict(details or {})),
     }
+
+
+def account_reference(email: str, settings: Settings) -> str:
+    """A stable, non-reversible reference to an account name, for audit details.
+
+    The audit log is immutable, so an email address written into it can never be
+    removed -- a departed operator could not be pseudonymised, and a typo'd
+    address belonging to someone else would stay there for good. A keyed hash
+    still lets a reviewer, or a detection rule, see that forty failures were
+    against the *same* account, without recording which. Keyed with the session
+    secret so it cannot be reversed by hashing a list of known addresses.
+    """
+    digest = hmac.new(
+        settings.session_secret.get_secret_value().encode("utf-8"),
+        b"audit-account:" + email.strip().lower().encode("utf-8"),
+        hashlib.sha256,
+    )
+    return digest.hexdigest()[:24]
 
 
 async def record(

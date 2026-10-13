@@ -25,6 +25,7 @@ from aivs_schemas.enums import OperatorRole, OrgType
 from aivs_server.auth.passwords import generate_totp_secret, hash_password
 from aivs_server.auth.secretbox import SecretPurpose
 from aivs_server.db.models import (
+    AuditLog,
     Operator,
     Submission,
     SubmissionTransition,
@@ -719,3 +720,40 @@ async def test_content_the_database_refuses_returns_the_form_not_a_500(
     )
     assert response.status_code == 400
     assert "value too long" not in response.text, "storage detail is not echoed"
+
+
+async def _fail_sign_in(client, pem, email: str) -> None:
+    form = await client.get("/portal/login", headers=proxy_headers(pem))
+    token = re.search(r'name="csrf_token" value="([^"]+)"', form.text).group(1)
+    response = await client.post(
+        "/portal/login",
+        data={"email": email, "password": "wrong", "totp_code": "000000", "csrf_token": token},
+        headers=proxy_headers(pem),
+    )
+    assert response.status_code == 401
+
+
+async def test_a_failed_sign_in_audits_a_reference_to_the_account_not_the_address(
+    client, analyst, session
+):
+    """The audit log is immutable; an address written into it could never be
+    removed, so a departed operator could not be pseudonymised. A keyed
+    reference still shows that repeated failures hit the *same* account, which
+    is what credential-stuffing detection needs -- the pair below.
+    """
+    _org, operator, _secret, pem = analyst
+    await _fail_sign_in(client, pem, operator.email)
+    await _fail_sign_in(client, pem, operator.email.upper())
+    await _fail_sign_in(client, pem, "someone-else@example.test")
+
+    rows = (
+        (await session.execute(select(AuditLog).where(AuditLog.action == "portal.login.failure")))
+        .scalars()
+        .all()
+    )
+    assert len(rows) == 3
+    assert all(operator.email not in str(row.details) for row in rows)
+    assert all("someone-else" not in str(row.details) for row in rows)
+    references = [row.details["account"] for row in rows]
+    assert references[0] == references[1], "the same account correlates"
+    assert references[2] != references[0], "a different account does not"

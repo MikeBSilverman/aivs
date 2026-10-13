@@ -27,7 +27,7 @@ from sqlalchemy import func, select
 
 from aivs_schemas.enums import TLP, CertStatus, DiscoveryScope, OrgStatus, SubmissionState
 from aivs_schemas.models import SubmissionCreate
-from aivs_server.audit.log import AuditAction, record_independently
+from aivs_server.audit.log import AuditAction, account_reference, record_independently
 from aivs_server.auth.context import AuthContext
 from aivs_server.auth.deps import SessionDep, SettingsDep
 from aivs_server.auth.policy import (
@@ -224,7 +224,7 @@ async def _login_failure(request: Request, settings: Settings, email: str, reaso
         outcome="failure",
         request_id=request.scope.get("aivs_request_id"),
         source_ip=request.client.host if request.client else None,
-        details={"reason": reason, "email": email},
+        details={"reason": reason, "account": account_reference(email, settings)},
     )
     token = uuid.uuid4().hex
     response = TEMPLATES.TemplateResponse(

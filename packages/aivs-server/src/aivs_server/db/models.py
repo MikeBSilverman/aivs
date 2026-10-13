@@ -69,6 +69,7 @@ __all__ = [
     "ClientCertificate",
     "Distribution",
     "Embargo",
+    "InstanceControl",
     "Operator",
     "Organization",
     "PortalSession",
@@ -801,6 +802,29 @@ class PortalSession(Base):
     revoked_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (CheckConstraint(f"token_hash ~ '{_SHA256_HEX}'", name="token_hash_format"),)
+
+
+class InstanceControl(Base):
+    """Instance-wide switches an incident needs. Exactly one row, id 1.
+
+    ``distribution_paused`` is the stop button: while it is set, nothing is
+    published and nothing is served. Both halves matter. Refusing new
+    publications alone does not stop an embargo stamped days ago from becoming
+    visible when its time arrives -- visibility is the clock, not a writer -- so
+    the read-side visibility clause consults this row too.
+    """
+
+    __tablename__ = "instance_controls"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    distribution_paused: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    paused_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    paused_by_operator_id: Mapped[uuid.UUID | None] = mapped_column()
+    pause_reason: Mapped[str | None] = mapped_column(Text)
+
+    __table_args__ = (CheckConstraint("id = 1", name="single_row"),)
 
 
 class AuditLog(Base):

@@ -547,13 +547,27 @@ Assume every piece of content is disclosed. That is the honest starting
 assumption for a database holding embargoed, unpatched vulnerabilities affecting
 GSIBs.
 
-1. Isolate: stop the overlay or the allowlist. Members will notice; that is fine.
-2. Preserve: snapshot the database and the audit log before touching anything.
-3. Verify audit integrity against the off-box stream. If the triggers were
+1. **Pause distribution** -- the first step, because it takes seconds and needs
+   no infrastructure access:
+
+   ```bash
+   curl --cert ... --key ... -H "Authorization: Bearer $SESSION" \
+        -X POST https://<instance>/api/v1/instance/distribution/pause \
+        -d '{"reason": "suspected compromise, INC-<n>"}'
+   ```
+
+   Every publication is refused and nothing is served, including embargoes
+   whose time arrives during the pause -- those would otherwise become visible
+   by the clock. Members' polling cursors do not move on an empty page, so
+   nothing is skipped when you resume. An ISAC editor or system admin may
+   pause; only an editor may resume.
+2. Isolate: stop the overlay or the allowlist. Members will notice; that is fine.
+3. Preserve: snapshot the database and the audit log before touching anything.
+4. Verify audit integrity against the off-box stream. If the triggers were
    dropped, the on-box log is untrustworthy from that point forward and the
    off-box copy is your only record.
-4. Notify every member and every submitter with content in the instance.
-5. Assume the issuing CA is compromised if the host held its key. Revoke the
+5. Notify every member and every submitter with content in the instance.
+6. Assume the issuing CA is compromised if the host held its key. Revoke the
    intermediate from the offline root, stand up a new one, re-issue member
    certificates. This is why the root is offline and why the hierarchy has two
    levels.

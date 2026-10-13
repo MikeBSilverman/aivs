@@ -29,7 +29,7 @@ import uuid
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Final
 
-from sqlalchemy import ColumnElement, and_, false, or_, true
+from sqlalchemy import ColumnElement, and_, exists, false, or_, true
 
 from aivs_schemas.enums import (
     VISIBLE_SUBMISSION_STATES,
@@ -41,7 +41,7 @@ from aivs_schemas.enums import (
     is_transition_allowed,
 )
 from aivs_server.auth.context import AuthContext, AuthMethod, MembershipInterval
-from aivs_server.db.models import Distribution, Submission
+from aivs_server.db.models import Distribution, InstanceControl, Submission
 
 if TYPE_CHECKING:  # pragma: no cover
     pass
@@ -54,7 +54,9 @@ __all__ = [
     "can_administer_circle",
     "can_change_embargo",
     "can_manage_org",
+    "can_pause_distribution",
     "can_read_circle",
+    "can_resume_distribution",
     "can_reveal_submitter",
     "can_review_submissions",
     "can_submit_to_circle",
@@ -359,6 +361,31 @@ def can_manage_org(ctx: AuthContext, target_org_id: uuid.UUID) -> bool:
 # ---------------------------------------------------------------------------
 # The visibility clause
 # ---------------------------------------------------------------------------
+def _distribution_not_paused() -> ColumnElement[bool]:
+    """False while the instance's stop button is pressed.
+
+    Part of visibility, not only of publishing: an embargo stamped days ago
+    becomes visible by the clock with no writer involved, so blocking writers
+    alone would not stop it. Members' paging cursors do not move on an empty
+    page, so nothing is skipped when distribution resumes.
+    """
+    return ~exists().where(InstanceControl.id == 1, InstanceControl.distribution_paused.is_(True))
+
+
+def can_pause_distribution(ctx: AuthContext) -> bool:
+    """Press the stop button. Editors, and the people who run the instance.
+
+    Wider than resuming on purpose: in an incident the person who notices is
+    not always an editor, and stopping is the safe direction.
+    """
+    return is_isac_editor(ctx) or is_system_admin(ctx)
+
+
+def can_resume_distribution(ctx: AuthContext) -> bool:
+    """Start publishing again: an editorial decision."""
+    return is_isac_editor(ctx)
+
+
 def _within_any(intervals: Intervals) -> ColumnElement[bool]:
     """``date_added`` falls inside at least one membership interval."""
     return or_(
@@ -429,6 +456,7 @@ def visible_content_clause(
         or_(*per_circle),
         Distribution.date_added <= now,
         Submission.state.in_(tuple(VISIBLE_SUBMISSION_STATES)),
+        _distribution_not_paused(),
     )
 
 

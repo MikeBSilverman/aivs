@@ -44,6 +44,7 @@ from aivs_server.notify.dispatcher import run_dispatcher
 from aivs_server.portal import admin_routes as portal_admin_routes
 from aivs_server.portal import routes as portal_routes
 from aivs_server.services.embargo import sweep_due_embargoes
+from aivs_server.services.publication import PublicationPausedError
 from aivs_server.taxii import router as taxii_router
 
 __all__ = ["create_app"]
@@ -220,6 +221,18 @@ def _register_exception_handlers(app: FastAPI, settings: Settings) -> None:
             route=request.url.path,
         )
         return _error_response(status.HTTP_403_FORBIDDEN, "Forbidden")
+
+    @app.exception_handler(PublicationPausedError)
+    async def _publication_paused(
+        request: Request,  # noqa: ARG001 - required by the handler signature
+        exc: PublicationPausedError,  # noqa: ARG001 - the type is the message
+    ) -> JSONResponse:
+        """A paused instance is a state the operator chose, not a server fault.
+
+        Reported as 409 with the cause named, so the editor who tried to
+        distribute knows why it did not happen rather than reading a 500.
+        """
+        return _error_response(status.HTTP_409_CONFLICT, "Distribution is paused instance-wide")
 
     @app.exception_handler(RequestValidationError)
     async def _validation_error(

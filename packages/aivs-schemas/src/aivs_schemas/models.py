@@ -210,6 +210,16 @@ class SubmissionOut(_Out):
     superseded_by_id: uuid.UUID | None
 
 
+class InstanceControlChange(_In):
+    """Why distribution is being paused or resumed. Recorded in the audit log."""
+
+    reason: Annotated[str, Field(min_length=10, max_length=1000)]
+
+
+class InstanceControlOut(_Out):
+    distribution_paused: bool
+
+
 class RevealRequest(_In):
     """Why the anonymous submitter of a submission must be named."""
 

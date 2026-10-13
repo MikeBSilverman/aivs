@@ -123,6 +123,8 @@ class AuditAction:
     SUBMISSION_UPDATED = "submission.updated"
     SUBMISSION_TRANSITIONED = "submission.transitioned"
     SUBMISSION_DISTRIBUTED = "submission.distributed"
+    DISTRIBUTION_PAUSED = "instance.distribution_paused"
+    DISTRIBUTION_RESUMED = "instance.distribution_resumed"
 
     # Embargo
     EMBARGO_SET = "embargo.set"

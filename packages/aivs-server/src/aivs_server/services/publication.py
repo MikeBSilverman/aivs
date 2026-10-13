@@ -40,10 +40,17 @@ from __future__ import annotations
 
 from typing import Final
 
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-__all__ = ["hold_publication_lock", "wait_for_publications"]
+from aivs_server.db.models import InstanceControl
+
+__all__ = ["PublicationPausedError", "hold_publication_lock", "wait_for_publications"]
+
+
+class PublicationPausedError(RuntimeError):
+    """Distribution is paused instance-wide; nothing may be published."""
+
 
 #: One fixed key for the whole instance. Publications are rare enough that a
 #: single global lock costs nothing, and anything finer-grained (per circle)
@@ -62,6 +69,14 @@ async def hold_publication_lock(session: AsyncSession) -> None:
     await session.execute(
         text("SELECT pg_advisory_xact_lock(:key)"), {"key": _PUBLICATION_LOCK_KEY}
     )
+    # Checked under the lock, so a pause that commits while a writer waits is
+    # seen by that writer rather than raced past.
+    paused = await session.scalar(
+        select(InstanceControl.distribution_paused).where(InstanceControl.id == 1)
+    )
+    if paused:
+        msg = "distribution is paused instance-wide"
+        raise PublicationPausedError(msg)
 
 
 async def wait_for_publications(session: AsyncSession) -> None:

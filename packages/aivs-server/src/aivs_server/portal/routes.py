@@ -72,6 +72,7 @@ from aivs_server.portal.shared import (
     tlp_label,
 )
 from aivs_server.services.distribution import DistributionError, distribute_submission
+from aivs_server.services.publication import PublicationPausedError
 from aivs_server.services.submissions import (
     STORAGE_ERRORS,
     SubmissionError,
@@ -689,7 +690,7 @@ async def perform_action(
         else:
             await apply_transition(session, ctx, submission, targets[verb])
         await session.commit()
-    except (SubmissionError, DistributionError, ValueError) as exc:
+    except (SubmissionError, DistributionError, PublicationPausedError, ValueError) as exc:
         await session.rollback()
         await record_independently(
             action=AuditAction.ACCESS_DENIED,

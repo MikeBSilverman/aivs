@@ -321,6 +321,7 @@ _ALL_TABLES = (
     "client_certificates",
     "operators",
     "organizations",
+    "instance_controls",
 )
 
 

@@ -26,6 +26,8 @@ from aivs_schemas.models import (
     CircleCreate,
     CircleMemberAdd,
     CircleOut,
+    InstanceControlChange,
+    InstanceControlOut,
     OrganizationCreate,
     OrganizationOut,
 )
@@ -34,6 +36,8 @@ from aivs_server.auth.deps import AuthenticatedContext, SessionDep, SettingsDep
 from aivs_server.auth.policy import (
     can_administer_circle,
     can_manage_org,
+    can_pause_distribution,
+    can_resume_distribution,
     is_isac_editor,
     is_isac_membership,
     is_isac_staff,
@@ -59,6 +63,7 @@ from aivs_server.services.circles import (
     remove_circle_member,
     resolve_organisations,
 )
+from aivs_server.services.instance import pause_distribution, resume_distribution
 
 __all__ = ["router"]
 
@@ -602,3 +607,25 @@ async def delete_webhook(
         resource_id=str(webhook_id),
     )
     await session.commit()
+
+
+@router.post("/instance/distribution/pause", response_model=InstanceControlOut)
+async def pause(
+    payload: InstanceControlChange, ctx: AuthenticatedContext, session: SessionDep
+) -> InstanceControlOut:
+    """The stop button: refuse every publication and serve nothing until resumed."""
+    require(can_pause_distribution(ctx), "pause_requires_isac_editor_or_system_admin")
+    await pause_distribution(session, ctx, reason=payload.reason, now=dt.datetime.now(dt.UTC))
+    await session.commit()
+    return InstanceControlOut(distribution_paused=True)
+
+
+@router.post("/instance/distribution/resume", response_model=InstanceControlOut)
+async def resume(
+    payload: InstanceControlChange, ctx: AuthenticatedContext, session: SessionDep
+) -> InstanceControlOut:
+    """Resume publication and serving. An ISAC editor only."""
+    require(can_resume_distribution(ctx), "resume_requires_isac_editor")
+    await resume_distribution(session, ctx, reason=payload.reason)
+    await session.commit()
+    return InstanceControlOut(distribution_paused=False)

@@ -19,6 +19,7 @@ import uuid
 import pyotp
 import pytest
 from sqlalchemy import func, select
+from sqlalchemy.exc import DataError
 
 from aivs_schemas.enums import OperatorRole, OrgType
 from aivs_server.auth.passwords import generate_totp_secret, hash_password
@@ -30,6 +31,7 @@ from aivs_server.db.models import (
     Webhook,
     WebhookDelivery,
 )
+from aivs_server.portal import routes as portal_routes
 from tests.conftest import proxy_headers
 
 pytestmark = pytest.mark.db
@@ -648,3 +650,72 @@ async def test_distributing_from_the_portal_queues_the_same_notifications(
     assert len(queued) == 1, "the portal distribution notified nobody"
     assert queued[0].payload["submission_id"] == submission_id
     assert "title" not in queued[0].payload, "notifications stay contentless"
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("title", "T" * 400), ("summary", "S" * 20_000)],
+    ids=["title", "summary"],
+)
+async def test_an_over_long_field_returns_the_form_not_a_500(
+    client, analyst, session, field, value
+):
+    """Finding #7: the portal had no length bounds, so the database refused it.
+
+    The flush raised a DataError -- not a ValueError -- which escaped the
+    handler, and the member got an opaque 500 instead of their form back. The
+    portal now validates through the API's own request model. The control is
+    ``test_an_analyst_can_file_a_finding`` above, the same form with a normal
+    value.
+    """
+    _org, operator, secret, pem = analyst
+    await sign_in(client, operator, secret, pem)
+    data = {
+        "title": "A normal title",
+        "summary": "",
+        "discovery_scope": "ai_system",
+        "tlp": "amber",
+        "bundle": bundle(),
+        "csrf_token": csrf_of(client),
+    }
+    data[field] = value
+
+    response = await client.post("/portal/submit", data=data, headers=proxy_headers(pem))
+
+    assert response.status_code == 400
+    assert field in response.text
+    assert (await session.scalar(select(func.count()).select_from(Submission))) == 0
+
+
+async def test_content_the_database_refuses_returns_the_form_not_a_500(
+    client, analyst, monkeypatch
+):
+    """A storage-level refusal is the member's malformed input, not our fault.
+
+    The API mapped these to 400; the portal did not catch them at all. Ingest
+    now bounds or truncates every column it writes, so no valid form reaches
+    one -- this is defence in depth, exercised by making the service raise
+    exactly what the database raises when a value does not fit.
+    """
+    _org, operator, secret, pem = analyst
+    await sign_in(client, operator, secret, pem)
+
+    async def refused_by_storage(*_args: object, **_kwargs: object) -> None:
+        statement = "INSERT INTO stix_objects ..."
+        raise DataError(statement, {}, Exception("value too long for type"))
+
+    monkeypatch.setattr(portal_routes, "create_submission", refused_by_storage)
+
+    response = await client.post(
+        "/portal/submit",
+        data={
+            "title": "Refused by storage",
+            "discovery_scope": "ai_system",
+            "tlp": "amber",
+            "bundle": bundle(),
+            "csrf_token": csrf_of(client),
+        },
+        headers=proxy_headers(pem),
+    )
+    assert response.status_code == 400
+    assert "value too long" not in response.text, "storage detail is not echoed"

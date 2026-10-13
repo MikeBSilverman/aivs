@@ -24,6 +24,7 @@ from collections.abc import Iterable
 from typing import Any, Final
 
 from sqlalchemy import delete, select
+from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aivs_schemas.enums import SubmissionState, is_transition_allowed
@@ -35,6 +36,7 @@ from aivs_server.db.models import Organization, StixObject, Submission, Submissi
 from aivs_server.taxii.resources import truncate_to_taxii_precision
 
 __all__ = [
+    "STORAGE_ERRORS",
     "SubmissionError",
     "apply_transition",
     "create_submission",
@@ -55,6 +57,15 @@ _CVSS_MAX: Final[float] = 10.0
 _MAX_STIX_ID: Final[int] = 100
 _MAX_STIX_TYPE: Final[int] = 60
 _MAX_OBJECT_NAME: Final[int] = 300
+
+
+#: Database-level rejections of submitter-supplied content: a value too long
+#: for its column, or one that violates a check constraint, means the bundle is
+#: malformed -- the caller's problem, not a server fault. Every ingest surface
+#: catches these and answers 400; the message is not echoed, because it would
+#: expose column names and constraint definitions. One definition, because the
+#: portal and the API disagreed about exactly this (finding #7).
+STORAGE_ERRORS: Final = (IntegrityError, DBAPIError)
 
 
 class SubmissionError(ValueError):

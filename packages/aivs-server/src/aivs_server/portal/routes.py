@@ -22,9 +22,11 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Form, HTTPException, Request, Response, status
 from fastapi.responses import HTMLResponse, RedirectResponse
+from pydantic import ValidationError
 from sqlalchemy import func, select
 
 from aivs_schemas.enums import TLP, CertStatus, DiscoveryScope, OrgStatus, SubmissionState
+from aivs_schemas.models import SubmissionCreate
 from aivs_server.audit.log import AuditAction, record_independently
 from aivs_server.auth.context import AuthContext
 from aivs_server.auth.deps import SessionDep, SettingsDep
@@ -71,6 +73,7 @@ from aivs_server.portal.shared import (
 )
 from aivs_server.services.distribution import DistributionError, distribute_submission
 from aivs_server.services.submissions import (
+    STORAGE_ERRORS,
     SubmissionError,
     apply_transition,
     create_submission,
@@ -712,6 +715,13 @@ async def submit_form(request: Request, settings: SettingsDep, session: SessionD
     return render(request, "submit.html", context)
 
 
+def _first_validation_message(exc: ValidationError) -> str:
+    """One readable line from a request-model error, naming the field."""
+    error = exc.errors(include_input=False)[0]
+    field = ".".join(str(part) for part in error.get("loc", ())) or "submission"
+    return f"{field}: {error.get('msg', 'invalid value')}"
+
+
 @router.post("/submit", response_class=HTMLResponse)
 async def submit_finding(
     request: Request,
@@ -753,16 +763,34 @@ async def submit_finding(
     except json.JSONDecodeError as exc:
         return failure(f"The bundle is not valid JSON: {exc.msg} (line {exc.lineno}).")
 
+    # The API's own request model, so the two ingest surfaces cannot disagree
+    # about what a legal submission is. They did: the form carried no length
+    # bounds, an over-long title reached the database, and the member got an
+    # opaque 500 instead of their form back (finding #7).
     try:
-        submission = await create_submission(
-            session,
-            ctx,
+        payload = SubmissionCreate(
             title=title,
             summary=summary or None,
             tlp=TLP(tlp),
             discovery_scope=DiscoveryScope(discovery_scope),
             distribute_anonymously=bool(distribute_anonymously),
             bundle=parsed,
+        )
+    except ValidationError as exc:
+        return failure(_first_validation_message(exc))
+    except ValueError as exc:
+        return failure(str(exc))
+
+    try:
+        submission = await create_submission(
+            session,
+            ctx,
+            title=payload.title,
+            summary=payload.summary,
+            tlp=payload.tlp,
+            discovery_scope=payload.discovery_scope,
+            distribute_anonymously=payload.distribute_anonymously,
+            bundle=payload.bundle,
             via="portal",
         )
         # One commit, so the submission and the record of it land together. A
@@ -773,6 +801,12 @@ async def submit_finding(
     except (SubmissionError, ValueError) as exc:
         await session.rollback()
         return failure(str(exc))
+    except STORAGE_ERRORS:
+        await session.rollback()
+        return failure(
+            "Part of the submission is longer or otherwise different from what can "
+            "be stored. Check the length of names and descriptions in the bundle."
+        )
 
     return RedirectResponse(
         f"/portal/submissions/{submission.id}", status_code=status.HTTP_303_SEE_OTHER

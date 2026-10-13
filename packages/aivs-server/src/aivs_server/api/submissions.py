@@ -17,7 +17,6 @@ from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import select
-from sqlalchemy.exc import DBAPIError, IntegrityError
 
 from aivs_schemas.enums import SubmissionState
 from aivs_schemas.extension.builders import (
@@ -55,6 +54,7 @@ from aivs_server.notify.events import (
 from aivs_server.services.distribution import DistributionError, distribute_submission
 from aivs_server.services.embargo import EmbargoError, extend_embargo, release_embargo_now
 from aivs_server.services.submissions import (
+    STORAGE_ERRORS,
     SubmissionError,
     apply_transition,
     create_submission,
@@ -77,14 +77,6 @@ _CLIENT_ERRORS = (
     ExtensionValidationError,
     UnknownExtensionError,
 )
-
-#: Database-level rejections of submitter-supplied content. These are the
-#: caller's problem, not a server fault: a value too long for its column or one
-#: that violates a check constraint means the bundle is malformed. They are
-#: caught alongside _CLIENT_ERRORS so a member's typo returns 400 rather than
-#: 500. The message is deliberately not echoed -- it would expose column names
-#: and constraint definitions.
-_STORAGE_ERRORS = (IntegrityError, DBAPIError)
 
 
 async def _require_visible_submission(
@@ -128,7 +120,7 @@ async def create(
         await session.commit()
     except _CLIENT_ERRORS as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    except _STORAGE_ERRORS as exc:
+    except STORAGE_ERRORS as exc:
         await session.rollback()
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST, detail="Submission content rejected by storage"
@@ -229,7 +221,7 @@ async def amend(
         await session.commit()
     except _CLIENT_ERRORS as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    except _STORAGE_ERRORS as exc:
+    except STORAGE_ERRORS as exc:
         await session.rollback()
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST, detail="Submission content rejected by storage"

@@ -16,7 +16,7 @@ import uuid
 import pytest
 from sqlalchemy import func, select
 
-from aivs_schemas.enums import TLP, CircleRole, OrgType
+from aivs_schemas.enums import TLP, CircleRole, OperatorRole, OrgType
 from aivs_server.db.models import AuditLog, Distribution, StixObject, SubmissionTransition
 from tests.conftest import proxy_headers
 
@@ -415,10 +415,13 @@ async def test_anonymous_distribution_rewrites_attribution(
     served = feed.json()["objects"][0]
     assert served["created_by_ref"] == isac_org.stix_identity_id
 
-    # Internally, attribution survives -- this is what lets the ISAC answer
-    # questions its members cannot.
-    detail = await client.get(f"{API}/{created['id']}", headers=isac_headers)
-    assert detail.json()["submitter_org_id"] == str(org.id)
+    # Internally, attribution survives -- but an ordinary read withholds it from
+    # everyone except the submitter (SF-44). Naming the submitter is the audited
+    # reveal action, tested below.
+    seen_by_isac = await client.get(f"{API}/{created['id']}", headers=isac_headers)
+    seen_by_submitter = await client.get(f"{API}/{created['id']}", headers=proxy_headers(pem))
+    assert seen_by_isac.json()["submitter_org_id"] is None
+    assert seen_by_submitter.json()["submitter_org_id"] == str(org.id)
 
 
 async def test_distribution_is_recorded_in_the_audit_trail(client, member, isac, circle, session):
@@ -863,3 +866,46 @@ async def test_a_member_may_carry_its_own_identity(client, member):
         headers=proxy_headers(pem),
     )
     assert response.status_code == 201
+
+
+async def test_revealing_an_anonymous_submitter_is_an_audited_editorial_act(
+    client, member, isac, session, make_org, make_cert, make_operator, human_headers
+):
+    """SF-44. Before this, any ISAC reader saw the identity in an ordinary GET,
+    so "reveal" was indistinguishable from routine review. Now: an editor names
+    the submitter with a stated reason, the audit row records the reason and
+    not the identity, and an ISAC analyst -- who can read the submission -- may
+    not reveal it.
+    """
+    org, pem = await member()
+    _isac_org, isac_headers = isac
+    created = await create_draft(client, pem, distribute_anonymously=True)
+    attributed = await create_draft(client, pem)
+    reason = "Law-enforcement request, case 2026-117, approved by counsel"
+
+    revealed = await client.post(
+        f"{API}/{created['id']}/reveal", json={"reason": reason}, headers=isac_headers
+    )
+    assert revealed.status_code == 200
+    assert revealed.json()["submitter_org_id"] == str(org.id)
+
+    rows = (
+        (await session.execute(select(AuditLog).where(AuditLog.action == "anonymity.reveal")))
+        .scalars()
+        .all()
+    )
+    assert [row.details for row in rows] == [{"reason": reason}]
+
+    isac_org = await make_org("hosting-isac-two", org_type=OrgType.ADMIN)
+    analyst_pem, _ = await make_cert(isac_org)
+    analyst, _seed = await make_operator(isac_org, roles=(OperatorRole.ISAC_ANALYST,))
+    analyst_headers = await human_headers(analyst, analyst_pem)
+    refused = await client.post(
+        f"{API}/{created['id']}/reveal", json={"reason": reason}, headers=analyst_headers
+    )
+    assert refused.status_code == 403
+
+    not_anonymous = await client.post(
+        f"{API}/{attributed['id']}/reveal", json={"reason": reason}, headers=isac_headers
+    )
+    assert not_anonymous.status_code == 409

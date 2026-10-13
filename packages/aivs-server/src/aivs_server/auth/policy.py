@@ -55,6 +55,7 @@ __all__ = [
     "can_change_embargo",
     "can_manage_org",
     "can_read_circle",
+    "can_reveal_submitter",
     "can_review_submissions",
     "can_submit_to_circle",
     "can_transition_submission",
@@ -177,6 +178,11 @@ def is_isac_staff(ctx: AuthContext) -> bool:
 def is_org_admin(ctx: AuthContext) -> bool:
     """Return whether the caller may administer their own organisation."""
     return is_active(ctx) and OperatorRole.ORG_ADMIN in ctx.operator_roles
+
+
+def can_reveal_submitter(ctx: AuthContext) -> bool:
+    """Name the submitter of an anonymous submission: an editorial act, audited."""
+    return is_isac_editor(ctx)
 
 
 def can_change_embargo(ctx: AuthContext) -> bool:

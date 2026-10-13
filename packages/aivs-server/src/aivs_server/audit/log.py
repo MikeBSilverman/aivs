@@ -106,6 +106,7 @@ class AuditAction:
     ACCESS_DENIED = "authz.denied"
 
     # Organisation and certificate lifecycle
+    ANONYMITY_REVEALED = "anonymity.reveal"
     ORG_CREATED = "org.created"
     OPERATOR_CREATED = "operator.created"
     ORG_STATUS_CHANGED = "org.status_changed"

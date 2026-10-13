@@ -278,7 +278,8 @@ rotation against the native API with the outgoing certificate.
 | `can_administer_circle(ctx, cid)` | May they change membership? | `is_isac_membership(ctx)`. |
 | `readable_circle_ids(ctx)` | Which circles may they read? | `ctx.circle_ids`, or the empty set if inactive. |
 | `writable_circle_ids(ctx)` | Which may they contribute to? | Circles where the role is contributor or circle admin. |
-| `can_view_submission(ctx, s)` | May they see the workflow record? | Active **and** (system admin, or `s.submitter_org_id == ctx.org_id`). |
+| `can_view_submission(ctx, s)` | May they see the workflow record? | Active **and** (`can_review_submissions`, or `s.submitter_org_id == ctx.org_id`). For an anonymous submission the record omits the submitter for everyone but the submitter. |
+| `can_reveal_submitter(ctx)` | May they name an anonymous submitter? | `is_isac_editor(ctx)`. Requires a reason; audited as `anonymity.reveal` with the reason and without the identity. |
 | `can_view_submission_receipts(ctx, s)` | May they see who retrieved it? | Same rule. Restricted because receipts reveal which firms attend to which threats. |
 | `can_transition_submission(ctx, s, target)` | May they make this move? | The move must be legal in `SUBMISSION_TRANSITIONS` **and** the caller must hold the right to that specific target. |
 | `can_manage_org(ctx, target)` | May they administer this org? | Active **and** (system admin, or org admin over their own org). |

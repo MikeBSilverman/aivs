@@ -27,6 +27,8 @@ from aivs_schemas.extension.builders import (
 from aivs_schemas.models import (
     DistributeRequest,
     EmbargoOut,
+    RevealOut,
+    RevealRequest,
     SubmissionCreate,
     SubmissionDetail,
     SubmissionOut,
@@ -34,9 +36,12 @@ from aivs_schemas.models import (
     TransitionOut,
     TransitionRequest,
 )
+from aivs_server.audit.log import AuditAction, record
+from aivs_server.auth.context import AuthContext
 from aivs_server.auth.deps import AuthenticatedContext, SessionDep
 from aivs_server.auth.policy import (
     can_change_embargo,
+    can_reveal_submitter,
     can_review_submissions,
     can_view_submission,
     is_isac_editor,
@@ -45,6 +50,7 @@ from aivs_server.auth.policy import (
 from aivs_server.db.models import (
     Distribution,
     Embargo,
+    Organization,
     StixObject,
     Submission,
     SubmissionTransition,
@@ -103,10 +109,25 @@ async def _require_visible_submission(
     return submission
 
 
+def _present(submission: Submission, ctx: AuthContext) -> SubmissionOut:
+    """The submission as this caller may see it.
+
+    An anonymous submission's submitter is shown to the submitter alone. Every
+    other reader -- ISAC staff included -- gets ``None``, and names it only
+    through the reveal action, which is audited with its reason. Without this,
+    any ISAC reader saw the identity in an ordinary GET, and an audited reveal
+    would have been decoration.
+    """
+    out = SubmissionOut.model_validate(submission)
+    if submission.distribute_anonymously and submission.submitter_org_id != ctx.org_id:
+        out = out.model_copy(update={"submitter_org_id": None})
+    return out
+
+
 @router.post("", status_code=status.HTTP_201_CREATED, response_model=SubmissionOut)
 async def create(
     payload: SubmissionCreate, ctx: AuthenticatedContext, session: SessionDep
-) -> Submission:
+) -> SubmissionOut:
     """Create a draft submission owned by the caller's organisation."""
     try:
         submission = await create_submission(
@@ -129,7 +150,7 @@ async def create(
         ) from exc
 
     await session.refresh(submission)
-    return submission
+    return _present(submission, ctx)
 
 
 @router.get("", response_model=list[SubmissionOut])
@@ -138,7 +159,7 @@ async def list_submissions(
     session: SessionDep,
     state: Annotated[SubmissionState | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
-) -> list[Submission]:
+) -> list[SubmissionOut]:
     """List submissions the caller may see.
 
     A member sees their own organisation's submissions; the hosting ISAC sees
@@ -149,7 +170,7 @@ async def list_submissions(
         query = query.where(Submission.submitter_org_id == ctx.org_id)
     if state is not None:
         query = query.where(Submission.state == state)
-    return list((await session.execute(query)).scalars().all())
+    return [_present(row, ctx) for row in (await session.execute(query)).scalars().all()]
 
 
 @router.get("/{submission_id}", response_model=SubmissionDetail)
@@ -198,7 +219,7 @@ async def get_submission(
     )
 
     return SubmissionDetail(
-        **SubmissionOut.model_validate(submission).model_dump(),
+        **_present(submission, ctx).model_dump(),
         object_count=len(stix_ids),
         stix_ids=stix_ids,
         circle_ids=circle_ids,
@@ -213,7 +234,7 @@ async def amend(
     payload: SubmissionUpdate,
     ctx: AuthenticatedContext,
     session: SessionDep,
-) -> Submission:
+) -> SubmissionOut:
     """Amend a draft. Refused once the submission has left the submitter."""
     submission = await _require_visible_submission(session, ctx, submission_id, for_update=True)
     try:
@@ -230,7 +251,7 @@ async def amend(
         ) from exc
 
     await session.refresh(submission)
-    return submission
+    return _present(submission, ctx)
 
 
 async def _transition(
@@ -256,9 +277,12 @@ async def submit(
     payload: TransitionRequest,
     ctx: AuthenticatedContext,
     session: SessionDep,
-) -> Submission:
+) -> SubmissionOut:
     """Hand a draft to the hosting ISAC for review."""
-    return await _transition(session, ctx, submission_id, SubmissionState.SUBMITTED, payload.reason)
+    return _present(
+        await _transition(session, ctx, submission_id, SubmissionState.SUBMITTED, payload.reason),
+        ctx,
+    )
 
 
 @router.post("/{submission_id}/validate", response_model=SubmissionOut)
@@ -267,14 +291,17 @@ async def validate(
     payload: TransitionRequest,
     ctx: AuthenticatedContext,
     session: SessionDep,
-) -> Submission:
+) -> SubmissionOut:
     """Accept a submission as fit to share. Hosting ISAC only.
 
     This is the human checkpoint that keeps AIVS clear of the
     coordinated-disclosure consent problem: content reaches members because the
     ISAC decided it should, never merely because a member uploaded it.
     """
-    return await _transition(session, ctx, submission_id, SubmissionState.VALIDATED, payload.reason)
+    return _present(
+        await _transition(session, ctx, submission_id, SubmissionState.VALIDATED, payload.reason),
+        ctx,
+    )
 
 
 @router.post("/{submission_id}/withdraw", response_model=SubmissionOut)
@@ -283,13 +310,16 @@ async def withdraw(
     payload: TransitionRequest,
     ctx: AuthenticatedContext,
     session: SessionDep,
-) -> Submission:
+) -> SubmissionOut:
     """Withdraw a submission that has not yet been distributed.
 
     Distributed content cannot be withdrawn: members already hold it, and
     pretending otherwise would be a false promise.
     """
-    return await _transition(session, ctx, submission_id, SubmissionState.WITHDRAWN, payload.reason)
+    return _present(
+        await _transition(session, ctx, submission_id, SubmissionState.WITHDRAWN, payload.reason),
+        ctx,
+    )
 
 
 @router.post("/{submission_id}/distribute", response_model=SubmissionOut)
@@ -298,7 +328,7 @@ async def distribute(
     payload: DistributeRequest,
     ctx: AuthenticatedContext,
     session: SessionDep,
-) -> Submission:
+) -> SubmissionOut:
     """Release a validated submission into circles. Hosting ISAC only.
 
     Writes visibility rows and the state change in one transaction, so a member
@@ -336,7 +366,7 @@ async def distribute(
     # and the audit trail.
     await session.commit()
     await session.refresh(submission)
-    return submission
+    return _present(submission, ctx)
 
 
 @router.post("/{submission_id}/embargo/release", response_model=SubmissionOut)
@@ -345,7 +375,7 @@ async def release_embargo(
     payload: TransitionRequest,
     ctx: AuthenticatedContext,
     session: SessionDep,
-) -> Submission:
+) -> SubmissionOut:
     """Release an embargoed submission immediately. Hosting ISAC only.
 
     The operational escape hatch: when a finding starts being exploited in the
@@ -371,7 +401,7 @@ async def release_embargo(
         raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
     await session.refresh(submission)
-    return submission
+    return _present(submission, ctx)
 
 
 @router.post("/{submission_id}/embargo/extend", response_model=SubmissionOut)
@@ -380,7 +410,7 @@ async def extend_embargo_endpoint(
     payload: DistributeRequest,
     ctx: AuthenticatedContext,
     session: SessionDep,
-) -> Submission:
+) -> SubmissionOut:
     """Push an embargo further out. Hosting ISAC only.
 
     Reuses ``DistributeRequest`` for its ``release_at`` validation; the circle
@@ -408,4 +438,48 @@ async def extend_embargo_endpoint(
         raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
     await session.refresh(submission)
-    return submission
+    return _present(submission, ctx)
+
+
+@router.post("/{submission_id}/reveal", response_model=RevealOut)
+async def reveal_submitter(
+    submission_id: uuid.UUID,
+    payload: RevealRequest,
+    ctx: AuthenticatedContext,
+    session: SessionDep,
+) -> RevealOut:
+    """Name the submitter of an anonymous submission. An ISAC editor only.
+
+    The one act that breaks the promise the platform made the submitter, so it
+    is its own audited action with a stated reason, distinguishable in the log
+    from routine review -- which, before this existed, it was not: any ISAC
+    reader saw the identity in an ordinary GET. The audit row records the reason
+    and *not* the identity revealed: the log is read by auditors whose scope
+    must not include every anonymous submitter by way of the audit trail.
+    """
+    submission = await _require_visible_submission(session, ctx, submission_id)
+    require(can_reveal_submitter(ctx), "reveal_requires_isac_editor")
+    if not submission.distribute_anonymously:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail="This submission is not anonymous; its submitter is in the ordinary record",
+        )
+
+    organisation = await session.get(Organization, submission.submitter_org_id)
+    if organisation is None:  # pragma: no cover - foreign key guarantees it
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Not found")
+
+    await record(
+        session,
+        action=AuditAction.ANONYMITY_REVEALED,
+        ctx=ctx,
+        resource_type="submission",
+        resource_id=str(submission.id),
+        details={"reason": payload.reason},
+    )
+    await session.commit()
+    return RevealOut(
+        submission_id=submission.id,
+        submitter_org_id=organisation.id,
+        submitter_slug=organisation.slug,
+    )

@@ -199,11 +199,31 @@ class SubmissionOut(_Out):
     tlp: TLP
     discovery_scope: DiscoveryScope
     distribute_anonymously: bool
-    submitter_org_id: uuid.UUID
+    #: ``None`` when withheld: an anonymous submission's submitter is shown to
+    #: the submitter alone. ISAC staff who need it use the reveal action, which
+    #: is audited with its reason (``POST /submissions/{id}/reveal``).
+    submitter_org_id: uuid.UUID | None
     created_at: dt.datetime
     updated_at: dt.datetime
     distributed_at: dt.datetime | None
     superseded_by_id: uuid.UUID | None
+
+
+class RevealRequest(_In):
+    """Why the anonymous submitter of a submission must be named."""
+
+    #: Recorded in the audit log. Required and non-trivial, because revealing an
+    #: anonymous submitter is the one act that breaks the promise the platform
+    #: made them, and a reviewer must be able to judge it later.
+    reason: Annotated[str, Field(min_length=10, max_length=1000)]
+
+
+class RevealOut(_Out):
+    """The submitter of an anonymous submission, for the editor who asked."""
+
+    submission_id: uuid.UUID
+    submitter_org_id: uuid.UUID
+    submitter_slug: str
 
 
 class TransitionOut(_Out):

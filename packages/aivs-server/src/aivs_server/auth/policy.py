@@ -55,7 +55,9 @@ __all__ = [
     "can_change_embargo",
     "can_manage_org",
     "can_pause_distribution",
+    "can_quarantine_org",
     "can_read_circle",
+    "can_reconnect_org",
     "can_resume_distribution",
     "can_reveal_submitter",
     "can_review_submissions",
@@ -370,6 +372,25 @@ def _distribution_not_paused() -> ColumnElement[bool]:
     page, so nothing is skipped when distribution resumes.
     """
     return ~exists().where(InstanceControl.id == 1, InstanceControl.distribution_paused.is_(True))
+
+
+def can_quarantine_org(ctx: AuthContext, target_org_id: uuid.UUID) -> bool:
+    """Cut an organisation off during an incident.
+
+    ISAC membership staff, editors and system admins; and the organisation's
+    own ``org_admin`` for itself -- "we are compromised, cut us off" needs no
+    one's approval, because stopping is the safe direction.
+    """
+    if is_isac_membership(ctx) or is_isac_editor(ctx) or is_system_admin(ctx):
+        return True
+    return is_org_admin(ctx) and ctx.org_id == target_org_id
+
+
+def can_reconnect_org(ctx: AuthContext) -> bool:
+    """Return a quarantined organisation to service. The ISAC's alone: a member
+    reconnecting itself would let whoever holds its compromised credentials do
+    the same."""
+    return is_isac_membership(ctx) or is_isac_editor(ctx)
 
 
 def can_pause_distribution(ctx: AuthContext) -> bool:

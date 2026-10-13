@@ -35,6 +35,7 @@ from aivs_schemas.enums import (
     OperatorRole,
     OrgStatus,
     OrgType,
+    QuarantineBacklog,
     SubmissionState,
 )
 
@@ -208,6 +209,18 @@ class SubmissionOut(_Out):
     updated_at: dt.datetime
     distributed_at: dt.datetime | None
     superseded_by_id: uuid.UUID | None
+
+
+class QuarantineRequest(_In):
+    """Why an organisation is being cut off. Recorded in the audit log."""
+
+    reason: Annotated[str, Field(min_length=10, max_length=1000)]
+
+
+class ReconnectRequest(_In):
+    reason: Annotated[str, Field(min_length=10, max_length=1000)]
+    #: Whether content shared during the quarantine reaches the member.
+    backlog: QuarantineBacklog = QuarantineBacklog.DELIVER
 
 
 class InstanceControlChange(_In):

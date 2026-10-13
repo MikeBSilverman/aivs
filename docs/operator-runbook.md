@@ -483,7 +483,25 @@ The worst case, and the one to have thought about in advance.
 6. **Record everything.** The audit log has the technical facts; the ISAC's own
    incident record needs the decisions.
 
-### 7.2 Suspected certificate compromise
+### 7.2 A member is compromised: quarantine
+
+When a member's credentials may be in someone else's hands -- a compromised
+collector, a stolen laptop, an intrusion -- quarantine it:
+`POST /api/v1/orgs/{id}/quarantine` with a reason. Its status becomes
+`quarantined` (refused on every request), and every certificate and portal
+session it holds is revoked. Its circle memberships are untouched: quarantine
+protects the member and the community; it does not change what it is entitled
+to. A member's own `org_admin` can quarantine their firm without asking you.
+
+Reconnecting is yours alone: `POST /api/v1/orgs/{id}/reconnect`. It refuses
+until the member has a freshly registered certificate -- the old ones stay
+revoked. `"backlog": "deliver"` (the default) lets the member receive what was
+shared while it was out; `"new_interval"` withholds it, for an incident whose
+nature means the gap must not reach them. Earlier content is kept either way.
+Tell the member which you chose and why; a self-quarantine is also something
+they may have to report to their own regulator.
+
+### 7.3 Suspected certificate compromise
 
 1. Revoke in the **database**: `client_certificates.status = revoked`, with
    `revoked_at` and `revoked_reason` set (a check constraint requires the
@@ -499,7 +517,7 @@ The worst case, and the one to have thought about in advance.
    effect on their next request and stops everything, not just that certificate.
 5. Issue a replacement once the member has generated a fresh key.
 
-### 7.3 Rotating the secret-encryption key, or changing its algorithm
+### 7.4 Rotating the secret-encryption key, or changing its algorithm
 
 Rotate on suspected disclosure of the key itself, on the departure of anyone who
 held it, and otherwise on the ISAC's own schedule. Both keys open during a
@@ -541,7 +559,7 @@ webhook signing key as known: re-enrol the operators and have members
 re-register their webhooks. Re-sealing already-disclosed plaintext under a new
 key protects nothing.
 
-### 7.4 Instance compromise
+### 7.5 Instance compromise
 
 Assume every piece of content is disclosed. That is the honest starting
 assumption for a database holding embargoed, unpatched vulnerabilities affecting
@@ -572,7 +590,7 @@ GSIBs.
    certificates. This is why the root is offline and why the hierarchy has two
    levels.
 
-### 7.5 Audit write failures
+### 7.6 Audit write failures
 
 `record_independently` **swallows its own failures** — deliberately, so that an
 audit outage does not turn a clean 403 into a 500 and tell a caller their denied

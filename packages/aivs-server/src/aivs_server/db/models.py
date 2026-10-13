@@ -102,6 +102,10 @@ class Organization(TimestampMixin, Base):
     status: Mapped[OrgStatus] = mapped_column(
         pg_enum(OrgStatus, "org_status"), nullable=False, default=OrgStatus.PENDING
     )
+    #: When a quarantine began; ``None`` when not quarantined. Needed at
+    #: reconnection to close the membership interval at the right moment if the
+    #: backlog is not to be delivered.
+    quarantined_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
     #: The org's STIX ``identity`` SDO id, used as ``created_by_ref`` on objects
     #: it submits (except where the submission is distributed anonymously).
     stix_identity_id: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)

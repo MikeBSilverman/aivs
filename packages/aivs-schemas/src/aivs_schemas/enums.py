@@ -55,9 +55,30 @@ class OrgType(StrEnum):
 
 
 class OrgStatus(StrEnum):
+    """Whether an organisation may transact. Only ``ACTIVE`` may.
+
+    ``QUARANTINED`` is an incident pause: the organisation (or the ISAC, on its
+    behalf) has cut it off because its credentials may be compromised. Every
+    certificate and session is revoked; its memberships are untouched, because
+    quarantine protects the member and the community, it does not change what
+    the member is entitled to.
+    """
+
     PENDING = "pending"
     ACTIVE = "active"
     SUSPENDED = "suspended"
+    QUARANTINED = "quarantined"
+
+
+class QuarantineBacklog(StrEnum):
+    """On reconnection, what happens to content shared during the quarantine."""
+
+    #: Delivered: the default. The member was protected, not penalised, and its
+    #: paging cursor resumes where it stopped.
+    DELIVER = "deliver"
+    #: Not delivered: membership resumes from now, as a new interval. For an
+    #: incident whose nature means the gap must not reach the member.
+    NEW_INTERVAL = "new_interval"
 
 
 #: Organisation types a circle's membership *rule* may admit automatically.

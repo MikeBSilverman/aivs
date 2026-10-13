@@ -30,6 +30,8 @@ from aivs_schemas.models import (
     InstanceControlOut,
     OrganizationCreate,
     OrganizationOut,
+    QuarantineRequest,
+    ReconnectRequest,
 )
 from aivs_server.audit.log import AuditAction, record
 from aivs_server.auth.deps import AuthenticatedContext, SessionDep, SettingsDep
@@ -37,6 +39,8 @@ from aivs_server.auth.policy import (
     can_administer_circle,
     can_manage_org,
     can_pause_distribution,
+    can_quarantine_org,
+    can_reconnect_org,
     can_resume_distribution,
     is_isac_editor,
     is_isac_membership,
@@ -64,6 +68,7 @@ from aivs_server.services.circles import (
     resolve_organisations,
 )
 from aivs_server.services.instance import pause_distribution, resume_distribution
+from aivs_server.services.quarantine import QuarantineError, quarantine_org, reconnect_org
 
 __all__ = ["router"]
 
@@ -210,12 +215,10 @@ async def suspend_org(
     # database before the rule is evaluated against it.
     await session.flush()
 
-    # Withdraws rule-managed memberships, since the rule matches active
-    # organisations only. Hand-added memberships are left alone: an operator who
-    # named this firm explicitly should decide themselves whether suspension
-    # means removal. Either way the authorization path already refuses a
-    # suspended organisation on its next request -- this keeps the membership
-    # table honest rather than being the control.
+    # Memberships are not touched: suspension is status, refused on every
+    # request, and closing rule memberships here (as this once did) cost a
+    # reactivated member its back catalogue. The reconcile still runs, for any
+    # drift from a rule change that was never reconciled.
     touched = await reconcile_circles_for_org(session, ctx, organisation=organization)
 
     await record(
@@ -629,3 +632,52 @@ async def resume(
     await resume_distribution(session, ctx, reason=payload.reason)
     await session.commit()
     return InstanceControlOut(distribution_paused=False)
+
+
+@router.post("/orgs/{org_id}/quarantine", response_model=OrganizationOut)
+async def quarantine(
+    org_id: uuid.UUID, payload: QuarantineRequest, ctx: AuthenticatedContext, session: SessionDep
+) -> Organization:
+    """Cut an organisation off now: status, certificates and sessions. See services.quarantine."""
+    require(can_quarantine_org(ctx, org_id), "quarantine")
+    organisation = await session.get(Organization, org_id, with_for_update=True)
+    if organisation is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Organisation not found")
+    try:
+        await quarantine_org(
+            session,
+            ctx,
+            organisation=organisation,
+            reason=payload.reason,
+            now=dt.datetime.now(dt.UTC),
+        )
+    except QuarantineError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    await session.commit()
+    await session.refresh(organisation)
+    return organisation
+
+
+@router.post("/orgs/{org_id}/reconnect", response_model=OrganizationOut)
+async def reconnect(
+    org_id: uuid.UUID, payload: ReconnectRequest, ctx: AuthenticatedContext, session: SessionDep
+) -> Organization:
+    """Return a quarantined organisation to service, on fresh credentials."""
+    require(can_reconnect_org(ctx), "reconnect_requires_isac")
+    organisation = await session.get(Organization, org_id, with_for_update=True)
+    if organisation is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Organisation not found")
+    try:
+        await reconnect_org(
+            session,
+            ctx,
+            organisation=organisation,
+            backlog=payload.backlog,
+            reason=payload.reason,
+            now=dt.datetime.now(dt.UTC),
+        )
+    except QuarantineError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    await session.commit()
+    await session.refresh(organisation)
+    return organisation

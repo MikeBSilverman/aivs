@@ -6,9 +6,13 @@ import datetime as dt
 from typing import Any
 
 from fastapi import APIRouter, Response, status
-from sqlalchemy import text
+from fastapi.responses import PlainTextResponse
+from sqlalchemy import func, select, text
 
+from aivs_schemas.enums import EmbargoStatus
 from aivs_server.auth.deps import AuthenticatedContext, SessionDep, SettingsDep
+from aivs_server.db.models import Embargo, WebhookDelivery
+from aivs_server.observability import HEARTBEATS, render_metrics
 
 __all__ = ["public_router", "router"]
 
@@ -23,8 +27,12 @@ __all__ = ["public_router", "router"]
 #:    them there with exact-match 404s (``deploy/nginx/nginx.conf``). The
 #:    application still keeps them harmless in case a deployment's proxy does
 #:    not carve them out: nothing here reveals anything about members or
-#:    content -- liveness is a constant, and the readiness probe discloses at
-#:    most whether the database is reachable.
+#:    content -- liveness is a constant, the readiness probe discloses whether
+#:    the database is reachable and which background components are healthy,
+#:    and ``/metrics`` adds two queue depths (undelivered notifications,
+#:    unreleased embargoes). Those depths are the most this router reveals: an
+#:    operational count with no identifier, wanted by the ISAC's monitoring
+#:    and not worth a credential every Prometheus scraper would have to hold.
 #:
 #: The consequence for maintainers: never add anything to this router that
 #: reveals more than that, because "unauthenticated" here also means "readable
@@ -48,11 +56,14 @@ async def healthz() -> dict[str, str]:
 
 @public_router.get("/readyz")
 async def readyz(session: SessionDep, response: Response) -> dict[str, Any]:
-    """Readiness probe: can this instance actually serve traffic?
+    """Readiness probe: can this instance actually serve traffic, and is every
+    background component running?
 
-    Unlike liveness, this does check the database, because an instance that
-    cannot reach its database should be taken out of rotation rather than
-    restarted. Returns 503 so a load balancer stops sending it requests.
+    503 only when the database is unreachable -- that is when a load balancer
+    should take the instance out. A degraded background component (the embargo
+    sweeper, the dispatcher, the detection rules) keeps the instance serving but
+    is reported by name with its reason, so "up" and "every part working" are
+    never the same answer.
     """
     try:
         await session.execute(text("SELECT 1"))
@@ -60,7 +71,55 @@ async def readyz(session: SessionDep, response: Response) -> dict[str, Any]:
         # reason belongs in the logs rather than in an unauthenticated response.
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
         return {"status": "unavailable", "database": "unreachable"}
-    return {"status": "ready", "database": "ok"}
+    components = HEARTBEATS.report(now=dt.datetime.now(dt.UTC))
+    degraded = any(component.state == "degraded" for component in components)
+    return {
+        "status": "degraded" if degraded else "ready",
+        "database": "ok",
+        "components": {
+            component.name: {"state": component.state, "reason": component.reason}
+            for component in components
+        },
+    }
+
+
+@public_router.get("/metrics", response_class=PlainTextResponse)
+async def metrics(session: SessionDep) -> str:
+    """Prometheus text exposition: component health and the work waiting.
+
+    Counts and timestamps only. A scraper reaches it on the app's own port over
+    the compose ``backend`` network, as the app's healthcheck does -- the
+    proxy's internal listener answers ``/healthz`` from nginx itself and nothing
+    else. The member-facing listener answers it with 404, as for the probes.
+    """
+    now = dt.datetime.now(dt.UTC)
+    return render_metrics(
+        HEARTBEATS.report(now=now),
+        pending_deliveries=await _pending_deliveries(session),
+        pending_embargoes=await _pending_embargoes(session),
+    )
+
+
+async def _pending_deliveries(session: SessionDep) -> int:
+    return int(
+        await session.scalar(
+            select(func.count())
+            .select_from(WebhookDelivery)
+            .where(WebhookDelivery.delivered_at.is_(None))
+        )
+        or 0
+    )
+
+
+async def _pending_embargoes(session: SessionDep) -> int:
+    return int(
+        await session.scalar(
+            select(func.count())
+            .select_from(Embargo)
+            .where(Embargo.status.in_((EmbargoStatus.PENDING, EmbargoStatus.EXTENDED)))
+        )
+        or 0
+    )
 
 
 @router.get("/whoami")

@@ -322,6 +322,7 @@ _ALL_TABLES = (
     "operators",
     "organizations",
     "instance_controls",
+    "detection_state",
 )
 
 

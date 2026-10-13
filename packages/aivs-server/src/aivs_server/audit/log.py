@@ -110,6 +110,7 @@ class AuditAction:
     ORG_CREATED = "org.created"
     OPERATOR_CREATED = "operator.created"
     ORG_STATUS_CHANGED = "org.status_changed"
+    DETECTION_RAISED = "detection.raised"
     ORG_QUARANTINED = "org.quarantined"
     ORG_RECONNECTED = "org.reconnected"
     CERT_REGISTERED = "cert.registered"

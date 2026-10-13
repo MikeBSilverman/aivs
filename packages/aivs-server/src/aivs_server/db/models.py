@@ -67,6 +67,7 @@ __all__ = [
     "Circle",
     "CircleMembership",
     "ClientCertificate",
+    "DetectionState",
     "Distribution",
     "Embargo",
     "InstanceControl",
@@ -806,6 +807,21 @@ class PortalSession(Base):
     revoked_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (CheckConstraint(f"token_hash ~ '{_SHA256_HEX}'", name="token_hash_format"),)
+
+
+class DetectionState(Base):
+    """When each (rule, subject) last raised a detection, so it raises once per window.
+
+    Without it a rule evaluated every minute over a ten-minute window would
+    raise the same burst ten times, and an alert that repeats itself is an alert
+    people learn to ignore.
+    """
+
+    __tablename__ = "detection_state"
+
+    rule: Mapped[str] = mapped_column(String(80), primary_key=True)
+    subject: Mapped[str] = mapped_column(String(200), primary_key=True)
+    last_raised_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class InstanceControl(Base):

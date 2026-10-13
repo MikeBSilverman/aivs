@@ -24,7 +24,6 @@ answering "did they get told?" has an answer either way.
 
 from __future__ import annotations
 
-import asyncio
 import datetime as dt
 import json
 import logging
@@ -45,7 +44,7 @@ from aivs_server.notify.webhooks import (
     sign_payload,
 )
 
-__all__ = ["dispatch_pending", "run_dispatcher"]
+__all__ = ["dispatch_pending"]
 
 logger = logging.getLogger(__name__)
 
@@ -231,24 +230,3 @@ async def _record_failure(
             "consecutive_failures": webhook.consecutive_failures,
         },
     )
-
-
-async def run_dispatcher(settings: Settings) -> None:  # pragma: no cover - background loop
-    """Drain the notification queue forever.
-
-    Structured like the embargo sweeper, and for the same reason: a failure in
-    one pass must not end the loop. An exception here means some member did not
-    get told, which is bad; a dead dispatcher means no member is ever told
-    again, which is much worse.
-    """
-    from aivs_server.db.engine import session_scope  # noqa: PLC0415 - avoids a cycle at import
-
-    while True:
-        await asyncio.sleep(settings.webhook_dispatch_interval_seconds)
-        try:
-            async with session_scope() as session:
-                await dispatch_pending(session, settings)
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            logger.exception("webhook dispatch failed; will retry on the next interval")

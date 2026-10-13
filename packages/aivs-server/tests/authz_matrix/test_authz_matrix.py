@@ -74,6 +74,8 @@ EXPECTED_PUBLIC: frozenset[tuple[str, str]] = frozenset(
     {
         ("/healthz", "GET"),
         ("/readyz", "GET"),
+        # Queue depths and component health, no identifiers; argued in api/meta.py.
+        ("/metrics", "GET"),
     }
 )
 

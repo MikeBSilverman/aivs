@@ -1,0 +1,371 @@
+"""Noticing abuse of the platform itself.
+
+The audit log was evidence only: a credential-stuffing run, a member
+certificate paging the whole archive, or someone revealing an anonymous
+submitter at 3 a.m. were all recorded and none was noticed. Each rule here reads
+the audit log or the receipts over a window and returns what it found; the
+engine raises each finding once per window and emits it three ways, so the ISAC
+and whoever monitors it can consume it without custom work:
+
+* an ``detection.raised`` audit row -- the evidentiary record;
+* one structured line on the ``aivs_server.security`` logger carrying the
+  finding as an OCSF Detection Finding and as a CEF string -- what a SIEM or an
+  MSP ingests when the deployment forwards logs over syslog;
+* a contentless webhook to the ISAC's own subscribed endpoints.
+
+Findings carry identifiers and counts, never content (CLAUDE.md section 5 on
+logs). Every rule has a test that raises it and a test that does not.
+"""
+
+from __future__ import annotations
+
+import datetime as dt
+import logging
+from collections.abc import Awaitable, Callable, Sequence
+from dataclasses import dataclass, field
+from typing import Any, Final
+
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from aivs_schemas.enums import AckType, OrgType
+from aivs_server.audit.log import AuditAction, record
+from aivs_server.db.models import (
+    Acknowledgment,
+    AuditLog,
+    DetectionState,
+    Organization,
+    Webhook,
+    WebhookDelivery,
+)
+from aivs_server.observability import HEARTBEATS
+
+__all__ = ["EVENT_DETECTION_RAISED", "RULES", "Finding", "run_detections"]
+
+security_logger = logging.getLogger("aivs_server.security")
+
+EVENT_DETECTION_RAISED: Final[str] = "detection.raised"
+
+#: OCSF Detection Finding (class 2004, category Findings). Severity ids per OCSF.
+_OCSF_CLASS_UID: Final[int] = 2004
+_OCSF_SEVERITY: Final[dict[str, int]] = {"low": 2, "medium": 3, "high": 4, "critical": 5}
+#: CEF severity, 0-10.
+_CEF_SEVERITY: Final[dict[str, int]] = {"low": 3, "medium": 5, "high": 8, "critical": 10}
+
+
+@dataclass(frozen=True, slots=True)
+class Finding:
+    """One thing a rule noticed. ``subject`` is what it is about: an address,
+    an account reference, an organisation id, an audit row id."""
+
+    rule: str
+    severity: str
+    subject: str
+    summary: str
+    count: int = 1
+    details: dict[str, Any] = field(default_factory=dict)
+
+
+RuleCheck = Callable[[AsyncSession, dt.datetime, dt.timedelta, int], Awaitable[list[Finding]]]
+
+
+@dataclass(frozen=True, slots=True)
+class Rule:
+    name: str
+    severity: str
+    window: dt.timedelta
+    threshold: int
+    check: RuleCheck
+
+
+async def _audit_bursts(
+    session: AsyncSession,
+    *,
+    action: str,
+    group_by: Any,
+    since: dt.datetime,
+    threshold: int,
+) -> list[tuple[str, int]]:
+    rows = (
+        await session.execute(
+            select(group_by, func.count())
+            .where(AuditLog.action == action, AuditLog.at >= since, group_by.is_not(None))
+            .group_by(group_by)
+            .having(func.count() >= threshold)
+        )
+    ).all()
+    return [(str(subject), int(count)) for subject, count in rows]
+
+
+async def _auth_failure_burst(
+    session: AsyncSession, now: dt.datetime, window: dt.timedelta, threshold: int
+) -> list[Finding]:
+    """Many refused authentications from one address: probing or a broken collector."""
+    bursts = await _audit_bursts(
+        session,
+        action=AuditAction.AUTH_FAILURE,
+        group_by=AuditLog.source_ip,
+        since=now - window,
+        threshold=threshold,
+    )
+    return [
+        Finding(
+            rule="auth_failure_burst",
+            severity="medium",
+            subject=address,
+            summary=f"{count} refused authentications from {address} in {window}",
+            count=count,
+        )
+        for address, count in bursts
+    ]
+
+
+async def _login_failure_burst(
+    session: AsyncSession, now: dt.datetime, window: dt.timedelta, threshold: int
+) -> list[Finding]:
+    """Many failed portal logins against one account: password guessing."""
+    bursts = await _audit_bursts(
+        session,
+        action=AuditAction.LOGIN_FAILURE,
+        group_by=AuditLog.details["account"].astext,
+        since=now - window,
+        threshold=threshold,
+    )
+    return [
+        Finding(
+            rule="login_failure_burst",
+            severity="high",
+            subject=account,
+            summary=f"{count} failed portal logins against one account in {window}",
+            count=count,
+        )
+        for account, count in bursts
+    ]
+
+
+async def _bulk_retrieval(
+    session: AsyncSession, now: dt.datetime, window: dt.timedelta, threshold: int
+) -> list[Finding]:
+    """One organisation retrieving far more than members do: a scraped archive."""
+    rows = (
+        await session.execute(
+            select(Acknowledgment.org_id, func.count(func.distinct(Acknowledgment.submission_id)))
+            .where(
+                Acknowledgment.ack_type == AckType.RETRIEVED,
+                Acknowledgment.created_at >= now - window,
+            )
+            .group_by(Acknowledgment.org_id)
+            .having(func.count(func.distinct(Acknowledgment.submission_id)) >= threshold)
+        )
+    ).all()
+    return [
+        Finding(
+            rule="bulk_retrieval",
+            severity="high",
+            subject=str(org_id),
+            summary=f"one organisation retrieved {count} submissions in {window}",
+            count=int(count),
+        )
+        for org_id, count in rows
+    ]
+
+
+async def _component_degraded(
+    session: AsyncSession, now: dt.datetime, window: dt.timedelta, threshold: int
+) -> list[Finding]:
+    """A background component that has stopped succeeding: the silent failure.
+
+    If the detection loop itself is the one that died, this cannot fire --
+    which is why /readyz and the aivs_component_up metric report the same
+    registry, for monitoring that does not depend on this process's loops.
+    """
+    del session, window, threshold
+    return [
+        Finding(
+            rule="component_degraded",
+            severity="high",
+            subject=report.name,
+            summary=f"{report.name} is degraded: {report.reason}",
+        )
+        for report in HEARTBEATS.report(now=now)
+        if report.state == "degraded"
+    ]
+
+
+def _every_occurrence(rule: str, action: str, severity: str, summary: str) -> RuleCheck:
+    """A rule that raises on each audit row of ``action`` -- acts worth an alert every time."""
+
+    async def check(
+        session: AsyncSession, now: dt.datetime, window: dt.timedelta, threshold: int
+    ) -> list[Finding]:
+        del threshold
+        rows = (
+            await session.execute(
+                select(AuditLog.id, AuditLog.resource_id).where(
+                    AuditLog.action == action, AuditLog.at >= now - window
+                )
+            )
+        ).all()
+        return [
+            Finding(
+                rule=rule,
+                severity=severity,
+                subject=str(row_id),
+                summary=summary,
+                details={"resource": resource_id},
+            )
+            for row_id, resource_id in rows
+        ]
+
+    return check
+
+
+RULES: Final[tuple[Rule, ...]] = (
+    Rule("component_degraded", "high", dt.timedelta(minutes=30), 1, _component_degraded),
+    Rule("auth_failure_burst", "medium", dt.timedelta(minutes=10), 20, _auth_failure_burst),
+    Rule("login_failure_burst", "high", dt.timedelta(minutes=15), 10, _login_failure_burst),
+    Rule("bulk_retrieval", "high", dt.timedelta(hours=1), 200, _bulk_retrieval),
+    Rule(
+        "anonymity_reveal",
+        "high",
+        dt.timedelta(hours=1),
+        1,
+        _every_occurrence(
+            "anonymity_reveal",
+            AuditAction.ANONYMITY_REVEALED,
+            "high",
+            "an anonymous submitter was revealed",
+        ),
+    ),
+    Rule(
+        "distribution_paused",
+        "critical",
+        dt.timedelta(hours=1),
+        1,
+        _every_occurrence(
+            "distribution_paused",
+            AuditAction.DISTRIBUTION_PAUSED,
+            "critical",
+            "distribution was paused instance-wide",
+        ),
+    ),
+    Rule(
+        "org_quarantined",
+        "high",
+        dt.timedelta(hours=1),
+        1,
+        _every_occurrence(
+            "org_quarantined",
+            AuditAction.ORG_QUARANTINED,
+            "high",
+            "an organisation was quarantined",
+        ),
+    ),
+)
+
+
+async def _already_raised(
+    session: AsyncSession, finding: Finding, now: dt.datetime, window: dt.timedelta
+) -> bool:
+    state = await session.get(DetectionState, (finding.rule, finding.subject))
+    if state is not None and state.last_raised_at > now - window:
+        return True
+    if state is None:
+        session.add(DetectionState(rule=finding.rule, subject=finding.subject, last_raised_at=now))
+    else:
+        state.last_raised_at = now
+    return False
+
+
+def _ocsf(finding: Finding, now: dt.datetime) -> dict[str, Any]:
+    return {
+        "class_uid": _OCSF_CLASS_UID,
+        "category_uid": 2,
+        "activity_id": 1,
+        "type_uid": _OCSF_CLASS_UID * 100 + 1,
+        "time": int(now.timestamp() * 1000),
+        "severity_id": _OCSF_SEVERITY[finding.severity],
+        "finding_info": {"uid": f"{finding.rule}:{finding.subject}", "title": finding.rule},
+        "message": finding.summary,
+        "count": finding.count,
+        "metadata": {"product": {"name": "AIVS", "vendor_name": "AIVS"}, "version": "1.1.0"},
+    }
+
+
+def _cef(finding: Finding) -> str:
+    def escape(value: str) -> str:
+        return value.replace("\\", "\\\\").replace("|", "\\|")
+
+    return (
+        f"CEF:0|AIVS|AIVS|1|{escape(finding.rule)}|{escape(finding.summary)}|"
+        f"{_CEF_SEVERITY[finding.severity]}|cnt={finding.count} "
+        f"suid={finding.subject.replace('=', '\\=')}"
+    )
+
+
+async def _queue_alert(session: AsyncSession, finding: Finding, now: dt.datetime) -> None:
+    """Contentless webhook to the ISAC's own subscribed endpoints."""
+    hooks = (
+        (
+            await session.execute(
+                select(Webhook)
+                .join(Organization, Organization.id == Webhook.org_id)
+                .where(Organization.org_type == OrgType.ADMIN, Webhook.is_active.is_(True))
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for hook in hooks:
+        if hook.events and EVENT_DETECTION_RAISED not in hook.events:
+            continue
+        session.add(
+            WebhookDelivery(
+                webhook_id=hook.id,
+                event=EVENT_DETECTION_RAISED,
+                payload={
+                    "event": EVENT_DETECTION_RAISED,
+                    "rule": finding.rule,
+                    "severity": finding.severity,
+                    "raised_at": now.isoformat(),
+                    "detail": "see the admin status page",
+                },
+            )
+        )
+
+
+async def _emit(session: AsyncSession, finding: Finding, now: dt.datetime) -> None:
+    await record(
+        session,
+        action=AuditAction.DETECTION_RAISED,
+        resource_type="detection",
+        resource_id=finding.rule,
+        details={
+            "rule": finding.rule,
+            "severity": finding.severity,
+            "subject": finding.subject,
+            "count": finding.count,
+            "summary": finding.summary,
+            **finding.details,
+        },
+    )
+    security_logger.warning(
+        finding.summary,
+        extra={"ocsf": _ocsf(finding, now), "cef": _cef(finding), "rule": finding.rule},
+    )
+    await _queue_alert(session, finding, now)
+
+
+async def run_detections(
+    session: AsyncSession, *, now: dt.datetime, rules: Sequence[Rule] = RULES
+) -> list[Finding]:
+    """Evaluate every rule once; raise what is new. Returns what was raised. Commits."""
+    raised: list[Finding] = []
+    for rule in rules:
+        for finding in await rule.check(session, now, rule.window, rule.threshold):
+            if await _already_raised(session, finding, now, rule.window):
+                continue
+            await _emit(session, finding, now)
+            raised.append(finding)
+    await session.commit()
+    return raised

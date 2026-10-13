@@ -698,6 +698,37 @@ collapses under examination:
 | Verify append-only enforcement (§1.1) | Quarterly, and after any restore or major upgrade | It can silently stop being true. |
 | Rehearse offline root recovery | Annually | An untested offline root is a lost root. |
 
+### 9.1 What the platform watches for you
+
+Some of the reviews above are now also rules that run every
+`AIVS_DETECTION_INTERVAL_SECONDS` (default 60) in `services/detections.py`.
+Each finding is raised **once per rule window** and goes three ways:
+
+- a `detection.raised` audit row (the record);
+- one WARNING line on the `aivs_server.security` logger carrying the finding as
+  an **OCSF Detection Finding** (class 2004) and a **CEF** string, for a SIEM
+  or MSP reading the forwarded logs;
+- a contentless `detection.raised` webhook to endpoints registered by the
+  ISAC's **own** organisation. Members' webhooks never receive it.
+
+| Rule | Raises when | First thing to do |
+| --- | --- | --- |
+| `auth_failure_burst` | 20 refused authentications from one address in 10 min | Check whether it is a member's collector with an expired certificate before you assume probing. |
+| `login_failure_burst` | 10 failed portal logins against one account in 15 min | The account locks at 5 failures, so 10 means someone kept going through the lockout. Contact the operator out of band. |
+| `bulk_retrieval` | One organisation retrieves 200 distinct submissions in 1 h | Treat as a possibly stolen certificate (§7.3). If it is confirmed, quarantine (§7.2). |
+| `anonymity_reveal` | Any reveal of an anonymous submitter | Confirm the reveal was expected and that its recorded reason holds up. |
+| `distribution_paused` | Distribution paused instance-wide | Confirm someone on the incident bridge did it. |
+| `org_quarantined` | Any quarantine, including self-quarantine | Confirm the member knows, and start reconnection planning. |
+| `component_degraded` | A background job (embargo sweeper, webhook dispatcher, detections) has not succeeded for two of its intervals | Read the app log for that component's exception; `/readyz` names it and the error type. |
+
+`component_degraded` cannot report the detection loop's own death. That is
+why the same health registry is also exposed on `/readyz` (a JSON
+`components` map; the probe stays 200 while only background work is degraded)
+and `/metrics` (`aivs_component_up`, `aivs_webhook_deliveries_pending`,
+`aivs_embargoes_pending`, Prometheus text format). Scrape `/metrics` from the
+`backend` network and alert on `aivs_component_up == 0`. That alert is the
+one that still works when this process's own loops do not.
+
 ---
 
 ## 10. Things that will bite you

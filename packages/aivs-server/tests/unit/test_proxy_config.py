@@ -46,3 +46,11 @@ def test_the_default_proxy_image_is_built_with_an_openssl_that_has_ml_kem(repo_r
     )
     assert match, "the proxy image default has moved; update this test with it"
     assert (int(match.group(1)), int(match.group(2))) >= (1, 29)
+
+
+def test_the_member_listener_answers_no_probe_or_metrics(repo_root: Path):
+    """Component health and backlogs are for the ISAC's monitoring; a member
+    learns nothing from them that it should."""
+    conf = (repo_root / "deploy/nginx/nginx.conf").read_text()
+    for path in ("/healthz", "/readyz", "/metrics"):
+        assert re.search(rf"location = {re.escape(path)}\s*\{{\s*return 404;", conf), path

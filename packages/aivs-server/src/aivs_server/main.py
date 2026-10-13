@@ -17,6 +17,7 @@ that quotes a database constraint or a file path is a free schema disclosure.
 from __future__ import annotations
 
 import asyncio
+import datetime as dt
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
@@ -40,9 +41,11 @@ from aivs_server.middleware import (
     SecurityHeadersMiddleware,
     security_headers_for,
 )
-from aivs_server.notify.dispatcher import run_dispatcher
+from aivs_server.notify.dispatcher import dispatch_pending
+from aivs_server.observability import run_periodically
 from aivs_server.portal import admin_routes as portal_admin_routes
 from aivs_server.portal import routes as portal_routes
+from aivs_server.services.detections import run_detections
 from aivs_server.services.embargo import sweep_due_embargoes
 from aivs_server.services.publication import PublicationPausedError
 from aivs_server.taxii import router as taxii_router
@@ -103,13 +106,32 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # than on a member's first request.
     get_engine()
 
+    # Each through run_periodically, so every one reports into the same health
+    # registry that /readyz, /metrics and the status page read. They are
+    # separate tasks because they fail independently: a dead dispatcher must not
+    # stop embargoes being marked released, nor a dead sweeper stop alerts.
     background = [
-        asyncio.create_task(_embargo_sweeper(settings)),
-        # Drains queued member notifications. Separate from the sweeper because
-        # they fail independently: a dispatcher that dies must not stop embargoes
-        # being marked released, and a sweeper that dies must not stop
-        # already-visible content being announced.
-        asyncio.create_task(run_dispatcher(settings)),
+        asyncio.create_task(
+            run_periodically(
+                "embargo_sweeper",
+                dt.timedelta(seconds=settings.embargo_sweep_interval_seconds),
+                _sweep_embargoes,
+            )
+        ),
+        asyncio.create_task(
+            run_periodically(
+                "webhook_dispatcher",
+                dt.timedelta(seconds=settings.webhook_dispatch_interval_seconds),
+                lambda: _dispatch_webhooks(settings),
+            )
+        ),
+        asyncio.create_task(
+            run_periodically(
+                "detections",
+                dt.timedelta(seconds=settings.detection_interval_seconds),
+                _run_detections,
+            )
+        ),
     ]
     try:
         yield
@@ -123,26 +145,21 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.info("stopped AIVS")
 
 
-async def _embargo_sweeper(settings: Settings) -> None:
-    """Mark embargoes as released once their time has passed.
+async def _sweep_embargoes() -> None:
+    """Mark embargoes released once due. Bookkeeping only: content becomes
+    visible the instant its ``date_added`` passes, whether or not this runs."""
+    async with session_scope() as session:
+        await sweep_due_embargoes(session)
 
-    Bookkeeping only, and deliberately so: content becomes visible the instant
-    its ``date_added`` passes, whether or not this loop is running. A sweeper
-    that has been down for a week leaks nothing and catches up in one pass.
 
-    Failures are logged and the loop continues. An instance that stopped serving
-    members because a background bookkeeping task hit a transient database error
-    would be a far worse outcome than a stale status column.
-    """
-    while True:
-        await asyncio.sleep(settings.embargo_sweep_interval_seconds)
-        try:
-            async with session_scope() as session:
-                await sweep_due_embargoes(session)
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            logger.exception("embargo sweep failed; will retry on the next interval")
+async def _dispatch_webhooks(settings: Settings) -> None:
+    async with session_scope() as session:
+        await dispatch_pending(session, settings)
+
+
+async def _run_detections() -> None:
+    async with session_scope() as session:
+        await run_detections(session, now=dt.datetime.now(dt.UTC))
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:

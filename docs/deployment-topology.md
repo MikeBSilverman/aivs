@@ -25,8 +25,10 @@ pager, not in the software.
 | Source | Apache-2.0, identical | Apache-2.0, identical |
 
 The critical line is the last-but-two. Managed hosting is an operations service.
-The `system_admin` accounts that move submissions from `submitted` → `validated`
-→ `distributed` belong to the ISAC, because that transition is the ISAC's
+The `isac_editor` accounts that move submissions from `submitted` → `validated`
+→ `distributed` belong to the ISAC, and the move requires a human session -- an
+admin-organisation certificate on its own, which the holder of the issuing CA
+could mint, confers no editorial power, because that transition is the ISAC's
 editorial and legal judgement about whether content should reach members. An
 Aequora operator holding database access is a real trust exposure and should be
 named as such in the hosting agreement — it is not eliminated by process, only
@@ -455,9 +457,10 @@ in every authorization predicate.
 
 ### People and process
 
-- At least two `system_admin` operators. One is a single point of failure; more
-  than about five dilutes accountability for a role that can distribute embargoed
-  content.
+- At least two operators holding `isac_editor`. One is a single point of failure;
+  more than about five dilutes accountability for a role that can distribute
+  embargoed content. `isac_membership` and `system_admin` can be held by the same
+  people or kept apart, which is the ISAC's choice (`docs/authz-model.md` §3).
 - A named submission reviewer with the standing to reject a submission on scope
   grounds. This is the human checkpoint that keeps AIVS out of third-party
   disclosure brokering, and it only works if the reviewer can say no.

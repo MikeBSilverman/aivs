@@ -54,12 +54,11 @@ def bundle() -> dict:
 
 
 @pytest.fixture
-async def embargoed(client, make_org, make_cert, make_circle, join_circle, make_collection):
+async def embargoed(client, isac, make_org, make_cert, make_circle, join_circle, make_collection):
     """A submission distributed with a future release time."""
     member = await make_org("meridian-global", org_type=OrgType.GSIB)
     member_pem, _ = await make_cert(member)
-    isac = await make_org("hosting-isac", org_type=OrgType.ADMIN)
-    isac_pem, _ = await make_cert(isac)
+    _isac_org, isac_headers = isac
     circle = await make_circle("section9")
     await join_circle(member, circle)
     collection = await make_collection(circle)
@@ -78,20 +77,20 @@ async def embargoed(client, make_org, make_cert, make_circle, join_circle, make_
     submission_id = created.json()["id"]
 
     await client.post(f"{API}/{submission_id}/submit", json={}, headers=proxy_headers(member_pem))
-    await client.post(f"{API}/{submission_id}/validate", json={}, headers=proxy_headers(isac_pem))
+    await client.post(f"{API}/{submission_id}/validate", json={}, headers=isac_headers)
 
     release_at = dt.datetime.now(dt.UTC) + dt.timedelta(days=3)
     distributed = await client.post(
         f"{API}/{submission_id}/distribute",
         json={"circle_ids": [str(circle.id)], "release_at": release_at.isoformat()},
-        headers=proxy_headers(isac_pem),
+        headers=isac_headers,
     )
     assert distributed.status_code == 200, distributed.text
 
     return {
         "submission_id": submission_id,
         "member_pem": member_pem,
-        "isac_pem": isac_pem,
+        "isac_headers": isac_headers,
         "collection": collection,
         "release_at": release_at,
     }
@@ -114,7 +113,7 @@ async def test_distributing_with_a_future_time_records_the_embargo(embargoed, se
 async def test_the_detail_view_reports_the_embargo(client, embargoed):
     """It reported None for everything before the record was wired up."""
     detail = await client.get(
-        f"{API}/{embargoed['submission_id']}", headers=proxy_headers(embargoed["isac_pem"])
+        f"{API}/{embargoed['submission_id']}", headers=embargoed["isac_headers"]
     )
     assert detail.status_code == 200
     assert detail.json()["embargo"] is not None
@@ -136,7 +135,7 @@ async def test_the_isac_can_release_early(client, embargoed, session):
     response = await client.post(
         f"{API}/{embargoed['submission_id']}/embargo/release",
         json={"reason": "observed in the wild"},
-        headers=proxy_headers(embargoed["isac_pem"]),
+        headers=embargoed["isac_headers"],
     )
     assert response.status_code == 200
 
@@ -162,7 +161,7 @@ async def test_early_release_never_moves_a_timestamp_into_the_past(client, embar
     await client.post(
         f"{API}/{embargoed['submission_id']}/embargo/release",
         json={},
-        headers=proxy_headers(embargoed["isac_pem"]),
+        headers=embargoed["isac_headers"],
     )
 
     rows = (await session.execute(select(Distribution.date_added))).scalars().all()
@@ -184,14 +183,14 @@ async def test_releasing_twice_is_refused(client, embargoed):
     first = await client.post(
         f"{API}/{embargoed['submission_id']}/embargo/release",
         json={},
-        headers=proxy_headers(embargoed["isac_pem"]),
+        headers=embargoed["isac_headers"],
     )
     assert first.status_code == 200
 
     second = await client.post(
         f"{API}/{embargoed['submission_id']}/embargo/release",
         json={},
-        headers=proxy_headers(embargoed["isac_pem"]),
+        headers=embargoed["isac_headers"],
     )
     assert second.status_code == 409
     assert "already been released" in second.text
@@ -205,7 +204,7 @@ async def test_an_embargo_can_be_extended(client, embargoed, session):
     response = await client.post(
         f"{API}/{embargoed['submission_id']}/embargo/extend",
         json={"circle_ids": [str(uuid.uuid4())], "release_at": later.isoformat()},
-        headers=proxy_headers(embargoed["isac_pem"]),
+        headers=embargoed["isac_headers"],
     )
     assert response.status_code == 200
 
@@ -221,7 +220,7 @@ async def test_an_embargo_cannot_be_shortened_by_extending(client, embargoed):
     response = await client.post(
         f"{API}/{embargoed['submission_id']}/embargo/extend",
         json={"circle_ids": [str(uuid.uuid4())], "release_at": sooner.isoformat()},
-        headers=proxy_headers(embargoed["isac_pem"]),
+        headers=embargoed["isac_headers"],
     )
     assert response.status_code == 409
     assert "release it early" in response.text
@@ -232,14 +231,14 @@ async def test_a_released_embargo_cannot_be_reinstated(client, embargoed):
     await client.post(
         f"{API}/{embargoed['submission_id']}/embargo/release",
         json={},
-        headers=proxy_headers(embargoed["isac_pem"]),
+        headers=embargoed["isac_headers"],
     )
 
     later = dt.datetime.now(dt.UTC) + dt.timedelta(days=10)
     response = await client.post(
         f"{API}/{embargoed['submission_id']}/embargo/extend",
         json={"circle_ids": [str(uuid.uuid4())], "release_at": later.isoformat()},
-        headers=proxy_headers(embargoed["isac_pem"]),
+        headers=embargoed["isac_headers"],
     )
     assert response.status_code == 409
     assert "cannot be reinstated" in response.text
@@ -250,7 +249,7 @@ async def test_extending_into_the_past_is_refused(client, embargoed):
     response = await client.post(
         f"{API}/{embargoed['submission_id']}/embargo/extend",
         json={"circle_ids": [str(uuid.uuid4())], "release_at": past.isoformat()},
-        headers=proxy_headers(embargoed["isac_pem"]),
+        headers=embargoed["isac_headers"],
     )
     assert response.status_code == 409
 

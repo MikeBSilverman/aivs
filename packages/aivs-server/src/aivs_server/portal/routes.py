@@ -31,10 +31,10 @@ from aivs_server.audit.log import AuditAction, record_independently
 from aivs_server.auth.context import AuthContext
 from aivs_server.auth.deps import SessionDep, SettingsDep
 from aivs_server.auth.policy import (
+    can_review_submissions,
     can_transition_submission,
     can_view_submission,
     can_view_submission_receipts,
-    is_system_admin,
     readable_circle_grants,
     require,
     visible_content_clause,
@@ -341,7 +341,7 @@ async def dashboard(request: Request, settings: SettingsDep, session: SessionDep
     ) or 0
 
     awaiting = 0
-    if is_system_admin(ctx):
+    if can_review_submissions(ctx):
         awaiting = (
             await session.scalar(
                 select(func.count())
@@ -422,7 +422,7 @@ async def review_queue(request: Request, settings: SettingsDep, session: Session
     than being a filter on a list.
     """
     ctx, _csrf_hash = await current_session(request, settings, session)
-    if not is_system_admin(ctx):
+    if not can_review_submissions(ctx):
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Not found")
 
     rows = (

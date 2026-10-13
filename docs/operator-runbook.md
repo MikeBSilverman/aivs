@@ -3,10 +3,13 @@
 For ISAC staff running an AIVS instance. Assumes you have read
 [`deployment-topology.md`](deployment-topology.md) and the instance is stood up.
 
-The role you hold is `system_admin`, and it is the most privileged in the system:
-you can validate and distribute embargoed vulnerability content to member firms,
-enrol and suspend organizations, and read every submission's receipts including
-those of anonymised submissions. Everything you do is written to an append-only
+The ISAC's powers are split across four roles and you may hold several:
+`isac_editor` validates and distributes embargoed content and changes embargoes;
+`isac_analyst` works the review queue; `isac_membership` enrols and suspends
+organizations and manages certificates and rosters; `system_admin` runs the
+instance. Every one of them requires you to be signed in -- the admin
+organisation's certificate on its own confers none of them. To script against the
+API, present your session token as `Authorization: Bearer <token>`. Everything you do is written to an append-only
 audit log.
 
 ---
@@ -65,9 +68,10 @@ members' TIPs forever.
 
 ### 1.3 Create the first system administrator
 
-An operator in the admin org with `role = system_admin`, TOTP enrolled. Then
-create a second one — a single `system_admin` is a single point of failure for
-distributing time-sensitive warnings.
+An operator in the admin org holding `system_admin`, TOTP enrolled, and operators
+holding `isac_editor` -- at least two, because a single editor is a single point
+of failure for distributing time-sensitive warnings. (The bootstrap command that
+creates the first operator is the next change; this section will name it.)
 
 Do not create more than about five. This role can distribute embargoed content to
 GSIBs; the accountability should stay legible.
@@ -223,7 +227,7 @@ draft ──► submitted ──► validated ──► distributed ──► su
 ```
 
 A member firm can never distribute its own content. The `validated` and
-`distributed` transitions are restricted to `system_admin` in
+`distributed` transitions are restricted to `isac_editor`, in a human session, in
 `can_transition_submission`, and that restriction is what keeps AIVS out of the
 business of brokering third-party disclosures.
 

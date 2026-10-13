@@ -32,7 +32,7 @@ from aivs_server.db.models import (
     WebhookDelivery,
 )
 from aivs_server.portal import routes as portal_routes
-from tests.conftest import proxy_headers
+from tests.conftest import ISAC_STAFF_ROLES, proxy_headers
 
 pytestmark = pytest.mark.db
 
@@ -59,7 +59,7 @@ def bundle(name: str = "Prompt injection in agent runtime") -> str:
     )
 
 
-async def make_operator(session, secret_box, org, *, role=OperatorRole.ANALYST, email=None):
+async def make_operator(session, secret_box, org, *, roles=(OperatorRole.ANALYST,), email=None):
     secret = generate_totp_secret()
     # Explicit id: the seal is bound to it, and the column default is not
     # applied until flush.
@@ -69,7 +69,7 @@ async def make_operator(session, secret_box, org, *, role=OperatorRole.ANALYST, 
         org_id=org.id,
         email=email or f"analyst@{org.slug}.test",
         display_name="Test Analyst",
-        role=role,
+        roles=list(roles),
         password_hash=hash_password(PASSWORD),
         totp_secret_encrypted=secret_box.seal(
             secret, purpose=SecretPurpose.TOTP, subject=operator_id
@@ -95,7 +95,7 @@ async def isac_operator(session, secret_box, make_org, make_cert):
     org = await make_org("hosting-isac", org_type=OrgType.ADMIN)
     pem, _cert = await make_cert(org)
     operator, secret = await make_operator(
-        session, secret_box, org, role=OperatorRole.SYSTEM_ADMIN, email="ops@isac.test"
+        session, secret_box, org, roles=ISAC_STAFF_ROLES, email="ops@isac.test"
     )
     return org, operator, secret, pem
 

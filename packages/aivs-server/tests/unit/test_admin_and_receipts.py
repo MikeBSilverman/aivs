@@ -25,13 +25,6 @@ API = "/api/v1"
 
 
 @pytest.fixture
-async def isac(make_org, make_cert):
-    org = await make_org("hosting-isac", org_type=OrgType.ADMIN)
-    pem, _ = await make_cert(org)
-    return org, pem
-
-
-@pytest.fixture
 async def member(make_org, make_cert):
     async def _build(slug: str = "meridian-global"):
         org = await make_org(slug, org_type=OrgType.GSIB)
@@ -62,7 +55,7 @@ async def test_isac_enrols_an_organisation_as_pending(client, isac, session):
     response = await client.post(
         f"{API}/orgs",
         json={"slug": "atlantic-clearing", "name": "Atlantic Clearing", "org_type": "section9"},
-        headers=proxy_headers(pem),
+        headers=pem,
     )
     assert response.status_code == 201
     body = response.json()
@@ -73,9 +66,9 @@ async def test_isac_enrols_an_organisation_as_pending(client, isac, session):
 async def test_duplicate_slug_is_a_conflict_not_a_500(client, isac):
     _org, pem = isac
     payload = {"slug": "atlantic-clearing", "name": "Atlantic", "org_type": "section9"}
-    first = await client.post(f"{API}/orgs", json=payload, headers=proxy_headers(pem))
+    first = await client.post(f"{API}/orgs", json=payload, headers=pem)
     assert first.status_code == 201
-    second = await client.post(f"{API}/orgs", json=payload, headers=proxy_headers(pem))
+    second = await client.post(f"{API}/orgs", json=payload, headers=pem)
     assert second.status_code == 409
 
 
@@ -85,7 +78,7 @@ async def test_member_listing_shows_only_itself(client, isac, member):
     await client.post(
         f"{API}/orgs",
         json={"slug": "another-firm", "name": "Another", "org_type": "gsib"},
-        headers=proxy_headers(isac[1]),
+        headers=isac[1],
     )
 
     response = await client.get(f"{API}/orgs", headers=proxy_headers(pem))
@@ -96,11 +89,11 @@ async def test_member_listing_shows_only_itself(client, isac, member):
 async def test_suspension_takes_effect_on_the_next_request(client, isac, member, session):
     """Suspending an organisation is a single field change with immediate effect."""
     org, member_pem = await member()
-    _isac_org, isac_pem = isac
+    _isac_org, isac_headers = isac
 
     assert (await client.get(f"{API}/whoami", headers=proxy_headers(member_pem))).status_code == 200
 
-    suspended = await client.post(f"{API}/orgs/{org.id}/suspend", headers=proxy_headers(isac_pem))
+    suspended = await client.post(f"{API}/orgs/{org.id}/suspend", headers=isac_headers)
     assert suspended.status_code == 200
     assert suspended.json()["status"] == "suspended"
 
@@ -118,13 +111,13 @@ async def test_registering_a_certificate_derives_the_fingerprint(client, isac, m
     material nobody holds.
     """
     org, _member_pem = await member()
-    _isac_org, isac_pem = isac
+    _isac_org, isac_headers = isac
     pem, expected_fingerprint, _cert = ca.issue("meridian-global-second-key")
 
     response = await client.post(
         f"{API}/orgs/{org.id}/certificates",
         json={"certificate_pem": pem, "label": "rotation key"},
-        headers=proxy_headers(isac_pem),
+        headers=isac_headers,
     )
     assert response.status_code == 201
     assert response.json()["fingerprint_sha256"] == expected_fingerprint
@@ -132,7 +125,7 @@ async def test_registering_a_certificate_derives_the_fingerprint(client, isac, m
 
 async def test_an_expired_certificate_is_refused_at_registration(client, isac, member, ca):
     org, _pem = await member()
-    _isac_org, isac_pem = isac
+    _isac_org, isac_headers = isac
     now = dt.datetime.now(dt.UTC)
     pem, _fp, _cert = ca.issue(
         "already-expired",
@@ -143,19 +136,19 @@ async def test_an_expired_certificate_is_refused_at_registration(client, isac, m
     response = await client.post(
         f"{API}/orgs/{org.id}/certificates",
         json={"certificate_pem": pem},
-        headers=proxy_headers(isac_pem),
+        headers=isac_headers,
     )
     assert response.status_code == 400
 
 
 async def test_unparseable_certificate_is_a_400_not_a_traceback(client, isac, member):
     org, _pem = await member()
-    _isac_org, isac_pem = isac
+    _isac_org, isac_headers = isac
 
     response = await client.post(
         f"{API}/orgs/{org.id}/certificates",
         json={"certificate_pem": "-----BEGIN CERTIFICATE-----\nnope\n-----END CERTIFICATE-----"},
-        headers=proxy_headers(isac_pem),
+        headers=isac_headers,
     )
     assert response.status_code == 400
 
@@ -163,7 +156,7 @@ async def test_unparseable_certificate_is_a_400_not_a_traceback(client, isac, me
 async def test_revocation_locks_the_holder_out_immediately(client, isac, member, session):
     """Revocation is authoritative in the database; no CRL round trip."""
     org, member_pem = await member()
-    _isac_org, isac_pem = isac
+    _isac_org, isac_headers = isac
 
     certificate = (
         await session.execute(select(ClientCertificate).where(ClientCertificate.org_id == org.id))
@@ -171,9 +164,7 @@ async def test_revocation_locks_the_holder_out_immediately(client, isac, member,
 
     assert (await client.get(f"{API}/whoami", headers=proxy_headers(member_pem))).status_code == 200
 
-    revoked = await client.post(
-        f"{API}/certificates/{certificate.id}/revoke", headers=proxy_headers(isac_pem)
-    )
+    revoked = await client.post(f"{API}/certificates/{certificate.id}/revoke", headers=isac_headers)
     assert revoked.status_code == 200
     assert revoked.json()["status"] == "revoked"
 
@@ -219,7 +210,7 @@ async def test_creating_a_circle_creates_its_collection(client, isac, session):
     response = await client.post(
         f"{API}/circles",
         json={"slug": "section9", "name": "Section 9", "minimum_tlp": "amber_strict"},
-        headers=proxy_headers(pem),
+        headers=pem,
     )
     assert response.status_code == 201
     circle_id = uuid.UUID(response.json()["id"])
@@ -256,13 +247,13 @@ async def test_member_sees_only_circles_it_belongs_to(
 
 async def test_isac_can_add_and_remove_circle_members(client, isac, member, make_circle, session):
     org, member_pem = await member()
-    _isac_org, isac_pem = isac
+    _isac_org, isac_headers = isac
     circle = await make_circle("section9")
 
     added = await client.post(
         f"{API}/circles/{circle.id}/members",
         json={"org_ids": [str(org.id)], "role": "contributor"},
-        headers=proxy_headers(isac_pem),
+        headers=isac_headers,
     )
     assert added.status_code == 204
 
@@ -270,7 +261,7 @@ async def test_isac_can_add_and_remove_circle_members(client, isac, member, make
     assert [c["role"] for c in seen.json()["circles"]] == ["contributor"]
 
     removed = await client.delete(
-        f"{API}/circles/{circle.id}/members/{org.id}", headers=proxy_headers(isac_pem)
+        f"{API}/circles/{circle.id}/members/{org.id}", headers=isac_headers
     )
     assert removed.status_code == 204
 
@@ -289,16 +280,14 @@ async def test_re_applying_a_roster_is_idempotent(client, isac, member, make_cir
     from aivs_server.db.models import CircleMembership  # noqa: PLC0415 - local to this test
 
     org, _pem = await member()
-    _isac_org, isac_pem = isac
+    _isac_org, isac_headers = isac
     circle = await make_circle("section9")
     body = {"org_ids": [str(org.id)]}
 
-    first = await client.post(
-        f"{API}/circles/{circle.id}/members", json=body, headers=proxy_headers(isac_pem)
-    )
+    first = await client.post(f"{API}/circles/{circle.id}/members", json=body, headers=isac_headers)
     assert first.status_code == 204
     second = await client.post(
-        f"{API}/circles/{circle.id}/members", json=body, headers=proxy_headers(isac_pem)
+        f"{API}/circles/{circle.id}/members", json=body, headers=isac_headers
     )
     assert second.status_code == 204, "re-applying a roster must not fail"
 
@@ -426,12 +415,10 @@ async def test_receipts_are_not_visible_to_other_members(
 async def test_the_isac_can_read_receipts(client, isac, member, make_circle, join_circle, publish):
     """The ISAC must be able to answer 'prove we warned member X'."""
     org, _pem = await member()
-    _isac_org, isac_pem = isac
+    _isac_org, isac_headers = isac
     circle = await make_circle("section9")
     await join_circle(org, circle)
     submission, _obj, _dist = await publish(org, circle)
 
-    response = await client.get(
-        f"{API}/submissions/{submission.id}/receipts", headers=proxy_headers(isac_pem)
-    )
+    response = await client.get(f"{API}/submissions/{submission.id}/receipts", headers=isac_headers)
     assert response.status_code == 200

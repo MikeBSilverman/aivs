@@ -36,8 +36,10 @@ from aivs_schemas.models import (
 )
 from aivs_server.auth.deps import AuthenticatedContext, SessionDep
 from aivs_server.auth.policy import (
+    can_change_embargo,
+    can_review_submissions,
     can_view_submission,
-    is_system_admin,
+    is_isac_editor,
     require,
 )
 from aivs_server.db.models import (
@@ -143,7 +145,7 @@ async def list_submissions(
     all of them, which is what lets it work a validation queue.
     """
     query = select(Submission).order_by(Submission.created_at.desc()).limit(limit)
-    if not is_system_admin(ctx):
+    if not can_review_submissions(ctx):
         query = query.where(Submission.submitter_org_id == ctx.org_id)
     if state is not None:
         query = query.where(Submission.state == state)
@@ -305,10 +307,7 @@ async def distribute(
     """
     submission = await _require_visible_submission(session, ctx, submission_id, for_update=True)
 
-    require(
-        is_system_admin(ctx),
-        "distribute_requires_system_admin",
-    )
+    require(is_isac_editor(ctx), "distribute_requires_isac_editor")
 
     try:
         await distribute_submission(
@@ -353,7 +352,7 @@ async def release_embargo(
     wild, waiting for a timer set days ago is the wrong answer.
     """
     submission = await _require_visible_submission(session, ctx, submission_id, for_update=True)
-    require(is_system_admin(ctx), "embargo_release_requires_system_admin")
+    require(can_change_embargo(ctx), "embargo_release_requires_isac_editor")
 
     try:
         await release_embargo_now(session, ctx, submission_id=submission.id, reason=payload.reason)
@@ -388,7 +387,7 @@ async def extend_embargo_endpoint(
     list it carries is ignored, since extension does not change who receives.
     """
     submission = await _require_visible_submission(session, ctx, submission_id, for_update=True)
-    require(is_system_admin(ctx), "embargo_extend_requires_system_admin")
+    require(can_change_embargo(ctx), "embargo_extend_requires_isac_editor")
 
     if payload.release_at is None:
         raise HTTPException(

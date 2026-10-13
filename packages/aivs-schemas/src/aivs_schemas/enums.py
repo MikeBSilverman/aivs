@@ -61,17 +61,34 @@ class OrgStatus(StrEnum):
 
 
 class OperatorRole(StrEnum):
-    """Role of a human operator within their organisation.
+    """A role a human operator holds. An operator may hold several.
 
-    Roles are strictly ordered in privilege: an ``ORG_ADMIN`` can do everything
-    an ``ANALYST`` can, and a ``SYSTEM_ADMIN`` (the hosting ISAC) everything an
-    ``ORG_ADMIN`` can. See ``aivs_server.auth.policy`` -- this ordering is
-    enforced there and nowhere else.
+    Two families. Within a member organisation, ``ANALYST`` and ``ORG_ADMIN``.
+    At the hosting ISAC, four roles that are deliberately *not* ordered, because
+    the point of splitting them is that holding one does not imply another:
+
+    * ``ISAC_ANALYST`` -- the review queue and every submission's record; drafts,
+      assigns, proposes. Never validates, distributes or reveals.
+    * ``ISAC_EDITOR`` -- the editorial verbs: validate, distribute, embargo,
+      reveal an anonymous submitter, create circles and set their floors.
+    * ``ISAC_MEMBERSHIP`` -- enrolment, activation, suspension, quarantine,
+      circle rosters, certificates. Reads organisations and counts; never
+      content.
+    * ``SYSTEM_ADMIN`` -- runs the instance: operators and settings. Lost the
+      editorial verbs it used to hold.
+
+    A small ISAC gives one person several of these; a larger one keeps them
+    apart. That is the ISAC's decision, made when it assigns roles. Every one
+    of them requires a human session -- see ``auth.policy``, the only place a
+    role is interpreted.
     """
 
     ANALYST = "analyst"
     ORG_ADMIN = "org_admin"
     SYSTEM_ADMIN = "system_admin"
+    ISAC_ANALYST = "isac_analyst"
+    ISAC_EDITOR = "isac_editor"
+    ISAC_MEMBERSHIP = "isac_membership"
 
 
 class CertStatus(StrEnum):

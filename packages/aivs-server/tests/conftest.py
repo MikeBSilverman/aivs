@@ -23,6 +23,7 @@ from __future__ import annotations
 import atexit
 import base64
 import datetime as dt
+import functools
 import os
 import shutil
 import tempfile
@@ -32,6 +33,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
+import pyotp
 import pytest
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
@@ -47,11 +49,14 @@ from aivs_schemas.enums import (
     CertStatus,
     CircleRole,
     DiscoveryScope,
+    OperatorRole,
     OrgStatus,
     OrgType,
     SubmissionState,
 )
-from aivs_server.auth.secretbox import SecretBox
+from aivs_server.auth.passwords import hash_password
+from aivs_server.auth.secretbox import SecretBox, SecretPurpose
+from aivs_server.auth.sessions import establish_session
 from aivs_server.config import Settings
 from aivs_server.db import models
 from aivs_server.db.base import Base
@@ -635,3 +640,107 @@ async def publish(session: AsyncSession):
 def repo_root() -> Path:
     """Absolute path to the repository root."""
     return Path(__file__).resolve().parents[3]
+
+
+# ---------------------------------------------------------------------------
+# Humans
+# ---------------------------------------------------------------------------
+#: What a small ISAC's staff member typically holds: the review queue, the
+#: editorial verbs, and membership administration. ``SYSTEM_ADMIN`` is left out
+#: on purpose -- it runs the instance and grants no editorial power.
+ISAC_STAFF_ROLES: tuple[OperatorRole, ...] = (
+    OperatorRole.ISAC_ANALYST,
+    OperatorRole.ISAC_EDITOR,
+    OperatorRole.ISAC_MEMBERSHIP,
+)
+
+#: Password used for every test operator.
+TEST_OPERATOR_PASSWORD = "correct-horse-battery-staple"
+
+
+@functools.cache
+def _test_operator_password_hash() -> str:
+    """Hashed once per run. Argon2 is slow by design, and every ISAC fixture
+    creates an operator, so hashing per test doubled the suite's runtime."""
+    return hash_password(TEST_OPERATOR_PASSWORD)
+
+
+@pytest.fixture
+async def make_operator(session: AsyncSession, secret_box: SecretBox):
+    """Factory creating an operator with a sealed TOTP seed. Returns it and the seed."""
+
+    async def _make(
+        org: models.Organization,
+        *,
+        roles: tuple[OperatorRole, ...] = (OperatorRole.ANALYST,),
+        email: str | None = None,
+    ) -> tuple[models.Operator, str]:
+        seed = pyotp.random_base32()
+        # Explicit id: the seal is bound to it, and the column default is not
+        # applied until flush.
+        operator_id = uuid.uuid4()
+        operator = models.Operator(
+            id=operator_id,
+            org_id=org.id,
+            email=email or f"{uuid.uuid4().hex[:8]}@{org.slug}.test",
+            display_name="Test Operator",
+            roles=list(roles),
+            password_hash=_test_operator_password_hash(),
+            totp_secret_encrypted=secret_box.seal(
+                seed, purpose=SecretPurpose.TOTP, subject=operator_id
+            ),
+            is_active=True,
+        )
+        session.add(operator)
+        await session.commit()
+        await session.refresh(operator)
+        return operator, seed
+
+    return _make
+
+
+@pytest.fixture
+async def human_headers(session: AsyncSession, settings: Settings):
+    """Factory: request headers for a signed-in human, session as a bearer token.
+
+    The session is established directly rather than through the login form, and
+    bound to ``pem``'s certificate exactly as a login over that path would be.
+    """
+
+    async def _headers(operator: models.Operator, pem: str) -> dict[str, str]:
+        certificate = x509.load_pem_x509_certificate(pem.encode("ascii"))
+        established = await establish_session(
+            session,
+            settings,
+            operator=operator,
+            cert_fingerprint=certificate.fingerprint(hashes.SHA256()).hex(),
+        )
+        await session.commit()
+        return {**proxy_headers(pem), "authorization": f"Bearer {established.token}"}
+
+    return _headers
+
+
+@pytest.fixture
+async def isac(make_org, make_cert, make_operator, human_headers):
+    """The hosting ISAC, as a signed-in member of its staff: ``(org, headers)``.
+
+    A person, not a certificate: every ISAC power requires a human session, and
+    the admin organisation's certificate on its own authenticates nothing more
+    than the network path.
+    """
+    org = await make_org("hosting-isac", org_type=OrgType.ADMIN)
+    pem, _ = await make_cert(org)
+    operator, _seed = await make_operator(org, roles=ISAC_STAFF_ROLES)
+    return org, await human_headers(operator, pem)
+
+
+@pytest.fixture
+async def isac_machine(make_org, make_cert):
+    """The admin organisation's *certificate* alone: ``(org, headers)``.
+
+    Kept for the tests that prove a certificate confers no ISAC power.
+    """
+    org = await make_org("hosting-isac-machine", org_type=OrgType.ADMIN)
+    pem, _ = await make_cert(org)
+    return org, proxy_headers(pem)

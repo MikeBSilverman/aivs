@@ -47,7 +47,7 @@ async def sealed_under_old(session, make_org):
         org_id=org.id,
         email=f"analyst-{uuid.uuid4().hex[:8]}@example.test",
         display_name="Analyst",
-        role=OperatorRole.ANALYST,
+        roles=[OperatorRole.ANALYST],
         password_hash=hash_password("correct-horse-battery-staple"),
         totp_secret_encrypted=old.seal(TOTP_SEED, purpose=SecretPurpose.TOTP, subject=operator_id),
         is_active=True,

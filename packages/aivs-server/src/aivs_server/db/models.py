@@ -134,8 +134,13 @@ class Operator(TimestampMixin, Base):
     )
     email: Mapped[str] = mapped_column(String(320), nullable=False, unique=True)
     display_name: Mapped[str] = mapped_column(String(200), nullable=False)
-    role: Mapped[OperatorRole] = mapped_column(
-        pg_enum(OperatorRole, "operator_role"), nullable=False, default=OperatorRole.ANALYST
+    #: Every role this operator holds. A set, because a small ISAC's staff wear
+    #: several hats and a large one's do not; which is a policy the ISAC sets by
+    #: assigning roles, not one the schema should make for it.
+    roles: Mapped[list[OperatorRole]] = mapped_column(
+        ARRAY(pg_enum(OperatorRole, "operator_role")),
+        nullable=False,
+        default=lambda: [OperatorRole.ANALYST],
     )
     #: Argon2id hash. Never a raw password, never a reversible encryption.
     password_hash: Mapped[str] = mapped_column(Text, nullable=False)

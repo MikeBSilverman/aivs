@@ -29,13 +29,6 @@ pytestmark = pytest.mark.db
 API = "/api/v1"
 
 
-@pytest.fixture
-async def isac(make_org, make_cert):
-    org = await make_org("hosting-isac", org_type=OrgType.ADMIN)
-    pem, _ = await make_cert(org)
-    return org, pem
-
-
 async def members_of(session, circle_id: uuid.UUID) -> list[CircleMembership]:
     """Current members: open intervals only."""
     return list(
@@ -56,14 +49,14 @@ async def members_of(session, circle_id: uuid.UUID) -> list[CircleMembership]:
 # ---------------------------------------------------------------------------
 async def test_a_roster_can_be_applied_in_one_call(client, isac, make_org, make_circle, session):
     """Thirty firms should be one call, not thirty."""
-    _isac_org, isac_pem = isac
+    _isac_org, isac_headers = isac
     circle = await make_circle("gsib")
     orgs = [await make_org(f"firm-{index}", org_type=OrgType.GSIB) for index in range(5)]
 
     response = await client.post(
         f"{API}/circles/{circle.id}/members",
         json={"org_ids": [str(org.id) for org in orgs], "role": "contributor"},
-        headers=proxy_headers(isac_pem),
+        headers=isac_headers,
     )
     assert response.status_code == 204, response.text
 
@@ -79,7 +72,7 @@ async def test_a_roster_can_be_given_as_slugs(client, isac, make_org, make_circl
     names, not UUIDs. Making them resolve thirty identifiers first is how a bulk
     endpoint goes unused.
     """
-    _isac_org, isac_pem = isac
+    _isac_org, isac_headers = isac
     circle = await make_circle("section9")
     for slug in ("atlantic-clearing", "meridian-global"):
         await make_org(slug, org_type=OrgType.SECTION9)
@@ -87,7 +80,7 @@ async def test_a_roster_can_be_given_as_slugs(client, isac, make_org, make_circl
     response = await client.post(
         f"{API}/circles/{circle.id}/members",
         json={"org_slugs": ["atlantic-clearing", "meridian-global"]},
-        headers=proxy_headers(isac_pem),
+        headers=isac_headers,
     )
     assert response.status_code == 204, response.text
     assert len(await members_of(session, circle.id)) == 2
@@ -100,14 +93,14 @@ async def test_an_unknown_name_fails_the_whole_batch(client, isac, make_org, mak
     was complete when it was not, which for embargoed intelligence is the
     failure that matters.
     """
-    _isac_org, isac_pem = isac
+    _isac_org, isac_headers = isac
     circle = await make_circle("section9")
     await make_org("real-firm", org_type=OrgType.SECTION9)
 
     response = await client.post(
         f"{API}/circles/{circle.id}/members",
         json={"org_slugs": ["real-firm", "no-such-firm"]},
-        headers=proxy_headers(isac_pem),
+        headers=isac_headers,
     )
     assert response.status_code == 404
     assert "no-such-firm" in response.text
@@ -115,10 +108,10 @@ async def test_an_unknown_name_fails_the_whole_batch(client, isac, make_org, mak
 
 
 async def test_naming_nobody_is_refused(client, isac, make_circle):
-    _isac_org, isac_pem = isac
+    _isac_org, isac_headers = isac
     circle = await make_circle("section9")
     response = await client.post(
-        f"{API}/circles/{circle.id}/members", json={}, headers=proxy_headers(isac_pem)
+        f"{API}/circles/{circle.id}/members", json={}, headers=isac_headers
     )
     assert response.status_code == 400
 
@@ -132,7 +125,7 @@ async def test_a_membership_can_be_restored_with_its_original_date(
     start date -- losing access it legitimately had -- or to edit the database,
     which is worse. It is a deliberate act, and the audit record says so.
     """
-    _isac_org, isac_pem = isac
+    _isac_org, isac_headers = isac
     circle = await make_circle("section9")
     org = await make_org("restored-firm", org_type=OrgType.SECTION9)
     original = dt.datetime(2024, 3, 1, tzinfo=dt.UTC)
@@ -140,7 +133,7 @@ async def test_a_membership_can_be_restored_with_its_original_date(
     response = await client.post(
         f"{API}/circles/{circle.id}/members",
         json={"org_ids": [str(org.id)], "joined_at": original.isoformat()},
-        headers=proxy_headers(isac_pem),
+        headers=isac_headers,
     )
     assert response.status_code == 204, response.text
 
@@ -200,7 +193,7 @@ async def test_a_member_cannot_remove_another_firm_from_a_circle(
 # ---------------------------------------------------------------------------
 async def test_a_rule_populates_the_circle_when_it_is_created(client, isac, make_org, session):
     """A circle created with a rule is not empty until someone else enrols."""
-    _isac_org, isac_pem = isac
+    _isac_org, isac_headers = isac
     for slug in ("firm-a", "firm-b"):
         org = await make_org(slug, org_type=OrgType.SECTION9)
         del org
@@ -213,7 +206,7 @@ async def test_a_rule_populates_the_circle_when_it_is_created(client, isac, make
             "name": "Section 9",
             "auto_member_org_types": ["section9"],
         },
-        headers=proxy_headers(isac_pem),
+        headers=isac_headers,
     )
     assert created.status_code == 201, created.text
     circle_id = uuid.UUID(created.json()["id"])
@@ -225,11 +218,11 @@ async def test_a_rule_populates_the_circle_when_it_is_created(client, isac, make
 
 async def test_activating_an_organisation_puts_it_in_its_circles(client, isac, make_org, session):
     """The point of the feature: covered from day one, not from when someone remembers."""
-    _isac_org, isac_pem = isac
+    _isac_org, isac_headers = isac
     created = await client.post(
         f"{API}/circles",
         json={"slug": "section9", "name": "Section 9", "auto_member_org_types": ["section9"]},
-        headers=proxy_headers(isac_pem),
+        headers=isac_headers,
     )
     circle_id = uuid.UUID(created.json()["id"])
     assert await members_of(session, circle_id) == []
@@ -237,7 +230,7 @@ async def test_activating_an_organisation_puts_it_in_its_circles(client, isac, m
     enrolled = await client.post(
         f"{API}/orgs",
         json={"slug": "newly-enrolled", "name": "Newly Enrolled", "org_type": "section9"},
-        headers=proxy_headers(isac_pem),
+        headers=isac_headers,
     )
     assert enrolled.status_code == 201
     org_id = uuid.UUID(enrolled.json()["id"])
@@ -245,7 +238,7 @@ async def test_activating_an_organisation_puts_it_in_its_circles(client, isac, m
     # Pending, so not yet a participant.
     assert await members_of(session, circle_id) == [], "enrolment alone is not participation"
 
-    activated = await client.post(f"{API}/orgs/{org_id}/activate", headers=proxy_headers(isac_pem))
+    activated = await client.post(f"{API}/orgs/{org_id}/activate", headers=isac_headers)
     assert activated.status_code == 200
 
     rows = await members_of(session, circle_id)
@@ -261,7 +254,7 @@ async def test_a_rule_added_member_starts_now_not_at_the_beginning(
     history -- which turns a convenience into the largest disclosure in the
     product.
     """
-    _isac_org, isac_pem = isac
+    _isac_org, isac_headers = isac
     circle = await make_circle("section9")
     circle.auto_member_org_types = ["section9"]
     collection = await make_collection(circle)
@@ -278,10 +271,10 @@ async def test_a_rule_added_member_starts_now_not_at_the_beginning(
     enrolled = await client.post(
         f"{API}/orgs",
         json={"slug": "late-joiner", "name": "Late Joiner", "org_type": "section9"},
-        headers=proxy_headers(isac_pem),
+        headers=isac_headers,
     )
     org_id = uuid.UUID(enrolled.json()["id"])
-    await client.post(f"{API}/orgs/{org_id}/activate", headers=proxy_headers(isac_pem))
+    await client.post(f"{API}/orgs/{org_id}/activate", headers=isac_headers)
 
     newcomer = await session.get(type(incumbent), org_id)
     assert newcomer is not None
@@ -305,24 +298,24 @@ async def test_suspension_and_reactivation_keep_the_membership_and_its_start(
     circle's whole back catalogue. Suspension is status, refused on every
     request; it does not touch the membership.
     """
-    _isac_org, isac_pem = isac
+    _isac_org, isac_headers = isac
     created = await client.post(
         f"{API}/circles",
         json={"slug": "section9", "name": "Section 9", "auto_member_org_types": ["section9"]},
-        headers=proxy_headers(isac_pem),
+        headers=isac_headers,
     )
     circle_id = uuid.UUID(created.json()["id"])
 
     org = await make_org("temporarily-in", org_type=OrgType.SECTION9)
-    await client.post(f"{API}/orgs/{org.id}/activate", headers=proxy_headers(isac_pem))
+    await client.post(f"{API}/orgs/{org.id}/activate", headers=isac_headers)
     org_id = org.id
     [before] = await members_of(session, circle_id)
     before_id, before_joined = before.id, before.joined_at
 
-    await client.post(f"{API}/orgs/{org_id}/suspend", headers=proxy_headers(isac_pem))
+    await client.post(f"{API}/orgs/{org_id}/suspend", headers=isac_headers)
     session.expire_all()
     during_ids = [membership.id for membership in await members_of(session, circle_id)]
-    await client.post(f"{API}/orgs/{org_id}/activate", headers=proxy_headers(isac_pem))
+    await client.post(f"{API}/orgs/{org_id}/activate", headers=isac_headers)
     session.expire_all()
     [after] = await members_of(session, circle_id)
 
@@ -340,26 +333,26 @@ async def test_a_rule_never_reinstates_a_member_an_operator_removed(
     reactivation anywhere -- quietly re-added the firm an operator had taken out.
     The control is a firm of the same type that was not removed: it stays in.
     """
-    _isac_org, isac_pem = isac
+    _isac_org, isac_headers = isac
     created = await client.post(
         f"{API}/circles",
         json={"slug": "section9", "name": "Section 9", "auto_member_org_types": ["section9"]},
-        headers=proxy_headers(isac_pem),
+        headers=isac_headers,
     )
     circle_id = uuid.UUID(created.json()["id"])
     removed_id = (await make_org("taken-out", org_type=OrgType.SECTION9)).id
     kept_id = (await make_org("left-alone", org_type=OrgType.SECTION9)).id
     for org_id in (removed_id, kept_id):
-        await client.post(f"{API}/orgs/{org_id}/activate", headers=proxy_headers(isac_pem))
+        await client.post(f"{API}/orgs/{org_id}/activate", headers=isac_headers)
 
     response = await client.delete(
-        f"{API}/circles/{circle_id}/members/{removed_id}", headers=proxy_headers(isac_pem)
+        f"{API}/circles/{circle_id}/members/{removed_id}", headers=isac_headers
     )
     assert response.status_code == 204
 
     # Anything that triggers a reconcile of this circle.
     trigger_id = (await make_org("newcomer", org_type=OrgType.SECTION9)).id
-    await client.post(f"{API}/orgs/{trigger_id}/activate", headers=proxy_headers(isac_pem))
+    await client.post(f"{API}/orgs/{trigger_id}/activate", headers=isac_headers)
 
     session.expire_all()
     current = {membership.org_id for membership in await members_of(session, circle_id)}
@@ -374,11 +367,11 @@ async def test_a_rule_never_removes_a_hand_added_member(client, isac, make_org, 
     rule does not get to reverse -- and a feature that silently undid operator
     intent is one operators route around.
     """
-    _isac_org, isac_pem = isac
+    _isac_org, isac_headers = isac
     created = await client.post(
         f"{API}/circles",
         json={"slug": "section9", "name": "Section 9", "auto_member_org_types": ["section9"]},
-        headers=proxy_headers(isac_pem),
+        headers=isac_headers,
     )
     circle_id = uuid.UUID(created.json()["id"])
 
@@ -387,12 +380,12 @@ async def test_a_rule_never_removes_a_hand_added_member(client, isac, make_org, 
     await client.post(
         f"{API}/circles/{circle_id}/members",
         json={"org_ids": [str(guest.id)]},
-        headers=proxy_headers(isac_pem),
+        headers=isac_headers,
     )
 
     # Something that triggers a reconcile.
     other = await make_org("a-section9-firm", org_type=OrgType.SECTION9)
-    await client.post(f"{API}/orgs/{other.id}/activate", headers=proxy_headers(isac_pem))
+    await client.post(f"{API}/orgs/{other.id}/activate", headers=isac_headers)
 
     rows = await members_of(session, circle_id)
     by_org = {row.org_id: row for row in rows}
@@ -403,10 +396,10 @@ async def test_a_rule_never_removes_a_hand_added_member(client, isac, make_org, 
 
 async def test_a_circle_without_a_rule_is_untouched(client, isac, make_org, make_circle, session):
     """Rules are opt-in; every existing circle keeps behaving as it did."""
-    _isac_org, isac_pem = isac
+    _isac_org, isac_headers = isac
     circle = await make_circle("manual-circle")
 
     org = await make_org("some-firm", org_type=OrgType.SECTION9)
-    await client.post(f"{API}/orgs/{org.id}/activate", headers=proxy_headers(isac_pem))
+    await client.post(f"{API}/orgs/{org.id}/activate", headers=isac_headers)
 
     assert await members_of(session, circle.id) == []

@@ -393,6 +393,6 @@ class WhoAmI(_Out):
     org_type: OrgType
     org_status: OrgStatus
     operator_id: uuid.UUID | None = None
-    operator_role: OperatorRole | None = None
+    operator_roles: list[OperatorRole] = []
     circles: list[WhoAmICircle]
     server_time: dt.datetime

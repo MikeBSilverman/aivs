@@ -163,23 +163,20 @@ async def test_a_registered_forgery_cannot_authenticate(client, make_org, make_c
 
 
 @pytest.mark.db
-async def test_registration_refuses_a_forgery_and_accepts_the_genuine(
-    client, make_org, make_cert, ca
-):
-    isac = await make_org("hosting-isac", org_type=OrgType.ADMIN)
-    isac_pem, _ = await make_cert(isac)
+async def test_registration_refuses_a_forgery_and_accepts_the_genuine(client, isac, make_org, ca):
+    _isac_org, isac_headers = isac
     member = await make_org("meridian-global", org_type=OrgType.GSIB)
     genuine_pem, _fp, _cert = ca.issue("meridian-global-second-key")
 
     refused = await client.post(
         f"{API}/orgs/{member.id}/certificates",
         json={"certificate_pem": _pem(_forged(ca, "meridian-global-forged"))},
-        headers=proxy_headers(isac_pem),
+        headers=isac_headers,
     )
     accepted = await client.post(
         f"{API}/orgs/{member.id}/certificates",
         json={"certificate_pem": genuine_pem},
-        headers=proxy_headers(isac_pem),
+        headers=isac_headers,
     )
 
     assert refused.status_code == 400

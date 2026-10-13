@@ -13,7 +13,7 @@ thing to say about a product an organisation is meant to operate.
 **No new authorization.** Every route here calls the same policy predicates the
 native API does and then the same service functions, so the portal cannot become
 a second, weaker door to the same operations. Where a route needs the hosting
-ISAC, it says ``require(is_system_admin(ctx), ...)`` before it acts, not after.
+ISAC, it says ``require(<the role predicate>(ctx), ...)`` before it acts, not after.
 
 **Reads before writes, and names before identifiers.** A group is easier to
 select and correspondingly easier to be wrong about, so the circle screen
@@ -36,7 +36,7 @@ from sqlalchemy.exc import IntegrityError
 from aivs_schemas.enums import CertStatus, CircleRole, OrgStatus, OrgType
 from aivs_server.audit.log import AuditAction, record
 from aivs_server.auth.deps import SessionDep, SettingsDep
-from aivs_server.auth.policy import is_system_admin, require
+from aivs_server.auth.policy import is_isac_editor, is_isac_membership, require
 from aivs_server.db.models import (
     Circle,
     CircleMembership,
@@ -95,7 +95,7 @@ def _parse_names(raw: str) -> tuple[list[uuid.UUID], list[str]]:
 async def orgs_screen(request: Request, settings: SettingsDep, session: SessionDep) -> Response:
     """Every enrolled organisation, with its certificates."""
     ctx, _csrf = await current_session(request, settings, session)
-    require(is_system_admin(ctx), "portal_admin_orgs")
+    require(is_isac_membership(ctx), "portal_admin_orgs")
 
     orgs = (await session.execute(select(Organization).order_by(Organization.slug))).scalars().all()
     certificate_counts: dict[uuid.UUID, int] = {
@@ -146,7 +146,7 @@ async def enrol_org(
     """Enrol an organisation. It starts pending, exactly as over the API."""
     ctx, csrf_hash = await current_session(request, settings, session)
     require_csrf(csrf_token, csrf_hash)
-    require(is_system_admin(ctx), "portal_admin_orgs")
+    require(is_isac_membership(ctx), "portal_admin_orgs")
 
     response = _redirect("/portal/admin/orgs")
     try:
@@ -193,7 +193,7 @@ async def org_status(
     """
     ctx, csrf_hash = await current_session(request, settings, session)
     require_csrf(csrf_token, csrf_hash)
-    require(is_system_admin(ctx), "portal_admin_orgs")
+    require(is_isac_membership(ctx), "portal_admin_orgs")
 
     if action not in ("activate", "suspend"):
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Not found")
@@ -237,7 +237,7 @@ async def org_status(
 async def circles_screen(request: Request, settings: SettingsDep, session: SessionDep) -> Response:
     """Every circle, with its membership count and rule."""
     ctx, _csrf = await current_session(request, settings, session)
-    require(is_system_admin(ctx), "portal_admin_circles")
+    require(is_isac_editor(ctx) or is_isac_membership(ctx), "portal_admin_circles")
 
     circles = (await session.execute(select(Circle).order_by(Circle.slug))).scalars().all()
     counts: dict[uuid.UUID, int] = {
@@ -292,7 +292,7 @@ async def create_circle_screen(
     """Create a circle, its collection, and populate any rule immediately."""
     ctx, csrf_hash = await current_session(request, settings, session)
     require_csrf(csrf_token, csrf_hash)
-    require(is_system_admin(ctx), "portal_admin_circles")
+    require(is_isac_editor(ctx), "portal_admin_circles")
 
     from aivs_schemas.enums import TLP  # noqa: PLC0415 - local to this handler
 
@@ -351,7 +351,7 @@ async def circle_detail(
     see this?" needs it in front of them.
     """
     ctx, _csrf = await current_session(request, settings, session)
-    require(is_system_admin(ctx), "portal_admin_circles")
+    require(is_isac_editor(ctx) or is_isac_membership(ctx), "portal_admin_circles")
 
     circle = await session.get(Circle, circle_id)
     if circle is None:
@@ -431,7 +431,7 @@ async def add_members_screen(
     """
     ctx, csrf_hash = await current_session(request, settings, session)
     require_csrf(csrf_token, csrf_hash)
-    require(is_system_admin(ctx), "portal_admin_circles")
+    require(is_isac_membership(ctx), "portal_admin_circles")
 
     circle = await session.get(Circle, circle_id)
     if circle is None:
@@ -490,7 +490,7 @@ async def remove_member_screen(
     """Remove one organisation from a circle."""
     ctx, csrf_hash = await current_session(request, settings, session)
     require_csrf(csrf_token, csrf_hash)
-    require(is_system_admin(ctx), "portal_admin_circles")
+    require(is_isac_membership(ctx), "portal_admin_circles")
 
     closed = await remove_circle_member(
         session, ctx, circle_id=circle_id, org_id=org_id, now=dt.datetime.now(dt.UTC), via="portal"

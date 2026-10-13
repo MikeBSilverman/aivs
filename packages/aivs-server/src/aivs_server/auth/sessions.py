@@ -348,7 +348,7 @@ async def resolve_session(
         circles=circles,
         cert_fingerprint=row.cert_fingerprint,
         operator_id=operator.id,
-        operator_role=operator.role,
+        operator_roles=frozenset(operator.roles),
         request_id=request_id,
         source_ip=source_ip,
     )

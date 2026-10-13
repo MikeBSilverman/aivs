@@ -202,7 +202,9 @@ scope as a first-class operational control**, not paperwork.
 ## Cross-cutting: the insider at the hosting ISAC
 
 The highest-capability actor in this model, and the one the product's positioning
-creates. What a `system_admin` can legitimately do:
+creates. What the hosting ISAC's staff can legitimately do, between them
+(the powers are split across `isac_analyst`, `isac_editor`, `isac_membership`
+and `system_admin`, each requiring a human session; see `docs/authz-model.md`):
 
 - Read every submission's workflow record (`can_view_submission`) and every
   submission's receipts (`can_view_submission_receipts`) — including the true

@@ -58,13 +58,6 @@ def bundle() -> dict:
 
 
 @pytest.fixture
-async def isac(make_org, make_cert):
-    org = await make_org("hosting-isac", org_type=OrgType.ADMIN)
-    pem, _ = await make_cert(org)
-    return org, pem
-
-
-@pytest.fixture
 async def subscriber(make_org, make_cert, make_circle, join_circle, session, secret_box):
     """A member of a circle with an active webhook."""
 
@@ -91,7 +84,7 @@ async def deliveries(session) -> list[WebhookDelivery]:
     return list((await session.execute(select(WebhookDelivery))).scalars().all())
 
 
-async def distribute(client, isac_pem, member_pem, circle, *, release_at=None):
+async def distribute(client, isac_headers, member_pem, circle, *, release_at=None):
     """Drive a submission all the way to distributed. Returns its id."""
     created = await client.post(
         f"{API}/submissions",
@@ -105,9 +98,9 @@ async def distribute(client, isac_pem, member_pem, circle, *, release_at=None):
     assert created.status_code == 201, created.text
     submission_id = created.json()["id"]
 
-    for verb, pem in (("submit", member_pem), ("validate", isac_pem)):
+    for verb, headers in (("submit", proxy_headers(member_pem)), ("validate", isac_headers)):
         step = await client.post(
-            f"{API}/submissions/{submission_id}/{verb}", json={}, headers=proxy_headers(pem)
+            f"{API}/submissions/{submission_id}/{verb}", json={}, headers=headers
         )
         assert step.status_code == 200, step.text
 
@@ -117,7 +110,7 @@ async def distribute(client, isac_pem, member_pem, circle, *, release_at=None):
     sent = await client.post(
         f"{API}/submissions/{submission_id}/distribute",
         json=body,
-        headers=proxy_headers(isac_pem),
+        headers=isac_headers,
     )
     assert sent.status_code == 200, sent.text
     return submission_id
@@ -144,7 +137,7 @@ async def test_the_notification_carries_no_content(
     the worst case for a leaked one must be that somebody learns a submission
     exists.
     """
-    _isac_org, isac_pem = isac
+    _isac_org, isac_headers = isac
     circle = await make_circle("section9")
     collection = await make_collection(circle)
     _sub_org, _sub_pem, webhook = await subscriber(circle)
@@ -153,7 +146,7 @@ async def test_the_notification_carries_no_content(
     submitter_pem, _ = await make_cert(submitter)
     await join_circle(submitter, circle)
 
-    submission_id = await distribute(client, isac_pem, submitter_pem, circle)
+    submission_id = await distribute(client, isac_headers, submitter_pem, circle)
 
     queued = await deliveries(session)
     assert len(queued) == 1
@@ -181,7 +174,7 @@ async def test_a_submitter_is_not_notified_about_their_own_submission(
     secret_box,
 ):
     """Noise at best; for an anonymous submission, a small confirmation."""
-    _isac_org, isac_pem = isac
+    _isac_org, isac_headers = isac
     circle = await make_circle("section9")
     await make_collection(circle)
 
@@ -200,7 +193,7 @@ async def test_a_submitter_is_not_notified_about_their_own_submission(
     )
     await session.commit()
 
-    await distribute(client, isac_pem, submitter_pem, circle)
+    await distribute(client, isac_headers, submitter_pem, circle)
     assert await deliveries(session) == []
 
 
@@ -223,7 +216,7 @@ async def test_an_embargoed_distribution_notifies_nobody_yet(
     Telling a member about content they cannot read is either useless or an
     early disclosure that something is coming.
     """
-    _isac_org, isac_pem = isac
+    _isac_org, isac_headers = isac
     circle = await make_circle("section9")
     await make_collection(circle)
     await subscriber(circle)
@@ -234,7 +227,7 @@ async def test_an_embargoed_distribution_notifies_nobody_yet(
 
     await distribute(
         client,
-        isac_pem,
+        isac_headers,
         submitter_pem,
         circle,
         release_at=dt.datetime.now(dt.UTC) + dt.timedelta(days=2),
@@ -257,7 +250,7 @@ async def test_releasing_an_embargo_early_notifies(
 
     An operator releases early because something is being exploited now.
     """
-    _isac_org, isac_pem = isac
+    _isac_org, isac_headers = isac
     circle = await make_circle("section9")
     await make_collection(circle)
     await subscriber(circle)
@@ -268,7 +261,7 @@ async def test_releasing_an_embargo_early_notifies(
 
     submission_id = await distribute(
         client,
-        isac_pem,
+        isac_headers,
         submitter_pem,
         circle,
         release_at=dt.datetime.now(dt.UTC) + dt.timedelta(days=2),
@@ -278,7 +271,7 @@ async def test_releasing_an_embargo_early_notifies(
     released = await client.post(
         f"{API}/submissions/{submission_id}/embargo/release",
         json={},
-        headers=proxy_headers(isac_pem),
+        headers=isac_headers,
     )
     assert released.status_code == 200, released.text
 
@@ -307,7 +300,7 @@ async def test_an_organisation_that_joined_later_is_not_notified(
     telling them it exists would advertise something they are not entitled to --
     and would be the back-catalogue leak reappearing as metadata.
     """
-    _isac_org, isac_pem = isac
+    _isac_org, isac_headers = isac
     circle = await make_circle("section9")
     await make_collection(circle)
 
@@ -330,7 +323,7 @@ async def test_an_organisation_that_joined_later_is_not_notified(
     )
     await session.commit()
 
-    await distribute(client, isac_pem, submitter_pem, circle)
+    await distribute(client, isac_headers, submitter_pem, circle)
     assert await deliveries(session) == []
 
 
@@ -345,7 +338,7 @@ async def test_a_webhook_subscribed_to_other_events_is_skipped(
     session,
     secret_box,
 ):
-    _isac_org, isac_pem = isac
+    _isac_org, isac_headers = isac
     circle = await make_circle("section9")
     await make_collection(circle)
 
@@ -368,7 +361,7 @@ async def test_a_webhook_subscribed_to_other_events_is_skipped(
     )
     await session.commit()
 
-    await distribute(client, isac_pem, submitter_pem, circle)
+    await distribute(client, isac_headers, submitter_pem, circle)
     assert await deliveries(session) == []
 
 
@@ -388,7 +381,7 @@ async def test_a_queued_notification_starts_undelivered(
     That is what makes delivery survive a restart: a process that dies before
     sending has still written down that it owes one.
     """
-    _isac_org, isac_pem = isac
+    _isac_org, isac_headers = isac
     circle = await make_circle("section9")
     await make_collection(circle)
     await subscriber(circle)
@@ -397,7 +390,7 @@ async def test_a_queued_notification_starts_undelivered(
     submitter_pem, _ = await make_cert(submitter)
     await join_circle(submitter, circle)
 
-    await distribute(client, isac_pem, submitter_pem, circle)
+    await distribute(client, isac_headers, submitter_pem, circle)
 
     queued = (await deliveries(session))[0]
     assert queued.delivered_at is None
@@ -414,7 +407,7 @@ async def test_a_former_member_is_not_notified_and_a_current_one_is(
     had ever covered the moment of release qualified -- and a former member was
     told what was shared after it went. The current subscriber is the control.
     """
-    _isac_org, isac_pem = isac
+    _isac_org, isac_headers = isac
     circle = await make_circle("section9")
     await make_collection(circle)
     _current_org, _pem, current_hook = await subscriber(circle)
@@ -446,7 +439,7 @@ async def test_a_former_member_is_not_notified_and_a_current_one_is(
     )
     await session.commit()
 
-    await distribute(client, isac_pem, submitter_pem, circle)
+    await distribute(client, isac_headers, submitter_pem, circle)
 
     notified = {delivery.webhook_id for delivery in await deliveries(session)}
     assert former_hook_id not in notified

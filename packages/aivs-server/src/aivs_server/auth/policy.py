@@ -52,14 +52,19 @@ Intervals = tuple[MembershipInterval, ...]
 __all__ = [
     "PolicyDeniedError",
     "can_administer_circle",
+    "can_change_embargo",
     "can_manage_org",
     "can_read_circle",
+    "can_review_submissions",
     "can_submit_to_circle",
     "can_transition_submission",
     "can_view_submission",
     "can_view_submission_receipts",
     "distribution_visibility_clause",
     "is_active",
+    "is_isac_editor",
+    "is_isac_membership",
+    "is_isac_staff",
     "is_org_admin",
     "is_system_admin",
     "readable_circle_grants",
@@ -114,27 +119,69 @@ def is_active(ctx: AuthContext) -> bool:
     return ctx.org_status is OrgStatus.ACTIVE
 
 
-def is_system_admin(ctx: AuthContext) -> bool:
-    """Return whether the caller operates the instance (the hosting ISAC).
+def _isac_human(ctx: AuthContext, role: OperatorRole) -> bool:
+    """A human at the hosting ISAC, signed in, holding ``role``.
 
-    A human at the hosting ISAC must additionally hold the ``SYSTEM_ADMIN``
-    role: an analyst who happens to work at the ISAC is an analyst. A machine
-    identity belonging to the admin organisation is the instance itself.
+    Every ISAC power requires a human session. A machine identity belonging to
+    the admin organisation used to be "the instance itself" and held all of
+    them -- and whoever controls the issuing CA can mint one, which in the
+    managed-hosting mode is the host. That made editorial control, and every
+    access grant, available to the one party the topology says must not have
+    them. A certificate now authenticates the network path and nothing more.
     """
-    if not is_active(ctx) or ctx.org_type is not OrgType.ADMIN:
-        return False
-    if ctx.operator_id is not None:
-        return ctx.operator_role is OperatorRole.SYSTEM_ADMIN
-    return ctx.auth_method is AuthMethod.MTLS
+    return (
+        is_active(ctx)
+        and ctx.org_type is OrgType.ADMIN
+        and ctx.auth_method is AuthMethod.PORTAL_SESSION
+        and role in ctx.operator_roles
+    )
+
+
+def is_system_admin(ctx: AuthContext) -> bool:
+    """Runs the instance: operators and settings. Holds no editorial verb."""
+    return _isac_human(ctx, OperatorRole.SYSTEM_ADMIN)
+
+
+def is_isac_editor(ctx: AuthContext) -> bool:
+    """Validates, distributes, sets embargoes, reveals, and governs circles."""
+    return _isac_human(ctx, OperatorRole.ISAC_EDITOR)
+
+
+def is_isac_membership(ctx: AuthContext) -> bool:
+    """Enrols, suspends and quarantines organisations; keeps rosters and certificates."""
+    return _isac_human(ctx, OperatorRole.ISAC_MEMBERSHIP)
+
+
+def can_review_submissions(ctx: AuthContext) -> bool:
+    """Sees every submission's workflow record and the review queue.
+
+    The ISAC's analysts and editors. Not membership staff: they enrol firms and
+    never need to read what those firms filed.
+    """
+    return _isac_human(ctx, OperatorRole.ISAC_ANALYST) or is_isac_editor(ctx)
+
+
+def is_isac_staff(ctx: AuthContext) -> bool:
+    """Holds any ISAC role. Decides what the portal *shows*, never what anyone may do."""
+    return any(
+        _isac_human(ctx, role)
+        for role in (
+            OperatorRole.ISAC_ANALYST,
+            OperatorRole.ISAC_EDITOR,
+            OperatorRole.ISAC_MEMBERSHIP,
+            OperatorRole.SYSTEM_ADMIN,
+        )
+    )
 
 
 def is_org_admin(ctx: AuthContext) -> bool:
     """Return whether the caller may administer their own organisation."""
-    if not is_active(ctx):
-        return False
-    if is_system_admin(ctx):
-        return True
-    return ctx.operator_role in (OperatorRole.ORG_ADMIN, OperatorRole.SYSTEM_ADMIN)
+    return is_active(ctx) and OperatorRole.ORG_ADMIN in ctx.operator_roles
+
+
+def can_change_embargo(ctx: AuthContext) -> bool:
+    """Release early or extend an embargo: an editorial decision."""
+    return is_isac_editor(ctx)
 
 
 # ---------------------------------------------------------------------------
@@ -181,7 +228,7 @@ def can_administer_circle(ctx: AuthContext, circle_id: uuid.UUID) -> bool:
     circle, rather than by widening some caller's idea of what "admin" means.
     """
     del circle_id
-    return is_system_admin(ctx)
+    return is_isac_membership(ctx)
 
 
 def readable_circle_ids(ctx: AuthContext) -> frozenset[uuid.UUID]:
@@ -233,7 +280,7 @@ def can_view_submission(ctx: AuthContext, submission: Submission) -> bool:
     """
     if not is_active(ctx):
         return False
-    if is_system_admin(ctx):
+    if can_review_submissions(ctx):
         return True
     return submission.submitter_org_id == ctx.org_id
 
@@ -247,7 +294,7 @@ def can_view_submission_receipts(ctx: AuthContext, submission: Submission) -> bo
     """
     if not is_active(ctx):
         return False
-    if is_system_admin(ctx):
+    if can_review_submissions(ctx):
         return True
     return submission.submitter_org_id == ctx.org_id
 
@@ -262,10 +309,11 @@ def can_transition_submission(
     * the move is legal in the state machine (``aivs_schemas.enums``), and
     * the caller holds the right to perform that particular move.
 
-    Validation and distribution are reserved to the hosting ISAC. That is the
-    human checkpoint which keeps AIVS clear of the coordinated-disclosure
-    consent problem: content reaches members only when the ISAC has decided it
-    should, never merely because a member uploaded it.
+    Validation and distribution are reserved to an ISAC editor, in a human
+    session -- never a certificate alone. That is the human checkpoint which
+    keeps AIVS clear of the coordinated-disclosure consent problem: content
+    reaches members only when the ISAC has decided it should, never merely
+    because a member uploaded it.
     """
     if not is_active(ctx):
         return False
@@ -273,7 +321,7 @@ def can_transition_submission(
         return False
 
     is_submitter = submission.submitter_org_id == ctx.org_id
-    admin = is_system_admin(ctx)
+    admin = is_isac_editor(ctx)
 
     match target:
         case SubmissionState.SUBMITTED:
@@ -292,12 +340,12 @@ def can_manage_org(ctx: AuthContext, target_org_id: uuid.UUID) -> bool:
     """Return whether the caller may administer ``target_org_id``.
 
     Enrolling organisations, issuing and revoking their certificates, and
-    changing their status belong to the hosting ISAC. An organisation
+    changing their status belong to the ISAC's membership staff. An organisation
     administrator may manage their own organisation only.
     """
     if not is_active(ctx):
         return False
-    if is_system_admin(ctx):
+    if is_isac_membership(ctx):
         return True
     return is_org_admin(ctx) and target_org_id == ctx.org_id
 

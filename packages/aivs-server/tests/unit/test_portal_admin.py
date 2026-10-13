@@ -41,7 +41,7 @@ async def signed_in_admin(client, make_org, make_cert, session, secret_box):
         org_id=org.id,
         email="isac-admin@example.test",
         display_name="ISAC Admin",
-        role=OperatorRole.SYSTEM_ADMIN,
+        roles=[OperatorRole.ISAC_EDITOR, OperatorRole.ISAC_MEMBERSHIP],
         password_hash=hash_password(PASSWORD),
         totp_secret_encrypted=secret_box.seal(
             secret, purpose=SecretPurpose.TOTP, subject=operator_id
@@ -110,7 +110,7 @@ async def test_a_member_analyst_cannot_reach_the_screens(
         org_id=org.id,
         email="analyst@example.test",
         display_name="Analyst",
-        role=OperatorRole.ANALYST,
+        roles=[OperatorRole.ANALYST],
         password_hash=hash_password(PASSWORD),
         totp_secret_encrypted=secret_box.seal(
             secret, purpose=SecretPurpose.TOTP, subject=operator_id

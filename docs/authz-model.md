@@ -60,16 +60,22 @@ else the certificate fingerprint, else the org id.
 
 ## 3. Roles
 
-### Organization-level roles (`OperatorRole`) — humans only
+### Operator roles (`OperatorRole`) — humans only, and held as a set
 
-Strictly ordered in privilege, and the ordering is enforced in `auth.policy` and
-nowhere else.
+An operator holds a **set** of roles. A small ISAC's staff wear several hats and
+a large one's do not; which is the ISAC's decision, made when it assigns roles.
+Every role is interpreted in `auth.policy` and nowhere else.
 
-| Role | Grants |
-| --- | --- |
-| `analyst` | Act within their own organization: create and edit drafts, submit, read the circles the org belongs to, record acknowledgments, view their org's own submissions and receipts. |
-| `org_admin` | Everything an analyst can, plus administer **their own organization only** — its operators, its certificates, its settings (`can_manage_org(ctx, target) → target == ctx.org_id`). |
-| `system_admin` | Everything an org admin can, plus operate the instance. Only meaningful at the hosting ISAC. |
+| Role | Held at | Grants |
+| --- | --- | --- |
+| `analyst` | a member firm | Act within their own organization: create and edit drafts, submit, read the circles the org belongs to, record acknowledgments, view their org's own submissions and receipts. |
+| `org_admin` | a member firm | Administer **their own organization only** — its operators, its certificates (`can_manage_org(ctx, target) → target == ctx.org_id`). |
+| `isac_analyst` | the hosting ISAC | The review queue and every submission's workflow record and receipts. Never validates, distributes or changes an embargo. |
+| `isac_editor` | the hosting ISAC | The editorial verbs: validate, distribute, release or extend an embargo; create circles. Also sees what an `isac_analyst` sees. |
+| `isac_membership` | the hosting ISAC | Enrol, activate and suspend organizations; circle rosters; register and revoke any organization's certificates; list organizations. **Never reads a submission.** |
+| `system_admin` | the hosting ISAC | Runs the instance: operators and settings. **Holds no editorial verb** — it used to hold all of them. |
+
+No ISAC role implies another.
 
 ### Circle-level roles (`CircleRole`) — per organization, per circle
 
@@ -92,21 +98,34 @@ These are orthogonal to `OperatorRole`. An `org_admin` at a firm holding only
 holding `contributor` can. Organization role governs what you may do *to your own
 organization*; circle role governs what you may do *inside a circle*.
 
-### What makes a caller a system administrator
+### A certificate is not a person
 
 ```python
-def is_system_admin(ctx) -> bool:
-    if not is_active(ctx) or ctx.org_type is not OrgType.ADMIN:
-        return False
-    if ctx.operator_id is not None:
-        return ctx.operator_role is OperatorRole.SYSTEM_ADMIN
-    return ctx.auth_method is AuthMethod.MTLS
+def _isac_human(ctx, role) -> bool:
+    return (
+        is_active(ctx)
+        and ctx.org_type is OrgType.ADMIN
+        and ctx.auth_method is AuthMethod.PORTAL_SESSION
+        and role in ctx.operator_roles
+    )
 ```
 
-Two conditions, both required. The organization must be the `admin` org **and**,
-for a human, that human must hold `system_admin`. An analyst who happens to work
-at the hosting ISAC is an analyst — employment is not authority. A machine
-identity belonging to the admin organization is the instance itself.
+Every ISAC power is a human, signed in with password and TOTP over a
+certificate-bound session, holding the specific role. **A machine identity of the
+admin organization holds none of them.** It used to be "the instance itself" and
+held all of them — and whoever controls the issuing CA can mint one, which in the
+managed-hosting mode is the host. That put editorial control and every access
+grant (enrolment, rosters, certificates) in the hands of the one party the
+topology says must not have them. The admin organization still holds
+certificates, because its staff reach the portal over a certificate-bound path;
+a certificate now authenticates the network path and nothing more.
+
+ISAC staff use the native API with their session as a bearer token
+(`Authorization: Bearer <session token>`). It is the portal session's own token:
+bound to the certificate on the request, with the same deadlines and revocation.
+A bearer header is never sent by a browser on its own, so this path needs no
+CSRF token. A header that is present but not a valid session is **refused**,
+never quietly downgraded to the certificate's machine identity.
 
 ---
 
@@ -185,34 +204,34 @@ organization or a submission it submitted.
 Legend: **Y** allowed · **N** denied · **circle** allowed only for circles the
 caller's org belongs to, at the role shown.
 
-| Resource / action | Suspended or pending org | Analyst (member firm) | Org admin (member firm) | Machine cert (member firm) | System admin (hosting ISAC) | ISAC machine cert |
+| Resource / action | Suspended or pending org | Analyst (member firm) | Org admin (member firm) | Machine cert (member firm) | ISAC human, by role | ISAC machine cert |
 | --- | --- | --- | --- | --- | --- | --- |
 | **Circles** |
 | Read circle content (TAXII objects, manifest) | N | circle: any role | circle: any role | circle: any role | circle: any role — **no bypass** | circle: any role — **no bypass** |
-| Contribute into a circle | N | circle: `contributor`/`circle_admin` | circle: `contributor`/`circle_admin` | circle: `contributor`/`circle_admin` | Y | Y |
-| Manage circle membership | N | N | N | N | Y | Y |
-| Create or delete a circle | N | N | N | N | Y | Y |
+| Contribute into a circle | N | circle: `contributor`/`circle_admin` | circle: `contributor`/`circle_admin` | circle: `contributor`/`circle_admin` | circle: as any member | circle: as any member |
+| Manage circle membership | N | N | N | N | `isac_membership` | N |
+| Create or delete a circle | N | N | N | N | `isac_editor` | N |
 | **Submissions** |
 | Create a draft | N | Y (own org) | Y (own org) | Y (own org) | Y | Y |
-| View submission workflow record | N | own only | own only | own only | Y (all) | Y (all) |
-| View submission receipts | N | own only | own only | own only | Y (all) | Y (all) |
+| View submission workflow record | N | own only | own only | own only | `isac_analyst`, `isac_editor` (all) | own only |
+| View submission receipts | N | own only | own only | own only | `isac_analyst`, `isac_editor` (all) | own only |
 | `draft` → `submitted` | N | own | own | own | N¹ | N¹ |
-| `submitted` → `validated` | N | N | N | N | **Y** | **Y** |
-| `validated` → `distributed` | N | N | N | N | **Y** | **Y** |
-| any → `withdrawn` (where legal) | N | own | own | own | Y | Y |
-| `distributed` → `superseded` | N | own | own | own | Y | Y |
+| `submitted` → `validated` | N | N | N | N | **`isac_editor`** | **N** |
+| `validated` → `distributed` | N | N | N | N | **`isac_editor`** | **N** |
+| any → `withdrawn` (where legal) | N | own | own | own | `isac_editor` | own |
+| `distributed` → `superseded` | N | own | own | own | `isac_editor` | own |
 | **Organizations and certificates** |
-| Enrol a new organization | N | N | N | N | Y | Y |
-| Change an org's `status` | N | N | N | N | Y | Y |
-| Register / revoke a certificate | N | N | own org | N² | Y (any org) | Y (any org) |
-| Manage operators | N | N | own org | N² | Y (any org) | Y (any org) |
+| Enrol a new organization | N | N | N | N | `isac_membership` | N |
+| Change an org's `status` | N | N | N | N | `isac_membership` | N |
+| Register / revoke a certificate | N | N | own org | N² | `isac_membership` (any org) | N |
+| Manage operators | N | N | own org | N² | `system_admin` (any org) | N |
 | **Embargoes** |
-| Set an embargo on own submission | N | own | own | own | Y | Y |
-| Lift or extend an embargo | N | N | N | N | Y | Y |
+| Set an embargo on own submission | N | own | own | own | Y | own |
+| Lift or extend an embargo | N | N | N | N | `isac_editor` | N |
 | **Acknowledgments** |
 | Record `acknowledged` / `actioned` [^ack] | N | own org | own org | own org | N | N |
 | **Audit log** |
-| Read the audit log | N | N | N | N | Y | Y |
+| Read the audit log | N | N | N | N | not yet built³ | N |
 | Modify the audit log | N | N | N | N | **N — database-enforced** | **N — database-enforced** |
 
 ¹ `can_transition_submission` grants `submitted` to `is_submitter` only. A system
@@ -220,9 +239,12 @@ administrator does not submit on a member's behalf; if the ISAC itself is the
 submitter (its own org submitted the content) it qualifies as `is_submitter` on
 that submission like any other org.
 
-² `can_manage_org` requires `is_system_admin(ctx)` or `is_org_admin(ctx)`, and
-`is_org_admin` tests `ctx.operator_role in (ORG_ADMIN, SYSTEM_ADMIN)`. A machine
-identity has no `operator_role`, so **a member firm's mTLS certificate cannot
+³ The plan's `auditor` role; until it exists there is no audit read route, and
+this table said `Y` for one that did not exist.
+
+² `can_manage_org` requires `is_isac_membership(ctx)` or `is_org_admin(ctx)`, and
+`is_org_admin` tests `ORG_ADMIN in ctx.operator_roles`. A machine identity has
+no roles, so **a member firm's mTLS certificate cannot
 administer its own organization.** Org administration is a human, portal-session
 action. This is worth knowing before someone tries to automate certificate
 rotation against the native API with the outgoing certificate.
@@ -246,11 +268,14 @@ rotation against the native API with the outgoing certificate.
 | Predicate | Question | Rule |
 | --- | --- | --- |
 | `is_active(ctx)` | May this caller transact at all? | `org_status is ACTIVE`. First check in every other predicate. |
-| `is_system_admin(ctx)` | Does this caller operate the instance? | Active **and** `org_type is ADMIN` **and** (`SYSTEM_ADMIN` operator, or an mTLS machine identity). |
-| `is_org_admin(ctx)` | May this caller administer their own org? | Active **and** (system admin, or `operator_role` in `{ORG_ADMIN, SYSTEM_ADMIN}`). |
+| `is_system_admin(ctx)` | Does this caller run the instance? | A human ISAC session holding `SYSTEM_ADMIN`. No editorial power. |
+| `is_isac_editor(ctx)` | May they validate, distribute, change embargoes, create circles? | A human ISAC session holding `ISAC_EDITOR`. |
+| `is_isac_membership(ctx)` | May they enrol, suspend, keep rosters and certificates? | A human ISAC session holding `ISAC_MEMBERSHIP`. |
+| `can_review_submissions(ctx)` | May they see every submission's record? | `ISAC_ANALYST` or `ISAC_EDITOR`, human ISAC session. |
+| `is_org_admin(ctx)` | May this caller administer their own org? | Active **and** `ORG_ADMIN in operator_roles`. |
 | `can_read_circle(ctx, cid)` | May they read this circle? | Active **and** `cid in ctx.circles`. No admin bypass. |
 | `can_submit_to_circle(ctx, cid)` | May they contribute here? | Active **and** role in `{CONTRIBUTOR, CIRCLE_ADMIN}`. |
-| `can_administer_circle(ctx, cid)` | May they change membership? | Active **and** (system admin, or `CIRCLE_ADMIN` in that circle). |
+| `can_administer_circle(ctx, cid)` | May they change membership? | `is_isac_membership(ctx)`. |
 | `readable_circle_ids(ctx)` | Which circles may they read? | `ctx.circle_ids`, or the empty set if inactive. |
 | `writable_circle_ids(ctx)` | Which may they contribute to? | Circles where the role is contributor or circle admin. |
 | `can_view_submission(ctx, s)` | May they see the workflow record? | Active **and** (system admin, or `s.submitter_org_id == ctx.org_id`). |

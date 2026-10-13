@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import datetime as dt
 import uuid
+from typing import Any
 
 import pytest
 from sqlalchemy.dialects import postgresql
@@ -38,12 +39,15 @@ from aivs_server.auth.policy import (
     can_administer_circle,
     can_manage_org,
     can_read_circle,
+    can_review_submissions,
     can_submit_to_circle,
     can_transition_submission,
     can_view_submission,
     can_view_submission_receipts,
     distribution_visibility_clause,
     is_active,
+    is_isac_editor,
+    is_isac_membership,
     is_org_admin,
     is_system_admin,
     readable_circle_ids,
@@ -64,12 +68,12 @@ def context(
     org_type: OrgType = OrgType.GSIB,
     status: OrgStatus = OrgStatus.ACTIVE,
     circles: dict[uuid.UUID, CircleRole] | None = None,
-    operator_role: OperatorRole | None = None,
+    operator_roles: frozenset[OperatorRole] | None = None,
     org_id: uuid.UUID = ORG,
 ) -> AuthContext:
     """Build a synthetic caller.
 
-    ``operator_role`` set implies a portal session with an operator id, which is
+    ``operator_roles`` set implies a portal session with an operator id, which is
     how the human-authorization branches are reached at all.
     """
     return AuthContext(
@@ -77,7 +81,7 @@ def context(
         org_slug="test-org",
         org_type=org_type,
         org_status=status,
-        auth_method=(AuthMethod.PORTAL_SESSION if operator_role is not None else AuthMethod.MTLS),
+        auth_method=(AuthMethod.PORTAL_SESSION if operator_roles is not None else AuthMethod.MTLS),
         circles={
             circle_id: (
                 value
@@ -87,8 +91,8 @@ def context(
             for circle_id, value in (circles or {}).items()
         },
         cert_fingerprint="a" * 64,
-        operator_id=uuid.uuid4() if operator_role is not None else None,
-        operator_role=operator_role,
+        operator_id=uuid.uuid4() if operator_roles is not None else None,
+        operator_roles=operator_roles or frozenset(),
     )
 
 
@@ -145,67 +149,102 @@ def test_an_inactive_org_sees_no_content(status):
 
 
 # ---------------------------------------------------------------------------
-# System administration
+# The ISAC's powers: human, and split four ways (SF-42)
 # ---------------------------------------------------------------------------
-def test_a_machine_identity_at_the_admin_org_is_the_instance():
-    assert is_system_admin(context(org_type=OrgType.ADMIN)) is True
+ISAC_PREDICATES = {
+    "system_admin": is_system_admin,
+    "editor": is_isac_editor,
+    "membership": is_isac_membership,
+    "reviewer": can_review_submissions,
+}
+
+
+def isac_human(*roles: OperatorRole, **overrides: Any) -> AuthContext:
+    """A signed-in human at the hosting ISAC holding ``roles``."""
+    return context(org_type=OrgType.ADMIN, operator_roles=frozenset(roles), **overrides)
+
+
+@pytest.mark.parametrize("predicate", list(ISAC_PREDICATES), ids=list(ISAC_PREDICATES))
+def test_a_machine_identity_at_the_admin_org_holds_no_isac_power(predicate):
+    """Inverted from ``..._is_the_instance``, which asserted the defect.
+
+    A certificate of the admin organisation used to *be* the instance and held
+    every ISAC power. Whoever controls the issuing CA can mint one -- in the
+    managed mode, the host -- so editorial control and every access grant were
+    available to the party the topology says must not have them. The pair: the
+    same organisation, as a human holding every role, holds every power.
+    """
+    machine = context(org_type=OrgType.ADMIN)
+    everyone = isac_human(
+        OperatorRole.SYSTEM_ADMIN,
+        OperatorRole.ISAC_EDITOR,
+        OperatorRole.ISAC_MEMBERSHIP,
+        OperatorRole.ISAC_ANALYST,
+    )
+    assert ISAC_PREDICATES[predicate](machine) is False
+    assert ISAC_PREDICATES[predicate](everyone) is True
 
 
 @pytest.mark.parametrize(
-    ("role", "expected"),
+    ("role", "grants"),
     [
-        (OperatorRole.SYSTEM_ADMIN, True),
-        (OperatorRole.ORG_ADMIN, False),
-        (OperatorRole.ANALYST, False),
+        (OperatorRole.SYSTEM_ADMIN, {"system_admin"}),
+        (OperatorRole.ISAC_EDITOR, {"editor", "reviewer"}),
+        (OperatorRole.ISAC_MEMBERSHIP, {"membership"}),
+        (OperatorRole.ISAC_ANALYST, {"reviewer"}),
+        (OperatorRole.ORG_ADMIN, set()),
+        (OperatorRole.ANALYST, set()),
     ],
 )
-def test_a_human_at_the_isac_needs_the_system_admin_role(role, expected):
-    """Employment is not authority.
+def test_each_isac_role_grants_exactly_its_own_powers(role, grants):
+    """Employment is not authority, and no role implies another.
 
-    This is the operator branch of `is_system_admin`, which the HTTP surface
-    cannot reach today because no portal session exists yet — so without this
-    test the rule "an analyst who happens to work at the ISAC is an analyst"
-    would be an unverified comment.
+    ``system_admin`` runs the instance and holds no editorial verb; membership
+    staff enrol firms and never read what those firms filed.
     """
-    ctx = context(org_type=OrgType.ADMIN, operator_role=role)
-    assert is_system_admin(ctx) is expected
+    ctx = isac_human(role)
+    held = {name for name, predicate in ISAC_PREDICATES.items() if predicate(ctx)}
+    assert held == grants
 
 
 @pytest.mark.parametrize("org_type", [OrgType.GSIB, OrgType.SECTION9, OrgType.CRIT_INFRA])
-def test_no_member_org_can_be_a_system_admin(org_type):
-    """Not even one holding the system_admin operator role.
-
-    `org_type` is a database field a member cannot set, and it gates first.
-    """
-    ctx = context(org_type=org_type, operator_role=OperatorRole.SYSTEM_ADMIN)
-    assert is_system_admin(ctx) is False
+def test_no_member_org_holds_an_isac_power_whatever_its_roles(org_type):
+    """``org_type`` is a database field a member cannot set, and it gates first."""
+    ctx = context(
+        org_type=org_type,
+        operator_roles=frozenset(
+            {OperatorRole.SYSTEM_ADMIN, OperatorRole.ISAC_EDITOR, OperatorRole.ISAC_MEMBERSHIP}
+        ),
+    )
+    assert not any(predicate(ctx) for predicate in ISAC_PREDICATES.values())
 
 
 # ---------------------------------------------------------------------------
 # Organisation administration
 # ---------------------------------------------------------------------------
 def test_an_org_admin_may_manage_only_their_own_org():
-    ctx = context(operator_role=OperatorRole.ORG_ADMIN)
+    ctx = context(operator_roles=frozenset({OperatorRole.ORG_ADMIN}))
     assert can_manage_org(ctx, ORG) is True
     assert can_manage_org(ctx, OTHER_ORG) is False
 
 
 def test_an_analyst_may_manage_no_org():
-    ctx = context(operator_role=OperatorRole.ANALYST)
+    ctx = context(operator_roles=frozenset({OperatorRole.ANALYST}))
     assert can_manage_org(ctx, ORG) is False
 
 
 def test_a_machine_identity_may_not_manage_its_own_org():
     """A compromised member certificate must not mint itself a successor.
 
-    `operator_role` is None for mTLS, so the org-admin branch cannot be reached
-    by a machine. Certificate rotation is deliberately a human or ISAC action.
+    A machine has no roles, so the org-admin branch cannot be reached by one.
+    Certificate rotation is deliberately a human or ISAC action.
     """
     assert can_manage_org(context(), ORG) is False
 
 
-def test_the_isac_may_manage_any_org():
-    assert can_manage_org(context(org_type=OrgType.ADMIN), OTHER_ORG) is True
+def test_isac_membership_staff_may_manage_any_org_and_a_machine_may_not():
+    assert can_manage_org(isac_human(OperatorRole.ISAC_MEMBERSHIP), OTHER_ORG) is True
+    assert can_manage_org(context(org_type=OrgType.ADMIN), OTHER_ORG) is False
 
 
 # ---------------------------------------------------------------------------
@@ -255,7 +294,7 @@ def test_the_hosting_isac_administers_every_circle():
     still requires joining it, visibly. See
     test_the_isac_does_not_read_circles_it_has_not_joined.
     """
-    ctx = context(org_type=OrgType.ADMIN)
+    ctx = isac_human(OperatorRole.ISAC_MEMBERSHIP)
     assert can_administer_circle(ctx, CIRCLE) is True
     assert can_administer_circle(ctx, OTHER_CIRCLE) is True
 
@@ -263,7 +302,7 @@ def test_the_hosting_isac_administers_every_circle():
 def test_a_suspended_isac_administers_nothing():
     """The status check comes first here as it does everywhere else."""
     for status in INACTIVE:
-        ctx = context(org_type=OrgType.ADMIN, status=status)
+        ctx = isac_human(OperatorRole.ISAC_MEMBERSHIP, status=status)
         assert can_administer_circle(ctx, CIRCLE) is False
 
 
@@ -273,8 +312,10 @@ def test_the_isac_does_not_read_circles_it_has_not_joined():
     An ISAC that wants to read a circle joins it, visibly, so that a member's
     view of who receives their content is complete.
     """
-    ctx = context(org_type=OrgType.ADMIN)
-    assert is_system_admin(ctx) is True
+    ctx = isac_human(
+        OperatorRole.SYSTEM_ADMIN, OperatorRole.ISAC_EDITOR, OperatorRole.ISAC_MEMBERSHIP
+    )
+    assert is_isac_editor(ctx) is True
     assert can_read_circle(ctx, CIRCLE) is False
 
 
@@ -313,7 +354,7 @@ def test_who_may_perform_each_transition(state, target, by_submitter, by_isac):
     """
     record = submission(state=state)
     submitter = context()
-    isac = context(org_type=OrgType.ADMIN, org_id=OTHER_ORG)
+    isac = isac_human(OperatorRole.ISAC_EDITOR, org_id=OTHER_ORG)
 
     assert can_transition_submission(submitter, record, target) is by_submitter
     assert can_transition_submission(isac, record, target) is by_isac
@@ -341,7 +382,7 @@ def test_illegal_transitions_are_refused_even_for_the_isac(state, target):
     because members already hold it and withdrawal would be a false promise.
     """
     record = submission(state=state)
-    assert can_transition_submission(context(org_type=OrgType.ADMIN), record, target) is False
+    assert can_transition_submission(isac_human(OperatorRole.ISAC_EDITOR), record, target) is False
 
 
 # ---------------------------------------------------------------------------
@@ -350,7 +391,9 @@ def test_illegal_transitions_are_refused_even_for_the_isac(state, target):
 def test_submissions_are_visible_to_their_submitter_and_the_isac():
     record = submission(state=SubmissionState.DRAFT)
     assert can_view_submission(context(), record) is True
-    assert can_view_submission(context(org_type=OrgType.ADMIN, org_id=OTHER_ORG), record) is True
+    assert (
+        can_view_submission(isac_human(OperatorRole.ISAC_ANALYST, org_id=OTHER_ORG), record) is True
+    )
     assert can_view_submission(context(org_id=OTHER_ORG), record) is False
 
 

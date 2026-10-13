@@ -37,7 +37,9 @@ from aivs_server.auth.mtls import CertificateRejectedError, verify_issued_by
 from aivs_server.auth.policy import (
     can_administer_circle,
     can_manage_org,
-    is_system_admin,
+    is_isac_editor,
+    is_isac_membership,
+    is_isac_staff,
     require,
 )
 from aivs_server.auth.secretbox import SecretBox, SecretPurpose
@@ -105,7 +107,7 @@ async def create_org(
     The organisation starts ``pending``: enrolment and activation are separate
     steps, so a half-finished onboarding cannot authenticate.
     """
-    require(is_system_admin(ctx), "org_create_requires_system_admin")
+    require(is_isac_membership(ctx), "org_create_requires_isac_membership")
 
     organization = Organization(
         slug=payload.slug,
@@ -140,7 +142,7 @@ async def create_org(
 async def list_orgs(ctx: AuthenticatedContext, session: SessionDep) -> list[Organization]:
     """List organisations. Hosting ISAC sees all; a member sees only itself."""
     query = select(Organization).order_by(Organization.slug)
-    if not is_system_admin(ctx):
+    if not is_isac_staff(ctx):
         query = query.where(Organization.id == ctx.org_id)
     return list((await session.execute(query)).scalars().all())
 
@@ -150,7 +152,7 @@ async def activate_org(
     org_id: uuid.UUID, ctx: AuthenticatedContext, session: SessionDep
 ) -> Organization:
     """Activate an enrolled organisation. Hosting ISAC only."""
-    require(is_system_admin(ctx), "org_activate_requires_system_admin")
+    require(is_isac_membership(ctx), "org_activate_requires_isac_membership")
 
     organization = await session.get(Organization, org_id)
     if organization is None:
@@ -192,7 +194,7 @@ async def suspend_org(
     org_id: uuid.UUID, ctx: AuthenticatedContext, session: SessionDep
 ) -> Organization:
     """Suspend an organisation. Takes effect on their next request."""
-    require(is_system_admin(ctx), "org_suspend_requires_system_admin")
+    require(is_isac_membership(ctx), "org_suspend_requires_isac_membership")
 
     organization = await session.get(Organization, org_id)
     if organization is None:
@@ -373,7 +375,7 @@ async def create_circle(
     step: a circle with no collection is invisible over TAXII, which is a
     confusing half-configured state for members to hit.
     """
-    require(is_system_admin(ctx), "circle_create_requires_system_admin")
+    require(is_isac_editor(ctx), "circle_create_requires_isac_editor")
 
     circle = Circle(
         slug=payload.slug,
@@ -439,7 +441,7 @@ async def list_circles(ctx: AuthenticatedContext, session: SessionDep) -> list[C
     sensitive.
     """
     query = select(Circle).order_by(Circle.slug)
-    if not is_system_admin(ctx):
+    if not is_isac_staff(ctx):
         query = query.where(Circle.id.in_(ctx.circle_ids))
     return list((await session.execute(query)).scalars().all())
 

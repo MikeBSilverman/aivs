@@ -24,6 +24,7 @@ from aivs_server.audit.log import AuditAction, record_independently
 from aivs_server.auth.context import AuthContext, AuthMethod
 from aivs_server.auth.memberships import load_circle_grants
 from aivs_server.auth.mtls import CertificateRejectedError, extract_client_certificate
+from aivs_server.auth.sessions import SessionRejectedError, resolve_session
 from aivs_server.config import Settings, get_settings
 from aivs_server.db.engine import get_session
 from aivs_server.db.models import ClientCertificate, Organization
@@ -87,6 +88,46 @@ async def _reject(
     )
 
 
+async def _human_session_context(
+    request: Request,
+    settings: Settings,
+    session: AsyncSession,
+    *,
+    authorization: str,
+    cert_fingerprint: str,
+    source_ip: str | None,
+) -> AuthContext:
+    """Resolve a signed-in human presenting their session as a bearer token.
+
+    How ISAC staff reach the editorial and membership endpoints from a script:
+    every ISAC power requires a human session, and the API authenticates
+    machines. The token is the portal session's own, so it is bound to the
+    certificate on this request, carries the same deadlines and revocation,
+    and was issued only after password and TOTP. A bearer header is never sent
+    by a browser on its own, which is why this path needs no CSRF token where
+    the portal's cookie does.
+
+    A header that is present but not a valid session is refused outright. It is
+    never quietly downgraded to the certificate's machine identity: a caller who
+    asked to act as a person and is not one must not proceed as something else.
+    """
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() != "bearer" or not token.strip():
+        raise await _reject("authorization_malformed", request, source_ip)
+    try:
+        ctx, _csrf_hash = await resolve_session(
+            session,
+            settings,
+            token=token.strip(),
+            cert_fingerprint=cert_fingerprint,
+            request_id=request.scope.get("aivs_request_id", ""),
+            source_ip=source_ip,
+        )
+    except SessionRejectedError as rejection:
+        raise await _reject(f"bearer_{rejection.reason}", request, source_ip) from rejection
+    return ctx
+
+
 async def get_auth_context(
     request: Request,
     settings: SettingsDep,
@@ -107,6 +148,17 @@ async def get_auth_context(
         certificate = extract_client_certificate(settings, headers, source_ip)
     except CertificateRejectedError as rejection:
         raise await _reject(rejection.reason, request, source_ip) from rejection
+
+    authorization = headers.get("authorization")
+    if authorization is not None:
+        return await _human_session_context(
+            request,
+            settings,
+            session,
+            authorization=authorization,
+            cert_fingerprint=certificate.fingerprint_sha256,
+            source_ip=source_ip,
+        )
 
     row = (
         await session.execute(

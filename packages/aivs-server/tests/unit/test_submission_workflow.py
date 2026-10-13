@@ -56,14 +56,6 @@ async def member(make_org, make_cert):
 
 
 @pytest.fixture
-async def isac(make_org, make_cert):
-    """The hosting ISAC's own machine identity."""
-    org = await make_org("hosting-isac", org_type=OrgType.ADMIN)
-    pem, _ = await make_cert(org)
-    return org, pem
-
-
-@pytest.fixture
 async def circle(make_circle, make_collection):
     async def _build(slug: str = "section9", minimum_tlp: TLP = TLP.AMBER):
         c = await make_circle(slug)
@@ -187,12 +179,12 @@ async def test_a_member_cannot_validate_their_own_submission(client, member):
 
 async def test_a_member_cannot_distribute(client, member, isac, circle):
     _org, pem = await member()
-    _isac_org, isac_pem = isac
+    _isac_org, isac_headers = isac
     target, _collection = await circle()
 
     created = await create_draft(client, pem)
     await client.post(f"{API}/{created['id']}/submit", json={}, headers=proxy_headers(pem))
-    await client.post(f"{API}/{created['id']}/validate", json={}, headers=proxy_headers(isac_pem))
+    await client.post(f"{API}/{created['id']}/validate", json={}, headers=isac_headers)
 
     response = await client.post(
         f"{API}/{created['id']}/distribute",
@@ -215,9 +207,9 @@ async def test_another_member_cannot_see_a_submission(client, member):
 async def test_the_isac_sees_every_submission(client, member, isac):
     _org, pem = await member()
     await create_draft(client, pem)
-    _isac_org, isac_pem = isac
+    _isac_org, isac_headers = isac
 
-    response = await client.get(API, headers=proxy_headers(isac_pem))
+    response = await client.get(API, headers=isac_headers)
     assert response.status_code == 200
     assert len(response.json()) == 1
 
@@ -264,16 +256,16 @@ async def test_a_draft_can_be_edited(client, member):
 async def test_distributed_content_cannot_be_withdrawn(client, member, isac, circle):
     """Members already hold it; withdrawal would be a false promise."""
     _org, pem = await member()
-    _isac_org, isac_pem = isac
+    _isac_org, isac_headers = isac
     target, _collection = await circle()
 
     created = await create_draft(client, pem)
     await client.post(f"{API}/{created['id']}/submit", json={}, headers=proxy_headers(pem))
-    await client.post(f"{API}/{created['id']}/validate", json={}, headers=proxy_headers(isac_pem))
+    await client.post(f"{API}/{created['id']}/validate", json={}, headers=isac_headers)
     await client.post(
         f"{API}/{created['id']}/distribute",
         json={"circle_ids": [str(target.id)]},
-        headers=proxy_headers(isac_pem),
+        headers=isac_headers,
     )
 
     response = await client.post(
@@ -290,17 +282,17 @@ async def test_distribution_makes_content_visible_over_taxii(
 ):
     """The whole point, proved end to end: submit here, collect there."""
     org, pem = await member()
-    _isac_org, isac_pem = isac
+    _isac_org, isac_headers = isac
     target, collection = await circle()
     await join_circle(org, target, CircleRole.MEMBER)
 
     created = await create_draft(client, pem)
     await client.post(f"{API}/{created['id']}/submit", json={}, headers=proxy_headers(pem))
-    await client.post(f"{API}/{created['id']}/validate", json={}, headers=proxy_headers(isac_pem))
+    await client.post(f"{API}/{created['id']}/validate", json={}, headers=isac_headers)
     distributed = await client.post(
         f"{API}/{created['id']}/distribute",
         json={"circle_ids": [str(target.id)]},
-        headers=proxy_headers(isac_pem),
+        headers=isac_headers,
     )
     assert distributed.status_code == 200, distributed.text
     assert distributed.json()["state"] == "distributed"
@@ -317,19 +309,19 @@ async def test_distribution_makes_content_visible_over_taxii(
 async def test_a_future_release_time_holds_content_back(client, member, isac, circle, join_circle):
     """Embargo is a timestamp, so it holds with no scheduler running at all."""
     org, pem = await member()
-    _isac_org, isac_pem = isac
+    _isac_org, isac_headers = isac
     target, collection = await circle()
     await join_circle(org, target)
 
     created = await create_draft(client, pem)
     await client.post(f"{API}/{created['id']}/submit", json={}, headers=proxy_headers(pem))
-    await client.post(f"{API}/{created['id']}/validate", json={}, headers=proxy_headers(isac_pem))
+    await client.post(f"{API}/{created['id']}/validate", json={}, headers=isac_headers)
 
     release_at = dt.datetime.now(dt.UTC) + dt.timedelta(days=3)
     response = await client.post(
         f"{API}/{created['id']}/distribute",
         json={"circle_ids": [str(target.id)], "release_at": release_at.isoformat()},
-        headers=proxy_headers(isac_pem),
+        headers=isac_headers,
     )
     assert response.status_code == 200
 
@@ -342,17 +334,17 @@ async def test_a_future_release_time_holds_content_back(client, member, isac, ci
 async def test_a_naive_release_time_is_refused(client, member, isac, circle):
     """Guessing a timezone on an embargo boundary publishes content early."""
     _org, pem = await member()
-    _isac_org, isac_pem = isac
+    _isac_org, isac_headers = isac
     target, _collection = await circle()
 
     created = await create_draft(client, pem)
     await client.post(f"{API}/{created['id']}/submit", json={}, headers=proxy_headers(pem))
-    await client.post(f"{API}/{created['id']}/validate", json={}, headers=proxy_headers(isac_pem))
+    await client.post(f"{API}/{created['id']}/validate", json={}, headers=isac_headers)
 
     response = await client.post(
         f"{API}/{created['id']}/distribute",
         json={"circle_ids": [str(target.id)], "release_at": "2026-12-01T00:00:00"},
-        headers=proxy_headers(isac_pem),
+        headers=isac_headers,
     )
     assert response.status_code == 400
 
@@ -360,17 +352,17 @@ async def test_a_naive_release_time_is_refused(client, member, isac, circle):
 async def test_tlp_floor_is_enforced_per_circle(client, member, isac, circle):
     """A circle's minimum restrictiveness is a commitment to its members."""
     _org, pem = await member()
-    _isac_org, isac_pem = isac
+    _isac_org, isac_headers = isac
     strict, _collection = await circle("section9", minimum_tlp=TLP.RED)
 
     created = await create_draft(client, pem, tlp="green")
     await client.post(f"{API}/{created['id']}/submit", json={}, headers=proxy_headers(pem))
-    await client.post(f"{API}/{created['id']}/validate", json={}, headers=proxy_headers(isac_pem))
+    await client.post(f"{API}/{created['id']}/validate", json={}, headers=isac_headers)
 
     response = await client.post(
         f"{API}/{created['id']}/distribute",
         json={"circle_ids": [str(strict.id)]},
-        headers=proxy_headers(isac_pem),
+        headers=isac_headers,
     )
     assert response.status_code == 409
     assert "tighter" in response.text
@@ -381,17 +373,17 @@ async def test_distribution_to_an_unknown_circle_fails_wholly(
 ):
     """A partial distribution is the worst outcome: some members silently unwarned."""
     _org, pem = await member()
-    _isac_org, isac_pem = isac
+    _isac_org, isac_headers = isac
     good, _collection = await circle()
 
     created = await create_draft(client, pem)
     await client.post(f"{API}/{created['id']}/submit", json={}, headers=proxy_headers(pem))
-    await client.post(f"{API}/{created['id']}/validate", json={}, headers=proxy_headers(isac_pem))
+    await client.post(f"{API}/{created['id']}/validate", json={}, headers=isac_headers)
 
     response = await client.post(
         f"{API}/{created['id']}/distribute",
         json={"circle_ids": [str(good.id), str(uuid.uuid4())]},
-        headers=proxy_headers(isac_pem),
+        headers=isac_headers,
     )
     assert response.status_code == 409
 
@@ -404,17 +396,17 @@ async def test_anonymous_distribution_rewrites_attribution(
 ):
     """The consumer-visible attribution becomes the ISAC; the ISAC still knows."""
     org, pem = await member()
-    isac_org, isac_pem = isac
+    isac_org, isac_headers = isac
     target, collection = await circle()
     await join_circle(org, target)
 
     created = await create_draft(client, pem, distribute_anonymously=True)
     await client.post(f"{API}/{created['id']}/submit", json={}, headers=proxy_headers(pem))
-    await client.post(f"{API}/{created['id']}/validate", json={}, headers=proxy_headers(isac_pem))
+    await client.post(f"{API}/{created['id']}/validate", json={}, headers=isac_headers)
     await client.post(
         f"{API}/{created['id']}/distribute",
         json={"circle_ids": [str(target.id)]},
-        headers=proxy_headers(isac_pem),
+        headers=isac_headers,
     )
 
     feed = await client.get(
@@ -425,22 +417,22 @@ async def test_anonymous_distribution_rewrites_attribution(
 
     # Internally, attribution survives -- this is what lets the ISAC answer
     # questions its members cannot.
-    detail = await client.get(f"{API}/{created['id']}", headers=proxy_headers(isac_pem))
+    detail = await client.get(f"{API}/{created['id']}", headers=isac_headers)
     assert detail.json()["submitter_org_id"] == str(org.id)
 
 
 async def test_distribution_is_recorded_in_the_audit_trail(client, member, isac, circle, session):
     _org, pem = await member()
-    _isac_org, isac_pem = isac
+    _isac_org, isac_headers = isac
     target, _collection = await circle()
 
     created = await create_draft(client, pem)
     await client.post(f"{API}/{created['id']}/submit", json={}, headers=proxy_headers(pem))
-    await client.post(f"{API}/{created['id']}/validate", json={}, headers=proxy_headers(isac_pem))
+    await client.post(f"{API}/{created['id']}/validate", json={}, headers=isac_headers)
     await client.post(
         f"{API}/{created['id']}/distribute",
         json={"circle_ids": [str(target.id)]},
-        headers=proxy_headers(isac_pem),
+        headers=isac_headers,
     )
 
     actions = set((await session.execute(select(AuditLog.action))).scalars().all())
@@ -467,7 +459,7 @@ async def test_one_members_object_cannot_suppress_anothers(
 
     first_org, first_pem = await member("meridian-global")
     await join_circle(first_org, target)
-    _isac_org, isac_pem = isac
+    _isac_org, isac_headers = isac
 
     second_org, second_pem = await member("atlantic-clearing")
     await join_circle(second_org, target)
@@ -477,13 +469,11 @@ async def test_one_members_object_cannot_suppress_anothers(
             client, pem, title=name, bundle=bundle(stix_id=shared_id, name=name)
         )
         await client.post(f"{API}/{created['id']}/submit", json={}, headers=proxy_headers(pem))
-        await client.post(
-            f"{API}/{created['id']}/validate", json={}, headers=proxy_headers(isac_pem)
-        )
+        await client.post(f"{API}/{created['id']}/validate", json={}, headers=isac_headers)
         return await client.post(
             f"{API}/{created['id']}/distribute",
             json={"circle_ids": [str(target.id)]},
-            headers=proxy_headers(isac_pem),
+            headers=isac_headers,
         )
 
     assert (await file_and_distribute(first_pem, "first-firms-finding")).status_code == 200
@@ -508,18 +498,18 @@ async def test_a_backdated_release_time_is_refused(client, member, isac, circle)
     receipts table showed they simply never fetched it.
     """
     _org, pem = await member()
-    _isac_org, isac_pem = isac
+    _isac_org, isac_headers = isac
     target, _collection = await circle()
 
     created = await create_draft(client, pem)
     await client.post(f"{API}/{created['id']}/submit", json={}, headers=proxy_headers(pem))
-    await client.post(f"{API}/{created['id']}/validate", json={}, headers=proxy_headers(isac_pem))
+    await client.post(f"{API}/{created['id']}/validate", json={}, headers=isac_headers)
 
     past = dt.datetime.now(dt.UTC) - dt.timedelta(days=1)
     response = await client.post(
         f"{API}/{created['id']}/distribute",
         json={"circle_ids": [str(target.id)], "release_at": past.isoformat()},
-        headers=proxy_headers(isac_pem),
+        headers=isac_headers,
     )
     assert response.status_code == 409
     assert "backdated" in response.text
@@ -530,16 +520,16 @@ async def test_redistributing_the_same_submission_reports_nothing_to_do(
 ):
     """Reporting success for a distribution that delivered nothing misleads the operator."""
     _org, pem = await member()
-    _isac_org, isac_pem = isac
+    _isac_org, isac_headers = isac
     target, _collection = await circle()
 
     created = await create_draft(client, pem)
     await client.post(f"{API}/{created['id']}/submit", json={}, headers=proxy_headers(pem))
-    await client.post(f"{API}/{created['id']}/validate", json={}, headers=proxy_headers(isac_pem))
+    await client.post(f"{API}/{created['id']}/validate", json={}, headers=isac_headers)
     first = await client.post(
         f"{API}/{created['id']}/distribute",
         json={"circle_ids": [str(target.id)]},
-        headers=proxy_headers(isac_pem),
+        headers=isac_headers,
     )
     assert first.status_code == 200
 
@@ -548,7 +538,7 @@ async def test_redistributing_the_same_submission_reports_nothing_to_do(
     again = await client.post(
         f"{API}/{created['id']}/distribute",
         json={"circle_ids": [str(target.id)]},
-        headers=proxy_headers(isac_pem),
+        headers=isac_headers,
     )
     assert again.status_code == 409
 
@@ -734,7 +724,7 @@ async def test_distribution_refuses_an_anonymous_submission_that_names_its_submi
     from aivs_server.db.models import Submission  # noqa: PLC0415 - local to this test
 
     _org, pem = await member()
-    _isac_org, isac_pem = isac
+    _isac_org, isac_headers = isac
     circle_row, _collection = await circle()
 
     created = await create_draft(client, pem, bundle=identity_bundle())
@@ -744,9 +734,7 @@ async def test_distribution_refuses_an_anonymous_submission_that_names_its_submi
         f"{API}/{created['id']}/submit", json={}, headers=proxy_headers(pem)
     )
     assert submitted.status_code == 200, submitted.text
-    validated = await client.post(
-        f"{API}/{created['id']}/validate", json={}, headers=proxy_headers(isac_pem)
-    )
+    validated = await client.post(f"{API}/{created['id']}/validate", json={}, headers=isac_headers)
     assert validated.status_code == 200, validated.text
 
     row = await session.get(Submission, submission_id)
@@ -757,7 +745,7 @@ async def test_distribution_refuses_an_anonymous_submission_that_names_its_submi
     response = await client.post(
         f"{API}/{created['id']}/distribute",
         json={"circle_ids": [str(circle_row.id)]},
-        headers=proxy_headers(isac_pem),
+        headers=isac_headers,
     )
 
     # 409, like every other refusal to distribute: the submission is in a state
@@ -828,7 +816,7 @@ async def test_distribution_refuses_an_identity_registered_after_ingest(
     to one that distributes, which is the control below.
     """
     _org, pem = await member()
-    _isac_org, isac_pem = isac
+    _isac_org, isac_headers = isac
     target, _collection = await circle()
     later_identity = f"identity--{uuid.uuid4()}"
 
@@ -843,21 +831,19 @@ async def test_distribution_refuses_an_identity_registered_after_ingest(
 
     for submission in (held, clean):
         for verb in ("submit", "validate"):
-            who = pem if verb == "submit" else isac_pem
-            response = await client.post(
-                f"{API}/{submission['id']}/{verb}", json={}, headers=proxy_headers(who)
-            )
+            who = proxy_headers(pem) if verb == "submit" else isac_headers
+            response = await client.post(f"{API}/{submission['id']}/{verb}", json={}, headers=who)
             assert response.status_code == 200, response.text
 
     refused = await client.post(
         f"{API}/{held['id']}/distribute",
         json={"circle_ids": [str(target.id)]},
-        headers=proxy_headers(isac_pem),
+        headers=isac_headers,
     )
     distributed = await client.post(
         f"{API}/{clean['id']}/distribute",
         json={"circle_ids": [str(target.id)]},
-        headers=proxy_headers(isac_pem),
+        headers=isac_headers,
     )
 
     assert refused.status_code in (400, 409, 422)

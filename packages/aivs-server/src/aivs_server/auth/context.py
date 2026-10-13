@@ -91,7 +91,7 @@ class AuthContext:
 
     #: Present only for portal sessions.
     operator_id: uuid.UUID | None = None
-    operator_role: OperatorRole | None = None
+    operator_roles: frozenset[OperatorRole] = frozenset()
 
     #: Correlates this request across the audit log and application logs.
     request_id: str = ""

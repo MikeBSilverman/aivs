@@ -28,7 +28,7 @@ from aivs_server.auth.context import AuthContext
 from aivs_server.auth.deps import SessionDep
 from aivs_server.auth.mtls import CertificateRejectedError, extract_client_certificate
 from aivs_server.auth.passwords import constant_time_equals
-from aivs_server.auth.policy import is_system_admin
+from aivs_server.auth.policy import is_isac_staff
 from aivs_server.auth.sessions import SessionRejectedError, resolve_session
 from aivs_server.config import Settings
 from aivs_server.db.models import Operator
@@ -123,7 +123,7 @@ def base_context(
         "instance_name": settings.instance_name,
         "org_slug": ctx.org_slug,
         "operator_name": operator_name,
-        "is_admin": is_system_admin(ctx),
+        "is_admin": is_isac_staff(ctx),
         "active": active,
         "notices": take_notices(request),
         # Every authenticated page carries the sign-out form, so the token

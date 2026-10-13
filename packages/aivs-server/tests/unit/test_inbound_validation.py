@@ -194,15 +194,15 @@ async def test_an_empty_bundle_is_accepted_but_cannot_be_distributed(
     created = await post(client, pem, object_bundle())
     assert created.status_code == 201
 
-    isac_pem, circle = isac_and_circle
+    isac_headers, circle = isac_and_circle
     submission_id = created.json()["id"]
     await client.post(f"{API}/{submission_id}/submit", json={}, headers=proxy_headers(pem))
-    await client.post(f"{API}/{submission_id}/validate", json={}, headers=proxy_headers(isac_pem))
+    await client.post(f"{API}/{submission_id}/validate", json={}, headers=isac_headers)
 
     response = await client.post(
         f"{API}/{submission_id}/distribute",
         json={"circle_ids": [str(circle.id)]},
-        headers=proxy_headers(isac_pem),
+        headers=isac_headers,
     )
     assert response.status_code == 409
     assert "no STIX objects" in response.text
@@ -274,9 +274,7 @@ async def test_a_long_name_is_truncated_rather_than_refused(client, member, sess
 
 
 @pytest.fixture
-async def isac_and_circle(make_org, make_cert, make_circle, make_collection):
-    org = await make_org("hosting-isac", org_type=OrgType.ADMIN)
-    pem, _ = await make_cert(org)
+async def isac_and_circle(isac, make_circle, make_collection):
     circle = await make_circle("section9")
     await make_collection(circle)
-    return pem, circle
+    return isac[1], circle

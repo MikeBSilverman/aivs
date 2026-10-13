@@ -382,7 +382,7 @@ async def test_a_collection_marked_unreadable_serves_nothing(
 # ---------------------------------------------------------------------------
 @pytest.mark.db
 async def test_a_member_cannot_publish_under_another_firms_identity(
-    client, make_org, make_cert, make_circle, make_collection, join_circle, session
+    isac, client, make_org, make_cert, make_circle, make_collection, join_circle, session
 ):
     """created_by_ref is rewritten to the submitter on the attributed path too.
 
@@ -396,8 +396,7 @@ async def test_a_member_cannot_publish_under_another_firms_identity(
     submitter = await make_org("actual-submitter", org_type=OrgType.GSIB)
     submitter_pem, _ = await make_cert(submitter)
     victim = await make_org("impersonated-firm", org_type=OrgType.GSIB)
-    isac = await make_org("hosting-isac", org_type=OrgType.ADMIN)
-    isac_pem, _ = await make_cert(isac)
+    _isac_org, isac_headers = isac
 
     circle = await make_circle("section9")
     collection = await make_collection(circle)
@@ -418,16 +417,16 @@ async def test_a_member_cannot_publish_under_another_firms_identity(
     assert created.status_code == 201, created.text
     submission_id = created.json()["id"]
 
-    for verb, pem in (("submit", submitter_pem), ("validate", isac_pem)):
+    for verb, headers in (("submit", proxy_headers(submitter_pem)), ("validate", isac_headers)):
         step = await client.post(
-            f"{API}/submissions/{submission_id}/{verb}", json={}, headers=proxy_headers(pem)
+            f"{API}/submissions/{submission_id}/{verb}", json={}, headers=headers
         )
         assert step.status_code == 200, step.text
 
     distributed = await client.post(
         f"{API}/submissions/{submission_id}/distribute",
         json={"circle_ids": [str(circle.id)]},
-        headers=proxy_headers(isac_pem),
+        headers=isac_headers,
     )
     assert distributed.status_code == 200, distributed.text
 
@@ -444,7 +443,7 @@ async def test_a_member_cannot_publish_under_another_firms_identity(
 # ---------------------------------------------------------------------------
 @pytest.mark.db
 async def test_an_embargo_whose_time_has_passed_cannot_be_extended(
-    client, make_org, make_cert, make_circle, make_collection, join_circle, session
+    isac, client, make_org, make_cert, make_circle, make_collection, join_circle, session
 ):
     """Visibility is the timestamp; status is only what the sweeper wrote.
 
@@ -457,8 +456,7 @@ async def test_an_embargo_whose_time_has_passed_cannot_be_extended(
 
     member = await make_org("meridian-global", org_type=OrgType.GSIB)
     member_pem, _ = await make_cert(member)
-    isac = await make_org("hosting-isac", org_type=OrgType.ADMIN)
-    isac_pem, _ = await make_cert(isac)
+    _isac_org, isac_headers = isac
     circle = await make_circle("section9")
     await make_collection(circle)
     await join_circle(member, circle)
@@ -474,18 +472,16 @@ async def test_an_embargo_whose_time_has_passed_cannot_be_extended(
     )
     submission_id = created.json()["id"]
 
-    for verb, pem in (("submit", member_pem), ("validate", isac_pem)):
+    for verb, headers in (("submit", proxy_headers(member_pem)), ("validate", isac_headers)):
         assert (
-            await client.post(
-                f"{API}/submissions/{submission_id}/{verb}", json={}, headers=proxy_headers(pem)
-            )
+            await client.post(f"{API}/submissions/{submission_id}/{verb}", json={}, headers=headers)
         ).status_code == 200
 
     release_at = dt.datetime.now(dt.UTC) + dt.timedelta(minutes=5)
     distributed = await client.post(
         f"{API}/submissions/{submission_id}/distribute",
         json={"circle_ids": [str(circle.id)], "release_at": release_at.isoformat()},
-        headers=proxy_headers(isac_pem),
+        headers=isac_headers,
     )
     assert distributed.status_code == 200, distributed.text
 
@@ -513,7 +509,7 @@ async def test_an_embargo_whose_time_has_passed_cannot_be_extended(
     extended = await client.post(
         f"{API}/submissions/{submission_id}/embargo/extend",
         json={"release_at": (dt.datetime.now(dt.UTC) + dt.timedelta(days=7)).isoformat()},
-        headers=proxy_headers(isac_pem),
+        headers=isac_headers,
     )
     assert extended.status_code >= 400, "already-readable content cannot be retracted"
 

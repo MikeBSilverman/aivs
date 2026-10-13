@@ -65,7 +65,7 @@ async def operator_setup(session, settings, secret_box, make_org, make_cert):
         org_id=org.id,
         email="analyst@meridian.test",
         display_name="Test Analyst",
-        role=OperatorRole.ANALYST,
+        roles=[OperatorRole.ANALYST],
         password_hash=hash_password(PASSWORD),
         totp_secret_encrypted=secret_box.seal(
             totp_secret, purpose=SecretPurpose.TOTP, subject=operator_id
@@ -245,7 +245,7 @@ async def test_a_session_resumes_with_the_bound_certificate(session, settings, o
     )
     assert ctx.operator_id == operator.id
     assert ctx.auth_method is AuthMethod.PORTAL_SESSION
-    assert ctx.operator_role is OperatorRole.ANALYST
+    assert ctx.operator_roles == {OperatorRole.ANALYST}
 
 
 async def test_a_session_cookie_is_useless_from_another_certificate_path(

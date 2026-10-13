@@ -13,7 +13,6 @@ import datetime as dt
 
 import pytest
 
-from aivs_schemas.enums import OrgType
 from aivs_server.db.models import CircleMembership
 from tests.conftest import proxy_headers
 
@@ -24,10 +23,8 @@ DAY = dt.timedelta(days=1)
 
 
 @pytest.fixture
-async def isac_pem(make_org, make_cert) -> str:
-    org = await make_org("hosting-isac", org_type=OrgType.ADMIN)
-    pem, _ = await make_cert(org)
-    return pem
+def isac_headers(isac) -> dict[str, str]:
+    return isac[1]
 
 
 async def _objects(client, collection, pem) -> set[str]:
@@ -105,7 +102,7 @@ async def test_a_member_that_has_left_reads_nothing(
 
 
 async def test_joined_at_repairs_an_existing_member(
-    client, isac_pem, make_org, make_circle, join_circle, session
+    client, isac_headers, make_org, make_circle, join_circle, session
 ):
     """Finding #3: the repair was skipped for an organisation already present.
 
@@ -120,7 +117,7 @@ async def test_joined_at_repairs_an_existing_member(
     response = await client.post(
         f"{API}/circles/{circle.id}/members",
         json={"org_ids": [str(member.id)], "joined_at": restored_to.isoformat()},
-        headers=proxy_headers(isac_pem),
+        headers=isac_headers,
     )
 
     assert response.status_code in (200, 201, 204)
@@ -129,7 +126,7 @@ async def test_joined_at_repairs_an_existing_member(
 
 
 async def test_a_repair_cannot_reach_back_into_a_gap(
-    client, isac_pem, make_org, make_circle, session
+    client, isac_headers, make_org, make_circle, session
 ):
     """The exclusion constraint refuses an interval overlapping an earlier one.
 
@@ -158,12 +155,12 @@ async def test_a_repair_cannot_reach_back_into_a_gap(
     into_the_gap = await client.post(
         f"{API}/circles/{circle.id}/members",
         json={"org_ids": [str(member.id)], "joined_at": (left - DAY).isoformat()},
-        headers=proxy_headers(isac_pem),
+        headers=isac_headers,
     )
     clear_of_it = await client.post(
         f"{API}/circles/{circle.id}/members",
         json={"org_ids": [str(member.id)], "joined_at": (left + DAY).isoformat()},
-        headers=proxy_headers(isac_pem),
+        headers=isac_headers,
     )
 
     assert into_the_gap.status_code == 409

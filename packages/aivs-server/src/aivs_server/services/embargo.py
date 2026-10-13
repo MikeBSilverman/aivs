@@ -49,6 +49,7 @@ from aivs_server.notify.events import (
     circle_ids_for_submission,
     queue_visibility_notifications,
 )
+from aivs_server.services.publication import hold_publication_lock
 from aivs_server.taxii.resources import truncate_to_taxii_precision
 
 __all__ = [
@@ -122,6 +123,8 @@ async def release_embargo_now(
 
     Safe in the direction it moves. See the module docstring.
     """
+    # Before the clock is read: see services.publication.
+    await hold_publication_lock(session)
     now = now or dt.datetime.now(dt.UTC)
     # The next millisecond, not this one. A released row keeps the `seq` it was
     # given when it was *distributed*, which is necessarily lower than that of
@@ -131,8 +134,12 @@ async def release_embargo_now(
     # unrelated distribution ("this is being exploited, push everything now" is
     # exactly that shape) put the released rows at (T, low_seq) below a member's
     # cursor at (T, high_seq), and they were never delivered. One millisecond
-    # ahead is strictly greater than every cursor that can already exist, because
-    # a cursor is only ever issued for a row that is already visible.
+    # ahead is strictly greater than every cursor that can already exist: a
+    # cursor is only issued for a row that is visible, and the publication lock
+    # (taken above, and shared by every cursor-issuing read) means no cursor is
+    # being computed while this transaction is open. Without the lock that claim
+    # was false -- a distribution committing after this one could still land
+    # its rows below a cursor issued in between.
     released_at = truncate_to_taxii_precision(now) + _ONE_MILLISECOND
 
     embargo = (
@@ -190,6 +197,9 @@ async def extend_embargo(
     members poll forwards only, so a retraction is not something the system can
     honestly offer.
     """
+    # Before the clock is read: the "already visible" test below compares
+    # against it. See services.publication.
+    await hold_publication_lock(session)
     now = now or dt.datetime.now(dt.UTC)
     if release_at.tzinfo is None:
         msg = "release_at must be timezone-aware"

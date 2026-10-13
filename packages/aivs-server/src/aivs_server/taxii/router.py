@@ -30,6 +30,7 @@ from aivs_server.auth.deps import AuthenticatedContext, SessionDep, SettingsDep
 from aivs_server.auth.policy import can_read_circle, can_submit_to_circle, readable_circle_ids
 from aivs_server.config import Settings
 from aivs_server.db.models import Circle, TaxiiCollection
+from aivs_server.services.publication import wait_for_publications
 from aivs_server.services.receipts import record_retrievals
 from aivs_server.taxii import resources
 from aivs_server.taxii.filters import FilterError, parse_filters
@@ -308,6 +309,9 @@ async def list_objects(
     filters = _parse_request_filters(request, settings)
     cursor = _resolve_cursor(settings, filters.next_cursor, collection_id)
     limit = filters.limit or settings.taxii_default_page_size
+    # Before the clock is read: no paging cursor may be computed while a
+    # publication is in flight. See services.publication.
+    await wait_for_publications(session)
     now = dt.datetime.now(dt.UTC)
 
     rows = list(
@@ -391,6 +395,9 @@ async def get_object(
     # all three.
     cursor = _resolve_cursor(settings, filters.next_cursor, collection_id)
     limit = filters.limit or settings.taxii_default_page_size
+    # Before the clock is read: no paging cursor may be computed while a
+    # publication is in flight. See services.publication.
+    await wait_for_publications(session)
     now = dt.datetime.now(dt.UTC)
 
     rows = list(
@@ -465,6 +472,9 @@ async def get_object_versions(
     _collection, circle, joined_at = await _load_readable_collection(session, ctx, collection_id)
     filters = _parse_request_filters(request, settings)
     limit = filters.limit or settings.taxii_default_page_size
+    # Before the clock is read: no paging cursor may be computed while a
+    # publication is in flight. See services.publication.
+    await wait_for_publications(session)
     now = dt.datetime.now(dt.UTC)
 
     rows = list(
@@ -517,6 +527,9 @@ async def get_manifest(
     filters = _parse_request_filters(request, settings)
     cursor = _resolve_cursor(settings, filters.next_cursor, collection_id)
     limit = filters.limit or settings.taxii_default_page_size
+    # Before the clock is read: no paging cursor may be computed while a
+    # publication is in flight. See services.publication.
+    await wait_for_publications(session)
     now = dt.datetime.now(dt.UTC)
 
     rows = list(

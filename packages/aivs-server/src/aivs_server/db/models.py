@@ -503,10 +503,13 @@ class Distribution(Base):
     #: sort *below* the cursor and be silently skipped. An identity sequence
     #: increases with insertion order, so the sort key only ever moves forward.
     #:
-    #: This makes same-batch skips impossible. The distribution service must
-    #: additionally write all rows for one submission in a single transaction, so
-    #: that MVCC presents the batch atomically to a concurrent reader; that
-    #: obligation is enforced where the rows are written, not here.
+    #: This makes same-batch skips impossible, and nothing more. Identity values
+    #: are assigned at INSERT, not at COMMIT, so ``seq`` orders inserts, not
+    #: visibility: two concurrent distributions can commit in the opposite order
+    #: to the one they inserted in, and a member polling between the commits is
+    #: issued a cursor past the batch that commits last. This comment once said
+    #: the single-transaction rule closed that; it closes it within one batch
+    #: only. Across batches, ``services.publication`` does.
     seq: Mapped[int] = mapped_column(BigInteger, Identity(), nullable=False, unique=True)
 
     __table_args__ = (

@@ -1,0 +1,76 @@
+"""The lock that keeps ``date_added`` order and commit order the same.
+
+TAXII polling is a keyset walk over ``(date_added, seq)`` that only ever moves
+forward: a member echoes the last ``date_added`` it received as ``added_after``
+and never looks back. That is only correct if no row can *become visible* with
+a key below a cursor the server has already issued. Two things break it, and
+this module is the answer to both.
+
+**Two writers, one clock.** ``date_added`` is stamped (and ``seq`` assigned)
+when a row is written, but the row becomes visible when its transaction
+commits. If distribution A stamps first and commits second, a member polling
+in between is handed a cursor past A's batch, and A's rows are never delivered
+-- to exactly the members who poll correctly, while the receipts say they
+simply never fetched it. Every writer of ``date_added`` therefore takes this
+lock *exclusively* before reading the clock and holds it until commit, so
+stamps are taken in commit order. The earlier argument that the ``seq``
+identity made this impossible was wrong: identity values are assigned at
+INSERT, not at COMMIT, so they order inserts, not visibility.
+
+**A clock that moves under a writer.** Serialising writers is not enough on
+its own. A timer embargo is a row whose ``date_added`` was stamped days ago in
+the future; it becomes visible by the clock, with no transaction at all. If it
+crosses ``now`` while A's transaction is open, a reader sees it, is issued a
+cursor at the embargo's timestamp, and A -- stamped a moment earlier --
+commits below that cursor. So readers that issue cursors take the same lock
+*shared*: no cursor is computed while any publication is in flight, and any
+publication that starts waits for the reading transaction to finish.
+
+The cost is that a TAXII read and a distribution never overlap. Distributions
+run hundreds of times a year and complete in milliseconds; a read waits at most
+the length of one. The wait is bounded by the engine's ``lock_timeout``, so a
+stuck writer surfaces as an error, not as a hang.
+
+Writers: ``distribute_submission``, ``release_embargo_now``, ``extend_embargo``.
+Readers: the four TAXII listings that compute ``X-TAXII-Date-Added-Last``.
+A new writer or reader of ``distributions.date_added`` belongs on that list.
+"""
+
+from __future__ import annotations
+
+from typing import Final
+
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
+
+__all__ = ["hold_publication_lock", "wait_for_publications"]
+
+#: One fixed key for the whole instance. Publications are rare enough that a
+#: single global lock costs nothing, and anything finer-grained (per circle)
+#: would reopen the race for a submission distributed into two circles that a
+#: member reads through one. The value is arbitrary but must never change while
+#: an old and a new process can run side by side, as during a rolling deploy.
+_PUBLICATION_LOCK_KEY: Final[int] = 0x41495653_00000001  # "AIVS", lock 1
+
+
+async def hold_publication_lock(session: AsyncSession) -> None:
+    """Take the publication lock exclusively until this transaction ends.
+
+    Call before reading the clock to stamp ``date_added``. A ``now`` read
+    before the lock is acquired reopens the race this lock exists to close.
+    """
+    await session.execute(
+        text("SELECT pg_advisory_xact_lock(:key)"), {"key": _PUBLICATION_LOCK_KEY}
+    )
+
+
+async def wait_for_publications(session: AsyncSession) -> None:
+    """Take the publication lock shared until this transaction ends.
+
+    Call before reading the clock in any read that issues a paging cursor.
+    Returns once no publication is in flight, and holds off new ones until the
+    read's transaction ends.
+    """
+    await session.execute(
+        text("SELECT pg_advisory_xact_lock_shared(:key)"), {"key": _PUBLICATION_LOCK_KEY}
+    )

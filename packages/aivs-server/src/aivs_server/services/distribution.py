@@ -4,13 +4,13 @@ This is the moment content stops being one firm's draft and becomes something
 every member of a circle receives. Four properties are enforced here, and each
 one exists because getting it wrong is expensive rather than merely untidy.
 
-**One transaction.** Every distribution row for a submission is written in the
-caller's single transaction. This is not tidiness: a member paging a circle
-concurrently must see the batch atomically. If the rows committed separately, a
-member could page past a timestamp and only then have an earlier-sorting row of
-the same batch land behind their cursor -- silently never delivered. The
-monotonic ``seq`` tiebreaker makes same-batch ordering stable; committing
-atomically is the other half of that guarantee.
+**One transaction, under the publication lock.** Every distribution row for a
+submission is written in the caller's single transaction, so a member paging a
+circle sees the batch atomically. Within one batch the monotonic ``seq``
+tiebreaker keeps ordering stable. *Across* batches neither is enough: two
+distributions can stamp and commit in opposite orders, and a member polling
+between the commits is issued a cursor past the batch that commits last.
+``services.publication`` serialises them; see that module.
 
 **Visibility is a timestamp, not a flag.** An embargo is expressed by writing
 ``date_added`` in the future. Nothing is gated on a scheduler having run, so a
@@ -47,6 +47,7 @@ from aivs_server.db.models import (
     Submission,
 )
 from aivs_server.services.embargo import record_embargo
+from aivs_server.services.publication import hold_publication_lock
 from aivs_server.services.submissions import identity_object_ids
 from aivs_server.taxii.resources import truncate_to_taxii_precision
 
@@ -246,6 +247,8 @@ async def distribute_submission(
     committing exactly once afterwards; this function deliberately does not
     commit, so that the whole batch lands atomically. See the module docstring.
     """
+    # Before the clock is read: see services.publication.
+    await hold_publication_lock(session)
     now = now or dt.datetime.now(dt.UTC)
 
     if submission.state is not SubmissionState.VALIDATED:

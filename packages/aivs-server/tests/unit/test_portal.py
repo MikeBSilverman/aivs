@@ -21,8 +21,15 @@ import pytest
 from sqlalchemy import func, select
 
 from aivs_schemas.enums import OperatorRole, OrgType
-from aivs_server.auth.passwords import encode_secret, generate_totp_secret, hash_password
-from aivs_server.db.models import Operator, Submission, SubmissionTransition
+from aivs_server.auth.passwords import generate_totp_secret, hash_password
+from aivs_server.auth.secretbox import SecretPurpose
+from aivs_server.db.models import (
+    Operator,
+    Submission,
+    SubmissionTransition,
+    Webhook,
+    WebhookDelivery,
+)
 from tests.conftest import proxy_headers
 
 pytestmark = pytest.mark.db
@@ -50,15 +57,21 @@ def bundle(name: str = "Prompt injection in agent runtime") -> str:
     )
 
 
-async def make_operator(session, org, *, role=OperatorRole.ANALYST, email=None):
+async def make_operator(session, secret_box, org, *, role=OperatorRole.ANALYST, email=None):
     secret = generate_totp_secret()
+    # Explicit id: the seal is bound to it, and the column default is not
+    # applied until flush.
+    operator_id = uuid.uuid4()
     operator = Operator(
+        id=operator_id,
         org_id=org.id,
         email=email or f"analyst@{org.slug}.test",
         display_name="Test Analyst",
         role=role,
         password_hash=hash_password(PASSWORD),
-        totp_secret_encrypted=encode_secret(secret),
+        totp_secret_encrypted=secret_box.seal(
+            secret, purpose=SecretPurpose.TOTP, subject=operator_id
+        ),
         is_active=True,
     )
     session.add(operator)
@@ -68,19 +81,19 @@ async def make_operator(session, org, *, role=OperatorRole.ANALYST, email=None):
 
 
 @pytest.fixture
-async def analyst(session, make_org, make_cert):
+async def analyst(session, secret_box, make_org, make_cert):
     org = await make_org("meridian-global", org_type=OrgType.GSIB)
     pem, _cert = await make_cert(org)
-    operator, secret = await make_operator(session, org)
+    operator, secret = await make_operator(session, secret_box, org)
     return org, operator, secret, pem
 
 
 @pytest.fixture
-async def isac_operator(session, make_org, make_cert):
+async def isac_operator(session, secret_box, make_org, make_cert):
     org = await make_org("hosting-isac", org_type=OrgType.ADMIN)
     pem, _cert = await make_cert(org)
     operator, secret = await make_operator(
-        session, org, role=OperatorRole.SYSTEM_ADMIN, email="ops@isac.test"
+        session, secret_box, org, role=OperatorRole.SYSTEM_ADMIN, email="ops@isac.test"
     )
     return org, operator, secret, pem
 
@@ -103,6 +116,25 @@ async def sign_in(client, operator, secret, pem) -> None:
     )
     assert response.status_code == 303, response.text
     assert response.headers["location"] == "/portal/"
+
+
+async def make_org_with_webhook(session, secret_box, make_org, join_circle, circle):
+    """A member of `circle` with a registered webhook, sealed the way the app does."""
+    org = await make_org("subscriber-firm", org_type=OrgType.GSIB)
+    await join_circle(org, circle)
+    webhook_id = uuid.uuid4()
+    webhook = Webhook(
+        id=webhook_id,
+        org_id=org.id,
+        url="https://subscriber.example/hook",
+        hmac_secret_encrypted=secret_box.seal(
+            "webhook-signing-secret", purpose=SecretPurpose.WEBHOOK_HMAC, subject=webhook_id
+        ),
+        events=[],
+    )
+    session.add(webhook)
+    await session.commit()
+    return webhook
 
 
 def csrf_of(client) -> str:
@@ -396,7 +428,9 @@ async def test_the_detail_screen_shows_history_and_receipts(client, analyst):
     assert "Receipts" in detail.text, "the submitter may see who collected their finding"
 
 
-async def test_another_firms_submission_is_not_found(client, analyst, make_org, make_cert, session):
+async def test_another_firms_submission_is_not_found(
+    client, analyst, make_org, make_cert, session, secret_box
+):
     _org, operator, secret, pem = analyst
     await sign_in(client, operator, secret, pem)
     created = await client.post(
@@ -414,7 +448,7 @@ async def test_another_firms_submission_is_not_found(client, analyst, make_org, 
 
     other_org = await make_org("atlantic-clearing")
     other_pem, _cert = await make_cert(other_org)
-    other_operator, other_secret = await make_operator(session, other_org)
+    other_operator, other_secret = await make_operator(session, secret_box, other_org)
 
     await client.get("/portal/logout", headers=proxy_headers(pem))
     await sign_in(client, other_operator, other_secret, other_pem)
@@ -531,3 +565,86 @@ async def test_signing_in_needs_a_certificate_at_all(client, analyst):
         },
     )
     assert response.status_code in (401, 403)
+
+
+# ---------------------------------------------------------------------------
+# The portal and the API must distribute identically
+# ---------------------------------------------------------------------------
+async def test_distributing_from_the_portal_queues_the_same_notifications(
+    client,
+    session,
+    analyst,
+    isac_operator,
+    make_org,
+    make_circle,
+    make_collection,
+    join_circle,
+    secret_box,
+):
+    """The screen the ISAC actually works in must notify, exactly as the API does.
+
+    `queue_visibility_notifications` was called from the two API routes and the
+    embargo sweeper, and from nowhere in the portal -- so a distribution made
+    here wrote the visibility rows, moved the state, and told nobody. Members
+    with registered webhooks learned of the finding on their next poll instead,
+    which is most of what the notification exists to avoid.
+
+    The asymmetry was worst in the urgent case: an *embargoed* portal
+    distribution was still announced, because the sweeper queues at release, so
+    only the immediate ones went unannounced.
+    """
+    org, operator, secret, pem = analyst
+    circle = await make_circle("section9")
+    await make_collection(circle)
+    await join_circle(org, circle)
+
+    subscriber = await make_org_with_webhook(session, secret_box, make_org, join_circle, circle)
+
+    await sign_in(client, operator, secret, pem)
+    created = await client.post(
+        "/portal/submit",
+        data={
+            "title": "Portal-distributed finding",
+            "discovery_scope": "own_product",
+            "tlp": "amber",
+            "bundle": bundle(),
+            "csrf_token": csrf_of(client),
+        },
+        headers=proxy_headers(pem),
+    )
+    submission_id = created.headers["location"].rsplit("/", 1)[-1]
+    await client.post(
+        f"/portal/submissions/{submission_id}/submit",
+        data={"csrf_token": csrf_of(client)},
+        headers=proxy_headers(pem),
+    )
+    await client.post(
+        "/portal/logout", data={"csrf_token": csrf_of(client)}, headers=proxy_headers(pem)
+    )
+
+    _isac_org, isac_op, isac_secret, isac_pem = isac_operator
+    await sign_in(client, isac_op, isac_secret, isac_pem)
+    await client.post(
+        f"/portal/submissions/{submission_id}/validate",
+        data={"csrf_token": csrf_of(client)},
+        headers=proxy_headers(isac_pem),
+    )
+    distributed = await client.post(
+        f"/portal/submissions/{submission_id}/distribute",
+        data={"circle_ids": str(circle.id), "csrf_token": csrf_of(client)},
+        headers=proxy_headers(isac_pem),
+    )
+    assert distributed.status_code == 303, distributed.text
+
+    queued = (
+        (
+            await session.execute(
+                select(WebhookDelivery).where(WebhookDelivery.webhook_id == subscriber.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(queued) == 1, "the portal distribution notified nobody"
+    assert queued[0].payload["submission_id"] == submission_id
+    assert "title" not in queued[0].payload, "notifications stay contentless"

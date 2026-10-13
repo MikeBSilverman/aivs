@@ -14,9 +14,25 @@ import pytest
 from sqlalchemy import select
 
 from aivs_schemas.enums import OrgType
+from aivs_server.auth.secretbox import SecretBox, SecretPurpose
 from aivs_server.db.models import Webhook, WebhookDelivery
 from aivs_server.notify.events import EVENT_SUBMISSION_VISIBLE
 from tests.conftest import proxy_headers
+
+
+def _seal(secret_box: SecretBox, webhook_id: uuid.UUID) -> bytes:
+    """Seal a signing key the way the application does.
+
+    These fixtures used to write ``b"c2VjcmV0"`` -- the base64 form the sealing
+    migration exists to remove. They stayed green because none of them
+    dispatches, but they were registrations no delivery could ever have been
+    signed for, and they are exactly the shape the ``secret_box`` fixture's
+    docstring warns against.
+    """
+    return secret_box.seal(
+        "webhook-signing-secret", purpose=SecretPurpose.WEBHOOK_HMAC, subject=webhook_id
+    )
+
 
 pytestmark = pytest.mark.db
 
@@ -49,17 +65,19 @@ async def isac(make_org, make_cert):
 
 
 @pytest.fixture
-async def subscriber(make_org, make_cert, make_circle, join_circle, session):
+async def subscriber(make_org, make_cert, make_circle, join_circle, session, secret_box):
     """A member of a circle with an active webhook."""
 
     async def _build(circle, slug: str = "subscriber-firm"):
         org = await make_org(slug, org_type=OrgType.GSIB)
         pem, _ = await make_cert(org)
         await join_circle(org, circle)
+        webhook_id = uuid.uuid4()
         webhook = Webhook(
+            id=webhook_id,
             org_id=org.id,
             url="https://member.example/aivs-hook",
-            hmac_secret_encrypted=b"c2VjcmV0",
+            hmac_secret_encrypted=_seal(secret_box, webhook_id),
             events=[],
         )
         session.add(webhook)
@@ -152,7 +170,15 @@ async def test_the_notification_carries_no_content(
 
 
 async def test_a_submitter_is_not_notified_about_their_own_submission(
-    client, isac, make_circle, make_collection, make_org, make_cert, join_circle, session
+    client,
+    isac,
+    make_circle,
+    make_collection,
+    make_org,
+    make_cert,
+    join_circle,
+    session,
+    secret_box,
 ):
     """Noise at best; for an anonymous submission, a small confirmation."""
     _isac_org, isac_pem = isac
@@ -162,11 +188,13 @@ async def test_a_submitter_is_not_notified_about_their_own_submission(
     submitter = await make_org("submitting-firm", org_type=OrgType.GSIB)
     submitter_pem, _ = await make_cert(submitter)
     await join_circle(submitter, circle)
+    webhook_id = uuid.uuid4()
     session.add(
         Webhook(
+            id=webhook_id,
             org_id=submitter.id,
             url="https://submitter.example/hook",
-            hmac_secret_encrypted=b"c2VjcmV0",
+            hmac_secret_encrypted=_seal(secret_box, webhook_id),
             events=[],
         )
     )
@@ -263,7 +291,15 @@ async def test_releasing_an_embargo_early_notifies(
 # Who gets told
 # ---------------------------------------------------------------------------
 async def test_an_organisation_that_joined_later_is_not_notified(
-    client, isac, make_circle, make_collection, make_org, make_cert, join_circle, session
+    client,
+    isac,
+    make_circle,
+    make_collection,
+    make_org,
+    make_cert,
+    join_circle,
+    session,
+    secret_box,
 ):
     """Notification follows visibility exactly.
 
@@ -282,11 +318,13 @@ async def test_an_organisation_that_joined_later_is_not_notified(
     latecomer = await make_org("late-firm", org_type=OrgType.GSIB)
     await make_cert(latecomer)
     await join_circle(latecomer, circle, joined_at=dt.datetime.now(dt.UTC) + dt.timedelta(days=1))
+    webhook_id = uuid.uuid4()
     session.add(
         Webhook(
+            id=webhook_id,
             org_id=latecomer.id,
             url="https://late.example/hook",
-            hmac_secret_encrypted=b"c2VjcmV0",
+            hmac_secret_encrypted=_seal(secret_box, webhook_id),
             events=[],
         )
     )
@@ -297,7 +335,15 @@ async def test_an_organisation_that_joined_later_is_not_notified(
 
 
 async def test_a_webhook_subscribed_to_other_events_is_skipped(
-    client, isac, make_circle, make_collection, make_org, make_cert, join_circle, session
+    client,
+    isac,
+    make_circle,
+    make_collection,
+    make_org,
+    make_cert,
+    join_circle,
+    session,
+    secret_box,
 ):
     _isac_org, isac_pem = isac
     circle = await make_circle("section9")
@@ -310,11 +356,13 @@ async def test_a_webhook_subscribed_to_other_events_is_skipped(
     other = await make_org("selective-firm", org_type=OrgType.GSIB)
     await make_cert(other)
     await join_circle(other, circle)
+    webhook_id = uuid.uuid4()
     session.add(
         Webhook(
+            id=webhook_id,
             org_id=other.id,
             url="https://selective.example/hook",
-            hmac_secret_encrypted=b"c2VjcmV0",
+            hmac_secret_encrypted=_seal(secret_box, webhook_id),
             events=["something.else"],
         )
     )

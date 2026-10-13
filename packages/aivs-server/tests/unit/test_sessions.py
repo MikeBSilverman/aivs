@@ -12,21 +12,25 @@ certificate has to lock out the humans using it, not only the machines.
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import datetime as dt
+import uuid
 
 import pyotp
 import pytest
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from aivs_schemas.enums import CertStatus, OperatorRole, OrgStatus, OrgType
 from aivs_server.auth.context import AuthMethod
 from aivs_server.auth.passwords import (
-    encode_secret,
     generate_totp_secret,
     hash_password,
     verify_password,
     verify_totp,
 )
+from aivs_server.auth.secretbox import SecretPurpose
 from aivs_server.auth.sessions import (
     LOCKOUT_THRESHOLD,
     SessionRejectedError,
@@ -44,19 +48,25 @@ PASSWORD = "correct-horse-battery-staple"
 
 
 @pytest.fixture
-async def operator_setup(session, settings, make_org, make_cert):
+async def operator_setup(session, settings, secret_box, make_org, make_cert):
     """An active operator at an active org, with a registered certificate."""
     org = await make_org("meridian-global", org_type=OrgType.GSIB)
     pem, certificate = await make_cert(org)
 
     totp_secret = generate_totp_secret()
+    # The id is set here rather than left to the column default, because the
+    # seal is bound to it and the default is not applied until flush.
+    operator_id = uuid.uuid4()
     operator = Operator(
+        id=operator_id,
         org_id=org.id,
         email="analyst@meridian.test",
         display_name="Test Analyst",
         role=OperatorRole.ANALYST,
         password_hash=hash_password(PASSWORD),
-        totp_secret_encrypted=encode_secret(totp_secret),
+        totp_secret_encrypted=secret_box.seal(
+            totp_secret, purpose=SecretPurpose.TOTP, subject=operator_id
+        ),
         is_active=True,
     )
     session.add(operator)
@@ -72,10 +82,11 @@ def current_code(secret: str) -> str:
 # ---------------------------------------------------------------------------
 # Credential verification
 # ---------------------------------------------------------------------------
-async def test_correct_credentials_authenticate(session, operator_setup):
+async def test_correct_credentials_authenticate(secret_box, session, operator_setup):
     org, operator, secret, _cert, _pem = operator_setup
     result = await authenticate_operator(
         session,
+        secret_box=secret_box,
         email=operator.email,
         password=PASSWORD,
         totp_code=current_code(secret),
@@ -88,12 +99,15 @@ async def test_correct_credentials_authenticate(session, operator_setup):
     ("password", "use_valid_code"),
     [(PASSWORD, False), ("wrong-password-entirely", True), ("wrong", False)],
 )
-async def test_both_factors_are_required(session, operator_setup, password, use_valid_code):
+async def test_both_factors_are_required(
+    secret_box, session, operator_setup, password, use_valid_code
+):
     """Neither factor alone authenticates."""
     org, operator, secret, _cert, _pem = operator_setup
     with pytest.raises(SessionRejectedError):
         await authenticate_operator(
             session,
+            secret_box=secret_box,
             email=operator.email,
             password=password,
             totp_code=current_code(secret) if use_valid_code else "000000",
@@ -101,7 +115,9 @@ async def test_both_factors_are_required(session, operator_setup, password, use_
         )
 
 
-async def test_a_credential_from_another_orgs_path_is_refused(session, operator_setup, make_org):
+async def test_a_credential_from_another_orgs_path_is_refused(
+    secret_box, session, operator_setup, make_org
+):
     """A stolen credential replayed from a different firm's network path fails.
 
     The organisation comes from the client certificate, not from the form, so
@@ -114,6 +130,7 @@ async def test_a_credential_from_another_orgs_path_is_refused(session, operator_
     with pytest.raises(SessionRejectedError) as caught:
         await authenticate_operator(
             session,
+            secret_box=secret_box,
             email=operator.email,
             password=PASSWORD,
             totp_code=current_code(secret),
@@ -122,11 +139,12 @@ async def test_a_credential_from_another_orgs_path_is_refused(session, operator_
     assert caught.value.reason == "operator_org_mismatch"
 
 
-async def test_an_unknown_address_is_refused(session, operator_setup):
+async def test_an_unknown_address_is_refused(secret_box, session, operator_setup):
     org, _operator, secret, _cert, _pem = operator_setup
     with pytest.raises(SessionRejectedError):
         await authenticate_operator(
             session,
+            secret_box=secret_box,
             email="nobody@meridian.test",
             password=PASSWORD,
             totp_code=current_code(secret),
@@ -134,7 +152,7 @@ async def test_an_unknown_address_is_refused(session, operator_setup):
         )
 
 
-async def test_an_inactive_operator_is_refused(session, operator_setup):
+async def test_an_inactive_operator_is_refused(secret_box, session, operator_setup):
     org, operator, secret, _cert, _pem = operator_setup
     operator.is_active = False
     await session.commit()
@@ -142,6 +160,7 @@ async def test_an_inactive_operator_is_refused(session, operator_setup):
     with pytest.raises(SessionRejectedError) as caught:
         await authenticate_operator(
             session,
+            secret_box=secret_box,
             email=operator.email,
             password=PASSWORD,
             totp_code=current_code(secret),
@@ -150,7 +169,7 @@ async def test_an_inactive_operator_is_refused(session, operator_setup):
     assert caught.value.reason == "operator_inactive"
 
 
-async def test_repeated_failures_lock_the_operator_out(session, operator_setup):
+async def test_repeated_failures_lock_the_operator_out(secret_box, session, operator_setup):
     """Online guessing is bounded, and the lockout survives a correct password."""
     org, operator, secret, _cert, _pem = operator_setup
 
@@ -158,6 +177,7 @@ async def test_repeated_failures_lock_the_operator_out(session, operator_setup):
         with pytest.raises(SessionRejectedError):
             await authenticate_operator(
                 session,
+                secret_box=secret_box,
                 email=operator.email,
                 password="wrong",
                 totp_code="000000",
@@ -167,6 +187,7 @@ async def test_repeated_failures_lock_the_operator_out(session, operator_setup):
     with pytest.raises(SessionRejectedError) as caught:
         await authenticate_operator(
             session,
+            secret_box=secret_box,
             email=operator.email,
             password=PASSWORD,
             totp_code=current_code(secret),
@@ -175,16 +196,22 @@ async def test_repeated_failures_lock_the_operator_out(session, operator_setup):
     assert caught.value.reason == "operator_locked"
 
 
-async def test_a_successful_login_clears_the_failure_count(session, operator_setup):
+async def test_a_successful_login_clears_the_failure_count(secret_box, session, operator_setup):
     org, operator, secret, _cert, _pem = operator_setup
 
     with pytest.raises(SessionRejectedError):
         await authenticate_operator(
-            session, email=operator.email, password="wrong", totp_code="000000", org_id=org.id
+            session,
+            secret_box=secret_box,
+            email=operator.email,
+            password="wrong",
+            totp_code="000000",
+            org_id=org.id,
         )
 
     await authenticate_operator(
         session,
+        secret_box=secret_box,
         email=operator.email,
         password=PASSWORD,
         totp_code=current_code(secret),
@@ -447,3 +474,46 @@ def test_a_malformed_totp_code_is_refused(code):
 def test_a_missing_totp_secret_never_verifies():
     """An operator part-way through enrolment cannot pass the second factor."""
     assert verify_totp(None, "123456") is False
+
+
+async def test_concurrent_failures_all_count_against_the_lockout(
+    engine, secret_box, session, operator_setup
+):
+    """The lockout is the only bound on password guessing, so it must not race.
+
+    `failed_login_count += 1` is a read-modify-write. Without a row lock,
+    SQLAlchemy emits an absolute `SET failed_login_count = <n>` from a value read
+    before the attempt, so N concurrent failures against one operator all read
+    the same count and all write the same count: N attempts record one
+    increment, `locked_until` stays null, and LOCKOUT_THRESHOLD bounds nothing.
+
+    Each attempt here gets its own session and its own transaction, which is what
+    a portal request does -- driving them from one session would serialise them
+    for free and prove nothing.
+    """
+    org, operator, _secret, _cert, _pem = operator_setup
+    attempts = LOCKOUT_THRESHOLD
+
+    factory = async_sessionmaker(bind=engine, expire_on_commit=False, autoflush=False)
+
+    async def one_attempt() -> None:
+        async with factory() as own_session:
+            with contextlib.suppress(SessionRejectedError):
+                await authenticate_operator(
+                    own_session,
+                    secret_box=secret_box,
+                    email=operator.email,
+                    password="wrong-password-entirely",
+                    totp_code="000000",
+                    org_id=org.id,
+                )
+
+    await asyncio.gather(*(one_attempt() for _ in range(attempts)))
+
+    await session.refresh(operator)
+    # At the threshold the counter resets to 0 and the lockout is set, so the
+    # observable proof that every attempt was counted is the lockout itself.
+    assert operator.locked_until is not None, (
+        f"{attempts} concurrent failures did not reach the threshold: "
+        "the increment is racing and the lockout bounds nothing"
+    )

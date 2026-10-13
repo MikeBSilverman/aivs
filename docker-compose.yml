@@ -245,6 +245,17 @@ services:
       # -- Sessions ---------------------------------------------------------
       AIVS_SESSION_SECRET: ${AIVS_SESSION_SECRET:?set AIVS_SESSION_SECRET in deploy/.env (>= 32 chars)}
 
+      # -- Secrets at rest --------------------------------------------------
+      # Encrypts operator TOTP seeds and members' webhook signing keys. Back it
+      # up somewhere other than the database backup: together, they are one
+      # artefact with no encryption at rest.
+      AIVS_SECRET_ENCRYPTION_KEY: ${AIVS_SECRET_ENCRYPTION_KEY:?set AIVS_SECRET_ENCRYPTION_KEY in deploy/.env (openssl rand -base64 32)}
+      # Set only while rotating; see deploy/env.example.
+      AIVS_SECRET_ENCRYPTION_KEY_PREVIOUS: ${AIVS_SECRET_ENCRYPTION_KEY_PREVIOUS:-}
+      # Which AEAD seals new values. Stored values name their own, so this is
+      # safe to change; see deploy/env.example for the two supported names.
+      AIVS_SECRET_ENCRYPTION_ALGORITHM: ${AIVS_SECRET_ENCRYPTION_ALGORITHM:-aes-256-gcm}
+
       # -- Logging ----------------------------------------------------------
       # DEBUG is refused outright in production by validate_production_posture,
       # because debug logging can record request bodies -- which here are

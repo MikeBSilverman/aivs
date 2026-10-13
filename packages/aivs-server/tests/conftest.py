@@ -20,6 +20,7 @@ any test that accidentally relies on mutating audit history fails loudly.
 
 from __future__ import annotations
 
+import base64
 import datetime as dt
 import os
 import uuid
@@ -47,6 +48,7 @@ from aivs_schemas.enums import (
     OrgType,
     SubmissionState,
 )
+from aivs_server.auth.secretbox import SecretBox
 from aivs_server.config import Settings
 from aivs_server.db import models
 from aivs_server.db.base import Base
@@ -66,6 +68,11 @@ TEST_DATABASE_URL = os.environ.get(
 #: and obviously fake so no one mistakes them for something to protect.
 TEST_PROXY_SECRET = "test-proxy-shared-secret-not-a-real-secret-0123456789"
 TEST_SESSION_SECRET = "test-session-signing-secret-not-a-real-secret-0123456789"
+
+#: Key-encryption key for the suite. Fixed rather than random so a failure is
+#: reproducible from the file alone, and base64 of exactly 32 bytes because
+#: ``Settings`` refuses anything else.
+TEST_SECRET_KEY = base64.b64encode(b"aivs-test-kek-not-a-real-key-32b").decode("ascii")
 
 #: Subject DN of :class:`TestCertificateAuthority`, in the RFC 4514 form the
 #: application compares against. Set on ``Settings`` so the suite runs with the
@@ -89,10 +96,22 @@ def settings() -> Settings:
         database_url=TEST_DATABASE_URL,  # type: ignore[arg-type]
         proxy_shared_secret=TEST_PROXY_SECRET,  # type: ignore[arg-type]
         session_secret=TEST_SESSION_SECRET,  # type: ignore[arg-type]
+        secret_encryption_key=TEST_SECRET_KEY,  # type: ignore[arg-type]
         trusted_proxy_cidrs=["127.0.0.1/32"],
         expected_certificate_issuer_dn=TEST_CA_ISSUER_DN,
         log_level="WARNING",
     )
+
+
+@pytest.fixture(scope="session")
+def secret_box(settings: Settings) -> SecretBox:
+    """The suite's sealer, built from the same settings the app uses.
+
+    Tests that seed an operator or a webhook must seal through this rather than
+    writing bytes directly: the seal is bound to the row id, so a fixture that
+    hand-rolled the format would pass while the application could not open it.
+    """
+    return SecretBox.from_settings(settings)
 
 
 # ---------------------------------------------------------------------------

@@ -37,6 +37,7 @@ from aivs_server.auth.policy import (
     require,
     visible_content_clause,
 )
+from aivs_server.auth.secretbox import SecretBox
 from aivs_server.auth.sessions import (
     SessionRejectedError,
     authenticate_operator,
@@ -54,6 +55,7 @@ from aivs_server.db.models import (
     Submission,
     SubmissionTransition,
 )
+from aivs_server.notify.events import queue_visibility_notifications
 from aivs_server.portal.shared import (
     LOGIN_FAILED,
     TEMPLATES,
@@ -165,6 +167,7 @@ async def login(
             password=password,
             totp_code=totp_code,
             org_id=org.id,
+            secret_box=SecretBox.from_settings(settings),
         )
     except SessionRejectedError as exc:
         return await _login_failure(request, settings, email, exc.reason)
@@ -667,6 +670,19 @@ async def perform_action(
                 session, ctx, submission, circle_ids=circle_ids, release_at=release_at
             )
             await apply_transition(session, ctx, submission, SubmissionState.DISTRIBUTED)
+            # The same queue the API path writes, in the same transaction as the
+            # visibility rows. Omitted here originally, so a distribution made
+            # from this screen -- the one ISAC analysts actually work in --
+            # notified nobody, silently. The asymmetry was sharpest in the case
+            # that matters: an *embargoed* distribution was still announced,
+            # because the sweeper queues at release, so only immediate
+            # distributions went unannounced.
+            await queue_visibility_notifications(
+                session,
+                submission_id=submission.id,
+                circle_ids=list(circle_ids),
+                visible_at=release_at or dt.datetime.now(dt.UTC),
+            )
         else:
             await apply_transition(session, ctx, submission, targets[verb])
         await session.commit()

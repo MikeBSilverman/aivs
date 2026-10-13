@@ -138,11 +138,27 @@ def test_the_walker_actually_finds_the_routes(app):
     # `original_router` and `routes` return the same handful of routes many
     # times, satisfy this guard, and leave the matrix testing almost nothing.
     routes = set(walk_routes(app.routes))
-    assert len(routes) >= 30, (
-        f"route walker found only {len(routes)} routes; it is under-enumerating "
-        "and every authorization assertion below is therefore vacuous"
-    )
     paths = {path for path, _ in routes}
+
+    # Per surface, not in total. A single floor is satisfied by whichever routes
+    # happen to survive: with `>= 30` against an actual 54, the entire /portal
+    # surface -- 17 routes, including every admin screen -- could vanish from
+    # the walk and all ten matrix tests still passed, including the one that
+    # iterates portal routes and would then assert nothing at all.
+    surfaces = {
+        "/api/v1": 20,
+        "/taxii2": 5,
+        "/portal/admin": 6,
+        "/portal": 14,  # includes the admin screens counted above
+    }
+    for prefix, minimum in surfaces.items():
+        found = sum(1 for path in paths if path.startswith(prefix))
+        assert found >= minimum, (
+            f"the walker found only {found} routes under {prefix}, expected at least "
+            f"{minimum}; it is under-enumerating and every authorization assertion "
+            "below is vacuous for that surface"
+        )
+
     for expected in ("/api/v1/submissions", "/taxii2/aivs/collections/", "/api/v1/orgs"):
         assert expected in paths, f"{expected} missing from the walk"
 

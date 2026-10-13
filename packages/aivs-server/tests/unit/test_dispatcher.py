@@ -12,6 +12,7 @@ Delivery is driven directly rather than through the background loop, which is a
 
 from __future__ import annotations
 
+import base64
 import datetime as dt
 import uuid
 
@@ -20,14 +21,17 @@ import pytest
 from sqlalchemy import select
 
 from aivs_schemas.enums import OrgType
+from aivs_server.auth.secretbox import SecretPurpose
 from aivs_server.db.models import Webhook, WebhookDelivery
 from aivs_server.notify.dispatcher import _next_attempt_delay, dispatch_pending
+from aivs_server.notify.webhooks import SIGNATURE_HEADER, sign_payload
+from tests.conftest import proxy_headers
 
 pytestmark = pytest.mark.db
 
 
 @pytest.fixture
-async def queued(make_org, session):
+async def queued(make_org, session, secret_box):
     """One webhook with one notification waiting to go out.
 
     The URL uses a hostname that really resolves. The dispatcher resolves and
@@ -40,10 +44,18 @@ async def queued(make_org, session):
         url: str = "https://example.com/hook",
     ) -> tuple[Webhook, WebhookDelivery]:
         org = await make_org(f"firm-{uuid.uuid4().hex[:8]}", org_type=OrgType.GSIB)
+        # Explicit id: the signing key is sealed against it, and the column
+        # default is not applied until flush.
+        webhook_id = uuid.uuid4()
         webhook = Webhook(
+            id=webhook_id,
             org_id=org.id,
             url=url,
-            hmac_secret_encrypted=b"c2VjcmV0",
+            hmac_secret_encrypted=secret_box.seal(
+                "webhook-signing-secret",
+                purpose=SecretPurpose.WEBHOOK_HMAC,
+                subject=webhook_id,
+            ),
             events=[],
         )
         session.add(webhook)
@@ -237,3 +249,122 @@ async def test_a_delivery_for_a_removed_webhook_is_ignored(session, settings, qu
     assert await dispatch_pending(session, settings) == 0
     remaining = (await session.execute(select(WebhookDelivery))).scalars().all()
     assert remaining == [], "cascade removes the deliveries with the registration"
+
+
+async def test_an_unopenable_signing_key_is_not_delivered_unsigned(
+    session, settings, queued, member_endpoint
+):
+    """A key we cannot open spends the delivery instead of signing with nothing.
+
+    The realistic cause is our own misconfiguration -- a key-encryption key
+    rotated away without keeping the previous one -- so the member's endpoint
+    must not be contacted with a signature it is obliged to reject, and the
+    member's `consecutive_failures` must not be charged for it.
+    """
+    webhook, delivery = await queued()
+    # A well-formed envelope -- current magic, current version, current
+    # algorithm -- sealed under a key fingerprint nothing matches: the shape a
+    # rotation that dropped the previous key too early leaves behind.
+    #
+    # This previously read b"AIVS1" + zeros, where the "1" is the *version*
+    # byte, so it exercised the unsupported-envelope-version branch instead and
+    # the named scenario went untested.
+    webhook.hmac_secret_encrypted = b"AIVS" + bytes((1, 1)) + b"\xde\xad\xbe\xef" + b"\x00" * 28
+    await session.commit()
+    endpoint = member_endpoint(_Transport(status_code=204))
+
+    assert await dispatch_pending(session, settings) == 0, "nothing was delivered"
+
+    await session.refresh(delivery)
+    await session.refresh(webhook)
+    assert endpoint.requests == [], "the endpoint was never contacted"
+    assert delivery.delivered_at is None
+    assert delivery.attempts >= settings.webhook_max_attempts, "spent, not retried forever"
+    assert webhook.consecutive_failures == 0, "not held against the member's endpoint"
+
+
+# ---------------------------------------------------------------------------
+# The two halves of the signing secret, joined
+# ---------------------------------------------------------------------------
+async def test_the_signature_verifies_against_the_secret_the_member_was_given(
+    client, session, settings, make_org, make_cert, member_endpoint
+):
+    """Registration and delivery are tested end to end, through the API.
+
+    Both halves were previously tested apart: registration asserted a secret was
+    returned, delivery asserted the header started with "v1=", and `sign_payload`
+    was exercised on its own. Nothing joined them, so signing every payload with
+    a hardcoded constant passed the entire suite -- and verifiability is the only
+    reason this secret has to be reversible at all, and therefore the only
+    justification for sealing it rather than hashing it.
+
+    This is also the test that fails if the seal is ever bypassed: the plaintext
+    handed to the member at registration must be exactly what comes back out of
+    the sealed column at delivery time.
+    """
+    org = await make_org(f"firm-{uuid.uuid4().hex[:8]}", org_type=OrgType.GSIB)
+    pem, _ = await make_cert(org)
+
+    created = await client.post(
+        "/api/v1/webhooks",
+        json={"url": "https://example.com/aivs-hook"},
+        headers=proxy_headers(pem),
+    )
+    assert created.status_code == 201, created.text
+    member_secret = created.json()["signing_secret"]
+
+    webhook = (await session.execute(select(Webhook).where(Webhook.org_id == org.id))).scalar_one()
+    session.add(
+        WebhookDelivery(
+            webhook_id=webhook.id,
+            event="submission.visible",
+            payload={"event": "submission.visible", "submission_id": str(uuid.uuid4())},
+        )
+    )
+    await session.commit()
+
+    endpoint = member_endpoint(_Transport(status_code=204))
+    assert await dispatch_pending(session, settings) == 1
+
+    request = endpoint.requests[0]
+    expected = sign_payload(
+        member_secret.encode("utf-8"),
+        request.content,
+        request.headers["x-aivs-timestamp"],
+    )
+    assert request.headers[SIGNATURE_HEADER] == expected, (
+        "the delivered signature is not the one the member's own secret produces"
+    )
+
+
+@pytest.mark.db
+async def test_the_stored_signing_key_is_not_recoverable_from_the_column(
+    client, session, make_org, make_cert
+):
+    """A database read must not yield the member's signing key.
+
+    The whole point of `auth/secretbox.py`. Asserted against the column the
+    application actually writes, through the API that writes it -- the unit
+    tests exercise the primitive in isolation, which stays green even if the
+    application stores plaintext.
+    """
+    org = await make_org(f"firm-{uuid.uuid4().hex[:8]}", org_type=OrgType.GSIB)
+    pem, _ = await make_cert(org)
+
+    created = await client.post(
+        "/api/v1/webhooks",
+        json={"url": "https://example.com/aivs-hook"},
+        headers=proxy_headers(pem),
+    )
+    assert created.status_code == 201, created.text
+    member_secret = created.json()["signing_secret"]
+
+    stored = (
+        await session.execute(select(Webhook.hmac_secret_encrypted).where(Webhook.org_id == org.id))
+    ).scalar_one()
+
+    assert stored.startswith(b"AIVS"), "not in the sealed envelope format"
+    assert member_secret.encode("utf-8") not in stored
+    assert member_secret.encode("ascii") not in base64.b64decode(base64.b64encode(stored)), (
+        "not merely encoded"
+    )

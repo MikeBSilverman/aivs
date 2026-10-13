@@ -19,7 +19,6 @@ without a migration.
 
 from __future__ import annotations
 
-import base64
 import hmac
 import secrets
 from typing import Final
@@ -131,25 +130,3 @@ def generate_session_token() -> str:
 def constant_time_equals(left: str, right: str) -> bool:
     """Compare two tokens without leaking their common prefix length."""
     return hmac.compare_digest(left.encode("utf-8"), right.encode("utf-8"))
-
-
-def encode_secret(raw: str) -> bytes:
-    """Encode a TOTP secret for storage.
-
-    Base64 rather than plaintext so that a casual glance at the column does not
-    hand over a working second factor. This is encoding, **not encryption** --
-    an attacker with the database has the secret either way, and pretending
-    otherwise would be worse than being clear about it. Encrypting at rest with
-    a key held outside the database is tracked in docs/encryption-design.md.
-    """
-    return base64.b64encode(raw.encode("ascii"))
-
-
-def decode_secret(stored: bytes | None) -> str | None:
-    """Reverse :func:`encode_secret`."""
-    if not stored:
-        return None
-    try:
-        return base64.b64decode(stored).decode("ascii")
-    except (ValueError, UnicodeDecodeError):
-        return None

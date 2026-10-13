@@ -17,7 +17,8 @@ import pytest
 from sqlalchemy import select
 
 from aivs_schemas.enums import OperatorRole, OrgStatus, OrgType
-from aivs_server.auth.passwords import encode_secret, hash_password
+from aivs_server.auth.passwords import hash_password
+from aivs_server.auth.secretbox import SecretPurpose
 from aivs_server.db.models import Circle, CircleMembership, Operator, Organization
 from tests.conftest import proxy_headers
 
@@ -28,18 +29,23 @@ PASSWORD = "correct-horse-battery-staple"
 
 
 @pytest.fixture
-async def signed_in_admin(client, make_org, make_cert, session):
+async def signed_in_admin(client, make_org, make_cert, session, secret_box):
     """An operator at the hosting ISAC, signed in to the portal."""
     org = await make_org("hosting-isac", org_type=OrgType.ADMIN)
     pem, _ = await make_cert(org)
     secret = pyotp.random_base32()
+    # Explicit id: the seal is bound to it, before the column default applies.
+    operator_id = uuid.uuid4()
     operator = Operator(
+        id=operator_id,
         org_id=org.id,
         email="isac-admin@example.test",
         display_name="ISAC Admin",
         role=OperatorRole.SYSTEM_ADMIN,
         password_hash=hash_password(PASSWORD),
-        totp_secret_encrypted=encode_secret(secret),
+        totp_secret_encrypted=secret_box.seal(
+            secret, purpose=SecretPurpose.TOTP, subject=operator_id
+        ),
     )
     session.add(operator)
     await session.commit()
@@ -90,18 +96,25 @@ async def test_the_screens_redirect_an_anonymous_browser_to_sign_in(client, path
     assert response.headers["location"] == "/portal/login"
 
 
-async def test_a_member_analyst_cannot_reach_the_screens(client, make_org, make_cert, session):
+async def test_a_member_analyst_cannot_reach_the_screens(
+    client, make_org, make_cert, session, secret_box
+):
     """Same policy predicate as the API, checked before anything happens."""
     org = await make_org("meridian-global", org_type=OrgType.GSIB)
     pem, _ = await make_cert(org)
     secret = pyotp.random_base32()
+    # Explicit id: the seal is bound to it, before the column default applies.
+    operator_id = uuid.uuid4()
     operator = Operator(
+        id=operator_id,
         org_id=org.id,
         email="analyst@example.test",
         display_name="Analyst",
         role=OperatorRole.ANALYST,
         password_hash=hash_password(PASSWORD),
-        totp_secret_encrypted=encode_secret(secret),
+        totp_secret_encrypted=secret_box.seal(
+            secret, purpose=SecretPurpose.TOTP, subject=operator_id
+        ),
     )
     session.add(operator)
     await session.commit()

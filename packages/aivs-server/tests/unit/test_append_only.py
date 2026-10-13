@@ -24,6 +24,21 @@ from sqlalchemy.exc import DBAPIError
 
 APPEND_ONLY_TABLES = ("audit_log", "submission_transitions")
 
+#: A column that genuinely exists on each protected table.
+#:
+#: The UPDATE probe used to be ``SET action = 'tampered'`` for both, and
+#: ``submission_transitions`` has no ``action`` column -- so PostgreSQL raised
+#: UndefinedColumn before the trigger was ever consulted, and
+#: ``pytest.raises(DBAPIError)`` accepted it. The UPDATE half of the guarantee
+#: passed for that table with the trigger dropped. Both the real column and the
+#: ``match=`` below are needed: either alone leaves the test satisfied by the
+#: wrong error.
+MUTABLE_COLUMN = {"audit_log": "action", "submission_transitions": "to_state"}
+
+#: Text the trigger raises. Asserted so that only the append-only refusal
+#: passes, rather than any error the statement happens to provoke.
+REFUSAL = "append-only"
+
 pytestmark = pytest.mark.db
 
 
@@ -42,21 +57,22 @@ async def seeded_audit_row(session):
 @pytest.mark.parametrize("table", APPEND_ONLY_TABLES)
 async def test_update_is_refused(session, table, seeded_audit_row):
     """Rewriting history is refused, not merely discouraged."""
-    with pytest.raises(DBAPIError):
-        await session.execute(text(f"UPDATE {table} SET action = 'tampered'"))  # noqa: S608
+    column = MUTABLE_COLUMN[table]
+    with pytest.raises(DBAPIError, match=REFUSAL):
+        await session.execute(text(f"UPDATE {table} SET {column} = {column}"))  # noqa: S608
     await session.rollback()
 
 
 @pytest.mark.parametrize("table", APPEND_ONLY_TABLES)
 async def test_delete_is_refused(session, table, seeded_audit_row):
-    with pytest.raises(DBAPIError):
+    with pytest.raises(DBAPIError, match=REFUSAL):
         await session.execute(text(f"DELETE FROM {table}"))  # noqa: S608
     await session.rollback()
 
 
 @pytest.mark.parametrize("table", APPEND_ONLY_TABLES)
 async def test_truncate_is_refused(session, table, seeded_audit_row):
-    with pytest.raises(DBAPIError):
+    with pytest.raises(DBAPIError, match=REFUSAL):
         await session.execute(text(f"TRUNCATE {table}"))
     await session.rollback()
 
@@ -69,7 +85,7 @@ async def test_a_delete_matching_no_rows_is_still_refused(session, table, seeded
     nothing would succeed silently and tell an attacker the table is mutable.
     Statement-level fires regardless, so probing and doing are equally refused.
     """
-    with pytest.raises(DBAPIError):
+    with pytest.raises(DBAPIError, match=REFUSAL):
         await session.execute(text(f"DELETE FROM {table} WHERE id = -1"))  # noqa: S608
     await session.rollback()
 
@@ -93,7 +109,7 @@ async def test_the_protection_survives_a_refused_attempt(session, seeded_audit_r
     """A rejected mutation must leave the row untouched, not partially applied."""
     before = (await session.execute(text("SELECT count(*) FROM audit_log"))).scalar_one()
 
-    with pytest.raises(DBAPIError):
+    with pytest.raises(DBAPIError, match=REFUSAL):
         await session.execute(text("DELETE FROM audit_log"))
     await session.rollback()
 

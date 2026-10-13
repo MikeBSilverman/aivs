@@ -139,12 +139,10 @@ class Operator(TimestampMixin, Base):
     )
     #: Argon2id hash. Never a raw password, never a reversible encryption.
     password_hash: Mapped[str] = mapped_column(Text, nullable=False)
-    #: TOTP shared secret. **Encoded, not encrypted** -- the column name predates
-    #: the honesty and the migration to rename it has not been worth the churn.
-    #: ``auth.passwords.encode_secret`` is base64: anyone with a database read has
-    #: the working second factor for every operator. Real envelope encryption is
-    #: designed in docs/encryption-design.md and not yet built; until it is, this
-    #: comment is the accurate description and the column name is not.
+    #: TOTP shared secret, sealed by ``auth.secretbox``: AES-256-GCM under a key
+    #: held in the process environment, with the operator's id as additional
+    #: authenticated data so a seed cannot be moved between rows. The column
+    #: name was inaccurate for as long as this was base64; it is accurate now.
     totp_secret_encrypted: Mapped[bytes | None] = mapped_column(nullable=True)
     totp_enrolled_at: Mapped[dt.datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
@@ -650,9 +648,8 @@ class Webhook(TimestampMixin, Base):
     )
     url: Mapped[str] = mapped_column(Text, nullable=False)
     #: HMAC key the receiver uses to verify payload authenticity. The plaintext
-    #: is shown to the member exactly once, at creation. **Encoded, not
-    #: encrypted** -- see the note on ``Operator.totp_secret_encrypted``; a
-    #: database read yields every member's working signing key.
+    #: is shown to the member exactly once, at creation, and sealed by
+    #: ``auth.secretbox`` thereafter, bound to this webhook's id.
     hmac_secret_encrypted: Mapped[bytes] = mapped_column(nullable=False)
     events: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False, default=list)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)

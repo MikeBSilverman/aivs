@@ -33,13 +33,13 @@ from aivs_schemas.models import (
 )
 from aivs_server.audit.log import AuditAction, record
 from aivs_server.auth.deps import AuthenticatedContext, SessionDep, SettingsDep
-from aivs_server.auth.passwords import encode_secret
 from aivs_server.auth.policy import (
     can_administer_circle,
     can_manage_org,
     is_system_admin,
     require,
 )
+from aivs_server.auth.secretbox import SecretBox, SecretPurpose
 from aivs_server.auth.sessions import revoke_sessions_for_certificate
 from aivs_server.db.models import (
     Circle,
@@ -582,10 +582,17 @@ async def register_webhook(
         ) from exc
 
     secret = secrets.token_urlsafe(32)
+    # The identifier is generated here rather than left to the column default,
+    # because the seal is bound to it: a column default is applied at INSERT,
+    # so `webhook.id` would still be None at the point the secret is sealed.
+    webhook_id = uuid.uuid4()
     webhook = Webhook(
+        id=webhook_id,
         org_id=ctx.org_id,
         url=payload.url,
-        hmac_secret_encrypted=encode_secret(secret),
+        hmac_secret_encrypted=SecretBox.from_settings(settings).seal(
+            secret, purpose=SecretPurpose.WEBHOOK_HMAC, subject=webhook_id
+        ),
         events=payload.events,
         is_active=True,
     )

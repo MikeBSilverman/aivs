@@ -18,15 +18,23 @@ deliberately no ``.env`` file support in production.
 
 from __future__ import annotations
 
+import base64
+import binascii
 import ipaddress
 import sys
 from functools import lru_cache
 from typing import Final, Literal, Self
 
-from pydantic import Field, SecretStr, field_validator, model_validator
+from pydantic import Field, SecretStr, ValidationError, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-__all__ = ["Settings", "get_settings"]
+from aivs_server.auth.secretbox import (
+    DEFAULT_ALGORITHM_NAME,
+    algorithm_by_name,
+    supported_key_sizes,
+)
+
+__all__ = ["ConfigurationError", "Settings", "get_settings"]
 
 #: Minimum length for the proxy shared secret. 32 bytes of base64 is ~43 chars;
 #: we require enough that a brute-force against the header is hopeless.
@@ -38,6 +46,36 @@ MIN_SHARED_SECRET_LEN: Final[int] = 32
 _PLACEHOLDER_MARKER: Final[str] = "REPLACE_ME"
 
 Environment = Literal["dev", "test", "staging", "production"]
+
+
+def _check_kek(value: SecretStr | None) -> None:
+    """Raise unless ``value`` is a usable key-encryption key.
+
+    Takes the ``SecretStr`` rather than the string it wraps, so that no caller
+    can hand the raw value to something that formats it. Nothing here puts the
+    value into a message. See ``Settings._keys_fit_the_algorithm`` for why this
+    must only ever be called from a model validator.
+    """
+    if value is None:
+        return
+    raw = value.get_secret_value()
+    if _PLACEHOLDER_MARKER in raw:
+        msg = (
+            f"secret still contains {_PLACEHOLDER_MARKER!r} -- it is the "
+            "deploy/env.example placeholder, which is public. Generate a "
+            "real one with: openssl rand -base64 32"
+        )
+        raise ValueError(msg)
+    try:
+        base64.b64decode(raw, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        msg = "must be base64 (generate one with: openssl rand -base64 32)"
+        raise ValueError(msg) from exc
+
+
+def _decode_kek(value: SecretStr) -> bytes:
+    """Decode a key-encryption key that :func:`_check_kek` has already accepted."""
+    return base64.b64decode(value.get_secret_value())
 
 
 class Settings(BaseSettings):
@@ -121,6 +159,29 @@ class Settings(BaseSettings):
     session_idle_timeout_minutes: int = Field(default=20, ge=5, le=240)
     session_cookie_name: str = "aivs_session"
 
+    # -- Secrets at rest ----------------------------------------------------
+    #: Key-encryption key for the two reversible secrets (operator TOTP seeds,
+    #: webhook HMAC keys). Base64, of whatever length the configured algorithm
+    #: takes -- 32 bytes for both current options:
+    #: ``openssl rand -base64 32``. See ``auth.secretbox`` for what it protects
+    #: and what it does not.
+    #:
+    #: Required rather than optional-with-a-default. A key the application
+    #: invents for itself would have to be stored somewhere it can read
+    #: unattended, which is the database it is meant to be protecting.
+    secret_encryption_key: SecretStr
+    #: The key being rotated away from. Set during a rotation so existing rows
+    #: still open; drop it once ``python -m aivs_server.rewrap_secrets`` reports
+    #: nothing stale.
+    secret_encryption_key_previous: SecretStr | None = None
+    #: AEAD used for *new* values. Existing values name their own algorithm in
+    #: their header and keep opening regardless, so changing this is a migration
+    #: run at leisure rather than a flag day -- see ``auth.secretbox``.
+    #:
+    #: Left at the default unless a member's cryptography policy or a platform
+    #: without AES hardware calls for something else.
+    secret_encryption_algorithm: str = DEFAULT_ALGORITHM_NAME
+
     # -- Outbound webhooks --------------------------------------------------
     webhook_timeout_seconds: float = Field(default=5.0, gt=0, le=30)
     webhook_max_attempts: int = Field(default=5, ge=1, le=20)
@@ -159,6 +220,37 @@ class Settings(BaseSettings):
         if len(value.get_secret_value()) < MIN_SHARED_SECRET_LEN:
             msg = f"secret must be at least {MIN_SHARED_SECRET_LEN} characters"
             raise ValueError(msg)
+        return value
+
+    @field_validator("secret_encryption_algorithm")
+    @classmethod
+    def _algorithm_is_registered(cls, value: str) -> str:
+        """Refuse an algorithm name this build does not implement.
+
+        A typo here would otherwise be discovered by the first write, and the
+        error would come from inside the cipher rather than from the line of
+        configuration that caused it.
+        """
+        algorithm_by_name(value)  # raises, naming the supported set
+        return value
+
+    @field_validator("secret_encryption_key_previous")
+    @classmethod
+    def _previous_kek_empty_means_absent(cls, value: SecretStr | None) -> SecretStr | None:
+        """An empty value means "not rotating".
+
+        Compose and Kubernetes both express "not set" as an empty string --
+        ``${VAR:-}`` and an absent secret mount respectively -- so a deployment
+        that is not mid-rotation must not be refused for a variable it never
+        set. This leniency is deliberately *not* shared with the active key:
+        pydantic does not re-validate an after-validator's return value, so a
+        shared validator that mapped empty to ``None`` would have quietly set
+        the required key to ``None`` and moved the failure to first use.
+
+        This validator must never raise. See :meth:`_keys_fit_the_algorithm`.
+        """
+        if value is None or not value.get_secret_value():
+            return None
         return value
 
     @field_validator("proxy_shared_secret", "session_secret", "database_url")
@@ -206,6 +298,49 @@ class Settings(BaseSettings):
         # fresh id and the proxy access log could no longer be joined to the
         # application log -- silently, with nothing logged to say so.
         return value.strip().lower()
+
+    @model_validator(mode="after")
+    def _keys_fit_the_algorithm(self) -> Self:
+        """Validate the key-encryption keys, in the one place that cannot leak them.
+
+        **Every check on these two values lives here, and none may move to a
+        field validator.** Pydantic puts the *pre-coercion* input into
+        ``ValidationError.input`` — the raw environment string, before
+        ``SecretStr`` exists to mask it — so a field validator that raises on a
+        bad key prints that key in the error. The compose healthcheck runs
+        ``python -m aivs_server.config`` every 30 seconds and prints the
+        exception, so a single stray character in a *working* previous key,
+        during the rotation window when it still opens every operator's second
+        factor and every member's signing key, would publish it to the container
+        health log and from there to the ISAC's log pipeline, repeatedly. An
+        after-validator's input is the model, whose repr masks ``SecretStr``.
+
+        The rest is ordinary cross-field validation: "how long is a key" is a
+        property of the algorithm. The active key is held to the active
+        algorithm exactly; the previous key only has to be a length *some*
+        registered algorithm uses, since it exists to open values that may have
+        been written under a different one.
+        """
+        _check_kek(self.secret_encryption_key)
+        _check_kek(self.secret_encryption_key_previous)
+
+        algorithm = algorithm_by_name(self.secret_encryption_algorithm)
+        active = len(self.secret_encryption_key_bytes)
+        if active != algorithm.key_bytes:
+            msg = (
+                f"secret_encryption_key must decode to {algorithm.key_bytes} bytes "
+                f"for {algorithm.name}, got {active}"
+            )
+            raise ValueError(msg)
+
+        previous = self.secret_encryption_key_previous_bytes
+        if previous is not None and len(previous) not in supported_key_sizes():
+            msg = (
+                "secret_encryption_key_previous must decode to one of "
+                f"{sorted(supported_key_sizes())} bytes, got {len(previous)}"
+            )
+            raise ValueError(msg)
+        return self
 
     @model_validator(mode="after")
     def validate_production_posture(self) -> Self:
@@ -274,6 +409,18 @@ class Settings(BaseSettings):
     def is_production(self) -> bool:
         return self.environment == "production"
 
+    @property
+    def secret_encryption_key_bytes(self) -> bytes:
+        """The active key-encryption key. Validated at construction."""
+        return _decode_kek(self.secret_encryption_key)
+
+    @property
+    def secret_encryption_key_previous_bytes(self) -> bytes | None:
+        """The key being rotated away from, if one is configured."""
+        if self.secret_encryption_key_previous is None:
+            return None
+        return _decode_kek(self.secret_encryption_key_previous)
+
     def peer_is_trusted_proxy(self, peer_ip: str | None) -> bool:
         """Return whether ``peer_ip`` is an address the proxy may connect from.
 
@@ -291,14 +438,51 @@ class Settings(BaseSettings):
         return any(address in network for network in self.trusted_proxy_networks)
 
 
+class ConfigurationError(RuntimeError):
+    """Configuration was rejected. Names fields and reasons, never values."""
+
+
+def _redacted(exc: ValidationError) -> str:
+    """Render a validation failure without the values that caused it.
+
+    Pydantic attaches the *input* to every error, and for a settings model built
+    from the environment that input is the dict of every configured value --
+    database URL, session secret, key-encryption keys and all. It is truncated
+    in the middle, so what survives into the message is the tail of a secret.
+
+    ``str(ValidationError)`` therefore cannot be printed or logged, and this is
+    not hypothetical: the compose healthcheck runs ``python -m
+    aivs_server.config`` every 30 seconds, so one malformed value during a key
+    rotation -- when the previous key still opens every operator's second factor
+    and every member's signing key -- would publish it to the container health
+    log and onward to the ISAC's log pipeline, indefinitely.
+
+    ``include_input=False`` is the whole fix; the rest is presentation.
+    """
+    reasons = [
+        f"{'.'.join(str(part) for part in err['loc']) or 'configuration'}: {err['msg']}"
+        for err in exc.errors(include_url=False, include_context=False, include_input=False)
+    ]
+    return "; ".join(reasons)
+
+
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     """Return the process-wide settings, constructed once.
 
     Cached because ``Settings`` is frozen and reading the environment repeatedly
     would let a mid-flight environment change alter security behaviour.
+
+    A rejected configuration is re-raised as :class:`ConfigurationError` with the
+    values stripped, ``from None`` so that the original -- which carries them in
+    its ``__context__`` and would be printed by any traceback -- does not travel
+    with it. Every caller in the application goes through this function, so the
+    redaction cannot be bypassed by forgetting it at a call site.
     """
-    return Settings()
+    try:
+        return Settings()
+    except ValidationError as exc:
+        raise ConfigurationError(_redacted(exc)) from None
 
 
 def _main() -> int:  # pragma: no cover - operational helper

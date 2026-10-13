@@ -37,13 +37,13 @@ from aivs_schemas.enums import CertStatus, OrgStatus
 from aivs_server.auth.context import AuthContext, AuthMethod, CircleGrant
 from aivs_server.auth.passwords import (
     constant_time_equals,
-    decode_secret,
     generate_session_token,
     hash_password,
     needs_rehash,
     verify_password,
     verify_totp,
 )
+from aivs_server.auth.secretbox import SecretBox, SecretPurpose
 from aivs_server.config import Settings
 from aivs_server.db.models import (
     Circle,
@@ -108,6 +108,7 @@ async def authenticate_operator(
     password: str,
     totp_code: str,
     org_id: uuid.UUID,
+    secret_box: SecretBox,
     now: dt.datetime | None = None,
 ) -> Operator:
     """Verify an operator's credentials, or raise :class:`SessionRejectedError`.
@@ -122,8 +123,24 @@ async def authenticate_operator(
     now = now or dt.datetime.now(dt.UTC)
     normalised = email.strip().lower()
 
+    # FOR UPDATE, because the lockout counter below is a read-modify-write and
+    # the lockout is the only bound on password guessing.
+    #
+    # Without it, `failed_login_count += 1` is an absolute UPDATE of a value read
+    # before the attempt: N concurrent failures all read the same count and all
+    # write the same count, so N attempts record one increment and the threshold
+    # is never reached. An attacker inside a member firm's certificate-bearing
+    # path could then guess without limit, while `locked_until` stayed null and
+    # the audit log showed an ordinary run of failures.
+    #
+    # The lock is held across the Argon2 verification below, which serialises
+    # concurrent attempts against one operator. That is the intent rather than a
+    # cost: attempts on one account queue instead of racing, and it is a single
+    # row, so there is nothing to deadlock against.
     operator = (
-        await session.execute(select(Operator).where(Operator.email == normalised))
+        await session.execute(
+            select(Operator).where(Operator.email == normalised).with_for_update()
+        )
     ).scalar_one_or_none()
 
     # Verified even when no operator matched, so the response time does not
@@ -141,7 +158,14 @@ async def authenticate_operator(
         # organisation's certificate path.
         raise SessionRejectedError("operator_org_mismatch")
 
-    second_factor_ok = verify_totp(decode_secret(operator.totp_secret_encrypted), totp_code)
+    second_factor_ok = verify_totp(
+        secret_box.unseal(
+            operator.totp_secret_encrypted,
+            purpose=SecretPurpose.TOTP,
+            subject=operator.id,
+        ),
+        totp_code,
+    )
 
     if not (password_ok and second_factor_ok):
         operator.failed_login_count += 1

@@ -15,11 +15,12 @@ from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
-from aivs_server.config import Settings
+from aivs_server.config import ConfigurationError, Settings, get_settings
 from aivs_server.db.models import Distribution, TaxiiCollection
 from tests.conftest import (
     TEST_CA_ISSUER_DN,
     TEST_PROXY_SECRET,
+    TEST_SECRET_KEY,
     TEST_SESSION_SECRET,
     proxy_headers,
 )
@@ -35,6 +36,7 @@ def _settings(**overrides: object) -> dict[str, object]:
         "database_url": "postgresql+psycopg://aivs@127.0.0.1:55432/aivs_test",
         "proxy_shared_secret": TEST_PROXY_SECRET,
         "session_secret": TEST_SESSION_SECRET,
+        "secret_encryption_key": TEST_SECRET_KEY,
         "expected_certificate_issuer_dn": TEST_CA_ISSUER_DN,
     }
     return {**base, **overrides}
@@ -192,3 +194,53 @@ async def test_a_retired_collection_may_be_replaced(session, make_circle, make_c
     await session.commit()
 
     assert replacement.id is not None
+
+
+# ---------------------------------------------------------------------------
+# A rejected configuration must not print the values it rejected
+# ---------------------------------------------------------------------------
+def test_a_rejected_configuration_never_prints_the_values(monkeypatch):
+    """`str(ValidationError)` carries the input, and the input is every secret.
+
+    Pydantic attaches the offending input to each error; for a settings model
+    built from the environment that input is the whole dict -- database URL,
+    session secret, key-encryption keys -- truncated in the middle, so the tail
+    of a secret survives into the message. The compose healthcheck runs
+    `python -m aivs_server.config` every 30 seconds and prints what it caught,
+    so one malformed value during a key rotation would publish a *working* key
+    to the container health log on a loop.
+    """
+    live_previous_key = "LIVE-KEY-THAT-STILL-OPENS-EVERY-SEALED-SECRET="
+    db_password = "DATABASE-PASSWORD-IN-THE-DSN"
+
+    for name, value in {
+        "AIVS_ENVIRONMENT": "test",
+        "AIVS_PUBLIC_BASE_URL": "https://aivs.test",
+        "AIVS_DATABASE_URL": f"postgresql+psycopg://aivs:{db_password}@127.0.0.1/aivs",
+        "AIVS_PROXY_SHARED_SECRET": TEST_PROXY_SECRET,
+        "AIVS_SESSION_SECRET": TEST_SESSION_SECRET,
+        "AIVS_SECRET_ENCRYPTION_KEY": TEST_SECRET_KEY,
+        "AIVS_EXPECTED_CERTIFICATE_ISSUER_DN": TEST_CA_ISSUER_DN,
+        # Malformed: not base64. A trailing newline from a file-backed secret
+        # is enough to land here.
+        "AIVS_SECRET_ENCRYPTION_KEY_PREVIOUS": live_previous_key,
+    }.items():
+        monkeypatch.setenv(name, value)
+
+    get_settings.cache_clear()
+    try:
+        with pytest.raises(ConfigurationError) as caught:
+            get_settings()
+    finally:
+        get_settings.cache_clear()
+
+    rendered = str(caught.value)
+    assert "secret_encryption_key_previous" in rendered or "configuration" in rendered
+    assert "base64" in rendered, "still says what is wrong"
+    for secret in (live_previous_key, db_password, TEST_SESSION_SECRET, TEST_PROXY_SECRET):
+        assert secret not in rendered
+    # The original ValidationError carries the values in its own message, so it
+    # must not be printed alongside this one. `from None` leaves __context__ set
+    # but marks it suppressed, which is what traceback rendering honours.
+    assert caught.value.__cause__ is None
+    assert caught.value.__suppress_context__ is True

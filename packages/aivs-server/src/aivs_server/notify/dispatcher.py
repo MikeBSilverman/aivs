@@ -35,7 +35,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aivs_server.audit.log import AuditAction, record
-from aivs_server.auth.passwords import decode_secret
+from aivs_server.auth.secretbox import SecretBox, SecretPurpose
 from aivs_server.config import Settings
 from aivs_server.db.models import Webhook, WebhookDelivery
 from aivs_server.notify.webhooks import (
@@ -141,7 +141,30 @@ async def _attempt(
         await _record_failure(session, webhook, delivery, reason=exc.reason)
         return False
 
-    secret = decode_secret(webhook.hmac_secret_encrypted) or ""
+    secret = (
+        SecretBox.from_settings(settings).unseal(
+            webhook.hmac_secret_encrypted,
+            purpose=SecretPurpose.WEBHOOK_HMAC,
+            subject=webhook.id,
+        )
+        or ""
+    )
+    if not secret:
+        # Signing with an empty key delivers a notification the member's
+        # receiver is obliged to reject, and burns an attempt doing it. The
+        # cause is on our side -- a key rotated away without keeping the old one
+        # configured -- so waiting will not fix it either.
+        #
+        # `consecutive_failures` is deliberately NOT incremented, unlike every
+        # other failure branch: it describes the health of the member's
+        # endpoint, and holding a member's webhook against them for our own
+        # misconfiguration would eventually have them re-registering an endpoint
+        # that was never broken.
+        delivery.error = "signing key could not be opened"
+        delivery.attempts = settings.webhook_max_attempts
+        await _record_failure(session, webhook, delivery, reason="signing_key_unavailable")
+        return False
+
     headers = {
         "content-type": "application/json",
         SIGNATURE_HEADER: sign_payload(secret.encode("utf-8"), body, timestamp),

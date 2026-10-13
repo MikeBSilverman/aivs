@@ -224,7 +224,7 @@ EXPOSE 8000
 # touches the database, so it stays honest about configuration and says nothing
 # about the database -- which is what the db service's own healthcheck is for.
 HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
-    CMD ["python", "-m", "aivs_server.config"]
+    CMD ["python", "-m", "aivs_server.healthcheck"]
 
 # The console script declared by packages/aivs-server/pyproject.toml
 # ([project.scripts] aivs-server = "aivs_server.__main__:main"). Exec form, so

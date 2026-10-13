@@ -265,13 +265,15 @@ services:
       AIVS_LOG_LEVEL: ${AIVS_LOG_LEVEL:-INFO}
 
     volumes:
-      # The issuing CA's *certificate* only, as one read-only file. The proxy
-      # mounts the whole CA output directory; the application must not, because
-      # that directory is where init-ca.sh writes the issuing key.
+      # The key-encryption key, as one read-only file (see the environment
+      # block above for why a file).
       - type: bind
         source: ${AIVS_SECRET_ENCRYPTION_KEY_PATH:?set AIVS_SECRET_ENCRYPTION_KEY_PATH in deploy/.env to the ABSOLUTE path of a 0600 key file}
         target: /run/aivs/secret-encryption-key
         read_only: true
+      # The issuing CA's *certificate* only, as one read-only file. The proxy
+      # mounts the whole CA output directory; the application must not, because
+      # that directory is where init-ca.sh writes the issuing key.
       - type: bind
         source: ${AIVS_CA_DIR:?set AIVS_CA_DIR in deploy/.env to the ABSOLUTE path of deploy/ca/out}/intermediate/intermediate.crt
         target: /etc/aivs/issuing-ca.pem
@@ -293,12 +295,13 @@ services:
         condition: service_healthy
 
     # Restates the image's own HEALTHCHECK so that the whole health contract is
-    # visible in one file during a review. `python -m aivs_server.config`
+    # visible in one file during a review. `python -m aivs_server.healthcheck`
     # constructs Settings, which runs every validator including
-    # validate_production_posture: a container started with a dev bypass
-    # enabled reports unhealthy instead of quietly serving traffic.
+    # validate_production_posture (a container started with a dev bypass
+    # enabled reports unhealthy instead of quietly serving traffic), and then
+    # asks /readyz on loopback, so a database outage shows here too.
     healthcheck:
-      test: ["CMD", "python", "-m", "aivs_server.config"]
+      test: ["CMD", "python", "-m", "aivs_server.healthcheck"]
       interval: 30s
       timeout: 10s
       retries: 3

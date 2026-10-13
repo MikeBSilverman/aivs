@@ -374,6 +374,15 @@ interact, build the object explicitly and assert the result.
 than overriding it, so the dev stack published a privileged port on every
 interface. Use `!override`, and verify with `docker compose config`.
 
+**A runbook procedure is an interface; changing what it drives breaks it.**
+Moving the key-encryption key into a file was tested in code and left runbook
+§7.4 telling operators to set the key in the environment, which the app now
+refuses. That would have stopped the instance from starting in the middle of a
+rotation after a suspected key disclosure, which is exactly when a rotation
+happens. Compose also had no way to mount a previous key. The steps that matter
+in an incident get a test that reads the runbook and the files it names
+(`test_deployment_contract.py`).
+
 **"Permit only dev", never "deny only production" — and that includes the docs.**
 `show_docs = not settings.is_production` meant a staging instance, which for an
 ISAC mirrors production and holds real embargoed intelligence, served an

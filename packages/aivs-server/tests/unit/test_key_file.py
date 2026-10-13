@@ -85,3 +85,17 @@ def test_a_rotations_previous_key_is_held_to_the_same_rule(tmp_path: Path):
         secret_encryption_key_file=TEST_SECRET_KEY_FILE,
         secret_encryption_key_previous_file=previous,
     ).secret_encryption_key_previous
+
+
+def test_an_unreadable_key_path_is_a_configuration_error_not_a_crash(tmp_path: Path):
+    """A directory at the path passes stat() and failed at read as a raw
+    IsADirectoryError, outside the configuration-error path."""
+    directory = tmp_path / "secret-encryption-key"
+    directory.mkdir(mode=0o700)
+    private = tmp_path / "private-key"
+    private.write_text(TEST_SECRET_KEY, encoding="utf-8")
+    private.chmod(0o600)
+
+    with pytest.raises(ValidationError, match="cannot be read"):
+        _settings(secret_encryption_key_file=directory)
+    assert _settings(secret_encryption_key_file=private)

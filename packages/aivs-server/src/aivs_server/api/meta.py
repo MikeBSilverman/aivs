@@ -20,8 +20,9 @@ __all__ = ["public_router", "router"]
 #: These answer the orchestrator's health probes, which cannot present a member
 #: certificate. Two things are true and were previously misstated here:
 #:
-#: 1. The orchestrator and container healthcheck reach these on the proxy's
-#:    *internal* listener, which is not exposed off-host.
+#: 1. The container healthcheck asks /readyz on loopback, and a scraper reads
+#:    /metrics over the compose backend network; neither goes through the
+#:    proxy, whose internal listener answers /healthz alone.
 #: 2. They are NOT reachable on the member-facing mTLS listener: nginx answers
 #:    them there with exact-match 404s (``deploy/nginx/nginx.conf``). The
 #:    application still keeps them harmless in case a deployment's proxy does

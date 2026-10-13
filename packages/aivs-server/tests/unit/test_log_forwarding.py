@@ -64,8 +64,8 @@ def test_forwarding_replaces_the_local_policy_and_insists_on_tls():
     assert forward.tag == "!override"
     assert "max-size" not in options
     assert options["syslog-format"].startswith("rfc5424")
-    assert options["syslog-address"].startswith("${AIVS_LOG_FORWARD_ADDRESS:?")
-    assert "tcp+tls://" in options["syslog-address"]
+    # The scheme is fixed in the file; only host:port comes from the environment.
+    assert options["syslog-address"].startswith("tcp+tls://${AIVS_LOG_FORWARD_COLLECTOR:?")
     assert options["syslog-tls-ca-cert"].startswith("${AIVS_LOG_FORWARD_CA_CERT:?")
     assert options["mode"] == "non-blocking", "a collector outage must not stop the platform"
 

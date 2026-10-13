@@ -1,0 +1,25 @@
+# =============================================================================
+# Run during a key-encryption-key rotation only (runbook section 7.4).
+#
+#   docker compose --env-file deploy/.env \
+#     -f docker-compose.yml -f docker-compose.rotation.yml up -d
+#
+# Mounts the key being replaced, so values sealed under it still open while
+# `rewrap_secrets` moves them onto the new one. Remove this file from the
+# command line, and restart, only when a report run shows stale=0 and
+# unopenable=0. Dropping it earlier is the one way to lose those secrets, and
+# it does not fail loudly.
+#
+#   AIVS_SECRET_ENCRYPTION_KEY_PREVIOUS_PATH   absolute path of the old key file
+#                                              (mode 0600, owned by uid 10001)
+# =============================================================================
+
+services:
+  app:
+    environment:
+      AIVS_SECRET_ENCRYPTION_KEY_PREVIOUS_FILE: /run/aivs/secret-encryption-key-previous
+    volumes:
+      - type: bind
+        source: ${AIVS_SECRET_ENCRYPTION_KEY_PREVIOUS_PATH:?set AIVS_SECRET_ENCRYPTION_KEY_PREVIOUS_PATH to the ABSOLUTE path of the key being replaced}
+        target: /run/aivs/secret-encryption-key-previous
+        read_only: true

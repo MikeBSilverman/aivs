@@ -103,7 +103,15 @@ def read_secret_file(path: Path) -> str:
             "chmod 600 it"
         )
         raise ValueError(msg)
-    return path.read_text(encoding="utf-8").rstrip("\r\n")
+    try:
+        contents = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        # A 0600 file owned by another uid, or a directory at the path, passes
+        # stat() and fails here. Raised as ValueError so it reaches the operator
+        # as the same "configuration refused" every other bad setting gives.
+        msg = f"secret file {path} cannot be read: {getattr(exc, 'strerror', None) or 'not text'}"
+        raise ValueError(msg) from exc
+    return contents.rstrip("\r\n")
 
 
 @lru_cache(maxsize=4)

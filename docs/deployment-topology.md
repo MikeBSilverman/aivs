@@ -445,8 +445,14 @@ in every authorization predicate.
 - Issuing CA in an HSM or KMS.
 - `AIVS_PROXY_SHARED_SECRET` — ≥ 32 characters, validated at startup.
 - `AIVS_SESSION_SECRET` — ≥ 32 characters, validated at startup.
-- `AIVS_SECRET_ENCRYPTION_KEY` — base64, of the length the configured algorithm
-  takes (32 bytes for either current option), validated at startup. Encrypts operator TOTP seeds and members' webhook signing keys.
+- The key-encryption key, as a **file** (`AIVS_SECRET_ENCRYPTION_KEY_FILE`; under
+  compose, `AIVS_SECRET_ENCRYPTION_KEY_PATH` on the host) — base64, of the length
+  the configured algorithm takes (32 bytes for either current option), mode
+  `0600` or stricter, validated at startup. Outside dev the environment form is
+  refused, because `docker inspect` and `/proc/<pid>/environ` show it. On
+  Kubernetes or Swarm, set the secret mount's mode to `0400` (`defaultMode`,
+  `mode`): their defaults are group- or world-readable and are refused.
+  Encrypts operator TOTP seeds and members' webhook signing keys.
   **Back it up separately from the database.** Held together, they are one
   artefact with no encryption at rest; lost entirely, every operator re-enrols
   their second factor and every member re-registers their webhook.
@@ -474,13 +480,14 @@ in every authorization predicate.
 Minimum production environment:
 
 ```bash
-AIVS_ENVIRONMENT=production            # the default; set it anyway, explicitly
+AIVS_ENVIRONMENT=production            # anything but `dev` gets the strict posture
 AIVS_INSTANCE_NAME="Meridian FS-ISAC AIVS"
 AIVS_PUBLIC_BASE_URL=https://aivs.example.org
 AIVS_DATABASE_URL=postgresql+psycopg://aivs_app:...@db:5432/aivs
 AIVS_PROXY_SHARED_SECRET=<32+ chars>
 AIVS_SESSION_SECRET=<32+ chars>
-AIVS_SECRET_ENCRYPTION_KEY=<openssl rand -base64 32>
+AIVS_SECRET_ENCRYPTION_KEY_FILE=/run/aivs/secret-encryption-key   # 0600, never the env form
+AIVS_ISSUING_CA_CERTIFICATE_FILE=/etc/aivs/issuing-ca.pem          # required outside dev
 # AIVS_SECRET_ENCRYPTION_ALGORITHM=aes-256-gcm   # or chacha20-poly1305
 AIVS_TRUSTED_PROXY_CIDRS=["10.20.0.2/32"]   # the nginx container address
 AIVS_LOG_LEVEL=INFO
@@ -512,8 +519,9 @@ deploy/ca/init-ca.sh --org "Meridian FS-ISAC" \
 # then move private/root/root.key to offline media
 
 # 1. Configuration
-$EDITOR .env
-python -m aivs_server.config
+cp deploy/env.example deploy/.env && chmod 0600 deploy/.env
+$EDITOR deploy/.env
+docker compose --env-file deploy/.env config -q   # interpolation and syntax
 
 # 2. Schema, with the app role named so the append-only grants apply
 AIVS_APP_DB_ROLE=aivs_app \
@@ -525,7 +533,7 @@ psql -U aivs_app -c "DELETE FROM audit_log WHERE id = 1;"
 #   expected: ERROR: table audit_log is append-only; DELETE is not permitted
 
 # 4. Start
-docker compose up -d
+docker compose --env-file deploy/.env up -d
 ```
 
 Step 3 is not optional. The append-only guarantee is the evidentiary basis of the
@@ -556,15 +564,22 @@ restore test on a schedule you actually keep.
 Three ways in, all reading the same health registry
 (`aivs_server/observability.py`), so they cannot disagree:
 
-- **`/readyz`** for the orchestrator: 503 only when the database is
-  unreachable; a degraded background component is named in `components`
-  while the probe stays 200.
-- **`/metrics`** in Prometheus text format, scraped from the `backend` network.
-  Alert on `aivs_component_up == 0`; that alert still works when the
-  application's own detection loop has died.
+- **`/readyz`**: 503 only when the database is unreachable; a degraded
+  background component is named in `components` while the probe stays 200.
+  The app container's healthcheck (`python -m aivs_server.healthcheck`) asks
+  it on loopback, so `docker compose ps` shows a database outage; an
+  orchestrator outside compose should probe the same.
+- **`/metrics`** in Prometheus text format. Neither probe is reachable through
+  the proxy (the member listener answers 404, the internal listener serves
+  only `/healthz`), so a scraper joins the compose `backend` network and asks
+  the app directly at `http://app:8000/metrics`: add it to this project with
+  `networks: [backend]`, or attach an existing one with
+  `docker network connect aivs_backend <scraper>`. Alert on
+  `aivs_component_up == 0`; that alert still works when the application's own
+  detection loop has died.
 - **`docker-compose.log-forward.yml`** forwards every container's output to
   the ISAC's collector as RFC 5424 syslog over TLS, including detections as
-  OCSF and CEF (runbook §9.1–9.2). Set `AIVS_LOG_FORWARD_ADDRESS` and
+  OCSF and CEF (runbook §9.1–9.2). Set `AIVS_LOG_FORWARD_COLLECTOR` (host:port; TLS is fixed in the file) and
   `AIVS_LOG_FORWARD_CA_CERT` on the host. The Docker daemon sends the stream,
   so the allow-list for it is the host firewall, not the compose networks.
 

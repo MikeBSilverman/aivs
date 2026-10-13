@@ -420,7 +420,7 @@ nothing else is allowed to.
 | Audit stream | **Ship `audit_log` rows off-box, append-only, to a system the AIVS operators cannot alter** | Continuous |
 | CA material | Offline, encrypted media, two locations | On change |
 | Configuration and secrets | Secret manager, versioned | On change |
-| `AIVS_SECRET_ENCRYPTION_KEY` | Secret manager or offline media, **not beside the database backup** | On rotation |
+| The key-encryption key file (`AIVS_SECRET_ENCRYPTION_KEY_PATH`) | Secret manager or offline media, **not beside the database backup** | On rotation |
 
 **The key-encryption key is not part of the database backup, and must not be
 stored with it.** A backup that contains both the sealed columns and the key
@@ -535,20 +535,40 @@ the same re-wrap below then migrates the rest. Substitute "the algorithm" for
 "the key" in the steps, and there is no previous-key variable to remove at the
 end.
 
-1. Generate the new key: `openssl rand -base64 32`.
-2. Set `AIVS_SECRET_ENCRYPTION_KEY` to it, and
-   `AIVS_SECRET_ENCRYPTION_KEY_PREVIOUS` to the value it replaces. Restart.
+Both keys are files. Outside dev the application refuses either key from the
+environment, so do not set `AIVS_SECRET_ENCRYPTION_KEY` or
+`AIVS_SECRET_ENCRYPTION_KEY_PREVIOUS` during a rotation: it will not start.
+
+1. Write the new key to a **new** file, readable only by the app's uid:
+
+   ```bash
+   umask 077
+   openssl rand -base64 32 > /srv/aivs/secrets/secret-encryption-key.new
+   chown 10001:10001 /srv/aivs/secrets/secret-encryption-key.new
+   ```
+
+2. In `deploy/.env`, point `AIVS_SECRET_ENCRYPTION_KEY_PATH` at the new file and
+   set `AIVS_SECRET_ENCRYPTION_KEY_PREVIOUS_PATH` to the file it replaces. Start
+   with the rotation override, which mounts the previous key:
+
+   ```bash
+   docker compose --env-file deploy/.env \
+     -f docker-compose.yml -f docker-compose.rotation.yml up -d
+   ```
+
    Everything continues to work at this point: existing rows open under the
    previous key, new writes seal under the new one.
 3. Re-seal what is still on the old key:
 
    ```bash
-   python -m aivs_server.rewrap_secrets            # report
-   python -m aivs_server.rewrap_secrets --apply    # re-seal
+   docker compose exec app python -m aivs_server.rewrap_secrets            # report
+   docker compose exec app python -m aivs_server.rewrap_secrets --apply    # re-seal
    ```
 
-4. Re-run the report. **Only when it shows `stale=0` and `unopenable=0`** remove
-   `AIVS_SECRET_ENCRYPTION_KEY_PREVIOUS` and restart.
+4. Re-run the report. **Only when it shows `stale=0` and `unopenable=0`**, start
+   again without `-f docker-compose.rotation.yml` and unset
+   `AIVS_SECRET_ENCRYPTION_KEY_PREVIOUS_PATH`. Keep the old file wherever keys
+   are kept until a backup taken after the rotation has been tested.
 
 Dropping the previous key before step 4 is clean is the one way to lose these
 secrets, and it does not fail loudly: the rows remain, the application starts,
@@ -772,10 +792,11 @@ the platform, so alert on the collector's side when the stream goes quiet.
 
 ## 10. Things that will bite you
 
-- **`AIVS_ENVIRONMENT` not set to `production`** disables
+- **`AIVS_ENVIRONMENT=dev`** is the one value that relaxes
   `validate_production_posture()`, which is what refuses to start with dev
-  bypasses enabled. It defaults to `production`, so this only happens if someone
-  set it to something else and left it.
+  bypasses enabled. Staging and every other value get the strict posture. It
+  defaults to `production`, so this only happens if someone set `dev` on a real
+  host and left it.
 - **A too-wide `AIVS_TRUSTED_PROXY_CIDRS`** throws away half of the B3 boundary
   control. It should be a `/32`.
 - **Migrating without `AIVS_APP_DB_ROLE`** silently skips the grant half of the

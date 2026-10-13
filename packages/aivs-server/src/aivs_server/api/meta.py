@@ -7,12 +7,11 @@ from typing import Any
 
 from fastapi import APIRouter, Response, status
 from fastapi.responses import PlainTextResponse
-from sqlalchemy import func, select, text
+from sqlalchemy import text
 
-from aivs_schemas.enums import EmbargoStatus
 from aivs_server.auth.deps import AuthenticatedContext, SessionDep, SettingsDep
-from aivs_server.db.models import Embargo, WebhookDelivery
 from aivs_server.observability import HEARTBEATS, render_metrics
+from aivs_server.services.instance_status import pending_deliveries, pending_embargoes
 
 __all__ = ["public_router", "router"]
 
@@ -95,30 +94,8 @@ async def metrics(session: SessionDep) -> str:
     now = dt.datetime.now(dt.UTC)
     return render_metrics(
         HEARTBEATS.report(now=now),
-        pending_deliveries=await _pending_deliveries(session),
-        pending_embargoes=await _pending_embargoes(session),
-    )
-
-
-async def _pending_deliveries(session: SessionDep) -> int:
-    return int(
-        await session.scalar(
-            select(func.count())
-            .select_from(WebhookDelivery)
-            .where(WebhookDelivery.delivered_at.is_(None))
-        )
-        or 0
-    )
-
-
-async def _pending_embargoes(session: SessionDep) -> int:
-    return int(
-        await session.scalar(
-            select(func.count())
-            .select_from(Embargo)
-            .where(Embargo.status.in_((EmbargoStatus.PENDING, EmbargoStatus.EXTENDED)))
-        )
-        or 0
+        pending_deliveries=await pending_deliveries(session),
+        pending_embargoes=await pending_embargoes(session),
     )
 
 

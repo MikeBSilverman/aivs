@@ -40,7 +40,13 @@ from aivs_schemas.enums import CertStatus, CircleRole, OrgStatus, OrgType
 from aivs_schemas.models import CircleCreate
 from aivs_server.audit.log import AuditAction, record
 from aivs_server.auth.deps import SessionDep, SettingsDep
-from aivs_server.auth.policy import is_isac_editor, is_isac_membership, require
+from aivs_server.auth.policy import (
+    can_view_instance_status,
+    is_isac_editor,
+    is_isac_membership,
+    require,
+)
+from aivs_server.auth.secretbox import SecretBox
 from aivs_server.db.models import (
     Circle,
     CircleMembership,
@@ -63,6 +69,7 @@ from aivs_server.services.circles import (
     remove_circle_member,
     resolve_organisations,
 )
+from aivs_server.services.instance_status import gather_status
 
 __all__ = ["router"]
 
@@ -527,3 +534,26 @@ async def remove_member_screen(
         "Removed. Content they already collected is theirs; this stops future delivery.",
     )
     return response
+
+
+# ---------------------------------------------------------------------------
+# Instance status
+# ---------------------------------------------------------------------------
+@router.get("/status", response_class=HTMLResponse)
+async def status_screen(request: Request, settings: SettingsDep, session: SessionDep) -> Response:
+    """Health, queues, usage and what needs attention, laid out for a person.
+
+    The same facts ``/readyz`` and ``/metrics`` expose, from the same functions,
+    so the page cannot say "fine" while the probe says "degraded".
+    """
+    ctx, _csrf = await current_session(request, settings, session)
+    require(can_view_instance_status(ctx), "portal_admin_status")
+
+    facts = await gather_status(
+        session, now=dt.datetime.now(dt.UTC), box=SecretBox.from_settings(settings)
+    )
+    context = base_context(
+        request, settings, ctx, await operator_name(session, ctx), "admin-status"
+    )
+    context["status"] = facts
+    return render(request, "admin_status.html", context)

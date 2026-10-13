@@ -1,0 +1,182 @@
+{% extends "base.html" %}
+{% block title %}Status &middot; {{ instance_name }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <h1>Instance status</h1>
+  <p>Health, queues and what needs attention, as of
+     <span class="mono">{{ status.now }}</span>. The same facts the readiness
+     probe and the metrics endpoint report. Counts and identifiers only.</p>
+</div>
+
+{% if status.distribution_paused %}
+  <div class="notice notice-error" role="alert">
+    <h2>Distribution is paused</h2>
+    <p>Nothing is being distributed or served to members, since
+       <span class="mono">{{ status.paused_at }}</span>. See runbook &sect;7.5.</p>
+  </div>
+{% endif %}
+
+<div class="card">
+  <h2>Components</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Component</th><th>State</th><th>Reason</th><th>Last success</th>
+                 <th>Runs</th><th>Failures</th></tr></thead>
+      <tbody>
+        <tr data-component="database">
+          <td class="mono">database</td>
+          <td><span class="badge state-ok">ok</span></td>
+          <td class="muted">this page read it</td><td></td><td></td><td></td>
+        </tr>
+        {% for component in status.components %}
+          <tr data-component="{{ component.name }}">
+            <td class="mono">{{ component.name }}</td>
+            <td><span class="badge state-{{ component.state }}">{{ component.state }}</span></td>
+            <td class="muted">{{ component.reason }}</td>
+            <td class="mono">{{ component.last_success_at or "never" }}</td>
+            <td class="muted">{{ component.successes }}</td>
+            <td class="muted">{{ component.failures }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Queues</h2>
+  <table>
+    <tbody>
+      <tr><th>Notifications waiting to be delivered</th>
+          <td data-fact="pending_deliveries">{{ status.pending_deliveries }}</td></tr>
+      <tr><th>Embargoes not yet released</th>
+          <td data-fact="pending_embargoes">{{ status.pending_embargoes }}</td></tr>
+      <tr><th>Next scheduled release</th>
+          <td class="mono">{{ status.next_release_at or "none scheduled" }}</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>Detections, last 24 hours</h2>
+  {% if status.detections %}
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Raised</th><th>Rule</th><th>Severity</th><th>Summary</th></tr></thead>
+        <tbody>
+          {% for finding in status.detections %}
+            <tr data-detection="{{ finding.rule }}">
+              <td class="mono">{{ finding.at }}</td>
+              <td class="mono">{{ finding.rule }}</td>
+              <td>{{ finding.severity }}</td>
+              <td class="muted">{{ finding.summary }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="muted">What each rule means and what to do first: runbook &sect;9.1.</p>
+  {% else %}
+    <div class="empty">Nothing raised.</div>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Usage, last 7 days</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Day (UTC)</th><th>Submissions</th><th>Distributions</th><th>Retrievals</th></tr></thead>
+      <tbody>
+        {% for day in status.usage %}
+          <tr><td class="mono">{{ day.day }}</td><td>{{ day.submissions }}</td>
+              <td>{{ day.distributions }}</td><td>{{ day.retrievals }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Organisations</h2>
+  <p>
+    {% for state, total in status.organisations.items() %}
+      <span class="badge state-{{ state }}">{{ state }}</span> {{ total }}{% if not loop.last %} &middot; {% endif %}
+    {% endfor %}
+  </p>
+  {% if status.quarantined %}
+    <h3>Quarantined</h3>
+    <ul>
+      {% for org in status.quarantined %}
+        <li data-quarantined="{{ org.slug }}"><span class="mono">{{ org.slug }}</span>
+            since <span class="mono">{{ org.since }}</span></li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Needs attention</h2>
+
+  <h3>Certificates expiring within 30 days</h3>
+  {% if status.expiring_certificates %}
+    <ul>
+      {% for cert in status.expiring_certificates %}
+        <li data-expiring="{{ cert.org }}"><span class="mono">{{ cert.org }}</span>
+            {{ cert.label }} &mdash;
+            {% if cert.expired %}<strong>expired</strong>{% else %}expires{% endif %}
+            <span class="mono">{{ cert.not_after }}</span></li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <div class="empty">None.</div>
+  {% endif %}
+
+  <h3>Members that have retrieved nothing for 14 days</h3>
+  <p class="muted">A member whose feed has stopped is not receiving warnings and may not know.</p>
+  {% if status.silent_members %}
+    <ul>
+      {% for member in status.silent_members %}
+        <li data-silent="{{ member.org }}"><span class="mono">{{ member.org }}</span>
+            &mdash; last retrieval
+            <span class="mono">{{ member.last_retrieval or "never" }}</span></li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <div class="empty">None.</div>
+  {% endif %}
+
+  <h3>Failing webhook endpoints</h3>
+  {% if status.failing_webhooks %}
+    <ul>
+      {% for hook in status.failing_webhooks %}
+        <li data-failing="{{ hook.org }}"><span class="mono">{{ hook.org }}</span>
+            &rarr; <span class="mono">{{ hook.host }}</span>:
+            {{ hook.failures }} consecutive failures{% if not hook.active %} (disabled){% endif %}</li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <div class="empty">None.</div>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Secret-encryption key</h2>
+  <table>
+    <tbody>
+      <tr><th>Active key fingerprint</th><td class="mono">{{ status.key_fingerprint }}</td></tr>
+      <tr><th>Algorithm</th><td class="mono">{{ status.key_algorithm }}</td></tr>
+      <tr><th>Sealed values not yet on this key</th>
+          <td data-fact="secrets_needing_rewrap">{{ status.secrets_needing_rewrap }}</td></tr>
+    </tbody>
+  </table>
+  <p class="muted">Above zero after a rotation: run the rewrap (runbook &sect;7.4) before
+     removing the previous key.</p>
+</div>
+
+<div class="card">
+  <h2>Not shown here</h2>
+  <p class="muted">Backup age. Backups run outside the application (runbook &sect;6),
+     so this page cannot see them. Monitor them where they run.</p>
+</div>
+{% endblock %}

@@ -31,6 +31,9 @@
           <a href="/portal/review" {% if active == 'review' %}aria-current="page"{% endif %}>Review queue</a>
           <a href="/portal/admin/orgs" {% if active == 'admin-orgs' %}aria-current="page"{% endif %}>Organisations</a>
           <a href="/portal/admin/circles" {% if active == 'admin-circles' %}aria-current="page"{% endif %}>Circles</a>
+          {% if can_view_status %}
+            <a href="/portal/admin/status" {% if active == 'admin-status' %}aria-current="page"{% endif %}>Status</a>
+          {% endif %}
         {% endif %}
       </nav>
       <span class="whoami">

@@ -700,6 +700,14 @@ collapses under examination:
 
 ### 9.1 What the platform watches for you
 
+**`/portal/admin/status`** puts all of it on one page for `system_admin` and
+`isac_membership`: component health, queue depths, detections from the last
+24 hours, usage for the past week, quarantined organisations, certificates
+expiring within 30 days, members that have retrieved nothing for 14 days,
+failing webhook endpoints, and sealed secrets not yet on the active key. Three
+of the monthly reviews in the table above start there. It cannot see backups,
+and it says so.
+
 Some of the reviews above are now also rules that run every
 `AIVS_DETECTION_INTERVAL_SECONDS` (default 60) in `services/detections.py`.
 Each finding is raised **once per rule window** and goes three ways:

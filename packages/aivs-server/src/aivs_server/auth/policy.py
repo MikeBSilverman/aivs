@@ -63,6 +63,7 @@ __all__ = [
     "can_review_submissions",
     "can_submit_to_circle",
     "can_transition_submission",
+    "can_view_instance_status",
     "can_view_submission",
     "can_view_submission_receipts",
     "distribution_visibility_clause",
@@ -391,6 +392,16 @@ def can_reconnect_org(ctx: AuthContext) -> bool:
     reconnecting itself would let whoever holds its compromised credentials do
     the same."""
     return is_isac_membership(ctx) or is_isac_editor(ctx)
+
+
+def can_view_instance_status(ctx: AuthContext) -> bool:
+    """Read the status page: health, queues, usage counts, expiring credentials.
+
+    The people who run the instance and the people who run the membership. It
+    carries counts and identifiers, never content, so a role with no content
+    right may read it.
+    """
+    return is_system_admin(ctx) or is_isac_membership(ctx)
 
 
 def can_pause_distribution(ctx: AuthContext) -> bool:

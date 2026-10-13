@@ -264,6 +264,10 @@ tbody tr:hover { background: var(--mist); }
 .state-distributed { background: var(--brand);       color: var(--white); }
 .state-superseded  { background: var(--mist);        color: var(--muted); border: 1px solid var(--line); }
 .state-withdrawn   { background: #f7e9eb;            color: var(--danger); }
+/* Component health and organisation status on the admin status page. */
+.state-ok          { background: #e6f2ec;            color: var(--ok); }
+.state-starting    { background: var(--mist);        color: var(--muted); border: 1px solid var(--line); }
+.state-degraded    { background: #fbf0e1;            color: var(--warn); }
 
 /* TLP 2.0 — FIRST's colours. Do not rebrand these. An analyst reads handling
  * instructions from this badge, and a TLP:RED that looks like a house red is

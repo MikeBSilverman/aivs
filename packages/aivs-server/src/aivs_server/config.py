@@ -130,6 +130,19 @@ def load_ca_certificate(path: Path) -> x509.Certificate:
     return certificate
 
 
+#: Headers the application reads identity from. Pinned to nginx's identity
+#: snippet by tests/unit/test_proxy_config.py.
+_IDENTITY_HEADER_FIELDS: Final[frozenset[str]] = frozenset(
+    {
+        "header_client_verify",
+        "header_client_cert",
+        "header_proxy_auth",
+        "header_request_id",
+        "header_real_ip",
+    }
+)
+
+
 class Settings(BaseSettings):
     """Process configuration, read once from the environment at startup."""
 
@@ -482,17 +495,34 @@ class Settings(BaseSettings):
         }
         return [name for name, enabled in flags.items() if enabled]
 
+    def _identity_header_violations(self) -> list[str]:
+        """Identity headers must be the ones the shipped proxy overwrites.
+
+        The names are settings, for other proxies, but nginx's identity snippet
+        overwrites only the defaults. Renamed, a header nginx neither sets nor
+        blanks is passed through from the client: a member sending another
+        member's (public) certificate under it would be resolved as that member,
+        since the CA signature proves who issued a certificate, not who holds it.
+        """
+        return [
+            f"{name} (renamed from {field.default!r}; the shipped proxy overwrites "
+            "only the default names)"
+            for name, field in type(self).model_fields.items()
+            if name in _IDENTITY_HEADER_FIELDS and getattr(self, name) != field.default
+        ]
+
     def _proxy_trust_violations(self) -> list[str]:
         """The allow-list of addresses the mTLS proxy may connect from."""
+        violations = self._identity_header_violations()
         if not self.trusted_proxy_cidrs:
-            return ["trusted_proxy_cidrs (must not be empty)"]
+            return [*violations, "trusted_proxy_cidrs (must not be empty)"]
         if any(network.prefixlen == 0 for network in self.trusted_proxy_networks):
             # A non-empty allowlist that matches every address is not an
             # allowlist. "0.0.0.0/0" passes the emptiness check, and
             # strict=False means a typo'd prefix length such as "10.0.0.1/0"
             # normalises to exactly that rather than erroring.
-            return ["trusted_proxy_cidrs (must not contain a /0 network)"]
-        return []
+            return [*violations, "trusted_proxy_cidrs (must not contain a /0 network)"]
+        return violations
 
     def _output_violations(self) -> list[str]:
         """What the service tells the world: its URL, its logs, its page sizes."""

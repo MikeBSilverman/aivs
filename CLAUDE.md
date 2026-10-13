@@ -330,8 +330,11 @@ the other branch owes.
 
 **Anonymity is a promise the server can only partly keep.** The pipeline rewrites
 `created_by_ref`; it cannot sanitise free text. Self-identifying structure
-(an `identity` SDO) is refused at ingest rather than stripped, and the residual
-limit is documented rather than papered over.
+is refused at ingest and again at distribution rather than stripped: the
+submitter's own `identity` SDO, and any reference to its registered identifier
+outside `created_by_ref` (a `where_sighted_refs` naming itself passed until the
+Phase A review). The residual limit, free text, is documented rather than papered
+over.
 
 **Check the property against the state, not against the request that changed it.**
 `distribute_anonymously` was validated only inside the code path that stored a

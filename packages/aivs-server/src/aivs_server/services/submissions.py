@@ -23,7 +23,7 @@ import uuid
 from collections.abc import Iterable
 from typing import Any, Final
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -42,6 +42,7 @@ __all__ = [
     "create_submission",
     "foreign_identity_ids",
     "replace_submission_objects",
+    "self_identifying_problem",
     "update_submission",
 ]
 
@@ -98,7 +99,14 @@ def _parse_stix_timestamp(value: Any, field: str, stix_id: str) -> dt.datetime:
     if parsed.tzinfo is None:
         msg = f"object {stix_id} has a '{field}' without a timezone"
         raise SubmissionError(msg)
-    return truncate_to_taxii_precision(parsed.astimezone(dt.UTC))
+    try:
+        in_utc = parsed.astimezone(dt.UTC)
+    except OverflowError as exc:
+        # 9999-12-31T23:30:00-01:00 parses, and has no UTC form. OverflowError is
+        # not a ValueError, so it reached the catch-all as a server fault.
+        msg = f"object {stix_id} has a '{field}' outside the representable range: {value!r}"
+        raise SubmissionError(msg) from exc
+    return truncate_to_taxii_precision(in_utc)
 
 
 def _extract_indexed_fields(obj: dict[str, Any]) -> dict[str, Any]:
@@ -150,38 +158,84 @@ def identity_object_ids(objects: Iterable[Any]) -> list[str]:
     ]
 
 
-def reject_self_identifying_content(objects: Iterable[Any]) -> None:
-    """Refuse content that would identify an anonymous submitter anyway.
+def _mentions(value: Any, identifier: str) -> bool:
+    """Whether ``identifier`` appears as any string value inside ``value``."""
+    if isinstance(value, str):
+        return value.lower() == identifier
+    if isinstance(value, dict):
+        return any(_mentions(item, identifier) for item in value.values())
+    if isinstance(value, list):
+        return any(_mentions(item, identifier) for item in value)
+    return False
+
+
+def _objects_naming(objects: Iterable[Any], own_identity_id: str) -> list[str]:
+    """Objects that reference ``own_identity_id`` anywhere but ``created_by_ref``.
+
+    ``created_by_ref`` is excluded because distribution rewrites it; every other
+    reference -- ``where_sighted_refs``, a relationship's ``target_ref``,
+    ``object_refs``, a custom property -- is served verbatim. Compared without
+    case, because a consuming platform may treat identifiers that way.
+    """
+    identifier = own_identity_id.lower()
+    return [
+        obj.get("id", "<no id>")
+        for obj in objects
+        if isinstance(obj, dict)
+        and _mentions({k: v for k, v in obj.items() if k != "created_by_ref"}, identifier)
+    ]
+
+
+def self_identifying_problem(objects: Iterable[Any], *, own_identity_id: str) -> str | None:
+    """Why this content would identify an anonymous submitter anyway, or ``None``.
 
     ``distribute_anonymously`` is a promise the *server* makes -- "the ISAC still
-    knows; consumers do not" -- and the distribution pipeline can only keep the
-    part of it that it controls, which is the ``created_by_ref`` it rewrites.
-    Everything else in the document is redistributed verbatim, so a bundle
-    carrying the submitter's own ``identity`` SDO delivers their name to every
-    circle member in the same envelope as the anonymised finding.
+    knows; consumers do not" -- and the pipeline can only keep the part it
+    controls, the ``created_by_ref`` it rewrites. Everything else is
+    redistributed verbatim, so two structural things defeat it: the submitter's
+    own ``identity`` SDO, and any reference to the submitter's registered
+    identifier ("sighted at us" is natural to write, and members know the id
+    from the submitter's attributed content). The server holds that identifier,
+    so it can refuse both.
 
-    Refused rather than stripped, matching how TLP floors are handled: silently
-    removing objects would change the meaning of content the submitter authored,
-    and a bundle whose ``created_by_ref`` no longer resolves is arguably worse
-    than one that never claimed to.
+    Refused rather than stripped: removing objects or references would change
+    the meaning of what the submitter authored. Free text is still beyond it --
+    a description naming the firm is the submitter's responsibility and the
+    validating operator's to catch. That limit is documented, not papered over.
 
-    This closes the structural leak. It cannot cover free text -- a description
-    naming the firm is still the submitter's responsibility, and the validating
-    operator's to catch. That limit is documented rather than papered over.
-
-    Takes objects rather than a bundle because the check has to run against
-    whatever the submission currently holds, which is a bundle only on the path
-    that stores one. The flag can be turned on later, against objects already
-    stored, and it is checked again at distribution -- see the callers.
+    One function for ingest and distribution, which raise in their own types.
     """
-    identities = identity_object_ids(objects)
+    listed = list(objects)
+    identities = identity_object_ids(listed)
     if identities:
-        msg = (
+        return (
             "an anonymous submission must not carry identity objects, which are "
             f"redistributed verbatim and would name the submitter: {', '.join(identities)}. "
             "Remove them, or submit without distribute_anonymously."
         )
+    naming = _objects_naming(listed, own_identity_id)
+    if naming:
+        return (
+            "an anonymous submission must not reference the submitter's own identity, "
+            f"which is redistributed verbatim and names it: {', '.join(naming)}"
+        )
+    return None
+
+
+def reject_self_identifying_content(objects: Iterable[Any], *, own_identity_id: str) -> None:
+    problem = self_identifying_problem(objects, own_identity_id=own_identity_id)
+    if problem is not None:
+        raise SubmissionError(problem)
+
+
+async def submitter_identity_id(session: AsyncSession, submitter_org_id: uuid.UUID) -> str:
+    identity = await session.scalar(
+        select(Organization.stix_identity_id).where(Organization.id == submitter_org_id)
+    )
+    if identity is None:
+        msg = "the submitting organisation has no registered identity"
         raise SubmissionError(msg)
+    return identity
 
 
 async def foreign_identity_ids(
@@ -201,13 +255,15 @@ async def foreign_identity_ids(
     A registered identifier is a random UUID a member only learns from content
     shared with it, so refusing one discloses nothing the caller lacked.
     """
-    claimed = set(identity_object_ids(objects))
+    # Lower-cased: an upper-case spelling of a peer's identifier is the same
+    # identifier to a consumer that compares without case.
+    claimed = {identifier.lower() for identifier in identity_object_ids(objects)}
     if not claimed:
         return []
     owners = (
         await session.execute(
             select(Organization.stix_identity_id).where(
-                Organization.stix_identity_id.in_(claimed),
+                func.lower(Organization.stix_identity_id).in_(claimed),
                 Organization.id != submitter_org_id,
             )
         )
@@ -232,7 +288,9 @@ async def _reject_stored_self_identifying_content(
         .scalars()
         .all()
     )
-    reject_self_identifying_content(raws)
+    reject_self_identifying_content(
+        raws, own_identity_id=await submitter_identity_id(session, submission.submitter_org_id)
+    )
 
 
 async def replace_submission_objects(
@@ -253,7 +311,10 @@ async def replace_submission_objects(
     validate_bundle(bundle)
 
     if submission.distribute_anonymously:
-        reject_self_identifying_content(bundle.get("objects") or [])
+        reject_self_identifying_content(
+            bundle.get("objects") or [],
+            own_identity_id=await submitter_identity_id(session, submission.submitter_org_id),
+        )
 
     impersonated = await foreign_identity_ids(
         session, bundle.get("objects") or [], submitter_org_id=submission.submitter_org_id

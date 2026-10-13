@@ -40,7 +40,7 @@ from typing import Final
 from urllib.parse import unquote
 
 from cryptography import x509
-from cryptography.exceptions import InvalidSignature
+from cryptography.exceptions import InvalidSignature, UnsupportedAlgorithm
 from cryptography.hazmat.primitives import hashes
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 
@@ -208,22 +208,34 @@ def verify_issued_by(certificate: x509.Certificate, issuing_ca: x509.Certificate
         raise CertificateRejectedError("issuer_mismatch")
     try:
         certificate.verify_directly_issued_by(issuing_ca)
-    except (InvalidSignature, ValueError, TypeError) as exc:
+    except (InvalidSignature, UnsupportedAlgorithm, ValueError, TypeError) as exc:
+        # UnsupportedAlgorithm is not a ValueError; uncaught, a certificate with
+        # an unknown signature algorithm was a 500 rather than the uniform 401.
         raise CertificateRejectedError("issuer_signature_invalid") from exc
 
-    try:
-        is_ca = certificate.extensions.get_extension_for_class(x509.BasicConstraints).value.ca
-    except x509.ExtensionNotFound:
-        is_ca = False
-    if is_ca:
+    constraints = _extension(certificate, x509.BasicConstraints)
+    if constraints is not None and constraints.ca:
         raise CertificateRejectedError("certificate_is_a_ca")
 
-    try:
-        usages = certificate.extensions.get_extension_for_class(x509.ExtendedKeyUsage).value
-    except x509.ExtensionNotFound:
-        usages = None
+    usages = _extension(certificate, x509.ExtendedKeyUsage)
     if usages is None or ExtendedKeyUsageOID.CLIENT_AUTH not in usages:
         raise CertificateRejectedError("not_a_client_certificate")
+
+
+def _extension[Ext: x509.ExtensionType](
+    certificate: x509.Certificate, kind: type[Ext]
+) -> Ext | None:
+    """The extension's value, ``None`` when absent; refused when malformed.
+
+    Extensions are parsed lazily, so a duplicate or malformed one raises
+    ValueError at first access -- here, outside any handler, as a 500.
+    """
+    try:
+        return certificate.extensions.get_extension_for_class(kind).value
+    except x509.ExtensionNotFound:
+        return None
+    except ValueError as exc:
+        raise CertificateRejectedError("certificate_extensions_malformed") from exc
 
 
 def _check_validity_window(certificate: x509.Certificate, now: dt.datetime) -> None:

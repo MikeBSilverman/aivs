@@ -64,6 +64,10 @@ def _build_engine(settings: Settings) -> AsyncEngine:
         # Never echo SQL: statements carry submission titles and member
         # identifiers, which do not belong in stdout.
         echo=False,
+        # Bound parameters out of exception messages. A DBAPIError's text
+        # otherwise carries the values -- STIX raw, titles -- into the traceback
+        # the catch-all logs, and logs are forwarded to the ISAC's collector.
+        hide_parameters=True,
         connect_args={"options": options},
     )
 

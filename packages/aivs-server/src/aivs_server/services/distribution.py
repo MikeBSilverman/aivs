@@ -48,7 +48,7 @@ from aivs_server.db.models import (
 )
 from aivs_server.services.embargo import record_embargo
 from aivs_server.services.publication import earliest_publication_instant, hold_publication_lock
-from aivs_server.services.submissions import foreign_identity_ids, identity_object_ids
+from aivs_server.services.submissions import foreign_identity_ids, self_identifying_problem
 from aivs_server.taxii.resources import truncate_to_taxii_precision
 
 __all__ = ["DistributionError", "DistributionResult", "distribute_submission"]
@@ -155,14 +155,12 @@ async def _apply_attribution(
         # created_by_ref over a bundle that still contains the submitter's own
         # identity SDO would deliver their name to every circle member while the
         # envelope claims the ISAC authored it.
-        self_identifying = identity_object_ids(stored.raw for stored in objects)
-        if self_identifying:
-            msg = (
-                "an anonymous submission must not carry identity objects, which are "
-                f"redistributed verbatim and would name the submitter: "
-                f"{', '.join(self_identifying)}"
-            )
-            raise DistributionError(msg)
+        problem = self_identifying_problem(
+            (stored.raw for stored in objects),
+            own_identity_id=await _submitter_identity(session, submission),
+        )
+        if problem is not None:
+            raise DistributionError(problem)
 
         identity = await _isac_identity(session)
         if identity is None:

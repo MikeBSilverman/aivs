@@ -17,6 +17,7 @@ import uuid
 from collections.abc import Awaitable, Callable, MutableMapping
 from typing import Any, Final
 
+from aivs_server.auth.mtls import client_address
 from aivs_server.config import Settings
 from aivs_server.logging_config import set_request_id
 
@@ -85,8 +86,17 @@ _PORTAL_CSP: Final[bytes] = (
 _access_logger = logging.getLogger("aivs_server.access")
 
 
-def _log_access(scope: Scope, status_code: int, started: float) -> None:
-    client = scope.get("client")
+def _client(scope: Scope, settings: Settings) -> str | None:
+    """The member's address when the proxy vouches for it, as on audit rows."""
+    peer = scope.get("client")
+    headers = {
+        key.decode("latin-1").lower(): value.decode("latin-1")
+        for key, value in scope.get("headers", [])
+    }
+    return client_address(settings, headers, peer[0] if peer else None)
+
+
+def _log_access(scope: Scope, settings: Settings, status_code: int, started: float) -> None:
     _access_logger.info(
         "request",
         extra={
@@ -94,7 +104,7 @@ def _log_access(scope: Scope, status_code: int, started: float) -> None:
             "path": scope.get("path"),
             "status": status_code,
             "duration_ms": round((time.monotonic() - started) * 1000, 1),
-            "client": client[0] if client else None,
+            "client": _client(scope, settings),
         },
     )
 
@@ -143,7 +153,7 @@ class RequestContextMiddleware:
         try:
             await self.app(scope, receive, send_with_request_id)
         finally:
-            _log_access(scope, status_code, started)
+            _log_access(scope, self.settings, status_code, started)
 
 
 class _BodyTooLargeError(Exception):

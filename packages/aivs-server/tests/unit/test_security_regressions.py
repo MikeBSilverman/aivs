@@ -52,6 +52,10 @@ def _settings(**overrides: object) -> dict[str, object]:
         {"trusted_proxy_cidrs": []},
         {"public_base_url": "http://aivs.test"},
         {"log_level": "DEBUG"},
+        # A header the shipped proxy neither sets nor blanks reaches the app
+        # from the client. Found by the Phase A review.
+        {"header_client_cert": "x-member-cert"},
+        {"header_real_ip": "x-client-address"},
     ],
 )
 def test_hardened_environments_refuse_dev_bypasses(environment, unsafe):
@@ -76,6 +80,7 @@ def test_development_may_still_use_bypasses():
             dev_trust_unauthenticated_proxy=True,
             dev_expose_error_detail=True,
             public_base_url="http://localhost",
+            header_client_cert="x-member-cert",
         )
     )
     assert settings.dev_trust_unauthenticated_proxy is True

@@ -78,7 +78,7 @@ async def current_session(
     if not token:
         raise redirect_to_login()
     try:
-        return await resolve_session(
+        resolved = await resolve_session(
             session,
             settings,
             token=token,
@@ -95,6 +95,9 @@ async def current_session(
             details={"reason": exc.reason, "path": request.url.path},
         )
         raise redirect_to_login() from exc
+    # For the 403 and 404 handlers, which audit who was refused.
+    request.state.auth_context = resolved[0]
+    return resolved
 
 
 def redirect_to_login() -> HTTPException:

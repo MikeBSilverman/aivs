@@ -104,6 +104,10 @@ class AuditAction:
 
     # Authorization
     ACCESS_DENIED = "authz.denied"
+    #: A 404 answered to an authenticated caller. Id-addressable resources
+    #: answer 404 rather than 403 so they are not an existence oracle; this row
+    #: is what lets the ISAC notice someone walking the id space anyway.
+    ACCESS_NOT_FOUND = "authz.not_found"
 
     # Organisation and certificate lifecycle
     ANONYMITY_REVEALED = "anonymity.reveal"

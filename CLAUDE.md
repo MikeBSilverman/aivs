@@ -372,6 +372,13 @@ only when the proxy check passes; the peer is for the proxy check and nothing
 else. An abuse test written as the attacker's sequence found it. The unit
 tests for the rule had used synthetic audit rows and could not.
 
+**A `getattr(obj, "name", None)` of a value nobody writes never fails.** The
+403 handler read `request.state.auth_context` to say who was refused; nothing
+set it, so every `authz.denied` row had no actor and the runbook's weekly
+"denials from one org" review was impossible. It type-checked, linted and
+passed every test, because the test asserted the 403 and not the row. When a
+handler reads state by name, a test asserts the value arrived.
+
 **Responses that skip the middleware stack still need its headers.** Starlette
 routes the `Exception` handler to `ServerErrorMiddleware`, *outside* the user
 middleware — so 500s carried no CSP, no `no-store`, and no correlation id. If a

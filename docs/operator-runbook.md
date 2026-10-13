@@ -724,6 +724,8 @@ Each finding is raised **once per rule window** and goes three ways:
 | `auth_failure_burst` | 20 refused authentications from one address in 10 min | Check whether it is a member's collector with an expired certificate before you assume probing. |
 | `login_failure_burst` | 10 failed portal logins against one account in 15 min | The account locks at 5 failures, so 10 means someone kept going through the lockout. Contact the operator out of band. |
 | `bulk_retrieval` | One organisation retrieves 200 distinct submissions in 1 h | Treat as a possibly stolen certificate (§7.3). If it is confirmed, quarantine (§7.2). |
+| `not_found_burst` | One organisation gets 50 "not found" answers in 10 min | Someone is walking identifiers. Ask the member whether a misconfigured client explains it. If not, treat it as §7.3. |
+| `first_distribution_to_circle` | An operator distributes to a circle they have never distributed to before | The checker's look: confirm the circle was the intended audience. |
 | `anonymity_reveal` | Any reveal of an anonymous submitter | Confirm the reveal was expected and that its recorded reason holds up. |
 | `distribution_paused` | Distribution paused instance-wide | Confirm someone on the incident bridge did it. |
 | `org_quarantined` | Any quarantine, including self-quarantine | Confirm the member knows, and start reconnection planning. |

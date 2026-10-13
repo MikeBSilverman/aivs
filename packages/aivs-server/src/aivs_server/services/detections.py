@@ -27,6 +27,7 @@ from typing import Any, Final
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from aivs_schemas.enums import AckType, OrgType
 from aivs_server.audit.log import AuditAction, record
@@ -143,6 +144,82 @@ async def _login_failure_burst(
     ]
 
 
+async def _not_found_burst(
+    session: AsyncSession, now: dt.datetime, window: dt.timedelta, threshold: int
+) -> list[Finding]:
+    """Many lookups of absent or invisible resources by one organisation.
+
+    Every id-addressable route answers 404 rather than 403 so it is not an
+    existence oracle. Walking the identifier space anyway shows up here.
+    """
+    bursts = await _audit_bursts(
+        session,
+        action=AuditAction.ACCESS_NOT_FOUND,
+        group_by=AuditLog.org_id,
+        since=now - window,
+        threshold=threshold,
+    )
+    return [
+        Finding(
+            rule="not_found_burst",
+            severity="medium",
+            subject=org_id,
+            summary=f"{count} lookups of absent or invisible resources by one org in {window}",
+            count=count,
+        )
+        for org_id, count in bursts
+    ]
+
+
+async def _first_distribution_to_circle(
+    session: AsyncSession, now: dt.datetime, window: dt.timedelta, threshold: int
+) -> list[Finding]:
+    """An operator distributing to a circle for the first time.
+
+    The checker half of maker/checker: a new route for content to take is
+    worth a second pair of eyes, whoever took it. Routine distributions to a
+    circle the same editor has used before raise nothing.
+    """
+    del threshold
+    recent = (
+        select(
+            AuditLog.at,
+            AuditLog.actor_id,
+            func.jsonb_array_elements_text(AuditLog.details["circles"]).label("circle"),
+        )
+        .where(
+            AuditLog.action == AuditAction.SUBMISSION_DISTRIBUTED,
+            AuditLog.at >= now - window,
+            AuditLog.actor_id.is_not(None),
+        )
+        .subquery()
+    )
+    earlier = aliased(AuditLog)
+    seen_before = (
+        select(earlier.id)
+        .where(
+            earlier.action == AuditAction.SUBMISSION_DISTRIBUTED,
+            earlier.actor_id == recent.c.actor_id,
+            earlier.at < recent.c.at,
+            earlier.details["circles"].has_key(recent.c.circle),
+        )
+        .exists()
+    )
+    rows = await session.execute(
+        select(recent.c.actor_id, recent.c.circle).where(~seen_before).distinct()
+    )
+    return [
+        Finding(
+            rule="first_distribution_to_circle",
+            severity="medium",
+            subject=f"{actor_id}:{circle}",
+            summary="an operator distributed to a circle for the first time",
+            details={"operator": str(actor_id), "circle": circle},
+        )
+        for actor_id, circle in rows.all()
+    ]
+
+
 async def _bulk_retrieval(
     session: AsyncSession, now: dt.datetime, window: dt.timedelta, threshold: int
 ) -> list[Finding]:
@@ -225,6 +302,14 @@ RULES: Final[tuple[Rule, ...]] = (
     Rule("auth_failure_burst", "medium", dt.timedelta(minutes=10), 20, _auth_failure_burst),
     Rule("login_failure_burst", "high", dt.timedelta(minutes=15), 10, _login_failure_burst),
     Rule("bulk_retrieval", "high", dt.timedelta(hours=1), 200, _bulk_retrieval),
+    Rule("not_found_burst", "medium", dt.timedelta(minutes=10), 50, _not_found_burst),
+    Rule(
+        "first_distribution_to_circle",
+        "medium",
+        dt.timedelta(hours=1),
+        1,
+        _first_distribution_to_circle,
+    ),
     Rule(
         "anonymity_reveal",
         "high",

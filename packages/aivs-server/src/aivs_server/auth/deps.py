@@ -146,6 +146,23 @@ async def get_auth_context(
     settings: SettingsDep,
     session: SessionDep,
 ) -> AuthContext:
+    """Resolve the caller, and leave the result where error handlers can find it.
+
+    The 403 and 404 handlers audit *who* was refused. They read the context
+    from ``request.state``, which nothing used to set, so every ``authz.denied``
+    row was written with no actor and "repeated denials from one org" could
+    not be reviewed.
+    """
+    ctx = await _resolve_auth_context(request, settings, session)
+    request.state.auth_context = ctx
+    return ctx
+
+
+async def _resolve_auth_context(
+    request: Request,
+    settings: Settings,
+    session: AsyncSession,
+) -> AuthContext:
     """Resolve the calling organisation from its client certificate.
 
     Raises 401 unless every one of the following holds: the request arrived via

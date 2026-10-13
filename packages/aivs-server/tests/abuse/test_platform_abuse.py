@@ -10,6 +10,7 @@ catch are tested together.
 from __future__ import annotations
 
 import datetime as dt
+import uuid
 
 import pytest
 
@@ -120,3 +121,25 @@ async def test_a_forged_client_address_is_not_believed(client, session, ca):
     )
     assert [finding.subject for finding in raised] != ["192.0.2.1"]
     assert len(raised) == 1, "still noticed, against the real peer"
+
+
+async def test_walking_submission_ids_is_noticed_without_becoming_an_oracle(
+    client, session, make_org, make_cert
+):
+    """Rule ``not_found_burst``. Each probe gets the same 404 an absent id
+    gets, so the walker learns nothing; the ISAC learns who is walking."""
+    walker = await make_org("meridian-global", org_type=OrgType.GSIB)
+    walker_id = walker.id
+    pem, _ = await make_cert(walker)
+
+    responses = [
+        await client.get(f"{API}/submissions/{uuid.uuid4()}", headers=proxy_headers(pem))
+        for _ in range(5)
+    ]
+
+    assert {r.status_code for r in responses} == {404}
+    assert len({r.text for r in responses}) == 1, "every miss reads the same"
+    raised = await run_detections(
+        session, now=dt.datetime.now(dt.UTC), rules=[_rule("not_found_burst", 5)]
+    )
+    assert [finding.subject for finding in raised] == [str(walker_id)]

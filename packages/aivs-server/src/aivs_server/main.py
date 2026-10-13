@@ -276,11 +276,27 @@ def _register_exception_handlers(app: FastAPI, settings: Settings) -> None:
         )
 
     @app.exception_handler(HTTPException)
-    async def _http_exception(
-        request: Request,  # noqa: ARG001 - required by the handler signature
-        exc: HTTPException,
-    ) -> JSONResponse:
-        """Render HTTPException in the TAXII error shape."""
+    async def _http_exception(request: Request, exc: HTTPException) -> JSONResponse:
+        """Render HTTPException in the TAXII error shape, auditing a refused lookup.
+
+        A 404 to a caller who authenticated is the refusal that must look like
+        absence; recording it is how the ``not_found_burst`` detection sees
+        someone enumerating identifiers. An unauthenticated 404 has no actor to
+        attribute and is left to the access log. Today none reaches here: every
+        route that raises 404 authenticates first, and an unknown path raises
+        Starlette's own HTTPException, which this handler does not receive. The
+        guard keeps a future public route from writing actorless rows.
+        """
+        ctx = getattr(request.state, "auth_context", None)
+        if exc.status_code == status.HTTP_404_NOT_FOUND and ctx is not None:
+            await record_denial(
+                reason="not_found",
+                action=AuditAction.ACCESS_NOT_FOUND,
+                ctx=ctx,
+                request_id=request.scope.get("aivs_request_id"),
+                source_ip=request_source_ip(request, request.app.state.settings),
+                route=request.url.path,
+            )
         headers = getattr(exc, "headers", None) or {}
         response = _error_response(exc.status_code, str(exc.detail))
         for key, value in headers.items():

@@ -47,6 +47,7 @@ async def test_a_fresh_instance_gets_an_isac_a_certificate_and_an_operator_who_c
         password=TEST_OPERATOR_PASSWORD,
         roles=EDITOR_AND_ADMIN,
         certificate_pem=pem,
+        additional=False,
     )
 
     organisation = await session.get(Organization, result.organisation_id)
@@ -83,6 +84,7 @@ async def test_it_refuses_a_member_organisation_and_accepts_the_isacs_own(
             password=TEST_OPERATOR_PASSWORD,
             roles=[OperatorRole.ANALYST],
             certificate_pem=None,
+            additional=False,
         )
     await session.rollback()
 
@@ -96,6 +98,7 @@ async def test_it_refuses_a_member_organisation_and_accepts_the_isacs_own(
         password=TEST_OPERATOR_PASSWORD,
         roles=[OperatorRole.ISAC_EDITOR],
         certificate_pem=None,
+        additional=False,
     )
     assert result.organisation_id == isac.id
     assert result.created_organisation is False
@@ -115,6 +118,7 @@ async def test_it_refuses_a_second_isac_organisation(session, settings, make_org
             password=TEST_OPERATOR_PASSWORD,
             roles=[OperatorRole.SYSTEM_ADMIN],
             certificate_pem=None,
+            additional=False,
         )
 
 
@@ -133,6 +137,7 @@ async def test_a_forged_certificate_refuses_the_whole_bootstrap(session, setting
             password=TEST_OPERATOR_PASSWORD,
             roles=[OperatorRole.SYSTEM_ADMIN],
             certificate_pem=forged_pem,
+            additional=False,
         )
     await session.rollback()
 
@@ -183,6 +188,7 @@ async def test_the_audit_record_names_roles_not_the_person(session, settings):
         password=TEST_OPERATOR_PASSWORD,
         roles=[OperatorRole.SYSTEM_ADMIN],
         certificate_pem=None,
+        additional=False,
     )
     rows = (await session.execute(select(AuditLog))).scalars().all()
     created = [row for row in rows if row.action == "operator.created"]

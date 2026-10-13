@@ -87,9 +87,13 @@ python -m aivs_server.bootstrap_operator \
 It creates the ISAC's organisation if none exists, registers the certificate
 (which must be signed by the issuing CA), and creates the operator. The password
 is prompted for, never passed on the command line. The TOTP provisioning URI is
-printed **once** -- scan it, then clear the terminal. Run it again, without
-`--org-name`, for each further ISAC operator until operator management exists in
-the portal. It refuses a member organisation and a second ISAC organisation.
+printed **once** -- scan it, then clear the terminal. For each further ISAC
+operator, until operator management exists in the portal, run it again without
+`--org-name` and with `--additional`. Once a system admin exists it refuses to
+run without that flag, and every run raises the `operator_bootstrapped`
+detection (§9.1): whoever holds the host can mint an editor this way, so the ISAC
+is told each time it happens. It refuses a member organisation and a second ISAC
+organisation.
 
 Do not create more than about five. This role can distribute embargoed content to
 GSIBs; the accountability should stay legible.
@@ -731,6 +735,7 @@ Each finding is raised **once per rule window** and goes three ways:
 | `first_distribution_to_circle` | An operator distributes to a circle they have never distributed to before | The checker's look: confirm the circle was the intended audience. |
 | `anonymity_reveal` | Any reveal of an anonymous submitter | Confirm the reveal was expected and that its recorded reason holds up. |
 | `distribution_paused` | Distribution paused instance-wide | Confirm someone on the incident bridge did it. |
+| `operator_bootstrapped` | The bootstrap command created an operator | Confirm who ran it on the host and why. An unexplained one is a host compromise (§7.5). |
 | `org_quarantined` | Any quarantine, including self-quarantine | Confirm the member knows, and start reconnection planning. |
 | `component_degraded` | A background job (embargo sweeper, webhook dispatcher, detections) has not succeeded for two of its intervals | Read the app log for that component's exception; `/readyz` names it and the error type. |
 

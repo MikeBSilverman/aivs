@@ -335,6 +335,18 @@ RULES: Final[tuple[Rule, ...]] = (
         ),
     ),
     Rule(
+        "operator_bootstrapped",
+        "high",
+        dt.timedelta(hours=1),
+        1,
+        _every_occurrence(
+            "operator_bootstrapped",
+            AuditAction.OPERATOR_BOOTSTRAPPED,
+            "high",
+            "an operator was created from the host with the bootstrap command",
+        ),
+    ),
+    Rule(
         "org_quarantined",
         "high",
         dt.timedelta(hours=1),

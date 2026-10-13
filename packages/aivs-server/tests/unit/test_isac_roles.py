@@ -61,9 +61,9 @@ async def submitted(client, make_org, make_cert):
 
 
 @pytest.fixture
-async def isac_person(make_org, make_cert, make_operator, human_headers):
+async def isac_person(isac_org, make_cert, make_operator, human_headers):
     """Factory: headers for a human at the hosting ISAC holding ``roles``."""
-    org = await make_org("hosting-isac", org_type=OrgType.ADMIN)
+    org = isac_org
     pem, _ = await make_cert(org)
 
     async def _person(*roles: OperatorRole) -> dict[str, str]:
@@ -179,13 +179,12 @@ async def test_an_invalid_bearer_is_refused_not_downgraded_to_the_certificate(
 
 
 async def test_a_bearer_is_bound_to_the_certificate_it_was_issued_over(
-    client, submitted, isac_person, make_cert, make_org
+    client, submitted, isac_person, make_cert, isac_org
 ):
     """A token lifted from one network path is useless from another, even the
     same organisation's second certificate."""
     person, _pem = isac_person
     editor = await person(OperatorRole.ISAC_EDITOR)
-    isac_org = await make_org("hosting-isac-second", org_type=OrgType.ADMIN)
     other_pem, _ = await make_cert(isac_org)
     replayed = {**proxy_headers(other_pem), "authorization": editor["authorization"]}
 

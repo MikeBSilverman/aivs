@@ -896,7 +896,7 @@ async def test_revealing_an_anonymous_submitter_is_an_audited_editorial_act(
     )
     assert [row.details for row in rows] == [{"reason": reason}]
 
-    isac_org = await make_org("hosting-isac-two", org_type=OrgType.ADMIN)
+    isac_org, _headers = isac
     analyst_pem, _ = await make_cert(isac_org)
     analyst, _seed = await make_operator(isac_org, roles=(OperatorRole.ISAC_ANALYST,))
     analyst_headers = await human_headers(analyst, analyst_pem)

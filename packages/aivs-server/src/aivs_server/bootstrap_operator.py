@@ -31,7 +31,7 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aivs_schemas.enums import OperatorRole, OrgStatus, OrgType
@@ -105,6 +105,21 @@ async def _isac_organisation(
     return organisation, True
 
 
+async def _active_system_admins(session: AsyncSession, organisation: Organization) -> int:
+    return int(
+        await session.scalar(
+            select(func.count())
+            .select_from(Operator)
+            .where(
+                Operator.org_id == organisation.id,
+                Operator.is_active.is_(True),
+                Operator.roles.contains([OperatorRole.SYSTEM_ADMIN]),
+            )
+        )
+        or 0
+    )
+
+
 async def bootstrap(
     session: AsyncSession,
     settings: Settings,
@@ -116,9 +131,27 @@ async def bootstrap(
     password: str,
     roles: list[OperatorRole],
     certificate_pem: str | None,
+    additional: bool,
 ) -> BootstrapResult:
-    """Create what a fresh instance lacks, in one transaction. Commits."""
+    """Create what a fresh instance lacks, in one transaction. Commits.
+
+    Once the instance has an active system admin, refused unless
+    ``additional``: whoever holds the host and the key-encryption key can mint
+    ISAC editors this way, which is the power the human-only role rules keep
+    from the host. Until operators can be created in the portal this is also
+    the only way to add one, so it is not refused outright; instead every run
+    writes ``operator.bootstrapped`` and raises the ``operator_bootstrapped``
+    detection, so an operator minted from the host is announced to the ISAC
+    every time.
+    """
     organisation, created = await _isac_organisation(session, slug=org_slug, name=org_name)
+    existing_admins = await _active_system_admins(session, organisation)
+    if existing_admins and not additional:
+        msg = (
+            f"this instance already has {existing_admins} active system admin(s); "
+            "pass --additional to create another operator (it is recorded and alerted)"
+        )
+        raise BootstrapError(msg)
 
     taken = (
         await session.execute(select(Operator.id).where(Operator.email == email.strip().lower()))
@@ -147,6 +180,22 @@ async def bootstrap(
         password=password,
         roles=roles,
         secret_box=SecretBox.from_settings(settings),
+    )
+    await record(
+        session,
+        action=AuditAction.OPERATOR_BOOTSTRAPPED,
+        # "system" is what the constraint allows; the actor id says which.
+        actor_type="system",
+        actor_id="bootstrap_operator",
+        org_id=organisation.id,
+        resource_type="operator",
+        resource_id=str(operator.id),
+        details={
+            "roles": [role.value for role in roles],
+            "additional": additional,
+            "existing_system_admins": existing_admins,
+            "created_organisation": created,
+        },
     )
     await session.commit()
     return BootstrapResult(
@@ -182,6 +231,11 @@ def _parse_args() -> argparse.Namespace:  # pragma: no cover - operational helpe
         help="repeatable",
     )
     parser.add_argument("--certificate", help="PEM client certificate to register for the ISAC")
+    parser.add_argument(
+        "--additional",
+        action="store_true",
+        help="create a further operator although system admins exist (recorded and alerted)",
+    )
     return parser.parse_args()
 
 
@@ -205,6 +259,7 @@ def _main() -> int:  # pragma: no cover - operational helper
                 password=_read_password(),
                 roles=[OperatorRole(role) for role in args.role],
                 certificate_pem=certificate_pem,
+                additional=args.additional,
             )
 
     try:

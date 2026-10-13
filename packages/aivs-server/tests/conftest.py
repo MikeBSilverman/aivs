@@ -736,28 +736,37 @@ async def human_headers(session: AsyncSession, settings: Settings):
 
 
 @pytest.fixture
-async def isac(make_org, make_cert, make_operator, human_headers):
+async def isac(isac_org, make_org, make_cert, make_operator, human_headers):
     """The hosting ISAC, as a signed-in member of its staff: ``(org, headers)``.
 
     A person, not a certificate: every ISAC power requires a human session, and
     the admin organisation's certificate on its own authenticates nothing more
     than the network path.
     """
-    org = await make_org("hosting-isac", org_type=OrgType.ADMIN)
+    org = isac_org
     pem, _ = await make_cert(org)
     operator, _seed = await make_operator(org, roles=ISAC_STAFF_ROLES)
     return org, await human_headers(operator, pem)
 
 
 @pytest.fixture
-async def isac_machine(make_org, make_cert):
+async def isac_org(make_org):
+    """The instance's one hosting ISAC, shared by every fixture that needs it.
+
+    The database allows exactly one admin-type organisation, so fixtures that
+    each created their own could not be used together.
+    """
+    return await make_org("hosting-isac", org_type=OrgType.ADMIN)
+
+
+@pytest.fixture
+async def isac_machine(isac_org, make_cert):
     """The admin organisation's *certificate* alone: ``(org, headers)``.
 
     Kept for the tests that prove a certificate confers no ISAC power.
     """
-    org = await make_org("hosting-isac-machine", org_type=OrgType.ADMIN)
-    pem, _ = await make_cert(org)
-    return org, proxy_headers(pem)
+    pem, _ = await make_cert(isac_org)
+    return isac_org, proxy_headers(pem)
 
 
 # ---------------------------------------------------------------------------
@@ -787,8 +796,8 @@ async def open_session(engine: Any) -> AsyncIterator[Any]:
 
 
 @pytest.fixture
-async def isac_ctx(make_org) -> AuthContext:
-    org = await make_org("the-isac", org_type=OrgType.ADMIN)
+async def isac_ctx(isac_org) -> AuthContext:
+    org = isac_org
     return AuthContext(
         org_id=org.id,
         org_slug=org.slug,

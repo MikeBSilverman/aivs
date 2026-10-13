@@ -144,6 +144,18 @@ async def _open_memberships(
     return {row.org_id: row for row in rows}
 
 
+def _refuse_unsafe_additions(
+    organisations: list[Organization], joined_at: dt.datetime | None, now: dt.datetime
+) -> None:
+    if joined_at is not None and joined_at > now:
+        msg = "a membership cannot start in the future"
+        raise CircleMembershipError(msg)
+    quarantined = sorted(org.slug for org in organisations if org.status is OrgStatus.QUARANTINED)
+    if quarantined:
+        msg = f"quarantined organisations cannot change membership: {', '.join(quarantined)}"
+        raise CircleMembershipError(msg)
+
+
 async def add_circle_members(
     session: AsyncSession,
     ctx: AuthContext,
@@ -151,7 +163,8 @@ async def add_circle_members(
     circle: Circle,
     organisations: list[Organization],
     role: CircleRole,
-    joined_at: dt.datetime | None = None,
+    joined_at: dt.datetime | None,
+    now: dt.datetime,
 ) -> list[uuid.UUID]:
     """Open a membership interval for each organisation not already in the circle.
 
@@ -167,7 +180,13 @@ async def add_circle_members(
     existed for. Backdating grants access to content shared before the row was
     written, which is why it is recorded. It cannot reach into the gap before a
     previous interval ended: the exclusion constraint refuses an overlap.
+
+    Refused for a quarantined organisation: a membership opened during the
+    quarantine lies wholly inside the gap a "new interval" reconnection must
+    withhold. Refused for a future ``joined_at``, which grants nothing until
+    then and cannot be closed before it starts.
     """
+    _refuse_unsafe_additions(organisations, joined_at, now)
     existing = await _open_memberships(session, circle.id)
 
     added: list[uuid.UUID] = []

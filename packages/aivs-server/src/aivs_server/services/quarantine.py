@@ -20,7 +20,7 @@ import datetime as dt
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from aivs_schemas.enums import CertStatus, OrgStatus, QuarantineBacklog
+from aivs_schemas.enums import CertStatus, OrgStatus, OrgType, QuarantineBacklog
 from aivs_server.audit.log import AuditAction, record
 from aivs_server.auth.context import AuthContext
 from aivs_server.db.models import (
@@ -66,6 +66,13 @@ async def quarantine_org(
     now: dt.datetime,
 ) -> None:
     """Cut an organisation off now. Does not commit."""
+    if organisation.org_type is OrgType.ADMIN:
+        # It would revoke every ISAC credential, and reconnection needs an ISAC
+        # human: only SQL could undo it. The instance-wide stop is the pause.
+        msg = (
+            "the hosting ISAC's own organisation cannot be quarantined; pause distribution instead"
+        )
+        raise QuarantineError(msg)
     if organisation.status is not OrgStatus.ACTIVE:
         msg = (
             "only an active organisation can be quarantined; "
@@ -90,12 +97,18 @@ async def quarantine_org(
 
 
 async def _has_fresh_certificate(session: AsyncSession, organisation: Organization) -> bool:
-    """Quarantine revoked every certificate, so any active one was registered since."""
+    """An active certificate registered after the quarantine began.
+
+    "Any active one" was not enough: a registration committing while the
+    quarantine's revoking UPDATE ran stayed active, and would have counted as
+    fresh although it was registered on the compromised side of the line.
+    """
     found = await session.scalar(
         select(ClientCertificate.id)
         .where(
             ClientCertificate.org_id == organisation.id,
             ClientCertificate.status == CertStatus.ACTIVE,
+            ClientCertificate.created_at > organisation.quarantined_at,
         )
         .limit(1)
     )
@@ -105,25 +118,39 @@ async def _has_fresh_certificate(session: AsyncSession, organisation: Organizati
 async def _close_the_gap(
     session: AsyncSession, organisation: Organization, now: dt.datetime
 ) -> None:
-    """End each open membership at the quarantine and open a new one from now."""
+    """Withhold the quarantine: no interval of this organisation may cover it.
+
+    Every interval reaching past the quarantine's start is ended there, whether
+    it is still open or was closed during the quarantine (a removal then left
+    ``[joined, removed)`` covering part of the gap). Each that was open gets a
+    new one from now. Membership could not be added during the quarantine, so
+    an interval starting inside it is a state this code refuses to guess about.
+    """
     started = organisation.quarantined_at
-    open_rows = (
+    if started is None:
+        msg = "this organisation has no recorded quarantine start"
+        raise QuarantineError(msg)
+    reaching = (
         (
             await session.execute(
                 select(CircleMembership).where(
                     CircleMembership.org_id == organisation.id,
-                    CircleMembership.left_at.is_(None),
+                    (CircleMembership.left_at.is_(None)) | (CircleMembership.left_at > started),
                 )
             )
         )
         .scalars()
         .all()
     )
-    for row in open_rows:
-        row.left_at = started if started is not None and started > row.joined_at else now
+    if any(row.joined_at >= started for row in reaching):
+        msg = "a membership began during the quarantine; resolve it before reconnecting"
+        raise QuarantineError(msg)
+    reopen = [row for row in reaching if row.left_at is None]
+    for row in reaching:
+        row.left_at = started
         row.ended_by = "operator"
     await session.flush()
-    for row in open_rows:
+    for row in reopen:
         session.add(
             CircleMembership(
                 circle_id=row.circle_id,

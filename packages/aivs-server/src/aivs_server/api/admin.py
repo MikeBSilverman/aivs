@@ -34,6 +34,7 @@ from aivs_schemas.models import (
     ReconnectRequest,
 )
 from aivs_server.audit.log import AuditAction, record
+from aivs_server.auth.context import AuthContext
 from aivs_server.auth.deps import AuthenticatedContext, SessionDep, SettingsDep
 from aivs_server.auth.policy import (
     can_administer_circle,
@@ -63,11 +64,15 @@ from aivs_server.services.circles import (
     CircleMembershipError,
     add_circle_members,
     reconcile_circle,
-    reconcile_circles_for_org,
     remove_circle_member,
     resolve_organisations,
 )
 from aivs_server.services.instance import pause_distribution, resume_distribution
+from aivs_server.services.org_status import (
+    OrgStatusError,
+    change_org_status,
+    load_org_for_update,
+)
 from aivs_server.services.quarantine import QuarantineError, quarantine_org, reconnect_org
 
 __all__ = ["router"]
@@ -162,40 +167,7 @@ async def activate_org(
 ) -> Organization:
     """Activate an enrolled organisation. Hosting ISAC only."""
     require(is_isac_membership(ctx), "org_activate_requires_isac_membership")
-
-    organization = await session.get(Organization, org_id)
-    if organization is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Organisation not found")
-
-    previous = organization.status
-    organization.status = OrgStatus.ACTIVE
-    # Flushed before reconciling. The sessionmaker sets autoflush=False, so
-    # without this the reconcile query still reads the pre-change status and the
-    # organisation matches nothing.
-    await session.flush()
-
-    # Activation is the point a rule can start matching: an enrolled but
-    # unactivated organisation is not yet a participant. Reconciling here is
-    # what makes "every active Section 9 firm" true without anyone having to
-    # remember the second step -- and the membership starts now, so they receive
-    # what is shared from today rather than the circle's back catalogue.
-    touched = await reconcile_circles_for_org(session, ctx, organisation=organization)
-
-    await record(
-        session,
-        action=AuditAction.ORG_STATUS_CHANGED,
-        ctx=ctx,
-        resource_type="organization",
-        resource_id=str(org_id),
-        details={
-            "from": previous.value,
-            "to": OrgStatus.ACTIVE.value,
-            "circles_reconciled": [str(i) for i in touched],
-        },
-    )
-    await session.commit()
-    await session.refresh(organization)
-    return organization
+    return await _change_status(session, ctx, org_id, OrgStatus.ACTIVE)
 
 
 @router.post("/orgs/{org_id}/suspend", response_model=OrganizationOut)
@@ -204,35 +176,20 @@ async def suspend_org(
 ) -> Organization:
     """Suspend an organisation. Takes effect on their next request."""
     require(is_isac_membership(ctx), "org_suspend_requires_isac_membership")
+    return await _change_status(session, ctx, org_id, OrgStatus.SUSPENDED)
 
-    organization = await session.get(Organization, org_id)
+
+async def _change_status(
+    session: SessionDep, ctx: AuthContext, org_id: uuid.UUID, target: OrgStatus
+) -> Organization:
+    organization = await load_org_for_update(session, org_id)
     if organization is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Organisation not found")
-
-    previous = organization.status
-    organization.status = OrgStatus.SUSPENDED
-    # See activate_org: autoflush is off, so the status change has to reach the
-    # database before the rule is evaluated against it.
-    await session.flush()
-
-    # Memberships are not touched: suspension is status, refused on every
-    # request, and closing rule memberships here (as this once did) cost a
-    # reactivated member its back catalogue. The reconcile still runs, for any
-    # drift from a rule change that was never reconciled.
-    touched = await reconcile_circles_for_org(session, ctx, organisation=organization)
-
-    await record(
-        session,
-        action=AuditAction.ORG_STATUS_CHANGED,
-        ctx=ctx,
-        resource_type="organization",
-        resource_id=str(org_id),
-        details={
-            "from": previous.value,
-            "to": OrgStatus.SUSPENDED.value,
-            "circles_reconciled": [str(i) for i in touched],
-        },
-    )
+    try:
+        await change_org_status(session, ctx, organisation=organization, target=target, via="api")
+    except OrgStatusError as exc:
+        await session.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     await session.commit()
     await session.refresh(organization)
     return organization
@@ -261,7 +218,9 @@ async def register_certificate(
     """
     require(can_manage_org(ctx, org_id), "certificate_register")
 
-    organization = await session.get(Organization, org_id)
+    # Locked: quarantine revokes every certificate, and a registration committing
+    # beside it must land wholly before or wholly after.
+    organization = await load_org_for_update(session, org_id)
     if organization is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Organisation not found")
 
@@ -451,6 +410,7 @@ async def add_circle_member(
             organisations=organisations,
             role=payload.role,
             joined_at=payload.joined_at,
+            now=dt.datetime.now(dt.UTC),
         )
         await session.commit()
     except CircleMembershipError as exc:

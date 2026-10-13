@@ -117,6 +117,15 @@ class Organization(TimestampMixin, Base):
         CheckConstraint(
             "stix_identity_id ~ '^identity--[0-9a-f-]{36}$'", name="stix_identity_format"
         ),
+        # One hosting ISAC per instance. Policy keys ISAC powers on the type,
+        # not on an id, so a second admin-type organisation would be a second
+        # ISAC whose operators hold every ISAC role they are given.
+        Index(
+            "uq_organizations_one_admin",
+            "org_type",
+            unique=True,
+            postgresql_where=text("org_type = 'admin'"),
+        ),
     )
 
     certificates: Mapped[list[ClientCertificate]] = relationship(back_populates="organization")

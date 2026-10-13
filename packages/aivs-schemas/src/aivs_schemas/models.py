@@ -424,6 +424,17 @@ class OrganizationCreate(_In):
     #: newline in it from being stored under a field named for an email.
     contact_email: Annotated[str, Field(max_length=320, pattern=_EMAIL_SHAPE)] | None = None
 
+    @field_validator("org_type")
+    @classmethod
+    def _not_a_second_isac(cls, value: OrgType) -> OrgType:
+        # The hosting ISAC is created once, by the bootstrap command.
+        if value is OrgType.ADMIN:
+            msg = (
+                "the hosting ISAC's organisation is created by the bootstrap command, not enrolled"
+            )
+            raise ValueError(msg)
+        return value
+
 
 class OrganizationOut(_Out):
     id: uuid.UUID

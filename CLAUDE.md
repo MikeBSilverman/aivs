@@ -424,6 +424,13 @@ refused per request. Anything that reads membership filters on the *open*
 interval (notifications got this wrong: a former member was told about content
 released after it left).
 
+**Every writer of a state goes through the one function that knows all of its
+states.** Activate and suspend were written twice (API and portal) before
+quarantine existed, and each set the new status whatever the old one was. So
+"activate" returned a quarantined member to service with no fresh certificate,
+no backlog decision and no reconnection record. Adding a state means finding
+every writer of the column; one writer makes that a single place.
+
 **`autoflush=False`, so flush before you query what you just changed.** The
 sessionmaker disables autoflush deliberately. `activate_org` set a status and
 then reconciled circle rules against it; the reconcile query read the *old*

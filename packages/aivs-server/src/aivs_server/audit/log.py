@@ -113,6 +113,9 @@ class AuditAction:
     ANONYMITY_REVEALED = "anonymity.reveal"
     ORG_CREATED = "org.created"
     OPERATOR_CREATED = "operator.created"
+    #: Written by the bootstrap command beside the rows its services write, so
+    #: an operator minted from the host is never mistaken for system activity.
+    OPERATOR_BOOTSTRAPPED = "operator.bootstrapped"
     ORG_STATUS_CHANGED = "org.status_changed"
     DETECTION_RAISED = "detection.raised"
     ORG_QUARANTINED = "org.quarantined"

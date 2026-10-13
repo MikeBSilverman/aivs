@@ -37,7 +37,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
 from aivs_schemas.enums import CertStatus, CircleRole, OrgStatus, OrgType
-from aivs_schemas.models import CircleCreate
+from aivs_schemas.models import CircleCreate, OrganizationCreate
 from aivs_server.audit.log import AuditAction, record
 from aivs_server.auth.deps import SessionDep, SettingsDep
 from aivs_server.auth.policy import (
@@ -70,6 +70,11 @@ from aivs_server.services.circles import (
     resolve_organisations,
 )
 from aivs_server.services.instance_status import gather_status
+from aivs_server.services.org_status import (
+    OrgStatusError,
+    change_org_status,
+    load_org_for_update,
+)
 
 __all__ = ["router"]
 
@@ -137,7 +142,7 @@ async def orgs_screen(request: Request, settings: SettingsDep, session: SessionD
                 }
                 for org in orgs
             ],
-            "org_types": [org_type.value for org_type in OrgType],
+            "org_types": [org_type.value for org_type in OrgType if org_type is not OrgType.ADMIN],
         }
     )
     return render(request, "admin_orgs.html", context)
@@ -161,11 +166,16 @@ async def enrol_org(
 
     response = _redirect("/portal/admin/orgs")
     try:
+        # Through the API's request model, so the portal cannot enrol what the
+        # API refuses -- a second ISAC among it.
+        enrolment = OrganizationCreate(
+            slug=slug, name=name, org_type=org_type, contact_email=contact_email.strip() or None
+        )
         organization = Organization(
-            slug=slug.strip(),
-            name=name.strip(),
-            org_type=OrgType(org_type),
-            contact_email=contact_email.strip() or None,
+            slug=enrolment.slug,
+            name=enrolment.name,
+            org_type=enrolment.org_type,
+            contact_email=enrolment.contact_email,
             status=OrgStatus.PENDING,
             stix_identity_id=f"identity--{uuid.uuid4()}",
         )
@@ -209,29 +219,20 @@ async def org_status(
     if action not in ("activate", "suspend"):
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Not found")
 
-    organization = await session.get(Organization, org_id)
+    organization = await load_org_for_update(session, org_id)
     if organization is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Not found")
 
-    from aivs_server.services.circles import (  # noqa: PLC0415 - avoids an import cycle
-        reconcile_circles_for_org,
-    )
-
-    previous = organization.status
-    organization.status = OrgStatus.ACTIVE if action == "activate" else OrgStatus.SUSPENDED
-    # Flushed before reconciling: autoflush is off, so the rule would otherwise
-    # be evaluated against the status this organisation had a moment ago.
-    await session.flush()
-    await reconcile_circles_for_org(session, ctx, organisation=organization)
-
-    await record(
-        session,
-        action=AuditAction.ORG_STATUS_CHANGED,
-        ctx=ctx,
-        resource_type="organization",
-        resource_id=str(org_id),
-        details={"from": previous.value, "to": organization.status.value, "via": "portal"},
-    )
+    target = OrgStatus.ACTIVE if action == "activate" else OrgStatus.SUSPENDED
+    try:
+        await change_org_status(
+            session, ctx, organisation=organization, target=target, via="portal"
+        )
+    except OrgStatusError as exc:
+        await session.rollback()
+        refused = _redirect("/portal/admin/orgs")
+        set_notice(refused, settings, "error", f"Not changed: {exc}.")
+        return refused
     await session.commit()
 
     response = _redirect("/portal/admin/orgs")
@@ -476,6 +477,7 @@ async def add_members_screen(
             organisations=organisations,
             role=CircleRole(role),
             joined_at=backdate,
+            now=dt.datetime.now(dt.UTC),
         )
         await session.commit()
     except (CircleMembershipError, ValueError) as exc:

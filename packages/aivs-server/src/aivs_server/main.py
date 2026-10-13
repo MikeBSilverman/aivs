@@ -296,7 +296,7 @@ def main() -> None:  # pragma: no cover - process entry point
         host=settings.bind_host,
         port=settings.bind_port,
         log_config=None,
-        access_log=False,  # RequestContextMiddleware emits structured access logs
+        access_log=False,  # RequestContextMiddleware logs every request (aivs_server.access)
         server_header=False,
         date_header=True,
         # Uvicorn defaults this to True, with FORWARDED_ALLOW_IPS defaulting to

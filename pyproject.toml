@@ -205,8 +205,10 @@ addopts = [
 ]
 markers = [
     "db: test requires a live PostgreSQL database",
-    "e2e: end-to-end test requiring the full compose stack (nginx + mTLS)",
-    "slow: deselect with '-m \"not slow\"'",
+    # No `e2e` marker until an end-to-end test exists: an empty tests/e2e/ and a
+    # declared marker applied to nothing read as a deselected tier rather than an
+    # absent one. The first e2e test (through nginx, in Docker) brings both back.
+    "slow: migrates a scratch database or similar; deselect with '-m \"not slow\"'",
     "authz: authorization matrix test -- the deny-by-default proof",
     "conformance: TAXII 2.1 / STIX 2.1 specification conformance test",
 ]
@@ -237,8 +239,11 @@ exclude_also = [
     "@overload",
     "if __name__ == .__main__.:",
 ]
-# Security-critical modules are held to a higher bar in CI via a separate
-# invocation; this is the floor for the codebase as a whole.
+# The floor for the codebase as a whole. The security-critical modules --
+# identity, authorization, sealing, publication, distribution, embargo, the TAXII
+# visibility query -- are held to 93 by a second `coverage report` over the same
+# data (see CLAUDE.md section 2 and the pipeline). This comment used to claim
+# that second check while nothing ran it.
 fail_under = 85
 
 [tool.bandit]

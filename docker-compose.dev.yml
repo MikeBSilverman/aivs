@@ -27,9 +27,11 @@
 #
 # The single strongest signal that this override is active is
 # AIVS_ENVIRONMENT=dev below. The application's validate_production_posture
-# only permits the bypasses set here when environment != production, so a
-# production deployment cannot accidentally inherit them without also
-# announcing itself as dev.
+# permits the bypasses set here in `dev` and nowhere else -- staging, test and
+# production are all held to the strict posture -- so a deployment cannot
+# inherit them without also announcing itself as dev. (This comment used to say
+# "when environment != production", the deny-only-production form the code was
+# deliberately moved away from.)
 # =============================================================================
 
 services:

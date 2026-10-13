@@ -205,6 +205,14 @@ stages:
                 -q
             displayName: Tests
 
+          - script: |
+              set -euo pipefail
+              # A higher bar for the modules a security defect would live in. The
+              # same .coverage data as the step above; no second test run.
+              uv run coverage report --fail-under=93 \
+                --include='*/aivs_server/auth/*,*/aivs_server/services/distribution.py,*/aivs_server/services/embargo.py,*/aivs_server/services/publication.py,*/aivs_server/taxii/queries.py'
+            displayName: Security-critical modules coverage
+
           - task: PublishTestResults@2
             condition: succeededOrFailed()
             inputs:

@@ -11,6 +11,8 @@ layer is one a reviewer will read closely.
 from __future__ import annotations
 
 import json
+import logging
+import time
 import uuid
 from collections.abc import Awaitable, Callable, MutableMapping
 from typing import Any, Final
@@ -76,6 +78,27 @@ _PORTAL_CSP: Final[bytes] = (
 )
 
 
+#: One structured line per request. Uvicorn's own access log is turned off in
+#: favour of this one, which carries the correlation id and nothing else uvicorn
+#: would add -- in particular not the query string, whose TAXII filters name
+#: what a member was looking for.
+_access_logger = logging.getLogger("aivs_server.access")
+
+
+def _log_access(scope: Scope, status_code: int, started: float) -> None:
+    client = scope.get("client")
+    _access_logger.info(
+        "request",
+        extra={
+            "method": scope.get("method"),
+            "path": scope.get("path"),
+            "status": status_code,
+            "duration_ms": round((time.monotonic() - started) * 1000, 1),
+            "client": client[0] if client else None,
+        },
+    )
+
+
 class RequestContextMiddleware:
     """Assign every request a correlation id and expose the client address.
 
@@ -103,14 +126,24 @@ class RequestContextMiddleware:
         scope["aivs_request_id"] = request_id
         set_request_id(request_id)
 
+        # 500 unless a response says otherwise: an exception that escapes the
+        # application is logged as the failure it is, not skipped.
+        status_code = 500
+        started = time.monotonic()
+
         async def send_with_request_id(message: MutableMapping[str, Any]) -> None:
+            nonlocal status_code
             if message["type"] == "http.response.start":
+                status_code = message["status"]
                 headers = list(message.get("headers", []))
                 headers.append((self._header_name, request_id.encode("ascii")))
                 message = {**message, "headers": headers}
             await send(message)
 
-        await self.app(scope, receive, send_with_request_id)
+        try:
+            await self.app(scope, receive, send_with_request_id)
+        finally:
+            _log_access(scope, status_code, started)
 
 
 class _BodyTooLargeError(Exception):

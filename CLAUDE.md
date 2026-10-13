@@ -82,7 +82,8 @@ uvx semgrep==1.173.0 scan --config p/python --config p/owasp-top-ten \
 uv export --no-emit-workspace --format requirements-txt -o /tmp/audit.txt
 uv run pip-audit --strict --requirement /tmp/audit.txt
 uv run alembic -c packages/aivs-server/alembic.ini check     # no model/migration drift
-uv run pytest -q
+uv run pytest -q --cov=aivs_server --cov=aivs_schemas --cov=aivs_client
+uv run coverage report --fail-under=93 --include='*/aivs_server/auth/*,*/aivs_server/services/distribution.py,*/aivs_server/services/embargo.py,*/aivs_server/services/publication.py,*/aivs_server/taxii/queries.py'
 gitleaks dir . --config .gitleaks.toml    # before any commit that adds files
 ```
 
@@ -137,6 +138,12 @@ False positives go in `.gitleaks.toml` as a *rule-level* allowlist matching the
 call shape, with the argument written beside it. A top-level `[[allowlists]]`
 with `targetRules` parsed cleanly in gitleaks 8.28 and was silently not
 applied, which is the same shape as the semgrep and pip-audit defaults above.
+
+**`caplog.text` is only the messages.** A test that asserts "no content in the
+logs" against `caplog.text` passes while content sits in a structured field
+(`extra=`), which is where this codebase puts everything. Assert over the
+records' fields -- `str(vars(record))` -- or the check is decorative. Found by
+a mutation that logged the query string and passed.
 
 **Suppressions are arguments, not annotations.** A `noqa`, `nosec`, or
 `type: ignore` needs a comment saying why the rule does not apply here. If the

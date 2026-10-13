@@ -29,7 +29,7 @@ from sqlalchemy.engine import make_url
 
 from tests.conftest import TEST_DATABASE_URL
 
-pytestmark = pytest.mark.db
+pytestmark = [pytest.mark.db, pytest.mark.slow]
 
 ALEMBIC_INI = Path(__file__).resolve().parents[2] / "alembic.ini"
 

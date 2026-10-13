@@ -19,12 +19,12 @@ __all__ = ["public_router", "router"]
 #:
 #: 1. The orchestrator and container healthcheck reach these on the proxy's
 #:    *internal* listener, which is not exposed off-host.
-#: 2. They are ALSO reachable on the public listener, gated only by mTLS -- the
-#:    proxy does not carve them out -- so any holder of a valid member
-#:    certificate can call them. That is acceptable only because nothing here
-#:    reveals anything about members or content: liveness is a constant, and the
-#:    readiness probe discloses at most whether the database is reachable, which
-#:    an authenticated member already learns the instant any real request fails.
+#: 2. They are NOT reachable on the member-facing mTLS listener: nginx answers
+#:    them there with exact-match 404s (``deploy/nginx/nginx.conf``). The
+#:    application still keeps them harmless in case a deployment's proxy does
+#:    not carve them out: nothing here reveals anything about members or
+#:    content -- liveness is a constant, and the readiness probe discloses at
+#:    most whether the database is reachable.
 #:
 #: The consequence for maintainers: never add anything to this router that
 #: reveals more than that, because "unauthenticated" here also means "readable

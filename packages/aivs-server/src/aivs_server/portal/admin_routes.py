@@ -1,8 +1,10 @@
 """The hosting ISAC's administrative screens.
 
-Everything an ISAC operator needs to run an instance without reaching for
-``curl``: enrolling member firms, registering and revoking their certificates,
-and running sharing circles.
+Enrolling member firms and running sharing circles without reaching for
+``curl``. Registering and revoking certificates is not here yet: it is on the
+native API (``/api/v1/orgs/{id}/certificates``, ``/api/v1/certificates/{id}/revoke``),
+which ISAC membership staff reach with their portal session as a bearer token.
+This docstring used to claim the portal covered it.
 
 This exists because the API-only version of these operations was, in practice, a
 barrier to deploying AIVS at all. An ISAC evaluating the product does not have an

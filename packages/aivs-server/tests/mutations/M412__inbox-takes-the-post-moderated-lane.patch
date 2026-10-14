@@ -1,7 +1,12 @@
 Mutation M412: an inbox filing is submitted like a person's draft
 Re-applies: Phase E slice 4 (T7) -- the guard's absence
 
-Expect red: packages/aivs-server/tests/unit/test_taxii_inbox.py::test_a_post_from_a_person_into_a_post_moderated_circle_still_waits_for_review
+Unproven, pending a rewrite (Phase E review, finding E): this patch also deletes
+`source = SYSTEM`, which is M411's defect, and only that half turns a test red.
+With the source kept, submit_submission returns early for SYSTEM, so the
+rerouting alone changes nothing and test_a_post_from_a_person_into_a_post_
+moderated_circle_still_waits_for_review stays green under it. The runner now
+requires every Expect red test to fail, which is how this surfaced.
 Expect red: packages/aivs-server/tests/unit/test_taxii_inbox.py::test_a_post_lands_as_a_submitted_system_submission_not_a_distributed_one
 
 diff --git a/packages/aivs-server/src/aivs_server/services/inbox.py b/packages/aivs-server/src/aivs_server/services/inbox.py

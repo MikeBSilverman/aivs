@@ -176,7 +176,10 @@ run that patch in the same commit; when it no longer applies, rewrite it against
 the new code, and never delete it to make the run green. And run it only in a
 worktree of your own or in CI: while a patch is applied, its files hold the
 defect, and the script refuses a tree whose target files have uncommitted
-changes.
+changes. A patch naming several tests must turn each of them red: the
+runner once took pytest's exit status as the verdict, so one red test credited
+the patch with all of them, and a patch carrying two defects (M412) was
+"killed" by the half that belonged to another patch.
 
 **A mutation proof can run the wrong code.** Python reuses a cached `.pyc`
 when the source's mtime (whole seconds) and size match. Two mutations of one

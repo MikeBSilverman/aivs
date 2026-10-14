@@ -87,6 +87,20 @@ run_tests() {
     uv run --frozen pytest -q -p no:cacheprovider "$@" >"${log}" 2>&1
 }
 
+# The named tests that stayed green. pytest exits 1 when *any* test fails, so
+# the exit status alone credited a patch naming two tests with both whenever
+# one went red -- the README's "each Expect red test fails" was never checked.
+# The short summary prints "FAILED <nodeid>" (with a "[param]" suffix for a
+# parametrised test) for each one.
+tests_still_green() {
+    local test
+    for test in "$@"; do
+        grep -qF -e "FAILED ${test} " -e "FAILED ${test}[" "${log}" \
+            || grep -qxF "FAILED ${test}" "${log}" \
+            || echo "${test}"
+    done
+}
+
 select_patches() {
     if (($# == 0)); then
         ls "${MUTATIONS_DIR}"/*.patch
@@ -158,8 +172,17 @@ for patch in "${patches[@]}"; do
     set -e
     restore_tree
 
+    green=()
+    if ((status == 1)); then
+        mapfile -t green < <(tests_still_green "${tests[@]}")
+    fi
     case "${status}" in
-        1) outcome="killed" ;;
+        1) if ((${#green[@]})); then
+               outcome="PARTLY KILLED (still green: ${green[*]})"
+               failures=$((failures + 1))
+           else
+               outcome="killed"
+           fi ;;
         0) outcome="SURVIVED"; failures=$((failures + 1)) ;;
         *) outcome="ERROR (pytest exit ${status})"; failures=$((failures + 1)) ;;
     esac

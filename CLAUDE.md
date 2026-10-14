@@ -374,6 +374,30 @@ publication lock orders commits; it cannot separate two stamps that truncate to
 the same value. Early release learned this first and distribution did not, so
 both now go through `earliest_publication_instant`.
 
+**Visibility has one clock, the database's.** `date_added`, a reader's "now",
+the cursors readers issue and the edges of a membership interval are all
+compared with one another, so all of them come from `db.clock.database_now`
+(read after the lock the comparison depends on; the publication lock helpers
+return it). They came from each replica's Python clock: a replica an hour fast
+served embargoes an hour early and closed memberships an hour late, and a
+writer behind a fast reader stamped below a cursor already issued. A new
+`dt.datetime.now()` next to anything compared with `date_added` reopens that.
+Residual: a step back of the database host's own clock.
+
+**A flag derived from a stamp is decided with the stamp, not re-read from a
+clock.** "Embargoed" was `date_added > now` after `date_added` had been set a
+millisecond past `now` by construction, so every immediate distribution was
+recorded as an embargo, "released" by the sweeper, and announced twice. Decide
+the flag where the choice is made and carry it.
+
+**Release by the clock has no transaction to refuse in.** A timer embargo
+becomes readable when `date_added` passes, with no writer present; that is what
+lets the sweeper be down (NFR-A3). So any rule that must hold "at release" is
+checked *before* the time arrives -- the sweeper re-checks each pending timer
+every pass and holds one that fails -- and what slips through the last interval
+is reported after, not silently accepted. Early release, an operator's act,
+re-checks and refuses.
+
 **A stop button stops the announcements too.** Pause hid content from every
 reader, while the embargo sweeper went on releasing and the dispatcher went on
 telling members "poll for submission X". Contentless still says that something

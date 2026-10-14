@@ -13,6 +13,11 @@ version may be read (``policy.isac_record_read_clause``). If the newest is
 still under embargo the record is left out entirely rather than answered with
 the version before it: a KEV version built on the older content would carry a
 later ``modified`` and replace the embargoed content in every TIP on release.
+A record with a version still in review (submitted or validated, not yet
+distributed or withdrawn) is left out for the same reason: once both are out,
+the KEV version built on the older content would outrank the reviewed one. Any
+version in review holds the record back, not only one with a later
+``modified``: the read fails closed, and a review that resolves releases it.
 """
 
 from __future__ import annotations
@@ -22,13 +27,17 @@ from typing import Any
 
 from sqlalchemy import exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
-from aivs_schemas.enums import VISIBLE_SUBMISSION_STATES
+from aivs_schemas.enums import VISIBLE_SUBMISSION_STATES, SubmissionState
 from aivs_server.auth.policy import isac_record_read_clause
 from aivs_server.db.models import Distribution, StixObject, Submission
 from aivs_server.services.ownership import ISAC_OWNER, owner_key
 
 __all__ = ["latest_isac_vulnerabilities"]
+
+#: States in which a version is on its way to distribution and may still get there.
+_IN_REVIEW_STATES = (SubmissionState.SUBMITTED, SubmissionState.VALIDATED)
 
 
 def _newest_isac_versions() -> Any:
@@ -48,6 +57,22 @@ def _newest_isac_versions() -> Any:
     )
 
 
+def _has_version_in_review() -> Any:
+    """Whether the ISAC has a version of this object's record in review."""
+    pending = aliased(StixObject)
+    pending_submission = aliased(Submission)
+    return (
+        exists()
+        .where(
+            pending.stix_id == StixObject.stix_id,
+            pending_submission.id == pending.submission_id,
+            owner_key(pending_submission.submitter_org_id) == ISAC_OWNER,
+            pending_submission.state.in_(_IN_REVIEW_STATES),
+        )
+        .correlate(StixObject)
+    )
+
+
 async def latest_isac_vulnerabilities(
     session: AsyncSession, *, now: dt.datetime
 ) -> list[dict[str, Any]]:
@@ -58,7 +83,11 @@ async def latest_isac_vulnerabilities(
         .distinct(StixObject.stix_id)
         .join(Submission, Submission.id == StixObject.submission_id)
         .join(Distribution, Distribution.stix_object_id == StixObject.id)
-        .where(StixObject.id.in_(select(newest.c.id)), isac_record_read_clause(now))
+        .where(
+            StixObject.id.in_(select(newest.c.id)),
+            isac_record_read_clause(now),
+            ~_has_version_in_review(),
+        )
         .order_by(StixObject.stix_id)
     )
     return [dict(raw) for raw in rows.scalars()]

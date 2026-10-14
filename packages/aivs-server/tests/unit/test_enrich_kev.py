@@ -276,6 +276,60 @@ async def test_a_record_whose_newest_version_is_embargoed_is_left_out(
     assert await _read_records(client, proxy_headers(automation_pem)) == []
 
 
+async def _file_newer_version(client, automation_pem: str, record: dict[str, Any]) -> str:
+    """A newer version of ``record``, filed and submitted for review through the API."""
+    newer = {**record, "modified": "2026-09-01T00:00:00.000Z", "name": "Revised"}
+    del newer["extensions"][AIVS_PROVENANCE_EXTENSION_ID]
+    filed = await file(client, automation_pem, [newer], scope="ai_system")
+    assert filed.status_code == 201, filed.text
+    submission_id = str(filed.json()["id"])
+    submitted = await client.post(
+        f"/api/v1/submissions/{submission_id}/submit",
+        json={},
+        headers=proxy_headers(automation_pem),
+    )
+    assert submitted.status_code == 200, submitted.text
+    return submission_id
+
+
+@pytest.mark.db
+async def test_a_record_with_a_newer_version_in_review_is_left_out(
+    client, session, isac, isac_org, make_circle, automation_pem
+):
+    """Same reason as an embargoed one: a KEV version of the older would outrank the newer."""
+    circle = await make_circle("kev")
+    record = validated(isac_record(isac_org.stix_identity_id))
+    await seed(session, isac_org, record, circle=circle)
+    submission_id = await _file_newer_version(client, automation_pem, record)
+    headers = proxy_headers(automation_pem)
+
+    assert await _read_records(client, headers) == [], "submitted"
+    _org, editor = isac
+    validate = await client.post(
+        f"/api/v1/submissions/{submission_id}/validate", json={}, headers=editor
+    )
+    assert validate.status_code == 200, validate.text
+    assert await _read_records(client, headers) == [], "validated"
+
+
+@pytest.mark.db
+async def test_a_withdrawn_newer_version_does_not_hold_the_record_back(
+    client, session, isac_org, make_circle, automation_pem
+):
+    circle = await make_circle("kev")
+    record = validated(isac_record(isac_org.stix_identity_id))
+    await seed(session, isac_org, record, circle=circle)
+    submission_id = await _file_newer_version(client, automation_pem, record)
+    headers = proxy_headers(automation_pem)
+
+    withdrawn = await client.post(
+        f"/api/v1/submissions/{submission_id}/withdraw", json={}, headers=headers
+    )
+
+    assert withdrawn.status_code == 200, withdrawn.text
+    assert [found["id"] for found in await _read_records(client, headers)] == [record["id"]]
+
+
 @pytest.mark.db
 async def test_a_red_record_is_not_read(client, session, isac_org, make_circle, automation_pem):
     circle = await make_circle("kev")

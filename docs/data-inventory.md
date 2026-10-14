@@ -16,9 +16,9 @@ What the application adds is named per class.
 | Class | Means | At rest today | When a member leaves |
 | --- | --- | --- | --- |
 | `content` | Intelligence: what was shared, and the free text around it. | Volume and backup encryption only. The application reads it, because analytics depend on that (BYOK is an option, deferred; `encryption-design.md`). | **Kept.** Other members received it, and the record of what was shared is the evidence. |
-| `pii` | Identifies a person. | Volume and backup encryption. Credentials within it are hashed (passwords, Argon2id) or sealed (TOTP seeds, `auth/secretbox.py`). | **Pseudonymised**: identifying fields scrubbed, the row id kept so the audit trail still resolves. *Planned in phase H; today an operator can only be deactivated.* |
+| `pii` | Identifies a person. | Volume and backup encryption. Credentials within it are hashed (passwords, Argon2id) or sealed (TOTP seeds, `auth/secretbox.py`). | **Pseudonymised**: identifying fields scrubbed, the row id kept so the audit trail still resolves. When its organisation is offboarded (`services/offboarding.py`, SF-72). A single person who leaves an organisation that stays is only deactivated today. |
 | `evidence` | The record of who could see what, when, and what they did. | Volume and backup encryption. `audit_log`, `submission_transitions` and `audit_stream_modes` are append-only, enforced by trigger. | **Kept.** Deleting it would destroy the "we warned member X" proof (runbook §8). |
-| `operational` | Needed to run the service, and worth nothing once the relationship ends. | Volume and backup encryption. Webhook signing keys are sealed. | **Deleted.** *Planned in phase H.* |
+| `operational` | Needed to run the service, and worth nothing once the relationship ends. | Volume and backup encryption. Webhook signing keys are sealed. | **Deleted** when the organisation is offboarded (`services/offboarding.py`, SF-72), except postures under a legal hold, which go when the hold is lifted. |
 
 Some evidence rows hold personal data incidentally. `audit_log` records the
 source IP address of each request and the operator id behind each human

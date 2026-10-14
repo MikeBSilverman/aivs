@@ -405,13 +405,17 @@ async def _validate_and_distribute(
     await record_transition(session, ctx, submission, SubmissionState.VALIDATED, reason=reason)
     submission.lane = lane
     targets = sorted(circle_ids, key=str)
-    await distribute_submission(session, ctx, submission, circle_ids=targets)
+    result = await distribute_submission(session, ctx, submission, circle_ids=targets)
     await record_transition(session, ctx, submission, SubmissionState.DISTRIBUTED, reason=reason)
+    # The distribution's own stamp, as "now" too: a database-clock instant
+    # compared with the notifier's default app-clock "now" read as "not yet
+    # visible" on a replica running behind, and nobody was told.
     await queue_visibility_notifications(
         session,
         submission_id=submission.id,
         circle_ids=targets,
-        visible_at=await database_now(session),
+        visible_at=result.date_added,
+        now=result.date_added,
     )
     await record(
         session,

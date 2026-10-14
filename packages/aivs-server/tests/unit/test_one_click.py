@@ -14,7 +14,7 @@ import logging
 import uuid
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from aivs_schemas.enums import (
     CIRCLE_ELIGIBLE_ORG_TYPES,
@@ -670,3 +670,47 @@ def test_no_member_contribution_or_posture_route_carries_an_object_id_in_its_pat
         "/api/v1/postures/openvex",
         "/api/v1/postures/{posture_id}",
     }
+
+
+@pytest.mark.requirement("SF-66")
+@pytest.mark.parametrize(
+    "app_clock_offset", [dt.timedelta(0), -dt.timedelta(hours=1)], ids=["honest", "behind"]
+)
+async def test_a_click_published_at_once_tells_the_circle_whatever_the_app_clock_says(
+    client, session, secret_box, world, monkeypatch, app_clock_offset
+):
+    """A fast-lane publication notifies the circle, like any distribution.
+
+    The notifier compared a database-clock instant with its own app-clock
+    "now"; on a replica running behind, the content read as not yet visible
+    and nobody was told. The pair is the honest clock.
+    """
+    from aivs_server.auth.secretbox import SecretPurpose  # noqa: PLC0415 - this test only
+    from aivs_server.db.models import Webhook, WebhookDelivery  # noqa: PLC0415 - as above
+    from aivs_server.notify import events as notify_events  # noqa: PLC0415 - patched here
+    from tests.unit.test_one_clock import skew_clock  # noqa: PLC0415 - shared helper
+
+    hook_id = uuid.uuid4()
+    session.add(
+        Webhook(
+            id=hook_id,
+            org_id=world.reader.org.id,
+            url="https://reader.example/aivs",
+            hmac_secret_encrypted=secret_box.seal(
+                "reader-secret", purpose=SecretPurpose.WEBHOOK_HMAC, subject=hook_id
+            ),
+            events=[],
+        )
+    )
+    await session.commit()
+    skew_clock(monkeypatch, notify_events, app_clock_offset)
+
+    response = await one_click(client, world.member.person, world.published)
+
+    assert response.json()["lane"] == "fast"
+    queued = await session.scalar(
+        select(func.count())
+        .select_from(WebhookDelivery)
+        .where(WebhookDelivery.webhook_id == hook_id)
+    )
+    assert queued == 1

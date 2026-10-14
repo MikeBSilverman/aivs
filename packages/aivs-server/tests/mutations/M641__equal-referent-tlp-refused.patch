@@ -1,0 +1,19 @@
+Mutation M641: a contribution exactly as strict as its referent is refused as looser (off by one)
+Re-applies: Phase E slice 2 (T6) -- "at least as restrictive" written as "stricter than"
+
+Expect red: packages/aivs-server/tests/unit/test_markings.py::test_a_contribution_as_strict_as_its_strictest_referent_is_distributed
+Expect red: packages/aivs-server/tests/unit/test_markings.py::test_an_opinion_at_its_referents_tlp_is_accepted
+
+diff --git a/packages/aivs-server/src/aivs_server/services/markings.py b/packages/aivs-server/src/aivs_server/services/markings.py
+index 99898a9..c654641 100644
+--- a/packages/aivs-server/src/aivs_server/services/markings.py
++++ b/packages/aivs-server/src/aivs_server/services/markings.py
+@@ -119,7 +119,7 @@ async def looser_than_referents_problem(
+     stricter = sorted(
+         f"{stix_id} ({referent.value})"
+         for stix_id, referent in tlps.items()
+-        if not tlp_at_least_as_restrictive(tlp, referent)
++        if TLP_RESTRICTIVENESS[tlp] <= TLP_RESTRICTIVENESS[referent]
+     )
+     if not stricter:
+         return None

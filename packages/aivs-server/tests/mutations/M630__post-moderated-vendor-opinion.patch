@@ -1,0 +1,18 @@
+Mutation M630: a post-moderated circle publishes a vendor's opinion without review
+Re-applies: Phase E slice 4 (T7) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_post_moderation.py::test_a_post_moderated_circle_still_sends_a_vendors_opinion_to_review
+
+diff --git a/packages/aivs-server/src/aivs_server/services/contributions.py b/packages/aivs-server/src/aivs_server/services/contributions.py
+index 6df8403..acb8d0f 100644
+--- a/packages/aivs-server/src/aivs_server/services/contributions.py
++++ b/packages/aivs-server/src/aivs_server/services/contributions.py
+@@ -418,8 +418,6 @@ def _post_moderable(raws: list[Mapping[str, Any]], ctx: AuthContext) -> bool:
+             return False
+         if object_type == "grouping" and raw.get("context") != RFI_CONTEXT:
+             return False
+-        if object_type == "opinion" and ctx.org_type is OrgType.VENDOR:
+-            return False
+     return bool(raws)
+ 
+ 

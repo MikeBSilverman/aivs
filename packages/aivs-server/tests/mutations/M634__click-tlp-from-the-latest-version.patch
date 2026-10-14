@@ -1,0 +1,18 @@
+Mutation M634: a click takes the TLP of the latest visible version, not the strictest
+Re-applies: Phase E slice 4 (T7) -- SF-49 read as "the current version's TLP"
+
+Expect red: packages/aivs-server/tests/unit/test_one_click.py::test_a_click_takes_the_strictest_tlp_among_the_versions_the_member_sees
+
+diff --git a/packages/aivs-server/src/aivs_server/services/contributions.py b/packages/aivs-server/src/aivs_server/services/contributions.py
+index 6df8403..20e0b9c 100644
+--- a/packages/aivs-server/src/aivs_server/services/contributions.py
++++ b/packages/aivs-server/src/aivs_server/services/contributions.py
+@@ -186,7 +186,7 @@ async def resolve_target(
+     ).all()
+     if not rows:
+         return None
+-    strictest = max((TLP(row.tlp) for row in rows), key=lambda tlp: TLP_RESTRICTIVENESS[tlp])
++    strictest = TLP(max(rows, key=lambda row: row.modified).tlp)
+     return Target(
+         stix_id=stix_id,
+         tlp=strictest,

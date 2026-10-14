@@ -1,0 +1,18 @@
+Mutation M631: the fast lane publishes into every circle the object reached once the member contributes to one
+Re-applies: Phase E slice 4 (T7) -- "may it contribute anywhere?" taken for "where may it contribute?"
+
+Expect red: packages/aivs-server/tests/unit/test_one_click.py::test_the_fast_lane_publishes_only_into_the_circles_the_member_contributes_to
+
+diff --git a/packages/aivs-server/src/aivs_server/services/contributions.py b/packages/aivs-server/src/aivs_server/services/contributions.py
+index 6df8403..a12d867 100644
+--- a/packages/aivs-server/src/aivs_server/services/contributions.py
++++ b/packages/aivs-server/src/aivs_server/services/contributions.py
+@@ -214,7 +214,7 @@ def fast_lane_problem(ctx: AuthContext, target: Target, *, object_type: str) ->
+ 
+ def publishable_circles(ctx: AuthContext, target: Target) -> frozenset[uuid.UUID]:
+     """The circles a contribution on ``target`` may reach without review."""
+-    return target.circle_ids & writable_circle_ids(ctx)
++    return target.circle_ids if target.circle_ids & writable_circle_ids(ctx) else frozenset()
+ 
+ 
+ async def within_hourly_allowance(

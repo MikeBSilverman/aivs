@@ -1,0 +1,17 @@
+Mutation M637: a machine lowering the SSVC decision members hold passes validate unnamed
+Re-applies: Phase E slice 2 (T6) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_provenance_gate.py::test_a_machine_lowering_the_ssvc_decision_members_hold_needs_naming
+
+diff --git a/packages/aivs-server/src/aivs_server/services/provenance.py b/packages/aivs-server/src/aivs_server/services/provenance.py
+index c599263..42cc95a 100644
+--- a/packages/aivs-server/src/aivs_server/services/provenance.py
++++ b/packages/aivs-server/src/aivs_server/services/provenance.py
+@@ -55,7 +55,6 @@ _DISRUPTIVE_RESTARTS: Final[frozenset[str]] = frozenset({"system", "parent"})
+ 
+ #: SSVC v2 values in increasing urgency, CISA's spellings.
+ _SSVC_ORDER: Final[Mapping[str, tuple[str, ...]]] = {
+-    "ssvc_decision": ("Track", "Track*", "Attend", "Act"),
+     "ssvc_exploitation": ("none", "poc", "active"),
+ }
+ 

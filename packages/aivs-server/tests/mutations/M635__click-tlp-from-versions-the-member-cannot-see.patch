@@ -1,0 +1,27 @@
+Mutation M635: a click takes the strictest TLP of every distributed version, including ones the member cannot see
+Re-applies: Phase E slice 4 (T7) -- SF-49 checked from the ISAC's view where the member's belongs
+
+Expect red: packages/aivs-server/tests/unit/test_one_click.py::test_a_stricter_version_the_member_cannot_see_does_not_set_the_clicks_tlp
+Expect red: packages/aivs-server/tests/unit/test_one_click.py::test_a_stricter_version_the_member_cannot_see_sends_the_click_to_review_unexplained
+
+diff --git a/packages/aivs-server/src/aivs_server/services/contributions.py b/packages/aivs-server/src/aivs_server/services/contributions.py
+index 6df8403..d3d2fad 100644
+--- a/packages/aivs-server/src/aivs_server/services/contributions.py
++++ b/packages/aivs-server/src/aivs_server/services/contributions.py
+@@ -186,7 +186,15 @@ async def resolve_target(
+     ).all()
+     if not rows:
+         return None
+-    strictest = max((TLP(row.tlp) for row in rows), key=lambda tlp: TLP_RESTRICTIVENESS[tlp])
++    every_tlp = (
++        await session.scalars(
++            select(Submission.tlp)
++            .join(StixObject, StixObject.submission_id == Submission.id)
++            .join(Distribution, Distribution.stix_object_id == StixObject.id)
++            .where(StixObject.stix_id == stix_id)
++        )
++    ).all()
++    strictest = max((TLP(tlp) for tlp in every_tlp), key=lambda tlp: TLP_RESTRICTIVENESS[tlp])
+     return Target(
+         stix_id=stix_id,
+         tlp=strictest,

@@ -1,0 +1,17 @@
+Mutation M640: distribution trusts validate's referent-TLP check, though a referent can tighten in between
+Re-applies: Phase E slice 2 (T6) -- the guard's absence at distribution
+
+Expect red: packages/aivs-server/tests/unit/test_markings.py::test_a_contribution_its_referent_has_since_outgrown_is_refused_at_distribution
+
+diff --git a/packages/aivs-server/src/aivs_server/services/distribution.py b/packages/aivs-server/src/aivs_server/services/distribution.py
+index 17540ff..229d52b 100644
+--- a/packages/aivs-server/src/aivs_server/services/distribution.py
++++ b/packages/aivs-server/src/aivs_server/services/distribution.py
+@@ -200,7 +200,6 @@ async def _refuse_content_problems(
+         await foreign_owned_versions_problem(
+             session, raws, owner_org_id=submission.submitter_org_id
+         ),
+-        await contribution_problem(session, submission, raws, visible_to=None, now=now),
+     ):
+         if problem is not None:
+             raise DistributionError(problem)

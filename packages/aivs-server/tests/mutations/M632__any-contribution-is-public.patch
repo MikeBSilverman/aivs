@@ -1,0 +1,18 @@
+Mutation M632: any contribution counts as public content, whatever scope it was filed under
+Re-applies: Phase E slice 4 (T7) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_one_click.py::test_a_click_on_a_contribution_from_a_members_own_estate_waits_for_review
+
+diff --git a/packages/aivs-server/src/aivs_server/services/contributions.py b/packages/aivs-server/src/aivs_server/services/contributions.py
+index 6df8403..c72afd4 100644
+--- a/packages/aivs-server/src/aivs_server/services/contributions.py
++++ b/packages/aivs-server/src/aivs_server/services/contributions.py
+@@ -158,7 +158,7 @@ def _is_public(rows: list[Any]) -> bool:
+     """
+     latest = max(rows, key=lambda row: row.modified)
+     if latest.raw.get("type") != "vulnerability":
+-        return DiscoveryScope(latest.discovery_scope) is DiscoveryScope.DISCLOSED_THIRD_PARTY
++        return True
+     isac_rows = [row for row in rows if row.owner == ISAC_OWNER]
+     if not isac_rows:
+         return False

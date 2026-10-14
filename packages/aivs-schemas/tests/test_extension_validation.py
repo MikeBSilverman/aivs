@@ -38,6 +38,7 @@ from aivs_schemas.tlp import (
     TLP,
     TLP20_EXTENSION_DEFINITION_ID,
     TLP_MARKING_IDS,
+    is_tlp_marking_id,
     marking_definition_for,
     tlp_for_marking_id,
 )
@@ -473,6 +474,15 @@ def test_legacy_tlp10_markings_are_not_silently_upgraded():
     """TLP 1.0 AMBER and TLP 2.0 AMBER carry different handling obligations."""
     for legacy_id in LEGACY_TLP10_MARKING_IDS.values():
         assert tlp_for_marking_id(legacy_id) is None
+
+
+def test_a_legacy_tlp10_marking_is_still_a_tlp_marking():
+    """Not translated, but not mistaken for a statement marking either: a TLP 1.0
+    marking beside the submission's TLP 2.0 one is a conflict, and the KEV
+    script must not carry it into a version as if it were the record's own."""
+    for marking_id in [*TLP_MARKING_IDS.values(), *LEGACY_TLP10_MARKING_IDS.values()]:
+        assert is_tlp_marking_id(marking_id)
+    assert not is_tlp_marking_id("marking-definition--0b3e1c6e-7f4a-4a8e-9a39-5d6f2c4b8e11")
 
 
 def test_marking_definition_returns_a_mutable_copy():

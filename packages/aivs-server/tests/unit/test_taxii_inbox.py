@@ -143,6 +143,12 @@ async def test_the_disclosure_split_applies_to_the_inbox(client, session, world)
 
 @pytest.mark.requirement("SF-69")
 async def test_a_finding_of_the_members_own_is_refused_at_the_inbox(client, session, world):
+    """Beside a note on a published record, so only the own-vulnerability rule refuses it.
+
+    Alone, the vulnerability would reference no ISAC record and fall to the
+    unknown-target refusal, which is a 400 as well: the test would pass with
+    this rule deleted.
+    """
     vulnerability = {
         "type": "vulnerability",
         "spec_version": "2.1",
@@ -152,7 +158,9 @@ async def test_a_finding_of_the_members_own_is_refused_at_the_inbox(client, sess
         "name": "Our own pre-CVE finding",
     }
 
-    response = await post(client, world, world.member.machine, [vulnerability])
+    response = await post(
+        client, world, world.member.machine, [vulnerability, note_about(world.published)]
+    )
 
     assert response.status_code == 400
     assert "native API" in response.text

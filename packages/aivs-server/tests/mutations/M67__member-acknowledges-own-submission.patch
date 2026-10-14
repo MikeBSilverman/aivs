@@ -1,0 +1,18 @@
+Mutation M67: a member may acknowledge its own submission, padding the receipts and its own telemetry
+Re-applies: acknowledgment open to the submitter (before this commit)
+
+Expect red: packages/aivs-server/tests/unit/test_self_acknowledgement.py::test_a_member_cannot_acknowledge_its_own_submission
+
+diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs-server/src/aivs_server/auth/policy.py
+index de69a88..df27f76 100644
+--- a/packages/aivs-server/src/aivs_server/auth/policy.py
++++ b/packages/aivs-server/src/aivs_server/auth/policy.py
+@@ -195,7 +195,7 @@ def can_acknowledge_own_submission(ctx: AuthContext) -> bool:
+     is evidence of nothing, and it would sit in the receipts and the
+     submitter's telemetry beside the members who really did.
+     """
+-    return is_isac_staff(ctx)
++    return is_active(ctx)
+ 
+ 
+ def can_manage_own_webhooks(ctx: AuthContext) -> bool:

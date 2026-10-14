@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import datetime as dt
 import getpass
 import logging
 import sys
@@ -40,6 +39,7 @@ from aivs_server.audit.log import AuditAction, record
 from aivs_server.auth.passwords import totp_provisioning_uri
 from aivs_server.auth.secretbox import SecretBox
 from aivs_server.config import Settings, get_settings
+from aivs_server.db.clock import database_now
 from aivs_server.db.engine import session_scope
 from aivs_server.db.models import Operator, Organization
 from aivs_server.services.certificates import register_certificate
@@ -141,7 +141,9 @@ async def _register_new_certificate(
             certificate_pem=certificate_pem,
             label="bootstrap",
             issuing_ca=settings.issuing_ca_certificate,
-            now=dt.datetime.now(dt.UTC),
+            # The database's clock, as every certificate registration uses:
+            # reconnection compares created_at with quarantined_at.
+            now=await database_now(session),
         )
         await session.flush()
     except IntegrityError as exc:

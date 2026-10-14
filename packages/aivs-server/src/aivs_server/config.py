@@ -459,6 +459,11 @@ class Settings(BaseSettings):
         for field in ("secret_encryption_key", "secret_encryption_key_previous"):
             path = resolved.get(f"{field}_file")
             if not path:
+                # An empty value is how compose and Kubernetes spell "unset".
+                # Left in place it became Path("."), which is not None, so the
+                # production check that the key comes from a file passed with
+                # the key in the environment beside it.
+                resolved.pop(f"{field}_file", None)
                 continue
             if resolved.get(field):
                 msg = f"set {field} or {field}_file, not both"

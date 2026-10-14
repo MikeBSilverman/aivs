@@ -44,6 +44,26 @@ def test_outside_dev_the_environment_form_is_refused_and_the_file_accepted():
     assert settings.secret_encryption_key.get_secret_value() == TEST_SECRET_KEY
 
 
+@pytest.mark.requirement("NFR-S7")
+@pytest.mark.parametrize(
+    ("key", "file_field"),
+    [
+        ("secret_encryption_key", "secret_encryption_key_file"),
+        ("secret_encryption_key_previous", "secret_encryption_key_previous_file"),
+    ],
+)
+def test_an_empty_file_setting_is_unset_not_a_file(key: str, file_field: str):
+    """An empty ``_FILE`` is how compose writes "unset"; it was read as ``Path(".")``."""
+    extra = (
+        {}
+        if key == "secret_encryption_key"
+        else {"secret_encryption_key_file": TEST_SECRET_KEY_FILE}
+    )
+
+    with pytest.raises(ValidationError, match=file_field):
+        _settings(**{key: TEST_SECRET_KEY, file_field: "", **extra})
+
+
 def test_dev_may_still_use_the_environment():
     """The interlock is "permit only dev", like every other posture rule."""
     assert _settings(environment="dev", secret_encryption_key=TEST_SECRET_KEY)

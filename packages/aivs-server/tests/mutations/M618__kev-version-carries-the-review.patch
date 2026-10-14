@@ -1,0 +1,18 @@
+Mutation M618: a KEV version carries the review of the version before it
+Re-applies: enriched_version copying the extensions wholesale
+
+Expect red: packages/aivs-server/tests/unit/test_enrich_kev.py::test_the_previous_versions_review_is_not_carried
+Expect red: packages/aivs-server/tests/unit/test_enrich_kev.py::test_run_files_a_kev_version_of_the_isacs_record_and_of_nothing_else
+
+diff --git a/scripts/enrich-kev.py b/scripts/enrich-kev.py
+--- a/scripts/enrich-kev.py
++++ b/scripts/enrich-kev.py
+@@ -103,7 +103,7 @@ def _without_server_review(extensions: Mapping[str, Any]) -> dict[str, Any]:
+     that carries one, and writes this version's when an editor validates it.
+     """
+     provenance = extensions.get(AIVS_PROVENANCE_EXTENSION_ID)
+-    if not isinstance(provenance, Mapping):
++    if provenance is not None or not isinstance(provenance, Mapping):
+         return dict(extensions)
+     kept = {k: v for k, v in provenance.items() if k not in SERVER_WRITTEN_PROVENANCE}
+     rest = {k: v for k, v in extensions.items() if k != AIVS_PROVENANCE_EXTENSION_ID}

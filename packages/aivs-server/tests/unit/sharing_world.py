@@ -46,7 +46,10 @@ class SharingWorld:
     reader: Party
     #: A vendor that contributes to the circle.
     vendor: Party
-    #: The ISAC's own machine identity, contributing to the circle.
+    #: The ISAC's own machine identity. In no circle: it contributes and never
+    #: reads, so no path may make it a member (``CIRCLE_ELIGIBLE_ORG_TYPES``).
+    #: An earlier version joined it as a contributor through the raw fixture,
+    #: and the tests then proved a rule in a world that cannot exist.
     automation: Party
     #: An ISAC editor, signed in.
     editor: dict[str, str]
@@ -60,14 +63,15 @@ class SharingWorld:
 async def _party(
     slug: str,
     org_type: OrgType,
-    role: CircleRole,
+    role: CircleRole | None,
     circle: models.Circle,
     fixtures: dict[str, Any],
 ) -> Party:
     org = await fixtures["make_org"](slug, org_type=org_type)
     pem, _ = await fixtures["make_cert"](org)
     operator, _seed = await fixtures["make_operator"](org, roles=(OperatorRole.ANALYST,))
-    await fixtures["join_circle"](org, circle, role=role)
+    if role is not None:
+        await fixtures["join_circle"](org, circle, role=role)
     return Party(org, pem, operator, await fixtures["human_headers"](operator, pem))
 
 
@@ -86,7 +90,7 @@ async def build_sharing_world(session, isac, isac_org, **fixtures: Any) -> Shari
     member = await _party("meridian-global", OrgType.GSIB, contributor, circle, fixtures)
     reader = await _party("atlantic-clearing", OrgType.GSIB, CircleRole.MEMBER, circle, fixtures)
     vendor = await _party("acme-software", OrgType.VENDOR, contributor, circle, fixtures)
-    automation = await _party("isac-automation", OrgType.AUTOMATION, contributor, circle, fixtures)
+    automation = await _party("isac-automation", OrgType.AUTOMATION, None, circle, fixtures)
     _isac_org, editor = isac
     return SharingWorld(
         circle=circle,

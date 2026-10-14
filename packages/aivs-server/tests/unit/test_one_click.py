@@ -9,21 +9,26 @@ fast lane, and the one changed in exactly that respect that does not.
 
 from __future__ import annotations
 
+import datetime as dt
 import uuid
 
 import pytest
 from sqlalchemy import select
 
 from aivs_schemas.enums import (
+    CIRCLE_ELIGIBLE_ORG_TYPES,
     TLP,
     CircleRole,
     DiscoveryScope,
+    OperatorRole,
+    OrgStatus,
     OrgType,
     SubmissionLane,
     SubmissionState,
 )
+from aivs_server.auth.context import AuthContext, AuthMethod, CircleGrant, MembershipInterval
 from aivs_server.db.models import Distribution, StixObject, Submission, SubmissionTransition
-from aivs_server.services.contributions import NEEDS_AN_EDITOR
+from aivs_server.services.contributions import NEEDS_AN_EDITOR, Target, fast_lane_problem
 from tests.unit.contribution_world import LATER, STAMP, seed, vulnerability_raw
 from tests.unit.sharing_world import SharingWorld, build_sharing_world, one_click
 
@@ -134,14 +139,104 @@ async def test_a_vendors_opinion_waits_for_review_though_its_sighting_does_not(
 
 
 @pytest.mark.requirement("SF-66")
-async def test_the_isacs_automation_waits_for_review_even_with_a_person_signed_in(
-    client, session, world
+@pytest.mark.parametrize(
+    "role",
+    [
+        OperatorRole.ISAC_ANALYST,
+        OperatorRole.ISAC_MEMBERSHIP,
+        OperatorRole.SYSTEM_ADMIN,
+        OperatorRole.ISAC_EDITOR,
+    ],
+)
+async def test_the_isacs_own_staff_wait_for_review_in_a_circle_the_isac_contributes_to(
+    client, session, isac_org, join_circle, make_cert, make_operator, human_headers, world, role
 ):
-    submission = await _filed(
-        session, await one_click(client, world.automation.person, world.published)
-    )
+    """The ISAC files through review, whoever at it clicks.
+
+    The ISAC's organisation may hold a contributor membership like anyone
+    (``CIRCLE_ELIGIBLE_ORG_TYPES`` admits it, and the runbook suggests it).
+    Its person's click was published at once, in the ISAC's name with no
+    editor -- by an analyst, membership officer or system admin, none of whom
+    may distribute. The pair is the member's identical click, published
+    (first test in this module).
+    """
+    assert OrgType.ADMIN in CIRCLE_ELIGIBLE_ORG_TYPES
+    await join_circle(isac_org, world.circle, role=CircleRole.CONTRIBUTOR)
+    pem, _ = await make_cert(isac_org)
+    operator, _seed = await make_operator(isac_org, roles=(role,))
+    headers = await human_headers(operator, pem)
+
+    submission = await _filed(session, await one_click(client, headers, world.published))
 
     assert submission.state is SubmissionState.SUBMITTED
+    assert submission.lane is SubmissionLane.REVIEW
+    assert await _distributed_to(session, submission) == set()
+
+
+#: Every organisation type that is not the ISAC's own. Written out rather than
+#: derived, so a new type is a decision this test makes someone take.
+MEMBER_TYPES = frozenset(
+    {
+        OrgType.GSIB,
+        OrgType.SECTION9,
+        OrgType.CRIT_INFRA,
+        OrgType.VENDOR,
+        OrgType.RESEARCHER,
+        OrgType.GOVERNMENT,
+    }
+)
+
+
+@pytest.mark.requirement("SF-66")
+@pytest.mark.parametrize("org_type", list(OrgType))
+def test_only_a_person_at_a_member_organisation_takes_a_shortcut_lane(org_type):
+    """The lane rule's filer check is an allow-list of member organisation types.
+
+    Everything else about the click is what the fast lane takes; only the
+    filer's organisation type varies. The ISAC and its automation are refused
+    by the same term, which is what "the ISAC files through review" means.
+    """
+    circle_id = uuid.uuid4()
+    ctx = AuthContext(
+        org_id=uuid.uuid4(),
+        org_slug="filer",
+        org_type=org_type,
+        org_status=OrgStatus.ACTIVE,
+        auth_method=AuthMethod.PORTAL_SESSION,
+        circles={
+            circle_id: CircleGrant(
+                role=CircleRole.CONTRIBUTOR,
+                intervals=(MembershipInterval(joined_at=dt.datetime(2026, 1, 1, tzinfo=dt.UTC)),),
+            )
+        },
+        operator_id=uuid.uuid4(),
+    )
+    target = Target(
+        stix_id=f"vulnerability--{uuid.uuid4()}",
+        tlp=TLP.AMBER,
+        circle_ids=frozenset({circle_id}),
+        is_public=True,
+    )
+
+    problem = fast_lane_problem(ctx, target, object_type="sighting")
+
+    assert (problem is None) is (org_type in MEMBER_TYPES)
+
+
+@pytest.mark.requirement("SF-66")
+async def test_the_isacs_automation_reads_no_circle_so_its_click_finds_nothing(client, world):
+    """No path makes the automation organisation a circle member, so it sees no target.
+
+    Its click answers exactly as a click on an absent object does. Should that
+    ever change, the allow-list above still sends its click to review.
+    """
+    assert OrgType.AUTOMATION not in CIRCLE_ELIGIBLE_ORG_TYPES
+
+    clicked = await one_click(client, world.automation.person, world.published)
+    absent = await one_click(client, world.automation.person, f"vulnerability--{uuid.uuid4()}")
+
+    assert clicked.status_code == absent.status_code == 404
+    assert clicked.text == absent.text
 
 
 @pytest.mark.requirement("SF-66")

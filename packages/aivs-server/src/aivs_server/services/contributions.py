@@ -12,7 +12,9 @@ else:
   is no prose for an editor to read;
 - it is about public content: a vulnerability the ISAC's record says is
   published, or an object filed as a contribution on one, never RED;
-- a person filed it, from a member's session, not a machine identity;
+- a person filed it, from a member's session: not a machine identity, and
+  not the ISAC's own organisation or its automation, which file through
+  review;
 - it goes only into circles the member may contribute to, among those the
   object reached: a reader-only membership (a government or vendor circle)
   keeps its editor;
@@ -84,6 +86,7 @@ __all__ = [
     "TargetNotFoundError",
     "contribute",
     "fast_lane_problem",
+    "filer_problem",
     "publishable_circles",
     "resolve_target",
     "submit_submission",
@@ -92,6 +95,19 @@ __all__ = [
 
 #: Object types a post-moderated circle may take without review.
 POST_MODERABLE_TYPES: Final[frozenset[str]] = frozenset({"note", "opinion", "sighting", "grouping"})
+
+#: Organisation types whose people may take a shortcut lane: the members. Not
+#: the ISAC's own organisation or its automation, which file through review.
+SHORTCUT_LANE_ORG_TYPES: Final[frozenset[OrgType]] = frozenset(
+    {
+        OrgType.GSIB,
+        OrgType.SECTION9,
+        OrgType.CRIT_INFRA,
+        OrgType.VENDOR,
+        OrgType.RESEARCHER,
+        OrgType.GOVERNMENT,
+    }
+)
 
 #: The ``grouping.context`` that makes a grouping a request for information.
 RFI_CONTEXT: Final[str] = "rfi"
@@ -195,12 +211,28 @@ async def resolve_target(
     )
 
 
-def fast_lane_problem(ctx: AuthContext, target: Target, *, object_type: str) -> str | None:
-    """Why this contribution must be reviewed rather than published at once, or ``None``."""
+def filer_problem(ctx: AuthContext) -> str | None:
+    """Why this filer takes no shortcut lane, or ``None`` for a person at a member organisation.
+
+    An allow-list of member types. The ISAC files through review: it is one
+    owner of every record it holds, so owner-only versioning cannot tell its
+    analyst from its editor, and refusing only the automation type let an
+    analyst, membership officer or system admin -- none of whom may
+    distribute -- publish in the ISAC's name, or replace an editor's record,
+    wherever the ISAC held a contributor membership.
+    """
     if ctx.operator_id is None:
         return "filed by a machine identity"
-    if ctx.org_type is OrgType.AUTOMATION:
-        return "filed by an automation organisation"
+    if ctx.org_type not in SHORTCUT_LANE_ORG_TYPES:
+        return "filed by the ISAC, which files through review"
+    return None
+
+
+def fast_lane_problem(ctx: AuthContext, target: Target, *, object_type: str) -> str | None:
+    """Why this contribution must be reviewed rather than published at once, or ``None``."""
+    filer = filer_problem(ctx)
+    if filer is not None:
+        return filer
     if ctx.org_type is OrgType.VENDOR and object_type == "opinion":
         return "a vendor's opinion"
     if target.tlp is TLP.RED:
@@ -459,7 +491,7 @@ async def submit_submission(
     has one home.
     """
     await apply_transition(session, ctx, submission, SubmissionState.SUBMITTED, reason=reason)
-    if submission.source is not SubmissionSource.MEMBER or ctx.operator_id is None:
+    if submission.source is not SubmissionSource.MEMBER or filer_problem(ctx) is not None:
         return submission
     raws = list(
         (

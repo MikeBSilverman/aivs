@@ -16,7 +16,7 @@ from sqlalchemy import select, update
 from sqlalchemy import text as sqlalchemy_text
 from sqlalchemy.exc import DBAPIError
 
-from aivs_schemas.enums import OrgType, SubmissionLane, SubmissionState
+from aivs_schemas.enums import CircleRole, OperatorRole, OrgType, SubmissionLane, SubmissionState
 from aivs_server.audit.log import AuditAction
 from aivs_server.db.models import AuditLog, Circle, Submission, SubmissionTransition
 from aivs_server.services.contributions import within_hourly_allowance
@@ -461,3 +461,30 @@ async def test_a_note_of_its_own_beside_another_firms_note_is_published(
 
     assert submission.state is SubmissionState.DISTRIBUTED
     assert submission.lane is SubmissionLane.POST_MODERATED
+
+
+@pytest.mark.requirement("SF-48", "SF-66")
+async def test_the_isacs_analyst_cannot_overwrite_an_editors_record_through_post_moderation(
+    client, session, world, isac_org, join_circle, make_cert, make_operator, human_headers
+):
+    """The ISAC is one owner, so only the lane rule stands between its staff and its records.
+
+    An analyst -- who may not distribute -- files a later version of a note an
+    editor published, in a post-moderated circle the ISAC contributes to.
+    Owner-only versioning passes it (the ISAC owns both), and it was published
+    on submit, replacing the editor's note with no editor. The pair is the
+    member's note on the same record, published on submit (first test above).
+    """
+    await post_moderation(client, world, enabled=True)
+    await join_circle(isac_org, world.circle, role=CircleRole.CONTRIBUTOR)
+    editors = note_about(world.published)
+    await seed(session, isac_org, editors, circle=world.circle)
+    pem, _ = await make_cert(isac_org)
+    analyst, _seed = await make_operator(isac_org, roles=(OperatorRole.ISAC_ANALYST,))
+    headers = await human_headers(analyst, pem)
+    overwrite = {**editors, "modified": LATER, "content": "Nothing to see; close the case."}
+
+    submission = await file_and_submit(client, session, headers, [overwrite])
+
+    assert submission.state is SubmissionState.SUBMITTED
+    assert submission.lane is SubmissionLane.REVIEW

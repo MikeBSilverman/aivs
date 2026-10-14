@@ -402,7 +402,10 @@ lane skips the editor, not the circle's contributor role -- but as first written
 it published into every circle the member could *read*, because "who may
 contribute here" was enforced only in the TAXII write path. When a new path
 reaches the same effect as an existing one, list the checks the old path makes
-and route through them.
+and route through them. Who may take the shortcut is an allow-list too: the
+lanes refused machines and the automation type, so ISAC staff with no editor
+role published in the ISAC's name, and replaced an editor's record, wherever
+the ISAC held a contributor membership.
 
 **Authorization comes before format.** The TAXII inbox first answered 415 before
 its 404/403 checks. A uniform 415 is no oracle, but "refused before anything

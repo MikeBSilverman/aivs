@@ -90,7 +90,8 @@ class RouteClass(enum.StrEnum):
     #: own organisation's; others 404, those who may not 403 (before any lookup).
     WEBHOOK_DELETE = "webhook delete"
     #: Responding to content (a one-click contribution, a posture): whoever can
-    #: read the object; others 404. The ISAC files through review instead.
+    #: read the object; others 404. The ISAC files through review instead
+    #: (``services.contributions.filer_problem``).
     CONTENT_RESPONSE = "content response"
     #: A record of one organisation's own (its posture, its TAXII status): that
     #: organisation only; everyone else 404, the ISAC included.

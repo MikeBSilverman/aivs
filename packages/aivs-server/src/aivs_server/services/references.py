@@ -19,14 +19,17 @@ __all__ = ["external_references_by_type", "referenced_ids"]
 
 #: Reference properties that are not "this content is about that object".
 #: ``created_by_ref`` is rewritten at distribution; markings are handled by
-#: the marking rule; a sighting's sources and locations name who saw it.
+#: the marking rule; ``where_sighted_refs`` names who saw it, and SF-50 lets
+#: it name only the filer itself (and nothing at all when anonymous).
+#: ``observed_data_refs`` is not here: a sighting's evidence is content it is
+#: about, and left out, a post-moderated sighting cited hidden or stricter
+#: observed-data with no visibility or TLP check.
 _NOT_SUBJECT_REFERENCES: Final[frozenset[str]] = frozenset(
     {
         "created_by_ref",
         "object_marking_refs",
         "marking_ref",
         "where_sighted_refs",
-        "observed_data_refs",
     }
 )
 

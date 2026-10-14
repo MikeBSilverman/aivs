@@ -16,7 +16,14 @@ from sqlalchemy import select, update
 from sqlalchemy import text as sqlalchemy_text
 from sqlalchemy.exc import DBAPIError
 
-from aivs_schemas.enums import CircleRole, OperatorRole, OrgType, SubmissionLane, SubmissionState
+from aivs_schemas.enums import (
+    TLP,
+    CircleRole,
+    OperatorRole,
+    OrgType,
+    SubmissionLane,
+    SubmissionState,
+)
 from aivs_server.audit.log import AuditAction
 from aivs_server.db.models import AuditLog, Circle, Submission, SubmissionTransition
 from aivs_server.services.contributions import within_hourly_allowance
@@ -27,6 +34,7 @@ from tests.unit.contribution_world import (
     course_of_action_about,
     opinion_about,
     seed,
+    vulnerability_raw,
 )
 from tests.unit.sharing_world import API, SharingWorld, build_sharing_world, one_click
 
@@ -488,3 +496,95 @@ async def test_the_isacs_analyst_cannot_overwrite_an_editors_record_through_post
 
     assert submission.state is SubmissionState.SUBMITTED
     assert submission.lane is SubmissionLane.REVIEW
+
+
+def observed_data() -> dict:
+    return {
+        "type": "observed-data",
+        "spec_version": "2.1",
+        "id": f"observed-data--{uuid.uuid4()}",
+        "created": STAMP,
+        "modified": STAMP,
+        "first_observed": STAMP,
+        "last_observed": STAMP,
+        "number_observed": 1,
+        "object_refs": [f"ipv4-addr--{uuid.uuid4()}"],
+    }
+
+
+def sighting_of(target: str, **extra: object) -> dict:
+    return {
+        "type": "sighting",
+        "spec_version": "2.1",
+        "id": f"sighting--{uuid.uuid4()}",
+        "created": STAMP,
+        "modified": STAMP,
+        "sighting_of_ref": target,
+        **extra,
+    }
+
+
+@pytest.mark.requirement("SF-66")
+@pytest.mark.parametrize("cites_evidence", [False, True], ids=["no-evidence", "hidden-evidence"])
+async def test_a_sighting_citing_evidence_the_member_cannot_see_waits_for_review(
+    client, session, world, make_circle, cites_evidence
+):
+    """``observed_data_refs`` is what the sighting is about, as much as ``sighting_of_ref``.
+
+    Left outside the referenced ids, it was never looked up: a post-moderated
+    sighting could cite any observed-data, hidden or stricter, with no
+    visibility or TLP check. The pair is the same sighting citing nothing.
+    """
+    await post_moderation(client, world, enabled=True)
+    hidden = observed_data()
+    await seed(session, world.isac_org, hidden, circle=await make_circle("staff-only"))
+    extra = {"observed_data_refs": [hidden["id"]]} if cites_evidence else {}
+
+    submission = await file_and_submit(
+        client, session, world.member.person, [sighting_of(world.published, **extra)]
+    )
+
+    expected = SubmissionState.SUBMITTED if cites_evidence else SubmissionState.DISTRIBUTED
+    assert submission.state is expected
+
+
+@pytest.mark.requirement("SF-49")
+async def test_a_sighting_is_at_least_as_strict_as_the_evidence_it_cites(client, session, world):
+    """A GREEN sighting of a GREEN record, citing AMBER observed-data, repeats it at GREEN.
+
+    Refused at ingest, naming the evidence; the pair is the same sighting
+    filed AMBER.
+    """
+    target = f"vulnerability--{uuid.uuid4()}"
+    await seed(
+        session,
+        world.isac_org,
+        vulnerability_raw(target, cve_status="published"),
+        circle=world.circle,
+        tlp=TLP.GREEN,
+    )
+    evidence = observed_data()
+    await seed(session, world.isac_org, evidence, circle=world.circle, tlp=TLP.AMBER)
+    sighting = sighting_of(target, observed_data_refs=[evidence["id"]])
+
+    looser = await draft_response(client, world.member.person, [sighting], tlp="green")
+    as_strict = await draft_response(client, world.member.person, [sighting], tlp="amber")
+
+    assert looser.status_code == 400, looser.text
+    assert evidence["id"] in looser.text
+    assert target not in looser.text
+    assert as_strict.status_code == 201, as_strict.text
+
+
+async def draft_response(client, headers, objects: list[dict], *, tlp: str):
+    return await client.post(
+        f"{API}/submissions",
+        json={
+            "title": "A sighting",
+            "discovery_scope": "own_estate",
+            "tlp": tlp,
+            "distribute_anonymously": True,
+            "bundle": bundle_of(*objects),
+        },
+        headers=headers,
+    )

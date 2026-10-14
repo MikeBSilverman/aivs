@@ -212,3 +212,54 @@ async def test_the_audit_record_names_roles_not_the_person(session, settings):
     assert len(created) == 1
     assert created[0].details == {"roles": ["system_admin"]}
     assert all("example-isac.org" not in str(row.details) for row in rows)
+
+
+async def _bootstrap_with(session, settings, *, email: str, pem: str | None, additional: bool):
+    return await bootstrap(
+        session,
+        settings,
+        org_slug="example-isac",
+        org_name="Example ISAC",
+        email=email,
+        display_name="Ops",
+        password=TEST_OPERATOR_PASSWORD,
+        roles=[OperatorRole.SYSTEM_ADMIN],
+        certificate_pem=pem,
+        additional=additional,
+    )
+
+
+async def test_an_additional_operator_with_a_registered_certificate_is_refused_by_name(
+    session, settings, ca
+):
+    """A refusal that says what to do, not a constraint violation; and nothing is created.
+
+    Refused even though the certificate is the ISAC's own: re-registering it
+    would add nothing, and a revoked one must not come back this way.
+    """
+    pem, _fingerprint, _cert = ca.issue("example-isac-ops")
+    await _bootstrap_with(
+        session, settings, email="first@example-isac.org", pem=pem, additional=False
+    )
+
+    with pytest.raises(BootstrapError, match="already registered; omit --certificate"):
+        await _bootstrap_with(
+            session, settings, email="second@example-isac.org", pem=pem, additional=True
+        )
+    await session.rollback()
+
+    assert await _count(session, Operator) == 1
+    assert await _count(session, ClientCertificate) == 1
+
+
+async def test_an_additional_operator_without_a_certificate_is_created(session, settings, ca):
+    pem, _fingerprint, _cert = ca.issue("example-isac-ops")
+    await _bootstrap_with(
+        session, settings, email="first@example-isac.org", pem=pem, additional=False
+    )
+
+    await _bootstrap_with(
+        session, settings, email="second@example-isac.org", pem=None, additional=True
+    )
+
+    assert await _count(session, Operator) == 2

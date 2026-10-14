@@ -32,6 +32,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aivs_schemas.enums import OperatorRole, OrgStatus, OrgType
@@ -120,6 +121,38 @@ async def _active_system_admins(session: AsyncSession, organisation: Organizatio
     )
 
 
+async def _register_new_certificate(
+    session: AsyncSession, settings: Settings, organisation: Organization, certificate_pem: str
+) -> None:
+    """Register the certificate, refusing by name one that is already registered.
+
+    Refused even when it is already the ISAC's own: registering it again adds
+    nothing, and a revoked one must not come back this way. The unique
+    fingerprint is the authority, so the insert is flushed here, where the only
+    row that can violate it is this one, rather than surfacing as a constraint
+    violation at commit. (A session that autoflushes may raise it inside the
+    registration itself, so that is inside the ``try`` too.)
+    """
+    try:
+        await register_certificate(
+            session,
+            None,
+            organisation=organisation,
+            certificate_pem=certificate_pem,
+            label="bootstrap",
+            issuing_ca=settings.issuing_ca_certificate,
+            now=dt.datetime.now(dt.UTC),
+        )
+        await session.flush()
+    except IntegrityError as exc:
+        await session.rollback()
+        msg = (
+            "that certificate is already registered; omit --certificate when adding "
+            "an operator to an ISAC that has one"
+        )
+        raise BootstrapError(msg) from exc
+
+
 async def bootstrap(
     session: AsyncSession,
     settings: Settings,
@@ -161,15 +194,7 @@ async def bootstrap(
         raise BootstrapError(msg)
 
     if certificate_pem is not None:
-        await register_certificate(
-            session,
-            None,
-            organisation=organisation,
-            certificate_pem=certificate_pem,
-            label="bootstrap",
-            issuing_ca=settings.issuing_ca_certificate,
-            now=dt.datetime.now(dt.UTC),
-        )
+        await _register_new_certificate(session, settings, organisation, certificate_pem)
 
     operator, seed = await create_operator(
         session,

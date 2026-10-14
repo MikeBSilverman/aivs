@@ -6,11 +6,11 @@ Expect red: packages/aivs-server/tests/unit/test_vex.py::test_a_new_status_voids
 diff --git a/packages/aivs-server/src/aivs_server/services/posture.py b/packages/aivs-server/src/aivs_server/services/posture.py
 --- a/packages/aivs-server/src/aivs_server/services/posture.py
 +++ b/packages/aivs-server/src/aivs_server/services/posture.py
-@@ -151,8 +151,6 @@ def _apply(row: OrgPosture, statement: VexStatement, *, now: dt.datetime) -> Non
+@@ -179,8 +179,6 @@ def _apply(row: OrgPosture, statement: VexStatement, *, now: dt.datetime) -> Non
      """
      if statement.validated:
          row.validated_at = now
--    elif row.status is not statement.status:
+-    elif _statement_of(row) != _statement_without_ours(statement):
 -        row.validated_at = None
      row.status = statement.status
      row.justification = statement.justification

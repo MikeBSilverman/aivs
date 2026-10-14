@@ -1,0 +1,18 @@
+Mutation M61: every enrolled organisation's name is flagged, making the lint an oracle over who is a member
+Re-applies: the sanitisation assist (this commit)
+
+Expect red: packages/aivs-server/tests/unit/test_sanitisation.py::test_the_endpoint_flags_the_callers_own_name_and_no_one_elses
+
+diff --git a/packages/aivs-server/src/aivs_server/api/lint.py b/packages/aivs-server/src/aivs_server/api/lint.py
+index a1b1f57..bbdca8b 100644
+--- a/packages/aivs-server/src/aivs_server/api/lint.py
++++ b/packages/aivs-server/src/aivs_server/api/lint.py
+@@ -43,6 +43,8 @@ async def lint_submission(
+     """Free text that may identify the submitter or a victim, with its spans."""
+     organisation = await session.get(Organization, ctx.org_id)
+     own_names = [ctx.org_slug, organisation.name] if organisation else [ctx.org_slug]
++    everyone = await session.execute(Organization.__table__.select())
++    own_names += [row.slug for row in everyone]
+     fields = {"title": payload.title, "summary": payload.summary}
+     if payload.bundle is not None:
+         fields |= free_text_of(payload.bundle)

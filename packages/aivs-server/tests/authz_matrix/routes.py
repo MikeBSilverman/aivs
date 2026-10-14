@@ -225,6 +225,13 @@ ROUTES: tuple[RouteCase, ...] = (
     ),
     # ----- a member's own submissions and receipts ------------------------
     RouteCase("POST", "/api/v1/submissions", RouteClass.FILING, _new_submission),
+    # The sanitisation assist: filing's policy, since it is used before filing.
+    RouteCase(
+        "POST",
+        "/api/v1/submissions/lint",
+        RouteClass.FILING,
+        _fixed(f"{API}/submissions/lint", {"summary": "seen from 10.0.0.1"}),
+    ),
     RouteCase(
         "PATCH",
         "/api/v1/submissions/{submission_id}",

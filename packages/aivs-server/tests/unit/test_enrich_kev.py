@@ -25,9 +25,14 @@ import pytest
 from sqlalchemy import select
 
 from aivs_schemas.enums import TLP, OrgType, SubmissionSource, SubmissionState
-from aivs_schemas.extension.builders import AIVS_EXTENSION_ID, AIVS_INTEL_EXTENSION_ID
+from aivs_schemas.extension.builders import (
+    AIVS_EXTENSION_ID,
+    AIVS_INTEL_EXTENSION_ID,
+    AIVS_PROVENANCE_EXTENSION_ID,
+)
 from aivs_schemas.tlp import marking_id_for
 from aivs_server.db.models import StixObject, Submission
+from aivs_server.services.provenance import reviewer_identity_id, stamp_review
 from tests.conftest import proxy_headers
 from tests.unit.contribution_world import STAMP, distribute, file, seed, submit_and_validate
 
@@ -98,6 +103,20 @@ def test_a_listed_record_gets_a_newer_version_saying_what_kev_says(script):
     assert body["kev_ransomware_use"] == "Known"
     assert body["cve_id"] == CVE, "everything else is carried over"
     assert "object_marking_refs" not in version, "the server stamps the marking (SF-49)"
+
+
+def test_the_previous_versions_review_is_not_carried(script):
+    """The server refuses a submission claiming a review; it writes this version's own."""
+    record = validated(isac_record("identity--isac"))
+
+    version = script.enriched_version(record, script.kev_by_cve(KEV_CATALOGUE), now=NOW)
+
+    assert AIVS_PROVENANCE_EXTENSION_ID not in version["extensions"]
+
+
+def validated(record: dict[str, Any]) -> dict[str, Any]:
+    """``record`` as an editor's validation leaves it: with the server's review stamped."""
+    return stamp_review(record, reviewer=reviewer_identity_id(uuid.uuid4()), now=NOW)
 
 
 def test_a_record_that_already_says_it_gets_nothing(script):
@@ -345,7 +364,7 @@ async def test_run_files_a_kev_version_of_the_isacs_record_and_of_nothing_else(
     tmp_path,
 ):
     circle = await make_circle("kev")
-    ours = isac_record(isac_org.stix_identity_id)
+    ours = validated(isac_record(isac_org.stix_identity_id))
     await seed(session, isac_org, ours, circle=circle)
     theirs = await _anonymous_member_record(client, isac, make_org, make_cert, join_circle, circle)
     transport = _ToTheApp(client, asyncio.get_running_loop(), proxy_headers(automation_pem))

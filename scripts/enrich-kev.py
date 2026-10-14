@@ -46,6 +46,8 @@ from aivs_schemas.enums import TLP
 from aivs_schemas.extension.builders import (
     AIVS_EXTENSION_ID,
     AIVS_INTEL_EXTENSION_ID,
+    AIVS_PROVENANCE_EXTENSION_ID,
+    SERVER_WRITTEN_PROVENANCE,
     format_stix_timestamp,
 )
 from aivs_schemas.tlp import tlp_for_marking_id
@@ -88,11 +90,26 @@ def enriched_version(
         return None
     version = {key: value for key, value in record.items() if key != "object_marking_refs"}
     version["modified"] = stamp
-    version["extensions"] = {
-        **record["extensions"],
-        AIVS_INTEL_EXTENSION_ID: {**extension, **wanted},
-    }
+    version["extensions"] = _without_server_review(
+        {**record["extensions"], AIVS_INTEL_EXTENSION_ID: {**extension, **wanted}}
+    )
     return version
+
+
+def _without_server_review(extensions: Mapping[str, Any]) -> dict[str, Any]:
+    """The extensions less the review an editor's validation wrote onto the record.
+
+    That review was of the previous version. The server refuses a submission
+    that carries one, and writes this version's when an editor validates it.
+    """
+    provenance = extensions.get(AIVS_PROVENANCE_EXTENSION_ID)
+    if not isinstance(provenance, Mapping):
+        return dict(extensions)
+    kept = {k: v for k, v in provenance.items() if k not in SERVER_WRITTEN_PROVENANCE}
+    rest = {k: v for k, v in extensions.items() if k != AIVS_PROVENANCE_EXTENSION_ID}
+    if set(kept) <= {"extension_type"}:
+        return rest
+    return {**rest, AIVS_PROVENANCE_EXTENSION_ID: kept}
 
 
 def tlp_of(record: Mapping[str, Any]) -> TLP:

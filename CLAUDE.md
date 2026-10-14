@@ -251,6 +251,11 @@ alone orders migrations, since two sessions adding one on the same parent fork
 an import nobody you know of changed, check `git status` before debugging: a
 shared tree can hold another session mid-edit.
 
+**Measure coverage on a frozen tree.** coverage.py reads the source at report
+time, so a file another session edits during the run is reported against its
+new text. One run in the shared tree showed `policy.py` at 35% with every test
+green. Run the coverage gate in a worktree.
+
 **Push the commit you verified, not the branch.** A worktree check of one
 commit followed by `git push origin main` pushed two more commits that had
 landed meanwhile, unverified. Push the SHA: `git push origin <sha>:main`. And
@@ -358,6 +363,16 @@ distribute silently overrides a submitter's withdrawal — their only stop butto
 bundle is malformed, which is a 400. With the commit outside the handler the
 `DataError` escapes to the catch-all and a member's typo is reported as a server
 fault. Bound the values at ingest as well, so the error names the object.
+
+**A refusal that could confirm existence is one constant string.** The
+disclosure split answers an absent, an invisible and a member-owned target with
+`disclosure.UNKNOWN_TARGET`, and its test compares response bodies byte for
+byte. Write that pair before writing the message, or a helpful message becomes
+an oracle.
+
+**Validate-time rules live in `apply_transition`, not in a route.** The API and
+the portal both reach validation through it; a rule placed in one route is a
+rule the other door skips.
 
 **Anything id-addressable answers 404, never 403.** Distinguishing "exists but
 forbidden" from "does not exist" turns an endpoint into an existence oracle over

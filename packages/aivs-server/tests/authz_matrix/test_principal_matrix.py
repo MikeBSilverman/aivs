@@ -25,10 +25,12 @@ from typing import Any
 import pytest
 from httpx import ASGITransport, AsyncClient, Response
 
+from aivs_server.main import create_app
 from tests.authz_matrix.principals import PLANNED_PRINCIPALS, Principal
 from tests.authz_matrix.routes import ROUTES, SURFACE_FLOORS, RouteCase, RouteClass
 from tests.authz_matrix.test_authz_matrix import walk_routes
 from tests.authz_matrix.world import Factories, build_world
+from tests.sso_support import FakeIdp, sso_settings
 
 pytestmark = [pytest.mark.db, pytest.mark.authz]
 
@@ -180,17 +182,47 @@ SIGN_IN_ROUTES: Mapping[tuple[str, str], Outcome] = {
 }
 
 
+#: Signing in through the IdP, on the instance where member SSO is on: the start
+#: redirects to the IdP; a callback this browser did not start is refused. On
+#: the suite's instance, where it is off, both are absent (404) for everyone.
+SSO_SIGN_IN_ROUTES: Mapping[tuple[str, str], Outcome] = {
+    ("/portal/sso/login", "GET"): A,
+    ("/portal/sso/callback", "GET"): F,
+}
+
+
 def expected(principal: Principal, route: RouteCase) -> Outcome:
     """The answer ``principal`` must get from ``route``."""
     if route.route_class is RouteClass.SIGN_IN:
+        if principal is P.SSO_MEMBER and route.key == ("/portal/logout", "POST"):
+            # Signed out onto a page that links back to the IdP: a redirect to
+            # /portal/login would land on nginx's 404 on the public listener.
+            return A
         return SIGN_IN_ROUTES[route.key]
     if route.route_class is RouteClass.HEALTH:
         return A
+    if route.route_class is RouteClass.SSO_SIGN_IN:
+        return SSO_SIGN_IN_ROUTES[route.key] if principal is P.SSO_MEMBER else N
+    if principal is P.SSO_MEMBER:
+        return _sso_member(route)
     if principal in REFUSED_AT_THE_DOOR:
         return S if route.is_portal else U
     if route.is_portal and principal in CERTIFICATE_ONLY:
         return S
     return EXPECTED[route.route_class][principal]
+
+
+def _sso_member(route: RouteCase) -> Outcome:
+    """A member's analyst over SSO: the analyst's portal row, and nothing on the machine surface.
+
+    The token is no machine credential -- the API and TAXII refuse it as a
+    bearer -- and on the portal it is worth exactly what the same person's
+    certificate-bound session is, for content within its ceiling (the world's
+    content is AMBER and unembargoed where these routes read it).
+    """
+    if not route.is_portal:
+        return U
+    return EXPECTED[route.route_class][P.MEMBER_ANALYST]
 
 
 def observed(response: Response) -> Outcome | str:
@@ -244,7 +276,7 @@ def test_each_surface_keeps_its_floor(app):
 
 def test_every_cell_is_declared():
     for route_class in RouteClass:
-        if route_class in (RouteClass.SIGN_IN, RouteClass.HEALTH):
+        if route_class in (RouteClass.SIGN_IN, RouteClass.HEALTH, RouteClass.SSO_SIGN_IN):
             continue
         assert set(EXPECTED[route_class]) == set(_PAST_THE_DOOR), route_class
 
@@ -328,11 +360,17 @@ async def _call(http: AsyncClient, route: RouteCase, world: Any, credentials: An
 
 @pytest.mark.requirement("NFR-S1", "NFR-S2")
 @pytest.mark.parametrize("principal", list(Principal), ids=lambda p: p.name.lower())
-async def test_each_principal_gets_exactly_its_row(principal, app, factories, safe_database_role):
+async def test_each_principal_gets_exactly_its_row(
+    principal, app, factories, settings, safe_database_role
+):
     world, credentials = await build_world(factories)
     mine = credentials[principal]
+    # The SSO principal needs an instance with member SSO configured; everyone
+    # else runs against the suite's, where it is off.
+    application = create_app(sso_settings(settings)) if principal is P.SSO_MEMBER else app
+    application.state.oidc_http = FakeIdp().client()
 
-    transport = ASGITransport(app=app, client=("127.0.0.1", 0))
+    transport = ASGITransport(app=application, client=("127.0.0.1", 0))
     wrong: list[str] = []
     async with AsyncClient(
         transport=transport,

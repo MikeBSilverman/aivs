@@ -1,0 +1,17 @@
+Mutation M505: the callback's state is not compared with the pending login's
+Re-applies: (T8, uncommitted) "Member sign-in through the ISAC's identity provider"
+
+Expect red: packages/aivs-server/tests/unit/test_member_sso.py::test_a_callback_without_the_pending_cookie_or_with_another_state_is_refused
+
+diff --git a/packages/aivs-server/src/aivs_server/auth/oidc.py b/packages/aivs-server/src/aivs_server/auth/oidc.py
+--- a/packages/aivs-server/src/aivs_server/auth/oidc.py
++++ b/packages/aivs-server/src/aivs_server/auth/oidc.py
+@@ -176,7 +176,7 @@
+     except BadSignature as exc:
+         reason = "pending_login_invalid_or_expired"
+         raise SsoRejectedError(reason) from exc
+-    if not isinstance(state, str) or not hmac.compare_digest(state, returned_state):
++    if not isinstance(state, str):
+         reason = "state_mismatch"
+         raise SsoRejectedError(reason)
+     return state

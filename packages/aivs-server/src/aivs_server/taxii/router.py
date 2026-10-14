@@ -36,6 +36,7 @@ from aivs_server.auth.policy import (
     can_read_circle,
     can_submit_to_circle,
     readable_circle_ids,
+    tlp_ceiling_clause,
 )
 from aivs_server.config import Settings
 from aivs_server.db.clock import database_now
@@ -344,6 +345,7 @@ async def list_objects(
                 build_object_listing_query(
                     circle_id=circle.id,
                     intervals=intervals,
+                    ceiling=tlp_ceiling_clause(ctx),
                     filters=filters,
                     now=now,
                     cursor=cursor,
@@ -431,6 +433,7 @@ async def get_object(
                 build_object_listing_query(
                     circle_id=circle.id,
                     intervals=intervals,
+                    ceiling=tlp_ceiling_clause(ctx),
                     filters=filters,
                     now=now,
                     cursor=cursor,
@@ -511,6 +514,7 @@ async def get_object_versions(
                 build_version_listing_query(
                     circle_id=circle.id,
                     intervals=intervals,
+                    ceiling=tlp_ceiling_clause(ctx),
                     stix_id=object_id,
                     now=now,
                     cursor=cursor,
@@ -576,6 +580,7 @@ async def get_manifest(
                 build_object_listing_query(
                     circle_id=circle.id,
                     intervals=intervals,
+                    ceiling=tlp_ceiling_clause(ctx),
                     filters=filters,
                     now=now,
                     cursor=cursor,

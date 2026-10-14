@@ -1,0 +1,17 @@
+Mutation M502: the submission detail check does not consult the ceiling
+Re-applies: (T8, uncommitted) "Member sign-in through the ISAC's identity provider"
+
+Expect red: packages/aivs-server/tests/unit/test_member_sso.py::test_an_sso_session_cannot_open_its_own_firms_red_filing
+
+diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs-server/src/aivs_server/auth/policy.py
+--- a/packages/aivs-server/src/aivs_server/auth/policy.py
++++ b/packages/aivs-server/src/aivs_server/auth/policy.py
+@@ -377,7 +377,7 @@
+     members see the objects only once they are distributed into a circle they
+     belong to, which the TAXII visibility clause governs.
+     """
+-    if not is_active(ctx) or not submission_within_ceiling(ctx, submission):
++    if not is_active(ctx):
+         return False
+     if can_review_submissions(ctx):
+         return True

@@ -38,10 +38,10 @@ rather than deleting rows.
 | `acknowledgments` | evidence | Receipts: retrieved, acknowledged, actioned, per organisation. |
 | `audit_log` | evidence | Every security-relevant decision. Append-only. |
 | `circle_memberships` | evidence | Membership *intervals*, which decide what an organisation could ever have seen. |
-| `organizations` | evidence | The member record: name, type, status, STIX identity, and any legal hold with its reason. Referenced by every receipt. Its contact email is cleared at offboarding; its name is kept, because evidence names who it is about. |
+| `organizations` | evidence | The member record: name, type, status, STIX identity, the ISAC directory group its people sign in through, and any legal hold with its reason. Referenced by every receipt. Its contact email is cleared at offboarding; its name is kept, because evidence names who it is about. |
 | `client_certificates` | evidence | Certificate fingerprint, the identity of record for every machine request; status and validity. No private key, ever. |
-| `operators` | pii | People: email, display name, roles, password hash, sealed TOTP seed, lockout state. |
-| `portal_sessions` | operational | Signed-in sessions: token hash, bound certificate, source IP, user agent, expiry. |
+| `operators` | pii | People: email, display name, roles, password hash (absent for a person who signs in only through the ISAC's IdP), sealed TOTP seed, lockout state, and the federated identity (IdP issuer and subject) they sign in as. |
+| `portal_sessions` | operational | Signed-in sessions: token hash, source IP, user agent, expiry, and either the bound certificate or, for an SSO session, the IdP issuer and subject, a device-cookie hash and the IdP's `amr` (how the person authenticated). |
 | `circles` | operational | Sharing-group definitions and their TLP floors and membership rules. |
 | `taxii_collections` | operational | The TAXII view onto each circle. |
 | `taxii_status` | operational | TAXII status resources for submissions over TAXII. |

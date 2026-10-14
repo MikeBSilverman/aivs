@@ -29,7 +29,7 @@ from aivs_server.auth.mtls import (
     client_address,
     extract_client_certificate,
 )
-from aivs_server.auth.sessions import SessionRejectedError, resolve_session
+from aivs_server.auth.sessions import SessionRejectedError, resolve_session, resolve_sso_session
 from aivs_server.config import Settings, get_settings
 from aivs_server.db.engine import get_session
 from aivs_server.db.models import ClientCertificate, Organization
@@ -137,6 +137,26 @@ async def resolve_request_session(
         cert_fingerprint=cert_fingerprint,
         request_id=request.scope.get("aivs_request_id", ""),
         source_ip=request_source_ip(request, settings),
+    )
+
+
+async def resolve_request_sso_session(
+    request: Request, settings: Settings, session: AsyncSession, *, token: str
+) -> tuple[AuthContext, str]:
+    """Resume a member's SSO session on this request; see ``resolve_sso_session``.
+
+    The SSO counterpart of :func:`resolve_request_session`: bound to the
+    device cookie rather than a certificate, so it is resumed only where the
+    request carries none. Raises ``SessionRejectedError``.
+    """
+    return await resolve_sso_session(
+        session,
+        settings,
+        token=token,
+        device_cookie=request.cookies.get(settings.sso_device_cookie_name),
+        request_id=request.scope.get("aivs_request_id", ""),
+        source_ip=request_source_ip(request, settings),
+        now=dt.datetime.now(dt.UTC),
     )
 
 

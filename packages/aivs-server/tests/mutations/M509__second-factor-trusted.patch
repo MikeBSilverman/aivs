@@ -1,0 +1,17 @@
+Mutation M509: a sign-in with no asserted second factor is accepted
+Re-applies: (T8, uncommitted) "Member sign-in through the ISAC's identity provider"
+
+Expect red: packages/aivs-server/tests/unit/test_member_sso.py::test_a_sign_in_without_an_asserted_second_factor_is_refused
+
+diff --git a/packages/aivs-server/src/aivs_server/auth/oidc.py b/packages/aivs-server/src/aivs_server/auth/oidc.py
+--- a/packages/aivs-server/src/aivs_server/auth/oidc.py
++++ b/packages/aivs-server/src/aivs_server/auth/oidc.py
+@@ -158,7 +158,7 @@
+     distinct methods such as ``pwd`` and ``otp``. A token with no ``amr`` is
+     refused, never assumed.
+     """
+-    if "mfa" in amr or len(set(amr)) >= _FACTORS_REQUIRED:
++    if True:
+         return
+     reason = "second_factor_not_asserted"
+     raise SsoRejectedError(reason)

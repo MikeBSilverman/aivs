@@ -1,29 +1,30 @@
 # Identity federation and passkeys
 
-**Status:** design agreed, unbuilt. **Changed in part by a later decision for
-member users** — see the next paragraph before relying on anything below.
+**Status:** member sign-in **built** (Phase M; §11 says what was built and
+where it departs from the design below). Staff issuer, back-channel logout,
+SCIM, passkeys and break-glass alerting: design agreed, unbuilt.
 **Decision owner:** Mike Silverman.
 
 How humans authenticate to the portal. Machine authentication is unaffected —
 collectors present client certificates and never see any of this.
 
-**Member users will sign in over ordinary TLS (planned).** AIVS is meant to be
-the platform an ISAC and *all* its members work in, and a client certificate
-behind an overlay network is within reach of a few dozen member firms with a
-PKI team, not of the rest. So the member tenant described here is to be built
-first, and its users will reach the member portal on a separate public TLS
-listener: the ISAC's IdP and a second factor, no client certificate, no local
-passwords, and sessions capped below `TLP:RED` with embargoed pre-CVE content
-kept on the certificate-bound path. Certificates stay for machine collectors,
-ISAC staff, and anything `TLP:RED`. Everything below about the two tenants, the
-issuer deciding authority, JIT provisioning and passkeys stands; what changes is
-that, **for member users only**, the certificate binding is no longer a
-precondition.
+**Member users sign in over ordinary TLS.** AIVS is meant to be the platform an
+ISAC and *all* its members work in, and a client certificate behind an overlay
+network is within reach of a few dozen member firms with a PKI team, not of the
+rest. So the member tenant described here was built first, and its users reach
+the member portal on a separate public TLS listener: the ISAC's IdP and a
+second factor, no client certificate, no local passwords, and sessions capped at
+`TLP:AMBER+STRICT` with embargoed content kept on the certificate-bound path.
+Certificates stay for machine collectors, ISAC staff, and anything `TLP:RED`.
+Everything below about the two tenants, the issuer deciding authority, JIT
+provisioning and passkeys stands; what changes is that, **for member users
+only**, the certificate binding is no longer a precondition.
 
 Read `auth/sessions.py` first. On the certificate-bound listener — staff, and
-member sessions until the change above is built — the certificate binding it
-describes is a precondition for everything here, not something federation
-replaces.
+member people who sign in with a password, TOTP and their firm's certificate —
+the certificate binding it describes is a precondition for everything here, not
+something federation replaces. The two kinds of session refuse each other
+(§11).
 
 ---
 
@@ -116,14 +117,33 @@ Mandatory, all of them:
 - Discovery documents and JWKS are fetched over TLS with the system trust
   store and cached with a bounded lifetime.
 
-**`state` is bound to the client certificate fingerprint.** This is the
-non-obvious one. The portal is reached through mTLS, so a login begins on one
-organisation's certificate-bearing path — but the round trip to the IdP leaves
-that path and comes back. Without binding, an authorization code obtained on one
-path could be redeemed on another, and the certificate factor would be
-established by whoever redeems rather than by whoever authenticated. Bind the
-pending-login record to the fingerprint, and refuse the callback if the
-certificate on the callback request is not the same one.
+**`state` is bound to the browser that started the login.** This is the
+non-obvious one. The round trip to the IdP leaves this site and comes back, and
+without binding an authorization code obtained in one browser could be
+redeemed in another — login CSRF, or a code lifted from a log or a referrer
+signing the thief in as the victim. The design first bound `state` to the
+client certificate; the public listener has none, so as built (`auth/oidc.py`)
+the binding is a signed, ten-minute, `HttpOnly` pending-login cookie scoped to
+`/portal/sso`, and a callback whose `state` is not the one in that cookie is
+refused. The PKCE verifier and the `nonce` are derived from `state` by HMAC
+under the session secret, so a stolen code is useless without the browser's
+cookie and nothing about a pending login is stored server-side. A staff issuer
+on the certificate-bound listener may add the fingerprint to that binding.
+
+**The second factor is asserted by the IdP and insisted on here.** The IdP
+performs it; AIVS refuses an ID token whose `amr` (RFC 8176) does not say `mfa`
+or name at least two distinct methods, including one with no `amr` at all. A
+sign-on policy edited to password-only would otherwise put single-factor
+sessions on AMBER content from any browser, with nothing here noticing. The
+methods are recorded on the session for the evidence pack.
+
+**JOSE library: PyJWT.** One dependency, pure Python, verifying with
+`cryptography`, which the server already carries, and maintained for over a
+decade. Authlib would also have done the relying-party flow, at several times
+the code and a second HTTP-client integration; the flow is one module
+(`auth/oidc.py`) over `httpx`, and that module is where the checks above live,
+so they are better read here than configured there. Algorithms are pinned to RS256, PS256, ES256
+and ES384; `none` and HMAC algorithms are never accepted.
 
 The client secret lives in the process environment alongside the database
 credentials, not in the database. It is not a per-row secret and putting it in a
@@ -171,17 +191,24 @@ rest of this codebase, and the reason it is safe to make is that the grant
 already happened upstream, in a tenant the ISAC controls. The fail-closed
 behaviour lives in the bounds instead:
 
-- The organisation comes from a claim the ISAC sets in its own tenant — in
-  practice mapped from the AD group that drives the rest of the membership
-  automation — resolved to an organisation slug. An unknown slug, or an
-  organisation that is not `ACTIVE`, refuses the login rather than creating
-  anything. This is what keeps a directory misconfiguration from inventing a
-  member.
+- The organisation comes from the AD group that drives the rest of the
+  membership automation: the ID token's group claim
+  (`oidc_member_group_claim`) is matched against
+  `organizations.directory_object_id`, which membership staff set at
+  enrolment. A group that maps to nothing, groups that map to two members, a
+  group that maps to the hosting ISAC, or an organisation that is not `ACTIVE`
+  refuses the login rather than creating anything — and each refusal is
+  audited with its reason. This is what keeps a directory misconfiguration
+  from inventing a member, or a member-tenant account from reaching staff
+  authority. (The design named an organisation-slug claim; the group's object
+  id is what the directory already has, and needs no claim mapping in the
+  tenant.)
 - The role is always `ANALYST`. Elevation is a deliberate act in AIVS, because
   the directory's groups describe membership, not editorial authority over other
   firms' embargoed content.
 - Per-organisation opt-out, for a member that wants its roster managed
-  explicitly. Off is the exception and should stay that way.
+  explicitly. Off is the exception and should stay that way. *Not built:*
+  `oidc_member_jit_provisioning` is instance-wide today.
 
 **The same automation must be able to take access away, which JIT alone does not
 do.** A directory-driven joiner process paired with a manual leaver process is
@@ -274,9 +301,12 @@ and an audit record, because outside an outage it is a signal worth looking at.
 
 - **Machine access.** Collectors authenticate with certificates. Federation
   applies to the portal only.
-- **The certificate requirement for people.** A federated login still happens
-  over a certificate-bearing path. Federation reduces credential sprawl; it does
-  not open the portal to the internet.
+- **The certificate requirement for staff and for RED.** Staff, and anyone
+  reading `TLP:RED` or embargoed content, still sign in over the
+  certificate-bearing path. For member users the requirement was deliberately
+  lifted (the decision at the top of this document); what replaced it is a
+  listener that serves the member portal and nothing else, and a ceiling on
+  what its sessions can read (§11).
 - **Authorization.** Roles, circles and the policy predicates are unchanged. The
   IdP says who someone is; AIVS continues to decide what they may do.
 
@@ -289,31 +319,109 @@ typo refuses to start:
 
 | Setting | Notes |
 | --- | --- |
-| `oidc_member_issuer`, `oidc_member_client_id`, `oidc_member_client_secret` | Empty issuer disables member federation |
-| `oidc_staff_issuer`, `oidc_staff_client_id`, `oidc_staff_client_secret` | Empty issuer disables staff federation |
-| `oidc_member_org_claim` | Claim carrying the organisation slug; default `aivs_org` |
-| `oidc_member_jit_provisioning` | **Default on.** Creates `ANALYST` operators in `ACTIVE` organisations only; §5 argues why on is right here |
-| `oidc_max_session_age_minutes` | Upper bound on a federated session's life |
-| `webauthn_rp_id`, `webauthn_rp_name` | RP ID must match the portal hostname |
+| `oidc_member_issuer`, `oidc_member_client_id`, `oidc_member_client_secret` | **Built.** Empty issuer disables member sign-in; the SSO routes then answer 404 |
+| `oidc_member_redirect_uri` | **Built.** The public listener's `https://…/portal/sso/callback`, registered with the IdP. Explicit, because the public listener is a different origin from `public_base_url` |
+| `oidc_member_group_claim` | **Built.** Claim listing directory groups; default `groups`. Matched against `organizations.directory_object_id` (§5) |
+| `oidc_member_jit_provisioning` | **Built. Default on.** Creates `ANALYST` operators in `ACTIVE` organisations only; §5 argues why on is right here |
+| `sso_session_max_age_minutes` | **Built.** Upper bound on an SSO session's life, whatever the idle timeout allows; default 480, range 15–1440 |
+| `sso_device_cookie_name` | **Built.** The per-browser cookie an SSO session is bound to; default `aivs_device` |
+| `oidc_staff_issuer`, `oidc_staff_client_id`, `oidc_staff_client_secret` | Unbuilt. Empty issuer disables staff federation |
+| `webauthn_rp_id`, `webauthn_rp_name` | Unbuilt. RP ID must match the portal hostname |
 
-`validate_production_posture` gains one rule, in the permit-only shape: outside
-dev, an issuer that is set must be `https`, and a configured issuer without a
-client secret refuses to start rather than falling back to local login.
+`validate_production_posture` refuses to start, in the permit-only shape, when
+a member issuer is set and is not `https`, lacks a client id or secret, or has
+no `https` redirect URI — rather than falling back to anything.
 
 ---
 
 ## 10. Build order
 
 1. Schema and migration: federated-identity columns on `operators`, issuer on
-   `portal_sessions`, a `webauthn_credentials` table.
+   `portal_sessions`, a `webauthn_credentials` table. *Built for the member
+   issuer (migration `7c4e2a91d5b3`); `webauthn_credentials` waits for step 5.*
 2. The issuer↔authority invariant in `resolve_session`, with the authorization
    matrix extended to assert it — the matrix currently splits by surface, and
-   gains a second axis.
-3. The OIDC relying-party flow, member issuer first.
-4. Staff issuer, back-channel logout, session age bound.
+   gains a second axis. *Built for the member issuer, as `resolve_sso_session`
+   and the matrix principal `member SSO session`.*
+3. The OIDC relying-party flow, member issuer first. *Built (Phase M).*
+4. Staff issuer, back-channel logout, session age bound. *The age bound is
+   built, for SSO sessions; the rest is not.*
 5. Passkeys: enrolment, authentication, administrator-initiated recovery.
 6. Break-glass alerting.
 
 Steps 1 and 2 land together. An issuer column that nothing enforces would be
 exactly the failure `CLAUDE.md` §5 warns about — a security control that appears
 in a row and is consulted by nothing.
+
+---
+
+## 11. Member sign-in as built (Phase M)
+
+What exists, in the order a sign-in meets it. Requirement SF-65 pins it;
+`threat-model.md` §B6 says what each part is for and what it leaves.
+
+**The public listener.** nginx's third server block (8444, published only by
+`docker-compose.public.yml`) asks for no client certificate and proxies an
+allow-list of paths: the two SSO endpoints, and the member portal's dashboard,
+own submissions and their member verbs (`submit`, `withdraw`), filing, signing
+out and static files. Everything else — the API, TAXII, the admin screens, the
+staff review queue, the password sign-in form, the probes — is a 404 written
+by nginx and never proxied. Sign-in is limited to ten a minute per address
+(burst five) and pages to ten a second (burst twenty); per-subject lockout is
+the IdP's, because no password is typed here. `deployment-topology.md` §2
+places it among the network layers.
+
+**Sign-in.** `GET /portal/sso/login` sends the browser to the IdP (§3: code
+flow, PKCE S256, state in a signed cookie, nonce). `GET /portal/sso/callback`
+correlates `state`, redeems the code, verifies the ID token, requires a
+second factor in `amr`, and resolves the person (`services/sso.py`, §4–5).
+Every refusal is audited as `portal.sso.login.refused` with its reason; the
+browser is told only that sign-in was refused. Success is
+`portal.sso.login.success`, with `amr` and whether the operator was just
+provisioned.
+
+**The session.** A new token at every sign-in, whatever cookie the browser
+arrived with. It is bound to the issuer and subject, and to a per-browser
+device cookie (`HttpOnly`, `Secure`, `SameSite=Strict`, 400 days) by its
+SHA-256: a session cookie copied to another browser is refused. A database
+constraint makes a session either certificate-bound or SSO-bound, never both
+and never neither. Each request re-checks that the issuer is still the
+configured member issuer, the device, the maximum age, that the operator is
+active and still linked to that subject, and that the organisation is active
+and is not the hosting ISAC. Its roles are intersected with `ANALYST` and
+`ORG_ADMIN`, whatever the operator row holds. The callback answers with a page
+that refreshes to the portal, because a `SameSite=Strict` cookie set on a
+redirect that continues the IdP's cross-site navigation is not sent on it.
+
+**Two kinds of session, each refused by the other's resolver.** A request with
+a client certificate resumes only a certificate-bound session; one without
+resumes only an SSO session. An SSO session presented beside a member
+certificate is refused (`session_unbound`), which matters because it would
+otherwise resolve without the ceiling. It is not a bearer credential on the
+API or TAXII either.
+
+**The ceiling.** `policy.tlp_ceiling(ctx)` is `AMBER+STRICT` for an SSO
+session and `RED` otherwise, written so that a new session kind is unlimited
+only if someone says so there. Every content read routes through it:
+`distribution_visibility_clause` (the portal dashboard, and the services that
+read distributed content), `tlp_ceiling_clause` passed to the TAXII listings as
+a required argument (no SSO session reaches TAXII today, and the listing does
+not rely on that), and for a firm's own filings both the list and count
+(`tlp_ceiling_clause`) and `can_view_submission` (through
+`submission_within_ceiling`): an SSO session neither sees nor opens its own
+firm's RED or embargoed submission, and the list says what it leaves out. An SSO session also never reads a
+submission that has an embargo, released or not.
+
+**Signing out** lands on a page linking to `/portal/sso/login`. It is not a
+redirect to the IdP, which would sign the person straight back in, nor to
+`/portal/login`, which the public listener does not serve.
+
+**Where the build departs from the design above.** `state` is bound to a
+browser cookie, not a certificate (§3). The organisation comes from a
+directory group's object id, not a slug claim (§5). Discovery and JWKS are
+fetched at each sign-in rather than cached: an IdP key rotation takes effect at
+once, at the cost of two extra requests to the IdP per sign-in. Not built:
+per-organisation JIT opt-out, SCIM, back-channel logout, the staff issuer,
+passkeys, and an end-to-end sign-in against a containerised IdP (the flow is
+exercised against an in-process fake IdP; the listener itself is exercised
+end to end).

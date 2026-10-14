@@ -98,6 +98,8 @@ class AuditAction:
     AUTH_SUCCESS = "auth.success"
     AUTH_FAILURE = "auth.failure"
     LOGIN_SUCCESS = "portal.login.success"
+    SSO_LOGIN_SUCCESS = "portal.sso.login.success"
+    SSO_LOGIN_REFUSED = "portal.sso.login.refused"
     LOGIN_FAILURE = "portal.login.failure"
     LOGOUT = "portal.logout"
     SESSION_REJECTED = "portal.session.rejected"

@@ -1,0 +1,17 @@
+Mutation M503: a member-tenant token naming the ISAC's own group signs in
+Re-applies: (T8, uncommitted) "Member sign-in through the ISAC's identity provider"
+
+Expect red: packages/aivs-server/tests/unit/test_member_sso.py::test_a_member_tenant_token_carrying_a_staff_group_is_refused
+
+diff --git a/packages/aivs-server/src/aivs_server/services/sso.py b/packages/aivs-server/src/aivs_server/services/sso.py
+--- a/packages/aivs-server/src/aivs_server/services/sso.py
++++ b/packages/aivs-server/src/aivs_server/services/sso.py
+@@ -69,7 +69,7 @@
+         if groups
+         else []
+     )
+-    if any(org.org_type is OrgType.ADMIN for org in matched):
++    if False:
+         reason = "staff_group_on_member_issuer"
+         raise SsoRejectedError(reason)
+     if not matched:

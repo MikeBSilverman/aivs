@@ -40,9 +40,10 @@ from aivs_schemas.enums import (
     OrgType,
     SubmissionState,
     is_transition_allowed,
+    tlp_at_least_as_restrictive,
 )
 from aivs_server.auth.context import AuthContext, AuthMethod, MembershipInterval
-from aivs_server.db.models import Distribution, InstanceControl, Organization, Submission
+from aivs_server.db.models import Distribution, Embargo, InstanceControl, Organization, Submission
 
 if TYPE_CHECKING:  # pragma: no cover
     pass
@@ -85,7 +86,11 @@ __all__ = [
     "readable_circle_grants",
     "readable_circle_ids",
     "require",
+    "submission_within_ceiling",
+    "tlp_ceiling",
+    "tlp_ceiling_clause",
     "visible_content_clause",
+    "within_tlp_ceiling",
     "writable_circle_ids",
 ]
 
@@ -330,6 +335,56 @@ def writable_circle_ids(ctx: AuthContext) -> frozenset[uuid.UUID]:
 # ---------------------------------------------------------------------------
 # Submission access
 # ---------------------------------------------------------------------------
+def tlp_ceiling(ctx: AuthContext) -> TLP:
+    """The most restrictive marking this caller may read.
+
+    A member's person signed in through the IdP, over ordinary TLS from any
+    browser, reads up to AMBER+STRICT -- organisation-only, and the person is in
+    the organisation. RED is for named individuals on named devices and stays on
+    the certificate-bound path (Mike's decision, "Human access"). Written as the
+    one session kind that is limited, so a new kind is unlimited only if someone
+    says so here.
+    """
+    if ctx.auth_method is AuthMethod.SSO_SESSION:
+        return TLP.AMBER_STRICT
+    return TLP.RED
+
+
+def within_tlp_ceiling(ctx: AuthContext, marking: TLP) -> bool:
+    """Whether ``marking`` is no more restrictive than the caller's ceiling."""
+    return tlp_at_least_as_restrictive(tlp_ceiling(ctx), marking)
+
+
+def tlp_ceiling_clause(ctx: AuthContext) -> ColumnElement[bool]:
+    """The ceiling as SQL, for every read that serves content.
+
+    Over ``Submission``: the query it joins must join the owning submission.
+
+    An SSO session also never reads content distributed under an embargo: the
+    pre-CVE lane under embargo stays on the certificate-bound path for its
+    whole life, released or not, because a warning that was worth an embargo
+    is the content RED-adjacent handling exists for.
+    """
+    allowed = tuple(marking for marking in TLP if within_tlp_ceiling(ctx, marking))
+    marking_allowed = Submission.tlp.in_(allowed)
+    if ctx.auth_method is not AuthMethod.SSO_SESSION:
+        return marking_allowed
+    embargoed = exists().where(Embargo.submission_id == Submission.id)
+    return and_(marking_allowed, ~embargoed)
+
+
+def submission_within_ceiling(ctx: AuthContext, submission: Submission) -> bool:
+    """:func:`tlp_ceiling_clause` for one loaded submission: the same two terms.
+
+    Reads ``submission.embargo``, so for an SSO session the submission must
+    have been loaded with it (``load_submission`` does); the check is made
+    first, so other sessions never touch the relationship.
+    """
+    if not within_tlp_ceiling(ctx, submission.tlp):
+        return False
+    return ctx.auth_method is not AuthMethod.SSO_SESSION or submission.embargo is None
+
+
 def can_view_submission(ctx: AuthContext, submission: Submission) -> bool:
     """Return whether the caller may view a submission's workflow record.
 
@@ -338,7 +393,7 @@ def can_view_submission(ctx: AuthContext, submission: Submission) -> bool:
     members see the objects only once they are distributed into a circle they
     belong to, which the TAXII visibility clause governs.
     """
-    if not is_active(ctx):
+    if not is_active(ctx) or not submission_within_ceiling(ctx, submission):
         return False
     if can_review_submissions(ctx):
         return True
@@ -631,7 +686,9 @@ def visible_content_clause(
 def distribution_visibility_clause(ctx: AuthContext, now: dt.datetime) -> ColumnElement[bool]:
     """Return the predicate selecting everything ``ctx`` may read, across circles.
 
-    An inactive organisation yields an empty circle set and therefore a clause
-    that matches no rows.
+    An inactive organisation matches no rows, as a plain ``FALSE`` rather than
+    ``FALSE AND <ceiling>``, so the refusal can be read off the rendered SQL.
     """
-    return visible_content_clause(readable_circle_grants(ctx), now)
+    if not is_active(ctx):
+        return false()
+    return and_(visible_content_clause(readable_circle_grants(ctx), now), tlp_ceiling_clause(ctx))

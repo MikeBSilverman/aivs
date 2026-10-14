@@ -19,7 +19,7 @@ import datetime as dt
 import uuid
 from typing import Any
 
-from sqlalchemy import Select, func, literal, select, tuple_
+from sqlalchemy import ColumnElement, Select, func, literal, select, tuple_
 
 from aivs_server.auth.policy import Intervals, visible_content_clause
 from aivs_server.db.models import Distribution, StixObject, Submission
@@ -30,7 +30,9 @@ from aivs_server.taxii.paging import Cursor
 __all__ = ["build_object_listing_query", "build_version_listing_query"]
 
 
-def _visible_rows(circle_id: uuid.UUID, intervals: Intervals, now: dt.datetime) -> Select[Any]:
+def _visible_rows(
+    circle_id: uuid.UUID, intervals: Intervals, now: dt.datetime, ceiling: ColumnElement[bool]
+) -> Select[Any]:
     """Return a subquery selecting every distribution row visible right now.
 
     Four conditions, all required, and this is the authoritative embargo gate:
@@ -41,6 +43,11 @@ def _visible_rows(circle_id: uuid.UUID, intervals: Intervals, now: dt.datetime) 
     whose content is visible. An embargoed object simply has a future
     ``date_added``, so nothing leaks early even if the release scheduler is not
     running.
+
+    ``ceiling`` is the caller's TLP ceiling (``policy.tlp_ceiling_clause``),
+    required rather than defaulted: no session kind that has one can reach
+    TAXII today, and a reader that relied on that would read RED the day one
+    could.
     """
     return (
         select(
@@ -61,7 +68,7 @@ def _visible_rows(circle_id: uuid.UUID, intervals: Intervals, now: dt.datetime) 
         .join(Submission, Submission.id == Distribution.submission_id)
         # The visibility conditions come from auth.policy so there is one
         # definition of them; see visible_content_clause.
-        .where(visible_content_clause({circle_id: intervals}, now))
+        .where(visible_content_clause({circle_id: intervals}, now), ceiling)
     )
 
 
@@ -144,6 +151,7 @@ def build_object_listing_query(
     *,
     circle_id: uuid.UUID,
     intervals: Intervals,
+    ceiling: ColumnElement[bool],
     filters: TaxiiFilters,
     now: dt.datetime,
     cursor: Cursor | None,
@@ -163,8 +171,8 @@ def build_object_listing_query(
     ``limit + 1`` rows are fetched so the caller can set the envelope's ``more``
     flag without a second counting query.
     """
-    visible = _visible_rows(circle_id, intervals, now).subquery("visible")
-    peers = _visible_rows(circle_id, intervals, now).subquery("visible_peers")
+    visible = _visible_rows(circle_id, intervals, now, ceiling).subquery("visible")
+    peers = _visible_rows(circle_id, intervals, now, ceiling).subquery("visible_peers")
 
     query = select(
         visible.c.distribution_id,
@@ -206,6 +214,7 @@ def build_version_listing_query(
     *,
     circle_id: uuid.UUID,
     intervals: Intervals,
+    ceiling: ColumnElement[bool],
     stix_id: str,
     now: dt.datetime,
     cursor: Cursor | None,
@@ -237,7 +246,7 @@ def build_version_listing_query(
     cursor has passed it, for the reason any ``date_added`` cannot (see
     ``services.publication``), so the key is as stable as the objects listing's.
     """
-    visible = _visible_rows(circle_id, intervals, now).subquery("visible")
+    visible = _visible_rows(circle_id, intervals, now, ceiling).subquery("visible")
     first_arrival = (
         select(visible.c.modified, visible.c.date_added, visible.c.seq)
         .where(visible.c.stix_id == stix_id)

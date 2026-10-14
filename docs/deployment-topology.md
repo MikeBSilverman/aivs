@@ -233,6 +233,48 @@ matter operationally:
   list is in `threat-model.md`). `AIVS_ENVIRONMENT` defaults to `production`, so
   forgetting it fails safe.
 
+### The public member listener (opt-in, Phase M)
+
+The three layers above describe the certificate-bound listener, which every
+machine, every ISAC staff member and every `TLP:RED` reader uses. An ISAC that
+configures member SSO (`identity-federation.md`) can also publish a second
+listener for members' people who sign in through the ISAC's identity
+provider, from any browser, with no client certificate and no overlay network.
+That is a deliberate exception to Layers 1 and 2 for a deliberately narrow
+surface:
+
+```
+  browser ──TLS──► nginx :8444 (no client certificate, no allowlist)
+                     ├─ /portal/sso/login|callback   10 r/min per address, burst 5
+                     ├─ member portal paths           10 r/s per address, burst 20
+                     └─ everything else               404 from nginx, never proxied
+                                │
+                           aivs-server: SSO session, bound to IdP subject
+                           + device cookie, ceilinged at TLP:AMBER+STRICT
+```
+
+- **Published only by `docker-compose.public.yml`.** nginx always configures
+  the listener, but without the override nothing outside the host reaches it,
+  so an ISAC that has not configured member SSO exposes nothing new.
+  `AIVS_PUBLIC_BIND_ADDRESS` and `AIVS_PUBLIC_BIND_PORT` choose where; give it
+  its own hostname or address on 443 in front of the host port if members
+  should not see a port number.
+- **The path allow-list is the boundary.** The API, TAXII, the admin and staff
+  screens, the password sign-in form and the probes answer `404` from nginx on
+  this listener (`tests/unit/test_proxy_config.py` checks the allow-list
+  statically; `tests/e2e/test_listeners.py` against the running proxy). The
+  application refuses an SSO session on the API and TAXII anyway, and refuses
+  every staff route to it; those are the second line, not the first.
+- **Rate limits key on the source address**, because there is no certificate
+  to key on. Sign-in is the tight one: credential spraying aims there, and
+  per-person lockout belongs to the IdP, since no password is typed here.
+- **What a session from it can read** is capped by `policy.tlp_ceiling`:
+  never `TLP:RED`, never an embargoed submission. That, not the listener, is
+  what keeps RED behind a certificate.
+- The identity-headers snippet is included as on every proxying location.
+  `X-Client-Verify` is then `NONE`, so the application sees no certificate and
+  resumes only an SSO session.
+
 ---
 
 ## 3. PKI

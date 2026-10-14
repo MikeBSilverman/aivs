@@ -6,9 +6,9 @@ Expect red: packages/aivs-server/tests/unit/test_locked_loads.py::test_a_locked_
 diff --git a/packages/aivs-server/src/aivs_server/services/submissions.py b/packages/aivs-server/src/aivs_server/services/submissions.py
 --- a/packages/aivs-server/src/aivs_server/services/submissions.py
 +++ b/packages/aivs-server/src/aivs_server/services/submissions.py
-@@ -902,5 +902,5 @@ async def load_submission(
-     """
-     query = select(Submission).where(Submission.id == submission_id)
+@@ -911,5 +911,5 @@
+         .options(selectinload(Submission.embargo))
+     )
      if for_update:
 -        query = query.with_for_update().execution_options(populate_existing=True)
 +        query = query.with_for_update()

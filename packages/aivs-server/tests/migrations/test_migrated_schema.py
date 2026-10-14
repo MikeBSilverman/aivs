@@ -321,6 +321,42 @@ def test_the_migrated_schema_knows_an_interval_closed_by_offboarding(migrated_ur
         engine.dispose()
 
 
+@pytest.mark.requirement("SF-65")
+@pytest.mark.parametrize(
+    ("table", "constraint", "terms"),
+    [
+        (
+            "portal_sessions",
+            "ck_portal_sessions_exactly_one_binding",
+            ("cert_fingerprint IS NOT NULL", "device_cookie_hash IS NOT NULL"),
+        ),
+        (
+            "operators",
+            "ck_operators_federated_identity_complete",
+            ("federated_issuer IS NULL", "federated_subject IS NULL"),
+        ),
+    ],
+)
+def test_a_session_has_exactly_one_binding_in_the_migrated_schema(
+    migrated_url: str, table: str, constraint: str, terms: tuple[str, ...]
+):
+    """alembic check does not compare check constraints. Without the first, a
+    session row with no binding at all -- a bare cookie -- could exist, and
+    each resolver checks only its own kind. The definition is read, not just
+    the name, so a constraint that checks nothing does not pass."""
+    definitions = _scalars(
+        migrated_url,
+        "SELECT pg_get_constraintdef(oid) FROM pg_constraint "
+        "WHERE conrelid = CAST(:table AS regclass) AND conname = :name",
+        table=table,
+        name=constraint,
+    )
+    assert len(definitions) == 1, constraint
+    definition = definitions.pop()
+    for term in terms:
+        assert term in definition, definition
+
+
 def _declared_enum_labels() -> dict[str, set[str]]:
     """Every native enum type the models declare, with the labels it stores."""
     return {

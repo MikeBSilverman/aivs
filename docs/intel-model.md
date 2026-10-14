@@ -198,14 +198,15 @@ surely as a small count names those that did.
 
 ### 3.2 Phase M: members sign in with SSO
 
-There will be two listeners and two kinds of session. The mTLS listener stays
-for machine collectors, ISAC staff and anything that may show RED. A public
-TLS listener serves the member portal to people who sign in through the
-ISAC's identity provider with a second factor. Those sessions carry their own
-`auth_method` and are ceilinged at `AMBER+STRICT`, so RED content and the
+Built. There are two listeners and two kinds of session. The mTLS listener
+stays for machine collectors, ISAC staff and anything that may show RED. An
+opt-in public TLS listener serves the member portal to people who sign in
+through the ISAC's identity provider with a second factor. Those sessions
+carry their own `auth_method` and are ceilinged at `AMBER+STRICT`, and never
+read a submission that was ever under embargo, so RED content and the
 embargoed pre-CVE lane stay bound to a certificate. The public listener serves
 `/portal` member routes and nothing else. This adds no objects to the model;
-it adds a principal row to the authorization matrix.
+it adds a principal to the authorization matrix.
 
 ### 3.3 Phase F: depth and exporters
 

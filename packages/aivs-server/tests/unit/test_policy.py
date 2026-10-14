@@ -27,6 +27,7 @@ import pytest
 from sqlalchemy.dialects import postgresql
 
 from aivs_schemas.enums import (
+    TLP,
     CircleRole,
     OperatorRole,
     OrgStatus,
@@ -103,8 +104,12 @@ LONG_AGO = dt.datetime(2020, 1, 1, tzinfo=dt.UTC)
 
 
 def submission(*, submitter: uuid.UUID = ORG, state: SubmissionState) -> Submission:
-    """A detached Submission carrying only what the predicates read."""
-    return Submission(id=uuid.uuid4(), submitter_org_id=submitter, state=state)
+    """A detached Submission carrying only what the predicates read.
+
+    ``tlp`` explicitly: the column default is applied at INSERT, and a stored
+    submission always has a marking for the ceiling to read.
+    """
+    return Submission(id=uuid.uuid4(), submitter_org_id=submitter, state=state, tlp=TLP.AMBER)
 
 
 INACTIVE = [OrgStatus.PENDING, OrgStatus.SUSPENDED]

@@ -1,0 +1,17 @@
+Mutation M504: the ID token's nonce is required but not compared with this login's
+Re-applies: (T8, uncommitted) "Member sign-in through the ISAC's identity provider"
+
+Expect red: packages/aivs-server/tests/unit/test_member_sso.py::test_a_token_minted_for_another_login_is_refused_by_its_nonce
+
+diff --git a/packages/aivs-server/src/aivs_server/auth/oidc.py b/packages/aivs-server/src/aivs_server/auth/oidc.py
+--- a/packages/aivs-server/src/aivs_server/auth/oidc.py
++++ b/packages/aivs-server/src/aivs_server/auth/oidc.py
+@@ -225,7 +225,7 @@
+     except jwt.PyJWTError as exc:
+         reason = "id_token_invalid"
+         raise SsoRejectedError(reason) from exc
+-    if not hmac.compare_digest(str(claims["nonce"]), _derive(settings, "nonce", state)):
++    if False:
+         reason = "nonce_mismatch"
+         raise SsoRejectedError(reason)
+     return claims

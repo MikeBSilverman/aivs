@@ -1,0 +1,16 @@
+Mutation M514: the public listener's sign-in endpoints have no rate limit of their own
+Re-applies: (T8, uncommitted) "Member sign-in through the ISAC's identity provider"
+
+Expect red: packages/aivs-server/tests/unit/test_proxy_config.py::test_the_public_listener_asks_for_no_certificate_and_limits_sign_in
+
+diff --git a/deploy/nginx/nginx.conf b/deploy/nginx/nginx.conf
+--- a/deploy/nginx/nginx.conf
++++ b/deploy/nginx/nginx.conf
+@@ -483,7 +483,6 @@
+ 
+         # Signing in: tightly limited, and the only two SSO paths.
+         location ~ ^/portal/sso/(login|callback)$ {
+-            limit_req   zone=aivs_public_sign_in burst=5 nodelay;
+             include     /etc/nginx/snippets/aivs-identity-headers.conf;
+             proxy_pass  http://aivs_app;
+         }

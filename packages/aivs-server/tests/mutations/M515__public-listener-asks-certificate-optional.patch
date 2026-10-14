@@ -1,0 +1,16 @@
+Mutation M515: the public listener requests an optional client certificate
+Re-applies: (T8, uncommitted) "Member sign-in through the ISAC's identity provider"
+
+Expect red: packages/aivs-server/tests/unit/test_proxy_config.py::test_the_public_listener_asks_for_no_certificate_and_limits_sign_in
+
+diff --git a/deploy/nginx/nginx.conf b/deploy/nginx/nginx.conf
+--- a/deploy/nginx/nginx.conf
++++ b/deploy/nginx/nginx.conf
+@@ -473,6 +473,7 @@
+ 
+         ssl_certificate      /etc/nginx/ca/nginx/server.crt;
+         ssl_certificate_key  /etc/nginx/ca/nginx/server.key;
++        ssl_verify_client    optional;
+ 
+         include  /etc/nginx/snippets/aivs-security-headers.conf;
+         proxy_hide_header  X-Powered-By;

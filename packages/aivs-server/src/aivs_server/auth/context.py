@@ -31,6 +31,10 @@ class AuthMethod(StrEnum):
     #: A human in the portal: password + TOTP session, additionally bound to the
     #: organisation's client certificate.
     PORTAL_SESSION = "portal_session"
+    #: A member's person in the portal, signed in through the ISAC's identity
+    #: provider over ordinary TLS: bound to the IdP subject and a device cookie,
+    #: not a certificate, and ceilinged below RED (policy.tlp_ceiling).
+    SSO_SESSION = "sso_session"
 
 
 @dataclass(frozen=True, slots=True)

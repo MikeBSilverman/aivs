@@ -246,6 +246,30 @@ class Settings(BaseSettings):
     session_idle_timeout_minutes: int = Field(default=20, ge=5, le=240)
     session_cookie_name: str = "aivs_session"
 
+    # -- Member sign-in through the ISAC's identity provider (OIDC) ---------
+    #: The member tenant's issuer. Unset means member SSO is off and the public
+    #: listener has nothing to sign anyone in with. Never the staff tenant: a
+    #: session from this issuer can only ever be a member's (identity-federation.md §2).
+    oidc_member_issuer: str | None = None
+    oidc_member_client_id: str | None = None
+    oidc_member_client_secret: SecretStr | None = None
+    #: Where the IdP sends the browser back: the public listener's
+    #: ``/portal/sso/callback``. Explicit rather than derived, because the
+    #: public listener is a different origin from ``public_base_url``.
+    oidc_member_redirect_uri: str | None = None
+    #: The ID-token claim listing the user's directory groups. A group maps to
+    #: an organisation through ``organizations.directory_object_id``, set at
+    #: enrolment; a group that maps to nothing grants nothing.
+    oidc_member_group_claim: str = "groups"
+    #: Create the member's operator on first sign-in. The grant already
+    #: happened in the ISAC's own tenant; identity-federation.md §5 argues why on.
+    oidc_member_jit_provisioning: bool = True
+    #: Hard cap on an SSO session's life, whatever the idle timeout allows, so
+    #: an IdP-side disable takes effect within a known window.
+    sso_session_max_age_minutes: int = Field(default=480, ge=15, le=1440)
+    #: Long-lived per-browser cookie an SSO session is bound to, beside its own.
+    sso_device_cookie_name: str = "aivs_device"
+
     # -- Secrets at rest ----------------------------------------------------
     #: Key-encryption key for the two reversible secrets (operator TOTP seeds,
     #: webhook HMAC keys). Base64, of whatever length the configured algorithm
@@ -312,6 +336,14 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------
     # Validators
     # ------------------------------------------------------------------
+    @field_validator(
+        "oidc_member_issuer", "oidc_member_client_id", "oidc_member_redirect_uri", mode="before"
+    )
+    @classmethod
+    def _empty_issuer_means_unset(cls, value: object) -> object:
+        """Compose and Kubernetes spell "unset" as an empty string. Optional fields only."""
+        return None if value == "" else value
+
     @field_validator("proxy_shared_secret", "session_secret")
     @classmethod
     def _secret_is_long_enough(cls, value: SecretStr) -> SecretStr:
@@ -501,6 +533,7 @@ class Settings(BaseSettings):
             *self._output_violations(),
             *self._key_and_identity_violations(),
             *self._secret_reuse_violations(),
+            *self._sso_violations(),
         ]
         if violations:
             msg = (
@@ -601,6 +634,29 @@ class Settings(BaseSettings):
             # between a self-signed certificate and a member identity.
             violations.append("issuing_ca_certificate_file (must pin the issuing CA)")
         return violations
+
+    def _sso_violations(self) -> list[str]:
+        """A configured member issuer is complete and reached over https, or nothing starts.
+
+        A half-configured issuer must not fall back to anything: an issuer over
+        plain http hands token exchange to whoever sits on the path, and one
+        with no secret is a configuration nobody finished.
+        """
+        if self.oidc_member_issuer is None:
+            return []
+        violations: list[str] = []
+        if not self.oidc_member_issuer.startswith("https://"):
+            violations.append("oidc_member_issuer (must be https)")
+        if not self.oidc_member_client_id or self.oidc_member_client_secret is None:
+            violations.append("oidc_member_client_id/secret (an issuer needs both)")
+        redirect = self.oidc_member_redirect_uri or ""
+        if not redirect.startswith("https://"):
+            violations.append("oidc_member_redirect_uri (an issuer needs an https callback)")
+        return violations
+
+    @property
+    def is_member_sso_enabled(self) -> bool:
+        return self.oidc_member_issuer is not None
 
     # ------------------------------------------------------------------
     # Derived helpers

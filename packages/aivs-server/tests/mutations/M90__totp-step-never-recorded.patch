@@ -7,11 +7,11 @@ Expect red: packages/aivs-server/tests/unit/test_sessions.py::test_an_earlier_wi
 diff --git a/packages/aivs-server/src/aivs_server/auth/sessions.py b/packages/aivs-server/src/aivs_server/auth/sessions.py
 --- a/packages/aivs-server/src/aivs_server/auth/sessions.py
 +++ b/packages/aivs-server/src/aivs_server/auth/sessions.py
-@@ -200,7 +200,6 @@
+@@ -202,7 +202,6 @@
      operator.last_login_at = now
      # Under the row lock taken above and in this commit: a second login with the
      # same code waits for this one and then reads this step.
 -    operator.last_totp_step = code_step
-     if needs_rehash(operator.password_hash):
+     # A passing password implies a stored hash; federated-only operators never get here.
+     if operator.password_hash is not None and needs_rehash(operator.password_hash):
          # Transparent upgrade: the stored cost keeps up with the library's
-         # current parameters without a migration or a forced password reset.

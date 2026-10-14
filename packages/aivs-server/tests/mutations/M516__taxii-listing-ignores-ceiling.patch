@@ -1,0 +1,17 @@
+Mutation M516: the TAXII listing reads without the caller's TLP ceiling
+Re-applies: (T8, uncommitted) "Member sign-in through the ISAC's identity provider"
+
+Expect red: packages/aivs-server/tests/unit/test_member_sso.py::test_the_taxii_listing_applies_the_ceiling_it_is_given
+
+diff --git a/packages/aivs-server/src/aivs_server/taxii/queries.py b/packages/aivs-server/src/aivs_server/taxii/queries.py
+--- a/packages/aivs-server/src/aivs_server/taxii/queries.py
++++ b/packages/aivs-server/src/aivs_server/taxii/queries.py
+@@ -67,7 +67,7 @@
+         .join(Submission, Submission.id == Distribution.submission_id)
+         # The visibility conditions come from auth.policy so there is one
+         # definition of them; see visible_content_clause.
+-        .where(visible_content_clause({circle_id: intervals}, now), ceiling)
++        .where(visible_content_clause({circle_id: intervals}, now))
+     )
+ 
+ 

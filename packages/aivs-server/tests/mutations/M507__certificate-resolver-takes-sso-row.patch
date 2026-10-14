@@ -1,0 +1,17 @@
+Mutation M507: the certificate-bound resolver accepts a session with no certificate
+Re-applies: (T8, uncommitted) "Member sign-in through the ISAC's identity provider"
+
+Expect red: packages/aivs-server/tests/unit/test_member_sso.py::test_an_sso_session_is_worth_nothing_beside_a_certificate
+
+diff --git a/packages/aivs-server/src/aivs_server/auth/sessions.py b/packages/aivs-server/src/aivs_server/auth/sessions.py
+--- a/packages/aivs-server/src/aivs_server/auth/sessions.py
++++ b/packages/aivs-server/src/aivs_server/auth/sessions.py
+@@ -353,7 +353,7 @@
+     stays correct when the next caller arrives.
+     """
+     if row.cert_fingerprint is None:
+-        raise SessionRejectedError("session_unbound")
++        return
+     if cert_fingerprint is None or not constant_time_equals(row.cert_fingerprint, cert_fingerprint):
+         raise SessionRejectedError("session_certificate_mismatch")
+ 

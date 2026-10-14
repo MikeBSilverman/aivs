@@ -16,21 +16,23 @@ import datetime as dt
 import hashlib
 from pathlib import Path
 from typing import Any, Final
+from urllib.parse import urlsplit
 
 from fastapi import HTTPException, Request, Response, status
-from fastapi.responses import RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from itsdangerous import BadSignature, URLSafeTimedSerializer
 
 from aivs_schemas.enums import TLP
 from aivs_schemas.tlp import TLP_NAMES
 from aivs_server.audit.log import AuditAction, record_independently
-from aivs_server.auth.context import AuthContext
+from aivs_server.auth.context import AuthContext, AuthMethod
 from aivs_server.auth.deps import (
     SessionDep,
     request_certificate_fingerprint,
     request_source_ip,
     resolve_request_session,
+    resolve_request_sso_session,
 )
 from aivs_server.auth.passwords import constant_time_equals
 from aivs_server.auth.policy import can_view_instance_status, is_isac_staff
@@ -44,11 +46,13 @@ __all__ = [
     "base_context",
     "current_session",
     "operator_name",
+    "redirect_to_identity_provider",
     "redirect_to_login",
     "redirect_within_portal",
     "render",
     "require_csrf",
     "set_notice",
+    "signed_out_response",
     "stamp",
     "tlp_label",
 ]
@@ -63,20 +67,30 @@ LOGIN_FAILED = "Those credentials were not accepted."
 async def current_session(
     request: Request, settings: Settings, session: SessionDep
 ) -> tuple[AuthContext, str]:
-    """Resolve the signed-in analyst, or redirect to the login page."""
+    """Resolve the signed-in person, or send them to sign in.
+
+    The request decides which kind of session it may resume. One that carries
+    a client certificate resumes only a certificate-bound session; one with no
+    certificate -- the public listener -- resumes only an SSO session, and only
+    when member SSO is configured. Each resolver refuses the other kind, so a
+    cookie taken from one path is worth nothing on the other.
+    """
+    fingerprint = request_certificate_fingerprint(request, settings)
+    is_sso = fingerprint is None and settings.is_member_sso_enabled
+    sign_in = redirect_to_sso_login() if is_sso else redirect_to_login()
     token = request.cookies.get(settings.session_cookie_name)
     if not token:
-        raise redirect_to_login()
+        raise sign_in
     try:
         # Identity is resolved in auth.deps, as the API's is; this function
-        # decides only what a refusal looks like here.
-        resolved = await resolve_request_session(
-            request,
-            settings,
-            session,
-            token=token,
-            cert_fingerprint=request_certificate_fingerprint(request, settings),
-        )
+        # decides only which kind of session the request may resume, and what
+        # a refusal looks like here.
+        if is_sso:
+            resolved = await resolve_request_sso_session(request, settings, session, token=token)
+        else:
+            resolved = await resolve_request_session(
+                request, settings, session, token=token, cert_fingerprint=fingerprint
+            )
     except SessionRejectedError as exc:
         await record_independently(
             action=AuditAction.SESSION_REJECTED,
@@ -85,10 +99,34 @@ async def current_session(
             source_ip=request_source_ip(request, settings),
             details={"reason": exc.reason, "path": request.url.path},
         )
-        raise redirect_to_login() from exc
+        raise sign_in from exc
     # For the 403 and 404 handlers, which audit who was refused.
     request.state.auth_context = resolved[0]
     return resolved
+
+
+def redirect_to_sso_login() -> HTTPException:
+    """Where a person on the public listener signs in: the ISAC's identity provider."""
+    return HTTPException(
+        status_code=status.HTTP_303_SEE_OTHER, headers={"Location": "/portal/sso/login"}
+    )
+
+
+#: Where an SSO session lands after signing out. Not a redirect to the IdP:
+#: the IdP would sign the person straight back in, so signing out would not
+#: appear to have happened. Not ``/portal/login`` either: the public listener
+#: does not serve the password form, so the person would land on nginx's 404.
+_SSO_SIGNED_OUT_PAGE: Final[str] = (
+    '<!doctype html><meta charset="utf-8"><title>Signed out</title>'
+    '<p>You have signed out.</p><p><a href="/portal/sso/login">Sign in again</a></p>'
+)
+
+
+def signed_out_response(ctx: AuthContext) -> Response:
+    """Where a person goes after signing out: the sign-in for the kind of session they had."""
+    if ctx.auth_method is AuthMethod.SSO_SESSION:
+        return HTMLResponse(_SSO_SIGNED_OUT_PAGE)
+    return redirect_within_portal("/portal/login")
 
 
 def redirect_to_login() -> HTTPException:
@@ -212,6 +250,25 @@ def tlp_label(value: Any) -> str:
 
 def stamp(value: dt.datetime | None) -> str:
     return value.strftime("%Y-%m-%d %H:%M") if value else ""
+
+
+def redirect_to_identity_provider(authorize_url: str, issuer: str) -> RedirectResponse:
+    """A 303 to the member IdP's authorization endpoint, on the issuer's own origin.
+
+    The one redirect that leaves the portal on purpose. The endpoint comes from
+    the issuer's discovery document; requiring the issuer's scheme and host
+    keeps a wrong or tampered document from turning sign-in into a redirect to
+    somewhere else.
+    """
+    target, trusted = urlsplit(authorize_url), urlsplit(issuer)
+    is_issuer_origin = target.scheme == "https" and (target.scheme, target.netloc) == (
+        trusted.scheme,
+        trusted.netloc,
+    )
+    if not is_issuer_origin:
+        msg = f"refusing to redirect off the identity provider's origin: {authorize_url!r}"
+        raise ValueError(msg)
+    return RedirectResponse(authorize_url, status_code=status.HTTP_303_SEE_OTHER)
 
 
 def redirect_within_portal(path: str) -> RedirectResponse:

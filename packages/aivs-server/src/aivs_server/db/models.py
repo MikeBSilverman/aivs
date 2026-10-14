@@ -120,6 +120,10 @@ class Organization(TimestampMixin, Base):
     #: The org's STIX ``identity`` SDO id, used as ``created_by_ref`` on objects
     #: it submits (except where the submission is distributed anonymously).
     stix_identity_id: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+    #: The ISAC directory group whose members belong to this organisation, as the
+    #: member IdP names it in the group claim. Set at enrolment by membership
+    #: staff; a sign-in naming a group that maps to no organisation grants nothing.
+    directory_object_id: Mapped[str | None] = mapped_column(String(200), nullable=True, unique=True)
     contact_email: Mapped[str | None] = mapped_column(String(320), nullable=True)
 
     __table_args__ = (
@@ -183,7 +187,9 @@ class Operator(TimestampMixin, Base):
         default=lambda: [OperatorRole.ANALYST],
     )
     #: Argon2id hash. Never a raw password, never a reversible encryption.
-    password_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    #: ``None`` for an operator who signs in only through the ISAC's identity
+    #: provider. Local sign-in with no hash always fails (passwords.verify_password).
+    password_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
     #: TOTP shared secret, sealed by ``auth.secretbox``: AES-256-GCM under a key
     #: held in the process environment, with the operator's id as additional
     #: authenticated data so a seed cannot be moved between rows. The column
@@ -204,8 +210,23 @@ class Operator(TimestampMixin, Base):
     #: section 5.2). Written in the login's own row-locked transaction, so two
     #: concurrent logins with one code cannot both pass.
     last_totp_step: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    #: The federated identity this operator signs in as: issuer and subject,
+    #: never email, because addresses are reassigned and subjects are not
+    #: (identity-federation.md §4). Both or neither.
+    federated_issuer: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    federated_subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     organization: Mapped[Organization] = relationship(back_populates="operators")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "federated_issuer", "federated_subject", name="uq_operators_federated_identity"
+        ),
+        CheckConstraint(
+            "(federated_issuer IS NULL) = (federated_subject IS NULL)",
+            name="federated_identity_complete",
+        ),
+    )
 
 
 class ClientCertificate(TimestampMixin, Base):
@@ -897,7 +918,17 @@ class PortalSession(Base):
     )
     #: NOT NULL: an unbound session would be a cookie that authenticates on its
     #: own, which is the opposite of what this column exists for.
-    cert_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    #: The client certificate a certificate-bound session is tied to; ``None``
+    #: for an SSO session, which is tied to the IdP subject and a device instead.
+    cert_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    #: An SSO session's identity: the member issuer and subject it signed in as.
+    idp_issuer: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    idp_subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    #: SHA-256 of the device cookie the SSO session was established with.
+    device_cookie_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    #: The IdP's ``amr`` claim at sign-in: how the person authenticated, for
+    #: the evidence pack's "which factor" question.
+    amr: Mapped[list[str] | None] = mapped_column(ARRAY(String(40)), nullable=True)
     csrf_token_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     source_ip: Mapped[str | None] = mapped_column(INET, nullable=True)
     user_agent: Mapped[str | None] = mapped_column(String(400), nullable=True)
@@ -912,7 +943,19 @@ class PortalSession(Base):
     )
     revoked_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    __table_args__ = (CheckConstraint(f"token_hash ~ '{_SHA256_HEX}'", name="token_hash_format"),)
+    __table_args__ = (
+        CheckConstraint(f"token_hash ~ '{_SHA256_HEX}'", name="token_hash_format"),
+        # Exactly one binding: a certificate, or an IdP subject on a device.
+        # A row with neither would be a cookie alone; a row with both would be
+        # two session kinds at once, and each resolver checks only its own.
+        CheckConstraint(
+            "(cert_fingerprint IS NOT NULL AND idp_issuer IS NULL AND idp_subject IS NULL "
+            "AND device_cookie_hash IS NULL) OR (cert_fingerprint IS NULL "
+            "AND idp_issuer IS NOT NULL AND idp_subject IS NOT NULL "
+            "AND device_cookie_hash IS NOT NULL)",
+            name="exactly_one_binding",
+        ),
+    )
 
 
 class DetectionState(Base):

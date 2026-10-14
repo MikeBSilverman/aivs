@@ -1,0 +1,17 @@
+Mutation M510: an SSO session row for the hosting ISAC's organisation resolves
+Re-applies: (T8, uncommitted) "Member sign-in through the ISAC's identity provider"
+
+Expect red: packages/aivs-server/tests/unit/test_member_sso.py::test_an_sso_session_for_the_hosting_isac_is_refused_whatever_its_row_says
+
+diff --git a/packages/aivs-server/src/aivs_server/auth/sessions.py b/packages/aivs-server/src/aivs_server/auth/sessions.py
+--- a/packages/aivs-server/src/aivs_server/auth/sessions.py
++++ b/packages/aivs-server/src/aivs_server/auth/sessions.py
+@@ -475,7 +475,7 @@
+     if (operator.federated_issuer, operator.federated_subject) != (row.idp_issuer, row.idp_subject):
+         raise SessionRejectedError("sso_identity_changed")
+     organization = await _load_active_organization(session, row)
+-    if organization.org_type is OrgType.ADMIN:
++    if False:
+         raise SessionRejectedError("sso_staff_refused")
+ 
+     circles = await load_circle_grants(session, organization.id)

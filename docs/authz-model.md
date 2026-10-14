@@ -359,6 +359,16 @@ and TOTP establish *which human*. Neither alone grants access, and the
 `AuthContext` carries both (`cert_fingerprint` is populated for portal sessions
 too).
 
+**Member people may instead sign in through the ISAC's identity provider**, on
+the public listener with no certificate (`identity-federation.md` §11). The IdP
+establishes the human and must assert a second factor. The organisation comes
+from the person's directory group, and the session is bound to the IdP subject
+and a device cookie instead of a certificate. Such a session (`AuthMethod.SSO_SESSION`)
+holds at most the analyst and org-admin roles, never a staff role, and reads
+under a ceiling: `policy.tlp_ceiling` caps it at `TLP:AMBER+STRICT` and
+excludes anything ever under embargo. Each kind of session is refused by the
+other's resolver.
+
 ---
 
 ## 9. Testing the model
@@ -457,9 +467,18 @@ The matrix does not claim:
   clause test.
 - visibility within content a caller may read.
 - audit content.
-- any principal that does not exist yet. The member SSO session, the auditor,
-  researcher and government organisations, and delegated providers are listed in `principals.py` with the phase that adds them, and are not
-  faked.
+- any principal that does not exist yet. The auditor, researcher and government
+  organisations, and delegated providers are listed in `principals.py` with the phase that adds them, and are not faked.
+
+**The member SSO session** is not a column of the table, because its row is
+derived from one (`_sso_member` in the matrix). On every portal route it gets
+exactly the member analyst's cell; on the API and TAXII it gets 401, because
+its token is not a machine credential. Its sign-in routes are their own map:
+`/portal/sso/login` is allowed and a callback this browser did not start is
+403; for every other principal, and on an instance without member SSO, both
+are 404. Signing out lands on a page rather than a redirect. What it may
+*read* on those routes is narrower than the analyst's, by the TLP ceiling
+(§8), which is a clause test, as filtering always is.
 
 If you add a route, `test_every_walked_route_is_in_exactly_one_class` fails
 until you give it a class. If it fits no class, that is a new policy: add the

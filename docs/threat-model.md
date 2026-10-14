@@ -71,6 +71,10 @@ that concludes everything is fine is not a threat model.
    └─────────────────────┘        └──────────────────────────────┘
 ```
 
+B6, the opt-in public member listener, is a second path from the internet
+to nginx beside B1–B2: no overlay and no client certificate, for member
+people signing in through the ISAC's identity provider.
+
 ---
 
 ## B1. Internet → WireGuard overlay / IP allowlist
@@ -167,6 +171,31 @@ host.
 | **I** | Notification payload discloses embargoed content to an endpoint that should not have it. | Design constraint: notifications carry **metadata and identifiers**, never embargoed object bodies. Members fetch content over authenticated TAXII. | Enforced by the notification payload builder, not by a schema. Worth a conformance test. |
 | **D** | A slow or hostile endpoint stalls delivery workers. | `AIVS_WEBHOOK_TIMEOUT_SECONDS` (default 5 s, max 30); `AIVS_WEBHOOK_MAX_ATTEMPTS` (default 5); `consecutive_failures` per webhook supports auto-disable. | A member can generate outbound load by registering a slow endpoint. Bounded, not eliminated. |
 | **E** | — | Webhook delivery runs with no authorization context; it cannot read content it was not handed. | — |
+
+---
+
+## B6. Internet → public member listener (member SSO, opt-in)
+
+**What crosses:** ordinary TLS from any browser, with no client certificate:
+the OIDC sign-in round trip, then portal requests carrying an SSO session
+cookie and a device cookie. Published only by `docker-compose.public.yml`
+(`deployment-topology.md`, "The public member listener").
+**Assets exposed:** what a member's person may read up to `TLP:AMBER+STRICT`,
+never RED or embargoed content, and their own firm's filings within that.
+**Relevant actors:** internet attacker, curious member operator, an attacker
+holding a member person's IdP credentials or browser.
+
+| STRIDE | Threat | Mitigation | Residual |
+| --- | --- | --- | --- |
+| **S** | Sign in as a member with a password phished or sprayed at the IdP. | The IdP performs the second factor, and AIVS refuses a token whose `amr` asserts fewer than two factors, a missing claim included (`auth/oidc.py`). nginx limits sign-in to 10 per minute per address. Lockout per person is the IdP's. | A real-time phishing proxy that relays the second factor yields a session. Passkeys at the IdP close it; AIVS cannot require them, only record `amr`. |
+| **S** | Sign a victim in as the attacker (login CSRF), or redeem a code lifted from a log or referrer. | `state` lives in a signed, ten-minute pending-login cookie that the callback must match. The PKCE verifier and `nonce` are derived from that `state`, so a code is useless without the browser that began the login. | None material. |
+| **S** | Replay a stolen session cookie from another browser. | The session is bound to a per-browser device cookie by its hash, and to the IdP issuer and subject; every request re-checks both, the maximum age (8 h by default), and operator and organisation status. | Malware that takes both cookies from one browser holds the session until it expires or the operator is deactivated: **R15**. |
+| **T** | Forge or alter the ID token. | Signature verified against the issuer's JWKS with PyJWT, with algorithms pinned to RS256/PS256/ES256/ES384, and `iss`, `aud`, `exp`, `iat`, `sub` and `nonce` all required. The discovery document must name the configured issuer. | Compromise of the ISAC's member IdP tenant forges any member person: the tenant is now part of the trusted base for AMBER content. |
+| **R** | A person denies having signed in. | `portal.sso.login.success` records the subject's operator and `amr`; every refusal is audited with its reason. | As for any federated login, the evidence of who typed the credential is the IdP's. |
+| **I** | Read RED or embargoed content, or another firm's filing, through the portal. | `policy.tlp_ceiling` caps an SSO session at AMBER+STRICT and excludes any submission with an embargo, on every read path: the visibility clause, the TAXII listings (passed as a required argument), the firm's own filings list and count, and `can_view_submission`. The authorization matrix holds the SSO principal to the member analyst's row. | Content at AMBER+STRICT and below is readable from any device the person signs in on. That is the decision this listener embodies. |
+| **I** | Reach the API, TAXII, staff or admin screens, or the probes, through the public listener. | nginx proxies an allow-list of member-portal paths; everything else is a 404 written by nginx. The app also refuses an SSO session as an API or TAXII credential, and it refuses an SSO session presented beside a certificate on the certificate-bound listener (`session_unbound`). | None material while the allow-list and the shipped snippet are used. |
+| **D** | Flood sign-in or pages from many addresses. | Per-address limits (sign-in 10 r/min with a burst of 5; pages 10 r/s with a burst of 20), 32 connections per address, answered 429. | A distributed flood is not stopped by per-address limits. It reaches only this listener, so the certificate-bound listener and its members keep working. |
+| **E** | A member-tenant account reaches staff authority, through a staff group in its claim or a mis-set role. | A sign-in naming a group that maps to the hosting ISAC is refused. The session resolver refuses any SSO session whose organisation is the ISAC, and intersects roles with `ANALYST` and `ORG_ADMIN`. JIT creates `ANALYST` only. | None material. The staff issuer is unbuilt; staff sign in on the certificate-bound listener. |
 
 ---
 
@@ -355,9 +384,11 @@ or answering with the reason.
 | R7 | `record_independently` swallows its own failures — audit-write outages are silent. | Medium | Alert on the log line |
 | R8 | Audit redaction is key-name based; a secret under an unlisted key is permanent. | Medium | Review of new audit detail keys |
 | R9 | IP-allowlist mode is materially weaker than WireGuard mode. | Medium | Prefer overlay; document if not |
-| R10 | Rate limiting exists at nginx, per certificate rather than per organization; the application limits only contributions published without review and TAXII inbox posts (per organisation, SF-66). | Low | Keep the shipped nginx limits; revisit if the proxy is replaced |
+| R10 | Rate limiting exists at nginx, per certificate rather than per organization (per source address on the public member listener, B6); the application limits only contributions published without review and TAXII inbox posts (per organisation, SF-66). | Low | Keep the shipped nginx limits; revisit if the proxy is replaced |
 | R13 | A post-moderated note's prose reaches members before an editor reads it, and `revoke` is not built yet. | Low–Medium | Editors: post-moderation off by default, per circle |
 | R14 | A contribution that goes to review although nothing the member can see requires it tells the member, as one bit, that the ISAC's view refused it. | Low | Accepted: the reason itself is shown to editors only |
+| R15 | A member person's browser taken over — both the SSO session and device cookies — reads that firm's AMBER+STRICT content until the session ages out (8 h by default) or the operator or organisation is deactivated. OIDC back-channel logout is not built, so disabling the person at the IdP does not end a live session. | Medium | ISAC membership team; member endpoint security |
+| R16 | The ISAC's member IdP tenant is in the trusted base for AMBER content: a compromised tenant, or a sign-on policy that the IdP misreports in `amr`, signs anyone in as a member person. | Medium | Hosting ISAC — tenant administration, phishing-resistant factors |
 | R11 | Webhook SSRF residual via DNS rebinding. | Low | Resolve-and-pin; egress policy |
 | R12 | A member firm can poison the corpus with plausible false findings. | Low–Medium | Reviewer judgement |
 

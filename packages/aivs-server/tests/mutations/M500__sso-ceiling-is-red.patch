@@ -1,0 +1,18 @@
+Mutation M500: an SSO session's TLP ceiling is RED, like a certificate-bound one
+Re-applies: (T8, uncommitted) "Member sign-in through the ISAC's identity provider"
+
+Expect red: packages/aivs-server/tests/unit/test_member_sso.py::test_an_sso_session_reads_up_to_amber_strict_and_never_red
+Expect red: packages/aivs-server/tests/unit/test_member_sso.py::test_sso_reads_amber_strict_but_not_red_or_embargoed_content
+
+diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs-server/src/aivs_server/auth/policy.py
+--- a/packages/aivs-server/src/aivs_server/auth/policy.py
++++ b/packages/aivs-server/src/aivs_server/auth/policy.py
+@@ -330,7 +330,7 @@
+     says so here.
+     """
+     if ctx.auth_method is AuthMethod.SSO_SESSION:
+-        return TLP.AMBER_STRICT
++        return TLP.RED
+     return TLP.RED
+ 
+ 

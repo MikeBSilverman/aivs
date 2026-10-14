@@ -62,6 +62,11 @@ class Stack:
         return str(self.raw["base_url"])
 
     @property
+    def public_base_url(self) -> str:
+        """The public member listener, published by docker-compose.public.yml."""
+        return str(self.raw["public_base_url"])
+
+    @property
     def ca_chain(self) -> Path:
         return Path(self.raw["ca_chain"])
 
@@ -91,6 +96,17 @@ class Stack:
         if identity is not None:
             context.load_cert_chain(str(identity.cert), str(identity.key))
         return httpx.Client(base_url=self.base_url, verify=context, timeout=30.0)
+
+    def public_client(self, identity: Identity | None = None) -> httpx.Client:
+        """A browser on the public listener, which asks for no certificate.
+
+        ``identity`` is offered anyway when given, to show that a certificate
+        on this listener counts for nothing.
+        """
+        context = ssl.create_default_context(cafile=str(self.ca_chain))
+        if identity is not None:
+            context.load_cert_chain(str(identity.cert), str(identity.key))
+        return httpx.Client(base_url=self.public_base_url, verify=context, timeout=30.0)
 
     def compose(self, *args: str, stdin: str | None = None) -> subprocess.CompletedProcess[str]:
         command = [

@@ -19,9 +19,9 @@ from cryptography.hazmat.primitives import hashes
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from aivs_schemas.enums import CircleRole, OrgStatus, OrgType
+from aivs_schemas.enums import CircleRole, OperatorRole, OrgStatus, OrgType
 from aivs_server.auth.secretbox import SecretBox, SecretPurpose
-from aivs_server.auth.sessions import establish_session
+from aivs_server.auth.sessions import establish_session, establish_sso_session
 from aivs_server.config import Settings
 from aivs_server.db.models import Organization, Webhook
 from tests.authz_matrix.principals import (
@@ -31,6 +31,7 @@ from tests.authz_matrix.principals import (
     Principal,
 )
 from tests.conftest import ISAC_STAFF_ROLES, TEST_PROXY_SECRET, proxy_headers
+from tests.sso_support import ISSUER as SSO_ISSUER
 from tests.unit.contribution_world import seed as seed_record
 from tests.unit.contribution_world import vulnerability_raw
 
@@ -122,6 +123,37 @@ async def _session_credentials(
         api_headers={**proxy, "authorization": f"Bearer {established.token}"},
         portal_headers=proxy,
         cookies={f.settings.session_cookie_name: established.token},
+        csrf_token=established.csrf_token,
+    )
+
+
+async def _sso_credentials(f: Factories, org: Organization) -> Credentials:
+    """A member analyst's SSO session: no certificate, a device cookie, the token as both."""
+    operator, _seed = await f.make_operator(org, roles=(OperatorRole.ANALYST,))
+    operator.federated_issuer = SSO_ISSUER
+    operator.federated_subject = f"matrix-subject-{uuid.uuid4()}"
+    device = "matrix-device-cookie"
+    established = await establish_sso_session(
+        f.session,
+        f.settings,
+        operator=operator,
+        issuer=SSO_ISSUER,
+        subject=operator.federated_subject,
+        device_cookie=device,
+        amr=("pwd", "otp"),
+        source_ip=None,
+        user_agent=None,
+        now=dt.datetime.now(dt.UTC),
+    )
+    await f.session.commit()
+    return Credentials(
+        # Presented as a bearer on the machine surface, which must not take it.
+        api_headers={"authorization": f"Bearer {established.token}"},
+        portal_headers={},
+        cookies={
+            f.settings.session_cookie_name: established.token,
+            f.settings.sso_device_cookie_name: device,
+        },
         csrf_token=established.csrf_token,
     )
 
@@ -327,6 +359,7 @@ async def _credentials(
     for principal, org_name in CERTIFICATE_ORGS.items():
         headers = proxy_headers(world.pems[org_name])
         principals[principal] = Credentials(api_headers=headers, portal_headers=headers)
+    principals[Principal.SSO_MEMBER] = await _sso_credentials(f, orgs["member"])
     for principal, (org_name, role) in SESSION_ROLES.items():
         principals[principal] = await _session_credentials(
             f, orgs[org_name], world.pems[org_name], (role,)

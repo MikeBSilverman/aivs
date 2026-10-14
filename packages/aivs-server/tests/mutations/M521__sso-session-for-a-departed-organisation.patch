@@ -1,0 +1,17 @@
+Mutation M521: an SSO session is established for an organisation offboarded since sign-in resolved it
+Re-applies: (T8, uncommitted) "Member sign-in through the ISAC's identity provider", rebased onto org_still_active
+
+Expect red: packages/aivs-server/tests/unit/test_member_sso.py::test_no_sso_session_is_established_for_an_organisation_that_has_left
+
+diff --git a/packages/aivs-server/src/aivs_server/auth/sessions.py b/packages/aivs-server/src/aivs_server/auth/sessions.py
+--- a/packages/aivs-server/src/aivs_server/auth/sessions.py
++++ b/packages/aivs-server/src/aivs_server/auth/sessions.py
+@@ -432,8 +432,6 @@
+     session (``establish_session``): sign-in resolved it as active, and an
+     offboarding committed in between must not be met by a fresh session.
+     """
+-    if not await org_still_active(session, operator.org_id):
+-        raise SessionRejectedError("org_not_active")
+     token = generate_session_token()
+     csrf_token = generate_session_token()
+     lifetime = min(settings.session_ttl_minutes, settings.sso_session_max_age_minutes)

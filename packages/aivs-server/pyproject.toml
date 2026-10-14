@@ -21,6 +21,7 @@ dependencies = [
     "python-multipart>=0.0.20",  # portal form parsing
     "itsdangerous>=2.2",         # signed pagination cursors and CSRF tokens
     "httpx>=0.28",               # SSRF-guarded webhook delivery
+    "pyjwt>=2.10",               # OIDC ID-token and JWKS verification (member SSO)
 ]
 
 [project.scripts]

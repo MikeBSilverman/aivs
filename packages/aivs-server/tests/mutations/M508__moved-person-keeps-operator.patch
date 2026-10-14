@@ -1,0 +1,17 @@
+Mutation M508: a person moved to another firm in the directory signs in as the old firm's operator
+Re-applies: (T8, uncommitted) "Member sign-in through the ISAC's identity provider"
+
+Expect red: packages/aivs-server/tests/unit/test_member_sso.py::test_a_person_moved_to_another_firm_does_not_carry_the_old_operator
+
+diff --git a/packages/aivs-server/src/aivs_server/services/sso.py b/packages/aivs-server/src/aivs_server/services/sso.py
+--- a/packages/aivs-server/src/aivs_server/services/sso.py
++++ b/packages/aivs-server/src/aivs_server/services/sso.py
+@@ -101,7 +101,7 @@
+     if not operator.is_active:
+         reason = "operator_inactive"
+         raise SsoRejectedError(reason)
+-    if operator.org_id != organization.id:
++    if False:
+         reason = "organisation_changed"
+         raise SsoRejectedError(reason)
+ 

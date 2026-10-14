@@ -30,6 +30,9 @@ class Principal(enum.StrEnum):
     ISAC_EDITOR = "ISAC editor session"
     ISAC_MEMBERSHIP = "ISAC membership session"
     SYSTEM_ADMIN = "system_admin session"
+    #: A member's analyst signed in through the ISAC's IdP over ordinary TLS:
+    #: no certificate, bound to its IdP subject and a device cookie.
+    SSO_MEMBER = "member SSO session"
 
 
 #: Principals the plan names that have no implementation yet. They are listed,
@@ -37,7 +40,6 @@ class Principal(enum.StrEnum):
 #: fixture, and the row it filled would read as a guarantee. Each is added to
 #: :class:`Principal`, with its expected row, in the phase that builds it.
 PLANNED_PRINCIPALS: dict[str, str] = {
-    "member SSO session (ordinary TLS, ceiling below RED)": "added with Phase M",
     "ISAC auditor session": "added with Phase H",
     "researcher organisation": "added with Phase E",
     "government organisation": "added with Phase E",

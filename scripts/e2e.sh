@@ -12,8 +12,11 @@
 #
 # It follows deploy/README.md section 3 in order, with the operator's choices
 # made by script: an ephemeral CA, generated secrets, the proxy bound to
-# loopback on AIVS_E2E_PORT (default 18443, through AIVS_BIND_PORT). The
-# compose file is used exactly as shipped: no override file. Everything it creates lives under AIVS_E2E_DIR, never in the
+# loopback on AIVS_E2E_PORT (default 18443, through AIVS_BIND_PORT), and the
+# public member listener on AIVS_E2E_PUBLIC_PORT (default 18444). The compose
+# files are used exactly as shipped: docker-compose.yml plus the shipped
+# docker-compose.public.yml, and no test-only override. Everything it creates
+# lives under AIVS_E2E_DIR, never in the
 # repository: nothing cryptographic is ever written into the checkout
 # (CLAUDE.md section 6), not even into a git-ignored path.
 #
@@ -34,6 +37,8 @@ REPO="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 WORK="${AIVS_E2E_DIR:-${TMPDIR:-/tmp}/aivs-e2e}"
 PROJECT="aivs-e2e"
 PORT="${AIVS_E2E_PORT:-18443}"
+# The public member listener, published by docker-compose.public.yml.
+PUBLIC_PORT="${AIVS_E2E_PUBLIC_PORT:-18444}"
 # The proxy image, as compose would choose it (the same digest-pinned default;
 # a contract test holds the two equal); used here only to chown files to the
 # uids the containers run as, which needs root on the host otherwise.
@@ -47,7 +52,8 @@ log() { printf '==> %s\n' "$*" >&2; }
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 
 compose() {
-    docker compose -p "${PROJECT}" --env-file "${WORK}/.env" -f "${REPO}/docker-compose.yml" "$@"
+    docker compose -p "${PROJECT}" --env-file "${WORK}/.env" -f "${REPO}/docker-compose.yml" \
+        -f "${REPO}/docker-compose.public.yml" "$@"
 }
 
 # -----------------------------------------------------------------------------
@@ -136,6 +142,8 @@ AIVS_PUBLIC_BASE_URL=https://localhost:${PORT}
 AIVS_BIND_ADDRESS=127.0.0.1
 AIVS_BIND_PORT=${PORT}
 AIVS_NGINX_ALLOWLIST=${WORK}/allowlist.conf
+AIVS_PUBLIC_BIND_ADDRESS=127.0.0.1
+AIVS_PUBLIC_BIND_PORT=${PUBLIC_PORT}
 AIVS_LOG_LEVEL=INFO
 AIVS_CA_DIR=${WORK}/ca/out
 AIVS_PROXY_SHARED_SECRET=$(random_secret)
@@ -194,7 +202,8 @@ write_state() {
   "repo": "${REPO}",
   "env_file": "${WORK}/.env",
   "base_url": "https://localhost:${PORT}",
-  "compose_files": ["${REPO}/docker-compose.yml"],
+  "public_base_url": "https://localhost:${PUBLIC_PORT}",
+  "compose_files": ["${REPO}/docker-compose.yml", "${REPO}/docker-compose.public.yml"],
   "ca_chain": "${WORK}/ca/out/ca-chain.pem",
   "isac": {
     "cert": "${WORK}/ca/out/clients/e2e-isac/e2e-isac.crt",

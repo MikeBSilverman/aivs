@@ -34,7 +34,7 @@ from typing import Final
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from aivs_schemas.enums import CertStatus, OrgStatus
+from aivs_schemas.enums import CertStatus, OperatorRole, OrgStatus, OrgType
 from aivs_server.auth.context import AuthContext, AuthMethod
 from aivs_server.auth.memberships import load_circle_grants
 from aivs_server.auth.passwords import (
@@ -62,7 +62,9 @@ __all__ = [
     "SessionRejectedError",
     "authenticate_operator",
     "establish_session",
+    "establish_sso_session",
     "resolve_session",
+    "resolve_sso_session",
     "revoke_session",
     "revoke_sessions_for_certificate",
 ]
@@ -202,7 +204,8 @@ async def authenticate_operator(
     # Under the row lock taken above and in this commit: a second login with the
     # same code waits for this one and then reads this step.
     operator.last_totp_step = code_step
-    if needs_rehash(operator.password_hash):
+    # A passing password implies a stored hash; federated-only operators never get here.
+    if operator.password_hash is not None and needs_rehash(operator.password_hash):
         # Transparent upgrade: the stored cost keeps up with the library's
         # current parameters without a migration or a forced password reset.
         operator.password_hash = hash_password(password)
@@ -394,6 +397,131 @@ async def _load_active_organization(session: AsyncSession, row: PortalSession) -
     if organization is None or organization.status is not OrgStatus.ACTIVE:
         raise SessionRejectedError("org_inactive")
     return organization
+
+
+# ---------------------------------------------------------------------------
+# SSO sessions: a member's person over ordinary TLS
+# ---------------------------------------------------------------------------
+#: Roles an SSO session may carry. The member tenant can never yield an ISAC
+#: role, whatever the operator row says (identity-federation.md §2).
+_SSO_ROLES: Final[frozenset[OperatorRole]] = frozenset(
+    {OperatorRole.ANALYST, OperatorRole.ORG_ADMIN}
+)
+
+
+async def establish_sso_session(
+    session: AsyncSession,
+    settings: Settings,
+    *,
+    operator: Operator,
+    issuer: str,
+    subject: str,
+    device_cookie: str,
+    amr: tuple[str, ...],
+    source_ip: str | None,
+    user_agent: str | None,
+    now: dt.datetime,
+) -> EstablishedSession:
+    """Create a session bound to the IdP identity and this browser's device cookie.
+
+    A new token every time, so signing in rotates the session (no fixation).
+    Its life is the shorter of the session TTL and the SSO maximum age, so an
+    IdP-side disable takes effect within a known window. Does not commit.
+
+    The organisation is share-locked and re-read first, as for every other
+    session (``establish_session``): sign-in resolved it as active, and an
+    offboarding committed in between must not be met by a fresh session.
+    """
+    if not await org_still_active(session, operator.org_id):
+        raise SessionRejectedError("org_not_active")
+    token = generate_session_token()
+    csrf_token = generate_session_token()
+    lifetime = min(settings.session_ttl_minutes, settings.sso_session_max_age_minutes)
+    expires_at = now + dt.timedelta(minutes=lifetime)
+    session.add(
+        PortalSession(
+            token_hash=_digest(token),
+            csrf_token_hash=_digest(csrf_token),
+            operator_id=operator.id,
+            org_id=operator.org_id,
+            cert_fingerprint=None,
+            idp_issuer=issuer,
+            idp_subject=subject,
+            device_cookie_hash=_digest(device_cookie),
+            amr=list(amr),
+            source_ip=source_ip,
+            user_agent=(user_agent or "")[:400] or None,
+            expires_at=expires_at,
+            last_seen_at=now,
+        )
+    )
+    operator.last_login_at = now
+    return EstablishedSession(
+        token=token, csrf_token=csrf_token, expires_at=expires_at, operator_id=operator.id
+    )
+
+
+async def resolve_sso_session(
+    session: AsyncSession,
+    settings: Settings,
+    *,
+    token: str,
+    device_cookie: str | None,
+    request_id: str,
+    source_ip: str | None,
+    now: dt.datetime,
+) -> tuple[AuthContext, str]:
+    """Resume an SSO session, re-checking everything that could have changed.
+
+    In order: the token is live, it is an SSO session, its issuer is still the
+    configured member issuer, this browser presents the device it was
+    established on, it is within the SSO maximum age, the operator is active
+    and still the identity the session names, and the organisation is an
+    active member -- never the hosting ISAC.
+    """
+    row = await _load_live_session(session, settings, token=token, now=now)
+    _check_sso_binding(row, settings, device_cookie, now)
+    operator = await _load_active_operator(session, row)
+    if (operator.federated_issuer, operator.federated_subject) != (row.idp_issuer, row.idp_subject):
+        raise SessionRejectedError("sso_identity_changed")
+    organization = await _load_active_organization(session, row)
+    if organization.org_type is OrgType.ADMIN:
+        raise SessionRejectedError("sso_staff_refused")
+
+    circles = await load_circle_grants(session, organization.id)
+    row.last_seen_at = now
+    await session.commit()
+
+    context = AuthContext(
+        org_id=organization.id,
+        org_slug=organization.slug,
+        org_type=organization.org_type,
+        org_status=organization.status,
+        auth_method=AuthMethod.SSO_SESSION,
+        circles=circles,
+        cert_fingerprint=None,
+        operator_id=operator.id,
+        operator_roles=frozenset(operator.roles) & _SSO_ROLES,
+        request_id=request_id,
+        source_ip=source_ip,
+    )
+    return context, row.csrf_token_hash
+
+
+def _check_sso_binding(
+    row: PortalSession, settings: Settings, device_cookie: str | None, now: dt.datetime
+) -> None:
+    """An SSO session, from the issuer still trusted, on the device it began on, not too old."""
+    if row.idp_issuer is None or row.device_cookie_hash is None:
+        raise SessionRejectedError("not_an_sso_session")
+    if settings.oidc_member_issuer is None or row.idp_issuer != settings.oidc_member_issuer:
+        raise SessionRejectedError("sso_issuer_not_trusted")
+    if device_cookie is None or not constant_time_equals(
+        row.device_cookie_hash, _digest(device_cookie)
+    ):
+        raise SessionRejectedError("sso_device_mismatch")
+    if row.created_at + dt.timedelta(minutes=settings.sso_session_max_age_minutes) <= now:
+        raise SessionRejectedError("sso_max_age")
 
 
 async def revoke_session(session: AsyncSession, *, token: str) -> None:

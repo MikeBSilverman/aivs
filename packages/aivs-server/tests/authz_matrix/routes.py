@@ -111,6 +111,8 @@ class RouteClass(enum.StrEnum):
     #: Confirming a filing made in one's name: a person at that member; its
     #: machine certificate, and a reviewer who can see it, 403.
     PROXY_CONFIRM = "proxy confirm"
+    #: Signing in through the ISAC's IdP: absent (404) unless member SSO is on.
+    SSO_SIGN_IN = "sso sign in"
     #: Signing in and out: the same for every caller.
     SIGN_IN = "sign in"
     #: Liveness, readiness and metrics, for the orchestrator: everyone.
@@ -671,6 +673,20 @@ ROUTES: tuple[RouteCase, ...] = (
     RouteCase(
         "POST", "/portal/logout", RouteClass.SIGN_IN, _fixed("/portal/logout", {}), is_portal=True
     ),
+    RouteCase(
+        "GET",
+        "/portal/sso/login",
+        RouteClass.SSO_SIGN_IN,
+        _fixed("/portal/sso/login"),
+        is_portal=True,
+    ),
+    RouteCase(
+        "GET",
+        "/portal/sso/callback",
+        RouteClass.SSO_SIGN_IN,
+        _fixed("/portal/sso/callback"),
+        is_portal=True,
+    ),
     # ----- health ---------------------------------------------------------
     RouteCase("GET", "/healthz", RouteClass.HEALTH, _fixed("/healthz")),
     RouteCase("GET", "/readyz", RouteClass.HEALTH, _fixed("/readyz")),
@@ -684,7 +700,7 @@ SURFACE_FLOORS: dict[str, int] = {
     "/api/v1": 38,
     "/taxii2": 10,
     "/portal/admin": 10,
-    "/portal": 20,
+    "/portal": 22,
     "/healthz": 1,
     "/readyz": 1,
     "/metrics": 1,

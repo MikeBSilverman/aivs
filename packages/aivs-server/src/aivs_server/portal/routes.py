@@ -41,9 +41,11 @@ from aivs_server.auth.policy import (
     can_transition_submission,
     can_view_submission,
     can_view_submission_receipts,
+    distribution_visibility_clause,
     readable_circle_grants,
     require,
-    visible_content_clause,
+    tlp_ceiling,
+    tlp_ceiling_clause,
 )
 from aivs_server.auth.secretbox import SecretBox
 from aivs_server.auth.sessions import (
@@ -75,6 +77,7 @@ from aivs_server.portal.shared import (
     render,
     require_csrf,
     set_notice,
+    signed_out_response,
     stamp,
     tlp_label,
 )
@@ -298,7 +301,7 @@ async def logout(
             request_id=request.scope.get("aivs_request_id"),
             source_ip=request_source_ip(request, settings),
         )
-    response = redirect_within_portal("/portal/login")
+    response = signed_out_response(ctx)
     response.delete_cookie(settings.session_cookie_name, path="/portal")
     response.delete_cookie("aivs_csrf", path="/portal")
     return response
@@ -329,7 +332,7 @@ async def dashboard(request: Request, settings: SettingsDep, session: SessionDep
                 # submission-state term -- the portal and the TAXII feed would
                 # have disagreed about what a member can see the moment a state
                 # outside VISIBLE_SUBMISSION_STATES became reachable.
-                .where(visible_content_clause(circle_grants, now))
+                .where(distribution_visibility_clause(ctx, now))
                 .order_by(Distribution.date_added.desc())
                 .limit(10)
             )
@@ -347,7 +350,7 @@ async def dashboard(request: Request, settings: SettingsDep, session: SessionDep
             await session.scalar(
                 select(func.count(func.distinct(Distribution.submission_id)))
                 .join(Submission, Submission.id == Distribution.submission_id)
-                .where(visible_content_clause(circle_grants, now))
+                .where(distribution_visibility_clause(ctx, now))
             )
         ) or 0
 
@@ -355,7 +358,7 @@ async def dashboard(request: Request, settings: SettingsDep, session: SessionDep
         await session.scalar(
             select(func.count())
             .select_from(Submission)
-            .where(Submission.submitter_org_id == ctx.org_id)
+            .where(Submission.submitter_org_id == ctx.org_id, tlp_ceiling_clause(ctx))
         )
     ) or 0
 
@@ -415,6 +418,16 @@ async def _filed_for_you(
 # ---------------------------------------------------------------------------
 # Submissions
 # ---------------------------------------------------------------------------
+def _own_filings_subheading(ctx: AuthContext) -> str:
+    """Say what the list leaves out, so a missing RED filing is not a mystery."""
+    if tlp_ceiling(ctx) is TLP.RED:
+        return "Everything your firm has filed."
+    return (
+        f"What your firm has filed up to {tlp_label(tlp_ceiling(ctx))}, and not under "
+        "embargo. Sign in with your firm's certificate to see the rest."
+    )
+
+
 def _submission_row(item: Submission) -> dict[str, Any]:
     return {
         "id": str(item.id),
@@ -437,7 +450,7 @@ async def list_submissions(
         (
             await session.execute(
                 select(Submission)
-                .where(Submission.submitter_org_id == ctx.org_id)
+                .where(Submission.submitter_org_id == ctx.org_id, tlp_ceiling_clause(ctx))
                 .order_by(Submission.created_at.desc())
                 .limit(200)
             )
@@ -450,7 +463,7 @@ async def list_submissions(
     context.update(
         {
             "heading": "Your submissions",
-            "subheading": "Everything your firm has filed.",
+            "subheading": _own_filings_subheading(ctx),
             "submissions": [_submission_row(row) for row in rows],
             "empty_message": "Your firm has not filed anything yet.",
         }

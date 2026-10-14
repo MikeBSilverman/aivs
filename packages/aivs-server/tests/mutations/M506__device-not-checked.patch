@@ -1,0 +1,19 @@
+Mutation M506: an SSO session resolves from its cookie alone, without its device
+Re-applies: (T8, uncommitted) "Member sign-in through the ISAC's identity provider"
+
+Expect red: packages/aivs-server/tests/unit/test_member_sso.py::test_the_session_cookie_alone_without_its_device_is_refused
+
+diff --git a/packages/aivs-server/src/aivs_server/auth/sessions.py b/packages/aivs-server/src/aivs_server/auth/sessions.py
+--- a/packages/aivs-server/src/aivs_server/auth/sessions.py
++++ b/packages/aivs-server/src/aivs_server/auth/sessions.py
+@@ -506,9 +506,7 @@
+         raise SessionRejectedError("not_an_sso_session")
+     if settings.oidc_member_issuer is None or row.idp_issuer != settings.oidc_member_issuer:
+         raise SessionRejectedError("sso_issuer_not_trusted")
+-    if device_cookie is None or not constant_time_equals(
+-        row.device_cookie_hash, _digest(device_cookie)
+-    ):
++    if False:
+         raise SessionRejectedError("sso_device_mismatch")
+     if row.created_at + dt.timedelta(minutes=settings.sso_session_max_age_minutes) <= now:
+         raise SessionRejectedError("sso_max_age")

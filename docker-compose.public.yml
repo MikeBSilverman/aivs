@@ -1,0 +1,25 @@
+# =============================================================================
+# Publish the public member listener: members' people signing in through the
+# ISAC's identity provider over ordinary TLS (Phase M).
+#
+#   docker compose --env-file deploy/.env \
+#     -f docker-compose.yml -f docker-compose.public.yml up -d
+#
+# Opt-in on purpose. Without this file the proxy still configures the listener
+# (8444 inside the container), but nothing outside the host can reach it, so
+# an ISAC that has not configured member SSO exposes nothing new. With it, the
+# listener serves the member portal and its SSO sign-in only; everything else
+# is a 404 from nginx (deploy/nginx/nginx.conf, "Public member listener").
+#
+# Configure member SSO (AIVS_OIDC_MEMBER_ISSUER, _CLIENT_ID, _CLIENT_SECRET,
+# _REDIRECT_URI) before publishing; the redirect URI is this listener's
+# https://<host>/portal/sso/callback. identity-federation.md has the IdP side.
+#
+#   AIVS_PUBLIC_BIND_ADDRESS   interface to publish on (default all)
+#   AIVS_PUBLIC_BIND_PORT      host port (default 8444; put 443 on its own
+#                              address or hostname in front of it)
+# =============================================================================
+services:
+  proxy:
+    ports:
+      - "${AIVS_PUBLIC_BIND_ADDRESS:-0.0.0.0}:${AIVS_PUBLIC_BIND_PORT:-8444}:8444"

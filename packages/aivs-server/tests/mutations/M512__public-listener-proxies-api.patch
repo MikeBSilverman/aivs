@@ -1,0 +1,20 @@
+Mutation M512: the public listener proxies the API
+Re-applies: (T8, uncommitted) "Member sign-in through the ISAC's identity provider"
+
+Expect red: packages/aivs-server/tests/unit/test_proxy_config.py::test_everything_else_on_the_public_listener_is_answered_by_nginx
+
+diff --git a/deploy/nginx/nginx.conf b/deploy/nginx/nginx.conf
+--- a/deploy/nginx/nginx.conf
++++ b/deploy/nginx/nginx.conf
+@@ -496,6 +496,11 @@
+             proxy_pass  http://aivs_app;
+         }
+ 
++        location /api/ {
++            include     /etc/nginx/snippets/aivs-identity-headers.conf;
++            proxy_pass  http://aivs_app;
++        }
++
+         # Everything else: not served on this listener, and never proxied.
+         location / {
+             default_type  text/plain;

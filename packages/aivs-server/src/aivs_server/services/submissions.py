@@ -27,6 +27,7 @@ from typing import Any, Final
 from sqlalchemy import delete, func, select
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from aivs_schemas.enums import (
     TLP,
@@ -906,7 +907,12 @@ async def load_submission(
     lock alone does not -- the guards would otherwise run on the state the
     request first read.
     """
-    query = select(Submission).where(Submission.id == submission_id)
+    # The embargo with it: the TLP ceiling reads it (policy.submission_within_ceiling).
+    query = (
+        select(Submission)
+        .where(Submission.id == submission_id)
+        .options(selectinload(Submission.embargo))
+    )
     if for_update:
         query = query.with_for_update().execution_options(populate_existing=True)
     return (await session.execute(query)).scalar_one_or_none()

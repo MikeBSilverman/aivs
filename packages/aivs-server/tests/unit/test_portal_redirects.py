@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from aivs_server.portal.shared import redirect_within_portal
+from aivs_server.portal.shared import redirect_to_identity_provider, redirect_within_portal
 
 PORTAL = Path(__file__).resolve().parents[2] / "src" / "aivs_server" / "portal"
 
@@ -45,3 +45,30 @@ def test_no_portal_module_builds_its_own_redirect():
         if module.name != "shared.py" and "RedirectResponse(" in module.read_text("utf-8")
     ]
     assert builders == []
+
+
+_ISSUER = "https://idp.member-tenant.test/oauth2/default"
+
+
+@pytest.mark.requirement("SF-65")
+def test_the_identity_providers_own_authorization_endpoint_is_a_redirect():
+    url = "https://idp.member-tenant.test/oauth2/default/v1/authorize?state=s"
+    response = redirect_to_identity_provider(url, _ISSUER)
+    assert response.status_code == 303
+    assert response.headers["location"] == url
+
+
+@pytest.mark.requirement("SF-65")
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://idp.member-tenant.test/oauth2/default/v1/authorize",
+        "https://elsewhere.test/authorize",
+        "https://idp.member-tenant.test@elsewhere.test/authorize",
+        "https://idp.member-tenant.test.elsewhere.test/authorize",
+        "//elsewhere.test/authorize",
+    ],
+)
+def test_an_authorization_endpoint_off_the_issuers_origin_is_refused(url):
+    with pytest.raises(ValueError, match="identity provider's origin"):
+        redirect_to_identity_provider(url, _ISSUER)

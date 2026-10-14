@@ -1,0 +1,21 @@
+Mutation M517: the sign-in redirect follows any https authorization endpoint the discovery document names
+Re-applies: (T8, uncommitted) "Member sign-in through the ISAC's identity provider"
+
+Expect red: packages/aivs-server/tests/unit/test_portal_redirects.py::test_an_authorization_endpoint_off_the_issuers_origin_is_refused
+Expect red: packages/aivs-server/tests/unit/test_member_sso.py::test_an_authorization_endpoint_off_the_issuers_origin_is_never_redirected_to
+
+diff --git a/packages/aivs-server/src/aivs_server/portal/shared.py b/packages/aivs-server/src/aivs_server/portal/shared.py
+--- a/packages/aivs-server/src/aivs_server/portal/shared.py
++++ b/packages/aivs-server/src/aivs_server/portal/shared.py
+@@ -299,10 +299,7 @@
+     somewhere else.
+     """
+     target, trusted = urlsplit(authorize_url), urlsplit(issuer)
+-    is_issuer_origin = target.scheme == "https" and (target.scheme, target.netloc) == (
+-        trusted.scheme,
+-        trusted.netloc,
+-    )
++    is_issuer_origin = target.scheme == "https"
+     if not is_issuer_origin:
+         msg = f"refusing to redirect off the identity provider's origin: {authorize_url!r}"
+         raise ValueError(msg)

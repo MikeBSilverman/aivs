@@ -694,7 +694,16 @@ def _parse_distribute_form(form: Any) -> tuple[list[uuid.UUID], dt.datetime | No
         message = "the hold-until time could not be read"
         raise SubmissionError(message) from exc
 
-    return circle_ids, release_at.replace(tzinfo=dt.UTC)
+    if release_at.tzinfo is None:
+        return circle_ids, release_at.replace(tzinfo=dt.UTC)
+    # A value carrying an offset (a hand-built form, or a client that sends
+    # one) is converted, not relabelled: replacing the zone moved the embargo
+    # by the offset, silently.
+    try:
+        return circle_ids, release_at.astimezone(dt.UTC)
+    except OverflowError as exc:
+        message = "the hold-until time is past the latest an embargo can hold"
+        raise SubmissionError(message) from exc
 
 
 @router.post("/submissions/{submission_id}/{verb}")

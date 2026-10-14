@@ -12,6 +12,7 @@ form parsing, and template rendering.
 
 from __future__ import annotations
 
+import datetime as dt
 import json
 import re
 import uuid
@@ -20,6 +21,7 @@ import pyotp
 import pytest
 from sqlalchemy import func, select
 from sqlalchemy.exc import DataError
+from starlette.datastructures import FormData
 
 from aivs_schemas.enums import OperatorRole, OrgType
 from aivs_server.audit.log import AuditAction
@@ -845,3 +847,20 @@ async def test_a_failed_sign_in_audits_a_reference_to_the_account_not_the_addres
     references = [row.details["account"] for row in rows]
     assert references[0] == references[1], "the same account correlates"
     assert references[2] != references[0], "a different account does not"
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("2030-01-01T12:00", dt.datetime(2030, 1, 1, 12, 0, tzinfo=dt.UTC)),
+        ("2030-01-01T12:00:00-05:00", dt.datetime(2030, 1, 1, 17, 0, tzinfo=dt.UTC)),
+    ],
+    ids=["as-labelled-utc", "offset-converted"],
+)
+def test_the_hold_until_time_is_read_as_utc_and_an_offset_is_converted(value, expected):
+    """Relabelling a supplied offset as UTC moved the embargo by the offset, silently."""
+    form = FormData([("circle_ids", str(uuid.uuid4())), ("release_at", value)])
+
+    _circles, release_at = portal_routes._parse_distribute_form(form)
+
+    assert release_at == expected

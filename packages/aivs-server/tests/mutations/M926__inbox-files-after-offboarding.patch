@@ -1,0 +1,17 @@
+Mutation M926: an inbox post in flight is filed after its organisation is offboarded
+Re-applies: the inbox trusting the request's context
+
+Expect red: packages/aivs-server/tests/unit/test_offboarding_races.py::test_an_inbox_post_in_flight_is_refused_after_offboarding
+
+diff --git a/packages/aivs-server/src/aivs_server/services/inbox.py b/packages/aivs-server/src/aivs_server/services/inbox.py
+--- a/packages/aivs-server/src/aivs_server/services/inbox.py
++++ b/packages/aivs-server/src/aivs_server/services/inbox.py
+@@ -86,7 +86,7 @@ async def receive_envelope(
+     collection.
+     """
+     objects = _objects_of(envelope)
+-    if not await org_still_active(session, ctx.org_id):
++    if False:
+         denial = "inbox_org_not_active"
+         raise PolicyDeniedError(denial)
+     if not await within_hourly_allowance(session, ctx.org_id, limit=hourly_limit, now=now):

@@ -1,0 +1,16 @@
+Mutation M927: a roster read before the circle lock adds an organisation offboarded since
+Re-applies: statuses checked only on the pre-lock read
+
+Expect red: packages/aivs-server/tests/unit/test_offboarding_races.py::test_a_roster_read_before_offboarding_adds_no_membership
+
+diff --git a/packages/aivs-server/src/aivs_server/services/circles.py b/packages/aivs-server/src/aivs_server/services/circles.py
+--- a/packages/aivs-server/src/aivs_server/services/circles.py
++++ b/packages/aivs-server/src/aivs_server/services/circles.py
+@@ -313,7 +313,6 @@ async def add_circle_members(
+     # Again on rows share-locked now: the statuses above were read before the
+     # lock, and an offboarding committing in between would otherwise leave an
+     # offboarded firm with an open interval nothing ever closes.
+-    _refuse_unsafe_additions(await _locked_for_share(session, organisations), joined_at, now)
+     existing = await _open_memberships(session, circle.id)
+     if joined_at is not None:
+         await _refuse_starts_in_a_gap(session, circle.id, existing, organisations, joined_at, now)

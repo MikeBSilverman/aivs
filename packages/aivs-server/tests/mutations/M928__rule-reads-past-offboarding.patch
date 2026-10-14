@@ -1,0 +1,16 @@
+Mutation M928: a rule reconciling during an offboarding reads the firm as active
+Re-applies: the rule's match without a shared lock
+
+Expect red: packages/aivs-server/tests/unit/test_offboarding_races.py::test_a_rule_reconciling_during_offboarding_waits_and_leaves_the_firm_out
+
+diff --git a/packages/aivs-server/src/aivs_server/services/circles.py b/packages/aivs-server/src/aivs_server/services/circles.py
+--- a/packages/aivs-server/src/aivs_server/services/circles.py
++++ b/packages/aivs-server/src/aivs_server/services/circles.py
+@@ -428,7 +428,6 @@ async def _orgs_matching_rule(session: AsyncSession, circle: Circle) -> set[uuid
+                 # Shared row locks, so an offboarding or quarantine committing
+                 # meanwhile is waited for and its status read: without them a
+                 # rule opened an interval for a firm offboarded a moment before.
+-                .with_for_update(read=True)
+             )
+         )
+         .scalars()

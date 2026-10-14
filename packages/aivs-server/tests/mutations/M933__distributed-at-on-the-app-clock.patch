@@ -1,0 +1,17 @@
+Mutation M933: distributed_at is stamped from the app process's clock
+Re-applies: record_transition before the database clock
+
+Expect red: packages/aivs-server/tests/unit/test_one_clock.py::test_distributed_at_is_stamped_on_the_database_clock
+
+diff --git a/packages/aivs-server/src/aivs_server/services/submissions.py b/packages/aivs-server/src/aivs_server/services/submissions.py
+--- a/packages/aivs-server/src/aivs_server/services/submissions.py
++++ b/packages/aivs-server/src/aivs_server/services/submissions.py
+@@ -841,7 +841,7 @@ async def record_transition(
+     if target is SubmissionState.DISTRIBUTED and submission.distributed_at is None:
+         # The database clock: the hourly allowance compares this with a
+         # database "now", and two clocks put the window off by their skew.
+-        submission.distributed_at = await database_now(session)
++        submission.distributed_at = dt.datetime.now(dt.UTC)
+ 
+     session.add(
+         SubmissionTransition(

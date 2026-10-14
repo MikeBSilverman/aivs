@@ -1,0 +1,18 @@
+Mutation M929: a NUL in a one-click target or posture id reaches the database
+Re-applies: unbounded id fields
+
+Expect red: packages/aivs-server/tests/unit/test_one_click.py::test_a_nul_in_the_target_is_the_members_400
+Expect red: packages/aivs-server/tests/unit/test_vex.py::test_a_nul_in_the_vulnerability_id_is_the_members_400
+
+diff --git a/packages/aivs-server/src/aivs_server/api/contributions.py b/packages/aivs-server/src/aivs_server/api/contributions.py
+--- a/packages/aivs-server/src/aivs_server/api/contributions.py
++++ b/packages/aivs-server/src/aivs_server/api/contributions.py
+@@ -93,7 +93,7 @@ class ContributionOut(BaseModel):
+ 
+ #: A STIX id as a member sends it: one line, no control characters. A NUL in
+ #: it reached PostgreSQL as a server error rather than a 400 for the member.
+-_ObjectId = Annotated[str, Field(min_length=1, max_length=100, pattern=r"^[^\x00-\x1f\x7f]+$")]
++_ObjectId = Annotated[str, Field(min_length=1, max_length=100)]
+ #: Prose a member writes for itself and its regulator: multi-line, bounded, and
+ #: free of NUL, which PostgreSQL refuses in text and would otherwise turn a
+ #: member's typo into a server error.

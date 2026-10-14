@@ -1,0 +1,17 @@
+Mutation M923: a posture in flight is written after its organisation is offboarded
+Re-applies: the posture upsert trusting the request's context
+
+Expect red: packages/aivs-server/tests/unit/test_offboarding_races.py::test_a_posture_in_flight_is_refused_after_offboarding
+
+diff --git a/packages/aivs-server/src/aivs_server/services/posture.py b/packages/aivs-server/src/aivs_server/services/posture.py
+--- a/packages/aivs-server/src/aivs_server/services/posture.py
++++ b/packages/aivs-server/src/aivs_server/services/posture.py
+@@ -128,7 +128,7 @@ async def record_posture(
+     problem = vex_problem(statement)
+     if problem is not None:
+         raise PostureError(problem)
+-    if not await org_still_active(session, ctx.org_id):
++    if False:
+         denial = "posture_org_not_active"
+         raise PolicyDeniedError(denial)
+ 

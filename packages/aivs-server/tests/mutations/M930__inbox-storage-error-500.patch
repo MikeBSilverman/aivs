@@ -1,0 +1,18 @@
+Mutation M930: a TAXII inbox envelope the database refuses answers 500
+Re-applies: the inbox mapping content errors only
+
+Expect red: packages/aivs-server/tests/unit/test_taxii_inbox.py::test_an_envelope_the_database_cannot_store_is_the_platforms_400
+
+diff --git a/packages/aivs-server/src/aivs_server/taxii/router.py b/packages/aivs-server/src/aivs_server/taxii/router.py
+--- a/packages/aivs-server/src/aivs_server/taxii/router.py
++++ b/packages/aivs-server/src/aivs_server/taxii/router.py
+@@ -674,7 +674,8 @@ async def add_objects(
+         ) from None
+     except INBOX_CLIENT_ERRORS as exc:
+         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+-    except STORAGE_ERRORS as exc:
++    except ():  # type: ignore[misc]
++        exc = None
+         # A value the database refuses (a NUL, a string past its column) is the
+         # platform's malformed envelope, as on every other ingest path: a 400.
+         await session.rollback()

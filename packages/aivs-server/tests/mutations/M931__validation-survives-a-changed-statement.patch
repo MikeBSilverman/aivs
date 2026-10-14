@@ -1,0 +1,17 @@
+Mutation M931: a validation survives a change to the statement it vouched for
+Re-applies: validation voided by a status change only
+
+Expect red: packages/aivs-server/tests/unit/test_vex.py::test_a_changed_statement_voids_the_validation_of_the_old_one
+
+diff --git a/packages/aivs-server/src/aivs_server/services/posture.py b/packages/aivs-server/src/aivs_server/services/posture.py
+--- a/packages/aivs-server/src/aivs_server/services/posture.py
++++ b/packages/aivs-server/src/aivs_server/services/posture.py
+@@ -179,7 +179,7 @@ def _apply(row: OrgPosture, statement: VexStatement, *, now: dt.datetime) -> Non
+     """
+     if statement.validated:
+         row.validated_at = now
+-    elif _statement_of(row) != _statement_without_ours(statement):
++    elif row.status is not statement.status:
+         row.validated_at = None
+     row.status = statement.status
+     row.justification = statement.justification

@@ -1,0 +1,17 @@
+Mutation M925: a login in flight gets a session after its organisation is offboarded
+Re-applies: establish_session trusting the credential check
+
+Expect red: packages/aivs-server/tests/unit/test_offboarding_races.py::test_a_login_in_flight_gets_no_session_after_offboarding
+
+diff --git a/packages/aivs-server/src/aivs_server/auth/sessions.py b/packages/aivs-server/src/aivs_server/auth/sessions.py
+--- a/packages/aivs-server/src/aivs_server/auth/sessions.py
++++ b/packages/aivs-server/src/aivs_server/auth/sessions.py
+@@ -238,7 +238,7 @@ async def establish_session(
+     that authenticates on its own.
+     """
+     now = now or dt.datetime.now(dt.UTC)
+-    if not await org_still_active(session, operator.org_id):
++    if False:
+         # Credentials checked while active; offboarded or cut off since.
+         raise SessionRejectedError("org_not_active")
+     token = generate_session_token()

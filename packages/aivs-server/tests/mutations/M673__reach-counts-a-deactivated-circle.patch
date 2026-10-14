@@ -1,0 +1,17 @@
+Mutation M673: reach counts members of a deactivated circle, who cannot read
+Re-applies: telemetry _reach ignoring Circle.is_active (review R-P2)
+
+Expect red: packages/aivs-server/tests/unit/test_telemetry.py::test_reach_counts_only_organisations_that_could_read_it[circle deactivated]
+Expect red: packages/aivs-server/tests/unit/test_telemetry.py::test_a_count_counts_only_organisations_in_reach
+
+diff --git a/packages/aivs-server/src/aivs_server/services/telemetry.py b/packages/aivs-server/src/aivs_server/services/telemetry.py
+--- a/packages/aivs-server/src/aivs_server/services/telemetry.py
++++ b/packages/aivs-server/src/aivs_server/services/telemetry.py
+@@ -182,7 +182,6 @@ def _reachable(submission: Submission) -> Select[tuple[uuid.UUID]]:
+         .join(TaxiiCollection, readable)
+         .where(
+             Distribution.submission_id == submission.id,
+-            Circle.is_active.is_(True),
+             _is_counted(CircleMembership.org_id, submission.submitter_org_id),
+         )
+     )

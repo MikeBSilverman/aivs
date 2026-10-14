@@ -1,0 +1,16 @@
+Mutation M674: reach counts members whose circle's collection cannot be read
+Re-applies: telemetry _reach ignoring TaxiiCollection.can_read (review R-P2)
+
+Expect red: packages/aivs-server/tests/unit/test_telemetry.py::test_reach_counts_only_organisations_that_could_read_it[collection unreadable]
+
+diff --git a/packages/aivs-server/src/aivs_server/services/telemetry.py b/packages/aivs-server/src/aivs_server/services/telemetry.py
+--- a/packages/aivs-server/src/aivs_server/services/telemetry.py
++++ b/packages/aivs-server/src/aivs_server/services/telemetry.py
+@@ -172,7 +172,6 @@ def _reachable(submission: Submission) -> Select[tuple[uuid.UUID]]:
+     readable = and_(
+         TaxiiCollection.circle_id == Distribution.circle_id,
+         TaxiiCollection.is_active.is_(True),
+-        TaxiiCollection.can_read.is_(True),
+     )
+     return (
+         select(CircleMembership.org_id)

@@ -1,0 +1,20 @@
+Mutation M672: posture withholds only 1..k-1, so a unanimous count and exact zeros are shown
+Re-applies: posture _suppress before it took telemetry's two-sided rule (review R-C2)
+
+Expect red: packages/aivs-server/tests/unit/test_posture.py::test_a_unanimous_status_is_withheld
+Expect red: packages/aivs-server/tests/unit/test_posture.py::test_the_isac_sees_a_count_that_k_have_and_k_do_not
+
+diff --git a/packages/aivs-server/src/aivs_server/services/posture.py b/packages/aivs-server/src/aivs_server/services/posture.py
+--- a/packages/aivs-server/src/aivs_server/services/posture.py
++++ b/packages/aivs-server/src/aivs_server/services/posture.py
+@@ -158,7 +158,9 @@ _TOO_FEW_POSTURES: Final[str] = f"shown once at least {K_ANONYMITY} organisation
+ def _suppress(counts: Mapping[PostureStatus, int]) -> PostureSummary:
+     total = sum(counts.values())
+     by_status = {
+-        status: k_anonymous(counts.get(status, 0), population=total, too_few=_TOO_FEW_POSTURES)
++        status: Count(None, f"fewer than {K_ANONYMITY}")
++        if 0 < counts.get(status, 0) < K_ANONYMITY
++        else Count(counts.get(status, 0))
+         for status in PostureStatus
+     }
+     if total < K_ANONYMITY:

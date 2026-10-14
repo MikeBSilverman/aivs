@@ -1,0 +1,17 @@
+Mutation M675: a count includes organisations outside reach, so all-but-fewer-than-k is measured against the wrong population
+Re-applies: _engaged counting every member that may be counted, not those in reach (review R-P2)
+
+Expect red: packages/aivs-server/tests/unit/test_telemetry.py::test_a_count_counts_only_organisations_in_reach
+
+diff --git a/packages/aivs-server/src/aivs_server/services/telemetry.py b/packages/aivs-server/src/aivs_server/services/telemetry.py
+--- a/packages/aivs-server/src/aivs_server/services/telemetry.py
++++ b/packages/aivs-server/src/aivs_server/services/telemetry.py
+@@ -200,7 +200,7 @@ async def _engaged(session: AsyncSession, submission: Submission, ack_type: AckT
+             select(func.count(distinct(Acknowledgment.org_id))).where(
+                 Acknowledgment.submission_id == submission.id,
+                 Acknowledgment.ack_type == ack_type,
+-                Acknowledgment.org_id.in_(_reachable(submission)),
++                _is_counted(Acknowledgment.org_id, submission.submitter_org_id),
+             )
+         )
+         or 0

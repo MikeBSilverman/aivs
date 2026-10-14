@@ -1,4 +1,4 @@
-Mutation M424: counts are shown whatever the total
+Mutation M424: the total is shown whatever its size
 Re-applies: Phase E slice 4 (T7) -- the guard's absence
 
 Expect red: packages/aivs-server/tests/unit/test_posture.py::test_below_k_the_isac_sees_nothing
@@ -6,12 +6,12 @@ Expect red: packages/aivs-server/tests/unit/test_posture.py::test_below_k_the_is
 diff --git a/packages/aivs-server/src/aivs_server/services/posture.py b/packages/aivs-server/src/aivs_server/services/posture.py
 --- a/packages/aivs-server/src/aivs_server/services/posture.py
 +++ b/packages/aivs-server/src/aivs_server/services/posture.py
-@@ -103,7 +103,7 @@
- 
- def _suppress(counts: Mapping[PostureStatus, int]) -> PostureSummary:
-     total = sum(counts.values())
+@@ -161,7 +161,7 @@ def _suppress(counts: Mapping[PostureStatus, int]) -> PostureSummary:
+         status: k_anonymous(counts.get(status, 0), population=total, too_few=_TOO_FEW_POSTURES)
+         for status in PostureStatus
+     }
 -    if total < K_ANONYMITY:
 +    if False:
-         withheld = Count(None, f"shown once at least {K_ANONYMITY} organisations have one")
-         return PostureSummary(withheld, dict.fromkeys(PostureStatus, withheld))
-     by_status = {
+         return PostureSummary(Count(None, _TOO_FEW_POSTURES), by_status)
+     # A total beside one withheld count gives the withheld one away by subtraction.
+     any_withheld = any(count.value is None for count in by_status.values())

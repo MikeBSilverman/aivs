@@ -2,6 +2,7 @@ Mutation M703: reach counts organisations that cannot read
 Re-applies: suspended and quarantined firms counted toward k
 
 Expect red: packages/aivs-server/tests/unit/test_telemetry.py::test_an_organisation_that_cannot_read_is_not_reach
+Expect red: packages/aivs-server/tests/unit/test_posture.py::test_only_active_members_are_counted
 
 diff --git a/packages/aivs-server/src/aivs_server/services/telemetry.py b/packages/aivs-server/src/aivs_server/services/telemetry.py
 --- a/packages/aivs-server/src/aivs_server/services/telemetry.py

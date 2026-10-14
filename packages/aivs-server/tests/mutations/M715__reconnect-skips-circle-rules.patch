@@ -1,0 +1,17 @@
+Mutation M715: reconnection writes active without reconciling circle rules
+Re-applies: L-P2, reconnect_org before 2d8bb0c
+
+Expect red: packages/aivs-server/tests/unit/test_quarantine.py::test_reconnection_reconciles_circle_rules_like_any_activation
+
+diff --git a/packages/aivs-server/src/aivs_server/services/quarantine.py b/packages/aivs-server/src/aivs_server/services/quarantine.py
+--- a/packages/aivs-server/src/aivs_server/services/quarantine.py
++++ b/packages/aivs-server/src/aivs_server/services/quarantine.py
+@@ -264,7 +264,7 @@ async def reconnect_org(
+     # any interval reopened above. Reconnection writes ``active`` as surely as
+     # activation does, so a rule written during the quarantine applies now.
+     await session.flush()
+-    touched = await reconcile_circles_for_org(session, ctx, organisation=organisation)
++    touched: list[uuid.UUID] = []
+     await record(
+         session,
+         action=AuditAction.ORG_RECONNECTED,

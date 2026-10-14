@@ -1,0 +1,15 @@
+Mutation M711: load_submission(for_update=True) returns the identity map's stale submission
+Re-applies: L-C2, services/submissions.py before 1dc2b15
+
+Expect red: packages/aivs-server/tests/unit/test_locked_loads.py::test_a_locked_submission_load_reads_a_state_committed_since_the_first_read
+
+diff --git a/packages/aivs-server/src/aivs_server/services/submissions.py b/packages/aivs-server/src/aivs_server/services/submissions.py
+--- a/packages/aivs-server/src/aivs_server/services/submissions.py
++++ b/packages/aivs-server/src/aivs_server/services/submissions.py
+@@ -902,5 +902,5 @@ async def load_submission(
+     """
+     query = select(Submission).where(Submission.id == submission_id)
+     if for_update:
+-        query = query.with_for_update().execution_options(populate_existing=True)
++        query = query.with_for_update()
+     return (await session.execute(query)).scalar_one_or_none()

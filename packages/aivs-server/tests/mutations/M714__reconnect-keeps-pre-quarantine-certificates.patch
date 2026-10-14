@@ -1,0 +1,17 @@
+Mutation M714: reconnection leaves active a certificate registered before the quarantine
+Re-applies: L-C1, reconnect_org before 2d8bb0c
+
+Expect red: packages/aivs-server/tests/unit/test_quarantine.py::test_reconnection_revokes_every_certificate_older_than_the_quarantine
+
+diff --git a/packages/aivs-server/src/aivs_server/services/quarantine.py b/packages/aivs-server/src/aivs_server/services/quarantine.py
+--- a/packages/aivs-server/src/aivs_server/services/quarantine.py
++++ b/packages/aivs-server/src/aivs_server/services/quarantine.py
+@@ -253,7 +253,7 @@ async def reconnect_org(
+             "connect -- or, if one were reinstated, on credentials that may be compromised"
+         )
+         raise QuarantineError(msg)
+-    stale = await _revoke_older_than_the_quarantine(session, organisation, now)
++    stale = 0
+     if backlog is QuarantineBacklog.NEW_INTERVAL:
+         await _close_the_gap(session, organisation, now)
+ 

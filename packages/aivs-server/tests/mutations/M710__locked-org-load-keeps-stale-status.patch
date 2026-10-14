@@ -1,0 +1,18 @@
+Mutation M710: load_org_for_update takes the lock but returns the identity map's stale organisation
+Re-applies: L-C2, services/org_status.py before 1dc2b15
+
+Expect red: packages/aivs-server/tests/unit/test_locked_loads.py::test_a_self_quarantine_after_a_suspension_reads_the_suspension
+Expect red: packages/aivs-server/tests/unit/test_quarantine.py::test_a_registration_queued_behind_a_quarantine_is_decided_on_the_locked_status[member_admin]
+
+diff --git a/packages/aivs-server/src/aivs_server/services/org_status.py b/packages/aivs-server/src/aivs_server/services/org_status.py
+--- a/packages/aivs-server/src/aivs_server/services/org_status.py
++++ b/packages/aivs-server/src/aivs_server/services/org_status.py
+@@ -37,7 +37,7 @@ async def load_org_for_update(session: AsyncSession, org_id: uuid.UUID) -> Organ
+     quarantining itself after the ISAC suspended it read ``active``, and wrote
+     ``quarantined`` over ``suspended``.
+     """
+-    return await session.get(Organization, org_id, with_for_update=True, populate_existing=True)
++    return await session.get(Organization, org_id, with_for_update=True)
+ 
+ 
+ def _refusal(organisation: Organization) -> str | None:

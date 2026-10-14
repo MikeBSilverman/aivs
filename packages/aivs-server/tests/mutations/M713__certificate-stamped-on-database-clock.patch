@@ -1,0 +1,16 @@
+Mutation M713: a certificate's created_at is the database's transaction start, compared with the app-clock quarantined_at
+Re-applies: L-C1, services/certificates.py before 2d8bb0c
+
+Expect red: packages/aivs-server/tests/unit/test_quarantine.py::test_a_certificate_registered_after_the_quarantine_committed_is_fresh
+
+diff --git a/packages/aivs-server/src/aivs_server/services/certificates.py b/packages/aivs-server/src/aivs_server/services/certificates.py
+--- a/packages/aivs-server/src/aivs_server/services/certificates.py
++++ b/packages/aivs-server/src/aivs_server/services/certificates.py
+@@ -109,7 +109,6 @@ async def register_certificate(
+         not_after=certificate.not_valid_after_utc,
+         status=CertStatus.ACTIVE,
+         label=label,
+-        created_at=now,
+     )
+     session.add(row)
+     await record(

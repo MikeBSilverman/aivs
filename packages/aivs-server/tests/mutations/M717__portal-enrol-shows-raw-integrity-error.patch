@@ -1,0 +1,22 @@
+Mutation M717: the portal's enrolment refusal shows the IntegrityError text: SQL, parameters, constraint names
+Re-applies: L-P5, portal/admin_routes.py before fdf05ca
+
+Expect red: packages/aivs-server/tests/unit/test_portal_admin.py::test_a_refused_enrolment_says_why_without_the_databases_words
+
+diff --git a/packages/aivs-server/src/aivs_server/portal/admin_routes.py b/packages/aivs-server/src/aivs_server/portal/admin_routes.py
+--- a/packages/aivs-server/src/aivs_server/portal/admin_routes.py
++++ b/packages/aivs-server/src/aivs_server/portal/admin_routes.py
+@@ -199,11 +199,9 @@ async def enrol_org(
+         problems = "; ".join(str(error["msg"]) for error in exc.errors())
+         set_notice(response, settings, "error", f"Could not enrol {slug}: {problems}")
+         return response
+-    except IntegrityError:
+-        # Its own words, never the exception's: those carry the SQL statement,
+-        # its parameters and constraint names. The API says the same.
++    except IntegrityError as exc:
+         await session.rollback()
+-        set_notice(response, settings, "error", f"Could not enrol {slug}: {_ENROLMENT_CONFLICT}")
++        set_notice(response, settings, "error", f"Could not enrol {slug}: {exc}")
+         return response
+ 
+     set_notice(response, settings, "info", f"Enrolled {slug}. Activate it to grant access.")

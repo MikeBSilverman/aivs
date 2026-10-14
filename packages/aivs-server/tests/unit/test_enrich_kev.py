@@ -31,7 +31,7 @@ from aivs_schemas.extension.builders import (
     AIVS_PROVENANCE_EXTENSION_ID,
 )
 from aivs_schemas.tlp import marking_id_for
-from aivs_server.db.models import StixObject, Submission
+from aivs_server.db.models import InstanceControl, StixObject, Submission
 from aivs_server.services.provenance import reviewer_identity_id, stamp_review
 from tests.conftest import proxy_headers
 from tests.unit.contribution_world import STAMP, distribute, file, seed, submit_and_validate
@@ -303,6 +303,54 @@ async def test_nobody_but_the_automation_reads_them(
 
     for headers in (proxy_headers(pem), editor, proxy_headers(isac_pem)):
         assert (await client.get(RECORDS, headers=headers)).status_code == 404
+
+
+@pytest.mark.db
+async def test_nothing_is_read_while_distribution_is_paused(
+    client, session, isac_org, make_circle, automation_pem
+):
+    """The script runs unattended, and a stop button stops it too."""
+    circle = await make_circle("kev")
+    await seed(session, isac_org, isac_record(isac_org.stix_identity_id), circle=circle)
+    control = await session.get(InstanceControl, 1) or InstanceControl(id=1)
+    control.distribution_paused = True
+    session.add(control)
+    await session.commit()
+
+    assert await _read_records(client, proxy_headers(automation_pem)) == []
+
+
+@pytest.mark.db
+async def test_a_withdrawn_record_is_not_read(
+    client, session, isac_org, make_circle, automation_pem
+):
+    circle = await make_circle("kev")
+    await seed(
+        session,
+        isac_org,
+        isac_record(isac_org.stix_identity_id),
+        circle=circle,
+        state=SubmissionState.WITHDRAWN,
+    )
+
+    assert await _read_records(client, proxy_headers(automation_pem)) == []
+
+
+@pytest.mark.db
+async def test_a_person_at_the_automation_organisation_reads_nothing(
+    client, session, isac_org, make_circle, make_org, make_cert, make_operator, human_headers
+):
+    """The read is the automation's machine identity, not a door for a session."""
+    circle = await make_circle("kev")
+    await seed(session, isac_org, isac_record(isac_org.stix_identity_id), circle=circle)
+    automation = await make_org("isac-automation", org_type=OrgType.AUTOMATION)
+    pem, _ = await make_cert(automation)
+    operator, _seed = await make_operator(automation)
+
+    response = await client.get(RECORDS, headers=await human_headers(operator, pem))
+
+    assert response.status_code == 404
+    assert (await client.get(RECORDS, headers=proxy_headers(pem))).status_code == 200
 
 
 async def _embargo(session, submission: Submission) -> None:

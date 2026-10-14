@@ -1,4 +1,4 @@
-Mutation M615: the automation's read returns every version, not the newest
+Mutation M615: the automation's read returns an older version, not the newest
 Re-applies: the newest-version selection's absence
 
 Expect red: packages/aivs-server/tests/unit/test_enrich_kev.py::test_only_the_newest_version_is_read
@@ -6,12 +6,12 @@ Expect red: packages/aivs-server/tests/unit/test_enrich_kev.py::test_only_the_ne
 diff --git a/packages/aivs-server/src/aivs_server/services/isac_records.py b/packages/aivs-server/src/aivs_server/services/isac_records.py
 --- a/packages/aivs-server/src/aivs_server/services/isac_records.py
 +++ b/packages/aivs-server/src/aivs_server/services/isac_records.py
-@@ -43,8 +43,6 @@ def _newest_isac_versions() -> Any:
-             Submission.state.in_(tuple(VISIBLE_SUBMISSION_STATES)),
+@@ -44,7 +44,7 @@ def _newest_isac_versions() -> Any:
              distributed,
          )
--        .distinct(StixObject.stix_id)
+         .distinct(StixObject.stix_id)
 -        .order_by(StixObject.stix_id, StixObject.modified.desc())
++        .order_by(StixObject.stix_id, StixObject.modified)
      )
  
  

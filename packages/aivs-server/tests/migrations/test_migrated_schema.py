@@ -173,6 +173,35 @@ def test_one_hosting_isac_and_rule_eligibility_exist_in_the_migrated_schema(migr
     assert any("rule_admits_eligible_types" in name for name in checks), checks
 
 
+@pytest.mark.parametrize("org_type", ["admin", "automation"])
+def test_the_migrated_schema_refuses_a_second_isac_organisation(migrated_url: str, org_type: str):
+    """Attempted, not looked up by name: a non-unique index, or one with the wrong
+    predicate, of the right name passed the check above."""
+    insert = text(
+        "INSERT INTO organizations (id, name, slug, org_type, status, stix_identity_id) "
+        "VALUES (:id, :slug, :slug, :org_type, 'active', :identity)"
+    )
+
+    def row(index: int) -> dict[str, str]:
+        org_id = f"00000000-0000-4000-8000-0000000001{index:02d}"
+        return {
+            "id": org_id,
+            "slug": f"second-{org_type}-{index}",
+            "org_type": org_type,
+            "identity": f"identity--{org_id}",
+        }
+
+    engine = create_engine(migrated_url)
+    try:
+        with engine.connect() as connection:
+            connection.execute(insert, row(1))
+            with pytest.raises(DBAPIError, match="uq_organizations_one_"):
+                connection.execute(insert, row(2))
+            connection.rollback()
+    finally:
+        engine.dispose()
+
+
 def _declared_enum_labels() -> dict[str, set[str]]:
     """Every native enum type the models declare, with the labels it stores."""
     return {

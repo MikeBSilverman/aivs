@@ -107,8 +107,8 @@ class RouteClass(enum.StrEnum):
     POST_MODERATION = "post moderation"
     #: Filing for a member on its consent: an editor.
     PROXY_FILING = "proxy filing"
-    #: Confirming a filing made in one's name: that member; a reviewer who can
-    #: see it 403.
+    #: Confirming a filing made in one's name: a person at that member; its
+    #: machine certificate, and a reviewer who can see it, 403.
     PROXY_CONFIRM = "proxy confirm"
     #: Signing in and out: the same for every caller.
     SIGN_IN = "sign in"

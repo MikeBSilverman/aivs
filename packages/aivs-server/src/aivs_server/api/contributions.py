@@ -112,7 +112,7 @@ class PostModerationIn(_In):
 
 
 class OnBehalfIn(SubmissionCreate):
-    """A filing an analyst makes for a member, with the member's consent artefact."""
+    """A filing an editor makes for a member, with the member's consent artefact."""
 
     on_behalf_of: uuid.UUID
     consent_sha256: Annotated[str, Field(min_length=64, max_length=64)]
@@ -123,7 +123,7 @@ class OnBehalfIn(SubmissionCreate):
 def _present(submission: Any, ctx: Any) -> SubmissionOut:
     """The submission as this caller may see it: an anonymous submitter to itself alone.
 
-    The rule the submissions API applies, here too: the analyst who filed for
+    The rule the submissions API applies, here too: the editor who filed for
     a member names it, like any ISAC reader, only through the audited reveal.
     """
     out = SubmissionOut.model_validate(submission)

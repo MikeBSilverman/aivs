@@ -55,6 +55,7 @@ __all__ = [
     "can_acknowledge_own_submission",
     "can_administer_circle",
     "can_change_embargo",
+    "can_confirm_proxy_filing",
     "can_manage_org",
     "can_manage_own_webhooks",
     "can_pause_distribution",
@@ -343,6 +344,18 @@ def can_view_submission_receipts(ctx: AuthContext) -> bool:
     beside a list of the four firms.
     """
     return is_active(ctx) and can_review_submissions(ctx)
+
+
+def can_confirm_proxy_filing(ctx: AuthContext, submission: Submission) -> bool:
+    """Confirm a filing an ISAC editor made in this organisation's name (SF-68).
+
+    A person at that organisation, never its machine certificate. The window
+    exists so someone at the member can say "we did not send this"; a
+    collector that confirms whatever arrives would close it unread.
+    """
+    return (
+        is_active(ctx) and submission.submitter_org_id == ctx.org_id and ctx.operator_id is not None
+    )
 
 
 def can_transition_submission(

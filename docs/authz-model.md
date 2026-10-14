@@ -419,7 +419,7 @@ which it versions (KEV status) and cannot reach through a circle.
 | isac records | 404 | 404 | 404 | 404 | 404 | ✓ | 404 | 404 | 404 | 404 |
 | post moderation | 403 | 403 | 403 | 403 | 403 | 403 | 403 | ✓ | 403 | 403 |
 | proxy filing | 403 | 403 | 403 | 403 | 403 | 403 | 403 | ✓ | 403 | 403 |
-| proxy confirm | ✓ | ✓ | ✓ | 404 | 404 | 404 | 403 | 403 | 404 | 404 |
+| proxy confirm | 403 | ✓ | ✓ | 404 | 404 | 404 | 403 | 403 | 404 | 404 |
 | webhook register | ✓ | 403 | ✓ | ✓ | 403 | ✓ | 403 | 403 | 403 | ✓ |
 | webhook delete | ✓ | 403 | ✓ | 404 | 403 | 404 | 403 | 403 | 403 | 404 |
 

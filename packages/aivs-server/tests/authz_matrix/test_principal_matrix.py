@@ -144,8 +144,11 @@ EXPECTED: Mapping[RouteClass, Mapping[Principal, Outcome]] = {
     RouteClass.TAXII_INBOX: {**_allow(*_MEMBER, otherwise=N), P.PEER_MACHINE: F},
     RouteClass.POST_MODERATION: _allow(P.ISAC_EDITOR, otherwise=F),
     RouteClass.PROXY_FILING: _allow(P.ISAC_EDITOR, otherwise=F),
+    # A person at the member confirms; its machine certificate may not, or a
+    # collector confirming whatever arrives would close the window unread.
     RouteClass.PROXY_CONFIRM: {
-        **_allow(*_MEMBER, otherwise=N),
+        **_allow(P.MEMBER_ANALYST, P.MEMBER_ORG_ADMIN, otherwise=N),
+        P.MEMBER_MACHINE: F,
         P.ISAC_ANALYST: F,
         P.ISAC_EDITOR: F,
     },

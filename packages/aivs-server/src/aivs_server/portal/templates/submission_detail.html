@@ -10,6 +10,17 @@
   </p>
 </div>
 
+{% if submission.confirm_by %}
+<div class="card">
+  <h2>Filed in your name by the ISAC</h2>
+  <p>
+    Confirm it if your firm sent this. Withdraw it if not. Unless someone
+    here does one or the other, it may be distributed after
+    <span class="mono">{{ submission.confirm_by }}</span>.
+  </p>
+</div>
+{% endif %}
+
 <div class="card">
   <h2>Summary</h2>
   <p>{{ submission.summary or "No summary supplied." }}</p>

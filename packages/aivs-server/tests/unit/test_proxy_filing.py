@@ -13,16 +13,20 @@ import uuid
 from typing import Any
 
 import pytest
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes
 from sqlalchemy import select
 
 from aivs_schemas.enums import OrgStatus, OrgType, SubmissionState
 from aivs_server.auth.secretbox import SecretPurpose
-from aivs_server.db.models import Submission, Webhook, WebhookDelivery
+from aivs_server.auth.sessions import establish_session
+from aivs_server.db.models import Operator, Submission, Webhook, WebhookDelivery
 from aivs_server.services.proxy_filing import (
     CONFIRM_WITHIN,
     EVENT_FILED_ON_BEHALF,
     awaiting_confirmation_problem,
 )
+from tests.conftest import proxy_headers
 from tests.unit.contribution_world import bundle_of
 from tests.unit.sharing_world import API, SharingWorld, build_sharing_world
 
@@ -120,7 +124,8 @@ async def test_a_filing_with_consent_is_the_members_and_records_who_filed_it(
     assert response.status_code == 201, response.text
     submission = await _stored(session, response)
     assert submission.submitter_org_id == world.member.org.id
-    assert submission.filed_by_operator_id is not None
+    editor = await session.scalar(select(Operator).where(Operator.org_id == world.isac_org.id))
+    assert submission.filed_by_operator_id == editor.id
     assert submission.created_by_operator_id is None
     assert submission.proxy_consent_sha256 == CONSENT
     assert submission.state is SubmissionState.SUBMITTED
@@ -265,6 +270,100 @@ async def test_only_the_member_confirms_the_editor_is_refused_and_others_see_not
     assert by_reader.status_code == absent.status_code == 404
     await session.refresh(submission)
     assert submission.proxy_confirmed_at is None
+
+
+@pytest.mark.requirement("SF-68")
+async def test_the_members_machine_certificate_cannot_confirm_only_a_person_can(
+    client, session, world
+):
+    """A collector that confirmed whatever arrived would close the window unread."""
+    submission = await _stored(session, await file_for(client, world, world.member.org.id))
+    path = f"{API}/submissions/{submission.id}/confirm"
+
+    by_machine = await client.post(path, json={}, headers=world.member.machine)
+    await session.refresh(submission)
+    unconfirmed = submission.proxy_confirmed_at
+    by_person = await client.post(path, json={}, headers=world.member.person)
+
+    assert by_machine.status_code == 403
+    assert unconfirmed is None
+    assert by_person.status_code == 200, by_person.text
+
+
+# ---------------------------------------------------------------------------
+# The portal: the notice that needs no webhook
+# ---------------------------------------------------------------------------
+async def _signed_in(client, session, settings, world) -> str:
+    """The member's analyst signed in to the portal; returns the form token."""
+    certificate = x509.load_pem_x509_certificate(world.member.pem.encode("ascii"))
+    established = await establish_session(
+        session,
+        settings,
+        operator=world.member.operator,
+        cert_fingerprint=certificate.fingerprint(hashes.SHA256()).hex(),
+    )
+    await session.commit()
+    client.cookies.set(settings.session_cookie_name, established.token)
+    return established.csrf_token
+
+
+@pytest.mark.requirement("SF-68")
+async def test_a_member_with_no_webhook_sees_the_filing_on_its_dashboard(
+    client, session, settings, world
+):
+    submission = await _stored(
+        session, await file_for(client, world, world.member.org.id, title="Sent by email")
+    )
+    await _signed_in(client, session, settings, world)
+
+    page = await client.get("/portal/", headers=proxy_headers(world.member.pem))
+
+    assert page.status_code == 200
+    assert "Filed in your name" in page.text
+    assert f"/portal/submissions/{submission.id}" in page.text
+
+
+@pytest.mark.requirement("SF-68")
+async def test_a_person_confirms_from_the_portal_and_the_dashboard_stops_asking(
+    client, session, settings, world
+):
+    submission = await _stored(session, await file_for(client, world, world.member.org.id))
+    csrf = await _signed_in(client, session, settings, world)
+    headers = proxy_headers(world.member.pem)
+
+    detail = await client.get(f"/portal/submissions/{submission.id}", headers=headers)
+    confirmed = await client.post(
+        f"/portal/submissions/{submission.id}/confirm",
+        data={"csrf_token": csrf},
+        headers=headers,
+    )
+    dashboard = await client.get("/portal/", headers=headers)
+
+    assert "Confirm we sent this" in detail.text
+    assert confirmed.status_code == 303, confirmed.text
+    await session.refresh(submission)
+    assert submission.proxy_confirmed_at is not None
+    assert "Filed in your name" not in dashboard.text
+
+
+async def test_the_dashboard_does_not_ask_about_a_filing_the_member_made_itself(
+    client, session, settings, world
+):
+    await client.post(
+        f"{API}/submissions",
+        json={
+            "title": "Filed by the member",
+            "discovery_scope": "own_estate",
+            "tlp": "amber",
+            "bundle": _finding(),
+        },
+        headers=world.member.person,
+    )
+    await _signed_in(client, session, settings, world)
+
+    page = await client.get("/portal/", headers=proxy_headers(world.member.pem))
+
+    assert "Filed in your name" not in page.text
 
 
 @pytest.mark.requirement("SF-68")

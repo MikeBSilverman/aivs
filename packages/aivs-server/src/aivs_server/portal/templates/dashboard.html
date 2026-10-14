@@ -7,6 +7,30 @@
   <p>{{ org_name }}</p>
 </div>
 
+{% if to_confirm %}
+<div class="card">
+  <h2>Filed in your name: confirm or withdraw</h2>
+  <p class="muted">
+    The ISAC filed these for your firm, from something it says you sent. Each
+    goes to members only once someone here confirms it, or after the time
+    shown if nobody does. Withdraw any your firm did not send.
+  </p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Filing</th><th>Goes ahead unless withdrawn after</th></tr></thead>
+      <tbody>
+        {% for item in to_confirm %}
+          <tr>
+            <td><a href="/portal/submissions/{{ item.id }}">{{ item.title }}</a></td>
+            <td class="nowrap muted mono">{{ item.confirm_by }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
 <div class="grid">
   <div class="stat">
     <div class="value">{{ stats.available }}</div>

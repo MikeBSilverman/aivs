@@ -31,6 +31,7 @@ from aivs_server.audit.log import AuditAction, account_reference, record_indepen
 from aivs_server.auth.context import AuthContext
 from aivs_server.auth.deps import SessionDep, SettingsDep, request_source_ip
 from aivs_server.auth.policy import (
+    can_confirm_proxy_filing,
     can_review_submissions,
     can_transition_submission,
     can_view_submission,
@@ -76,6 +77,7 @@ from aivs_server.portal.submitter_view import lint_hits, telemetry_rows
 from aivs_server.services.contributions import submit_submission
 from aivs_server.services.distribution import DistributionError, distribute_submission
 from aivs_server.services.provenance import consequential_changes
+from aivs_server.services.proxy_filing import awaiting_confirmation, confirm_proxy_filing
 from aivs_server.services.publication import PublicationPausedError
 from aivs_server.services.submissions import (
     STORAGE_ERRORS,
@@ -359,6 +361,7 @@ async def dashboard(request: Request, settings: SettingsDep, session: SessionDep
     context = base_context(request, settings, ctx, await operator_name(session, ctx), "dashboard")
     context.update(
         {
+            "to_confirm": await _filed_for_you(session, ctx, now),
             "org_name": organization.name if organization else ctx.org_slug,
             "stats": {
                 "available": available,
@@ -370,6 +373,31 @@ async def dashboard(request: Request, settings: SettingsDep, session: SessionDep
         }
     )
     return render(request, "dashboard.html", context)
+
+
+async def _filed_for_you(
+    session: SessionDep, ctx: AuthContext, now: dt.datetime
+) -> list[dict[str, Any]]:
+    """Filings the ISAC made in this firm's name that still wait for someone here (SF-68).
+
+    The webhook notice reaches only a member that registered one and
+    subscribed to the event; this reaches whoever signs in.
+    """
+    rows = await session.execute(
+        select(Submission)
+        .where(
+            Submission.submitter_org_id == ctx.org_id,
+            Submission.filed_by_operator_id.is_not(None),
+            Submission.proxy_confirmed_at.is_(None),
+            Submission.state != SubmissionState.WITHDRAWN,
+        )
+        .order_by(Submission.proxy_confirm_by)
+    )
+    return [
+        {"id": str(item.id), "title": item.title, "confirm_by": stamp(item.proxy_confirm_by)}
+        for item in rows.scalars()
+        if awaiting_confirmation(item, now)
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -527,6 +555,7 @@ async def submission_detail(
                 "object_count": object_count,
                 "anonymous": submission.distribute_anonymously,
                 "distributed_at": stamp(submission.distributed_at),
+                "confirm_by": _confirm_by_for(ctx, submission),
             },
             "transitions": [
                 {
@@ -549,6 +578,14 @@ async def submission_detail(
     return render(request, "submission_detail.html", context)
 
 
+def _confirm_by_for(ctx: AuthContext, submission: Submission) -> str | None:
+    """When silence confirms this filing, for the person who may confirm it; else ``None``."""
+    pending = awaiting_confirmation(submission, dt.datetime.now(dt.UTC))
+    if not pending or not can_confirm_proxy_filing(ctx, submission):
+        return None
+    return stamp(submission.proxy_confirm_by)
+
+
 async def _available_actions(
     session: SessionDep, ctx: AuthContext, submission: Submission
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -567,6 +604,18 @@ async def _available_actions(
         for target, verb, label, primary in verbs
         if can_transition_submission(ctx, submission, target)
     ]
+    if awaiting_confirmation(submission, dt.datetime.now(dt.UTC)) and can_confirm_proxy_filing(
+        ctx, submission
+    ):
+        actions.insert(
+            0,
+            {
+                "verb": "confirm",
+                "label": "Confirm we sent this",
+                "primary": True,
+                "acknowledge": [],
+            },
+        )
     for action in actions:
         if action["verb"] == "validate":
             # The AI gate's changes, each a checkbox the editor ticks by name:
@@ -663,7 +712,7 @@ async def perform_action(
         "validate": SubmissionState.VALIDATED,
         "withdraw": SubmissionState.WITHDRAWN,
     }
-    if verb != "distribute" and verb not in targets:
+    if verb not in {"distribute", "confirm", *targets}:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Not found")
 
     if verb == "distribute":
@@ -705,6 +754,8 @@ async def perform_action(
                 circle_ids=list(circle_ids),
                 visible_at=release_at or dt.datetime.now(dt.UTC),
             )
+        elif verb == "confirm":
+            await confirm_proxy_filing(session, ctx, submission, now=dt.datetime.now(dt.UTC))
         elif verb == "submit":
             await submit_submission(
                 session,

@@ -1,7 +1,7 @@
-"""An ISAC analyst files a member's contribution for it (SF-68).
+"""An ISAC editor files a member's contribution for it (SF-68).
 
-Members email the analyst rather than file; without this, that contribution
-reaches nobody. With it, the risk is the opposite: an analyst attributing to a
+Members email the ISAC rather than file; without this, that contribution
+reaches nobody. With it, the risk is the opposite: an editor attributing to a
 member content the member never sent. So a proxy filing needs three things the
 member can check:
 
@@ -9,10 +9,11 @@ member can check:
   mail, or the member's click), so the attribution traces to something the
   member did;
 - a **contentless notice** to the member's own endpoints -- "filed on your
-  behalf; confirm or withdraw" -- the moment it is filed;
-- a **window**: the filing is not distributed until the member confirms, or
-  until ``CONFIRM_WITHIN`` passes in silence. Withdrawing uses the member's
-  ordinary stop button.
+  behalf; confirm or withdraw" -- the moment it is filed, and on its portal
+  dashboard, which needs no webhook;
+- a **window**: the filing is not distributed until a person at the member
+  confirms, or until ``CONFIRM_WITHIN`` passes in silence. Withdrawing uses
+  the member's ordinary stop button.
 
 Anonymous by default, as every contribution is.
 """
@@ -30,7 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from aivs_schemas.enums import OrgStatus, OrgType, SubmissionState
 from aivs_server.audit.log import AuditAction, record
 from aivs_server.auth.context import AuthContext
-from aivs_server.auth.policy import PolicyDeniedError, is_isac_editor, require
+from aivs_server.auth.policy import can_confirm_proxy_filing, is_isac_editor, require
 from aivs_server.db.models import Organization, Submission, Webhook, WebhookDelivery
 from aivs_server.services.submissions import (
     ProxyFiling,
@@ -42,6 +43,7 @@ from aivs_server.services.submissions import (
 __all__ = [
     "CONFIRM_WITHIN",
     "EVENT_FILED_ON_BEHALF",
+    "awaiting_confirmation",
     "awaiting_confirmation_problem",
     "confirm_proxy_filing",
     "file_on_behalf",
@@ -54,7 +56,7 @@ EVENT_FILED_ON_BEHALF: Final[str] = "submission.filed_on_behalf"
 
 _SHA256_HEX: Final[re.Pattern[str]] = re.compile(r"^[0-9a-f]{64}$")
 
-#: Organisations an analyst may file for: those that contribute in their own
+#: Organisations an editor may file for: those that contribute in their own
 #: name. Never the ISAC itself, and never a machine.
 _FILEABLE_FOR: Final[frozenset[OrgType]] = frozenset(OrgType) - {
     OrgType.ADMIN,
@@ -65,7 +67,7 @@ _FILEABLE_FOR: Final[frozenset[OrgType]] = frozenset(OrgType) - {
 async def _member_for(session: AsyncSession, org_id: uuid.UUID) -> Organization:
     org = await session.get(Organization, org_id)
     if org is None or org.org_type not in _FILEABLE_FOR or org.status is not OrgStatus.ACTIVE:
-        msg = "an analyst may file only for an active member organisation"
+        msg = "an editor may file only for an active member organisation"
         raise SubmissionError(msg)
     return org
 
@@ -146,10 +148,8 @@ async def file_on_behalf(
 async def confirm_proxy_filing(
     session: AsyncSession, ctx: AuthContext, submission: Submission, *, now: dt.datetime
 ) -> Submission:
-    """The member confirms a filing made in its name. Only that member."""
-    if submission.submitter_org_id != ctx.org_id:
-        denial = "proxy_confirm_not_owner"
-        raise PolicyDeniedError(denial)
+    """A person at the member confirms a filing made in its name. Nobody else."""
+    require(can_confirm_proxy_filing(ctx, submission), "proxy_confirm_requires_member_person")
     if submission.filed_by_operator_id is None:
         msg = "this submission was not filed on your behalf"
         raise SubmissionError(msg)
@@ -166,11 +166,16 @@ async def confirm_proxy_filing(
     return submission
 
 
+def awaiting_confirmation(submission: Submission, now: dt.datetime) -> bool:
+    """Whether this is a proxy filing still inside its window, unconfirmed."""
+    if submission.filed_by_operator_id is None or submission.proxy_confirmed_at is not None:
+        return False
+    return submission.proxy_confirm_by is None or now < submission.proxy_confirm_by
+
+
 def awaiting_confirmation_problem(submission: Submission, now: dt.datetime) -> str | None:
     """Why a proxy filing may not be distributed yet, or ``None``."""
-    if submission.filed_by_operator_id is None or submission.proxy_confirmed_at is not None:
-        return None
-    if submission.proxy_confirm_by is not None and now >= submission.proxy_confirm_by:
+    if not awaiting_confirmation(submission, now):
         return None
     deadline = submission.proxy_confirm_by
     after = deadline.isoformat() if deadline is not None else "its window"

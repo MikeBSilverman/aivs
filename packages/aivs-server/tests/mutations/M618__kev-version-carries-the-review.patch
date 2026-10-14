@@ -3,6 +3,7 @@ Re-applies: enriched_version copying the extensions wholesale
 
 Expect red: packages/aivs-server/tests/unit/test_enrich_kev.py::test_the_previous_versions_review_is_not_carried
 Expect red: packages/aivs-server/tests/unit/test_enrich_kev.py::test_run_files_a_kev_version_of_the_isacs_record_and_of_nothing_else
+Expect red: packages/aivs-server/tests/unit/test_enrich_kev.py::test_the_version_the_script_builds_is_validated_by_an_editor
 
 diff --git a/scripts/enrich-kev.py b/scripts/enrich-kev.py
 --- a/scripts/enrich-kev.py

@@ -476,11 +476,12 @@ as the owner) needs the role created once, before that migrate run:
 with `AIVS_DB_APP_PASSWORD` added to `deploy/.env`. Then run the checks in
 `docs/operator-runbook.md` §1.1.
 
-For a deployment under third-party risk review, pin base images by digest — see
-`AIVS_PROXY_IMAGE`, `AIVS_DB_IMAGE`, `AIVS_APP_IMAGE` in `deploy/env.example`
-and the pinning note at the top of `packages/aivs-server/Dockerfile`. Record
-the digests alongside the `uv.lock` hash in the release notes; a base image bump
-is a change to review, not something to inherit implicitly on every rebuild.
+Every base image is pinned by digest: the Dockerfile's `FROM` lines and the
+proxy and database defaults in `docker-compose.yml`. Dependabot proposes digest
+bumps as pull requests, so a base-image bump is a change someone reviews, not
+something a rebuild inherits. An override (`AIVS_PROXY_IMAGE`, `AIVS_DB_IMAGE`,
+`AIVS_APP_IMAGE` in `deploy/env.example`) should use the digest form too. Record
+the digests alongside the `uv.lock` hash in the release notes.
 
 ### The development override
 

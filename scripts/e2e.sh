@@ -34,9 +34,10 @@ REPO="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 WORK="${AIVS_E2E_DIR:-${TMPDIR:-/tmp}/aivs-e2e}"
 PROJECT="aivs-e2e"
 PORT="${AIVS_E2E_PORT:-18443}"
-# The proxy image, as compose would choose it; used here only to chown files
-# to the uids the containers run as, which needs root on the host otherwise.
-PROXY_IMAGE="${AIVS_PROXY_IMAGE:-nginxinc/nginx-unprivileged:1.29-alpine}"
+# The proxy image, as compose would choose it (the same digest-pinned default;
+# a contract test holds the two equal); used here only to chown files to the
+# uids the containers run as, which needs root on the host otherwise.
+PROXY_IMAGE="${AIVS_PROXY_IMAGE:-nginxinc/nginx-unprivileged:1.29-alpine@sha256:0c79d56aee561a1d81c63f00eee5fb5fe29279560cdc55e91425133104c7fbe6}"
 
 FIXED_CONTAINERS=(aivs-proxy aivs-app aivs-db)
 FIXED_NETWORKS=(aivs_frontend aivs_backend aivs_data)

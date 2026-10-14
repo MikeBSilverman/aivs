@@ -20,39 +20,31 @@
 # -----------------------------------------------------------------------------
 # Base images.
 #
-# PINNING: these are tags, which are mutable. For any deployment that a
-# third-party risk review will look at, pin by digest instead, so that the
-# image a reviewer approved is byte-for-byte the image that runs:
+# PINNED BY DIGEST, written in the FROM lines themselves, so that the image a
+# reviewer approved is byte-for-byte the image that runs, and every build --
+# CI, scripts/e2e.sh, compose, an operator's -- gets the same bases without
+# having to remember a build argument. These used to be tag defaults behind
+# ARG PYTHON_IMAGE / UV_IMAGE, with the digest form documented as a
+# --build-arg; nothing passed it, so CI and e2e built from mutable tags, and
+# Dependabot (which reads FROM lines literally) could not see the bases at all.
+# Dependabot now proposes digest bumps as reviewed PRs, after its cooldown: a
+# base-image bump is a change to review, not something a rebuild does to you.
 #
-#     docker buildx imagetools inspect python:3.12-slim-bookworm --format '{{.Manifest.Digest}}'
-#     docker buildx imagetools inspect ghcr.io/astral-sh/uv:0.11.16 --format '{{.Manifest.Digest}}'
-#
-# then build with the digest form, which needs no edit to this file:
-#
-#     docker build \
-#       --build-arg PYTHON_IMAGE=python:3.12-slim-bookworm@sha256:<digest> \
-#       --build-arg UV_IMAGE=ghcr.io/astral-sh/uv:0.11.16@sha256:<digest> \
-#       -f packages/aivs-server/Dockerfile -t aivs-server:<version> .
-#
-# Record the digests in the release notes alongside the uv.lock hash. Refresh
-# them deliberately (a base-image bump is a change to review), not implicitly
-# on every rebuild.
+# Record the digests in the release notes alongside the uv.lock hash.
+# tests/unit/test_deployment_contract.py refuses a FROM without a digest.
 #
 # Debian slim rather than Alpine: the wheels for cryptography, psycopg and
 # argon2-cffi are built against glibc, so Alpine would mean compiling them from
 # source at build time -- more build tooling, slower builds, and a set of
 # binaries nobody else is running or fuzzing.
 # -----------------------------------------------------------------------------
-ARG PYTHON_IMAGE=python:3.12-slim-bookworm
-ARG UV_IMAGE=ghcr.io/astral-sh/uv:0.11.16
-
-FROM ${UV_IMAGE} AS uv
+FROM ghcr.io/astral-sh/uv:0.11.16@sha256:440fd6477af86a2f1b38080c539f1672cd22acb1b1a47e321dba5158ab08864d AS uv
 
 
 # =============================================================================
 # Build stage
 # =============================================================================
-FROM ${PYTHON_IMAGE} AS build
+FROM python:3.12-slim-bookworm@sha256:34386ef0cb081344d7ec1c103ba398e6e9f64e9ab3a1509accc92a4e24a07258 AS build
 
 COPY --from=uv /uv /usr/local/bin/uv
 
@@ -145,7 +137,7 @@ print('entry point resolves:', eps[0].value)"
 # =============================================================================
 # Runtime stage
 # =============================================================================
-FROM ${PYTHON_IMAGE} AS runtime
+FROM python:3.12-slim-bookworm@sha256:34386ef0cb081344d7ec1c103ba398e6e9f64e9ab3a1509accc92a4e24a07258 AS runtime
 
 LABEL org.opencontainers.image.title="aivs-server" \
       org.opencontainers.image.description="AIVS pre-CVE AI vulnerability sharing server" \

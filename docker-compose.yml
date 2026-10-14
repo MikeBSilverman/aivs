@@ -103,11 +103,9 @@ services:
     #
     # 1.29 because it is built with OpenSSL 3.5, the first with ML-KEM; 1.27 was
     # built with 3.3 and silently could not offer the hybrid post-quantum group
-    # nginx.conf asks for. Pin by digest for a reviewed deployment:
-    #   docker buildx imagetools inspect nginxinc/nginx-unprivileged:1.29-alpine \
-    #     --format '{{.Manifest.Digest}}'
-    # then set AIVS_PROXY_IMAGE in deploy/.env to the image@sha256:... form.
-    image: ${AIVS_PROXY_IMAGE:-nginxinc/nginx-unprivileged:1.29-alpine}
+    # nginx.conf asks for. The default is pinned by digest, as the database's
+    # is; an override in deploy/.env must be too (test_deployment_contract).
+    image: ${AIVS_PROXY_IMAGE:-nginxinc/nginx-unprivileged:1.29-alpine@sha256:0c79d56aee561a1d81c63f00eee5fb5fe29279560cdc55e91425133104c7fbe6}
     container_name: aivs-proxy
     user: "101:101"
 
@@ -387,7 +385,7 @@ services:
   # ===========================================================================
   db:
     <<: *hardening
-    image: ${AIVS_DB_IMAGE:-postgres:16-alpine}
+    image: ${AIVS_DB_IMAGE:-postgres:16-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea}
     container_name: aivs-db
     # uid/gid 70 is `postgres` in the alpine image. Set explicitly so the
     # container never starts as root: the official entrypoint would otherwise

@@ -389,3 +389,38 @@ def test_the_runbook_never_has_an_operator_set_a_status_column_by_hand():
     runbook = (ROOT / "docs/operator-runbook.md").read_text(encoding="utf-8")
 
     assert not re.search(r"`(client_certificates|organizations)\.status\s*=", runbook)
+
+
+_DIGEST = re.compile(r"@sha256:[0-9a-f]{64}$")
+
+
+def _base_images() -> list[str]:
+    dockerfile = (ROOT / "packages/aivs-server/Dockerfile").read_text(encoding="utf-8")
+    return re.findall(r"^FROM\s+(\S+)", dockerfile, re.M)
+
+
+def _compose_default_image(service: str) -> str:
+    image = _compose("docker-compose.yml")["services"][service]["image"]
+    default = re.fullmatch(r"\$\{AIVS_\w+_IMAGE:-(\S+)\}", image)
+    assert default, f"{service}: image is not an overridable default: {image}"
+    return default.group(1)
+
+
+def test_every_base_image_is_pinned_by_digest():
+    """CI and e2e built from mutable tags while the digest form sat in a comment
+    as a build argument nobody passed; Dependabot could not see the bases either."""
+    bases = _base_images()
+    assert len(bases) == 3
+    assert all(_DIGEST.search(image) for image in bases), bases
+
+
+@pytest.mark.parametrize("service", ["proxy", "db"])
+def test_the_compose_default_images_are_pinned_by_digest(service: str):
+    assert _DIGEST.search(_compose_default_image(service))
+
+
+def test_e2e_chowns_with_the_proxy_image_compose_runs():
+    script = (ROOT / "scripts/e2e.sh").read_text(encoding="utf-8")
+    default = re.search(r'^PROXY_IMAGE="\$\{AIVS_PROXY_IMAGE:-(\S+)\}"$', script, re.M)
+    assert default
+    assert default.group(1) == _compose_default_image("proxy")

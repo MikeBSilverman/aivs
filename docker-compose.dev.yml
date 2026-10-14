@@ -104,6 +104,10 @@ services:
       - /src/aivs-server
       - --reload-dir
       - /src/aivs-schemas
+      # The CLI defaults this on (trusting X-Forwarded-For from loopback), which
+      # rewrites the TCP peer the trusted-proxy check reads; production's main()
+      # turns it off, and dev must match.
+      - --no-proxy-headers
 
     environment:
       # Unlocks every bypass below. In production this is `production` and the

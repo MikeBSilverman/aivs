@@ -54,3 +54,18 @@ def test_the_member_listener_answers_no_probe_or_metrics(repo_root: Path):
     conf = (repo_root / "deploy/nginx/nginx.conf").read_text()
     for path in ("/healthz", "/readyz", "/metrics"):
         assert re.search(rf"location = {re.escape(path)}\s*\{{\s*return 404;", conf), path
+
+
+def test_neither_access_log_records_the_query_string(repo_root):
+    """TAXII filters name what a member was looking for, and both logs are
+    forwarded off the host. The app's log omitted it; nginx's did not."""
+    conf = (repo_root / "deploy/nginx/nginx.conf").read_text(encoding="utf-8")
+    format_block = conf.split("log_format  aivs_json", 1)[1].split(";", 1)[0]
+    assert "$args" not in format_block
+    assert "$query_string" not in format_block
+    assert "$request_uri" not in format_block, "the request URI carries the query too"
+
+
+def test_the_dev_server_does_not_rewrite_the_peer_from_forwarded_headers(repo_root):
+    dev = (repo_root / "docker-compose.dev.yml").read_text(encoding="utf-8")
+    assert "--no-proxy-headers" in dev

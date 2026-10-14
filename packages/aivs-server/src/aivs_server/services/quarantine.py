@@ -36,6 +36,7 @@ __all__ = [
     "quarantine_org",
     "quarantine_org_automatically",
     "reconnect_org",
+    "revoke_credentials",
 ]
 
 
@@ -43,17 +44,21 @@ class QuarantineError(ValueError):
     """The quarantine or reconnection cannot be applied; the message says why."""
 
 
-async def _revoke_credentials(
-    session: AsyncSession, organisation: Organization, now: dt.datetime
+async def revoke_credentials(
+    session: AsyncSession, organisation: Organization, now: dt.datetime, *, reason: str
 ) -> int:
-    """Revoke every active certificate and portal session. Returns certificates revoked."""
+    """Revoke every active certificate and portal session. Returns certificates revoked.
+
+    Quarantine and offboarding both end every credential an organisation
+    holds; one function, so the two cannot disagree about what that means.
+    """
     revoked = await session.execute(
         update(ClientCertificate)
         .where(
             ClientCertificate.org_id == organisation.id,
             ClientCertificate.status == CertStatus.ACTIVE,
         )
-        .values(status=CertStatus.REVOKED, revoked_at=now, revoked_reason="quarantine")
+        .values(status=CertStatus.REVOKED, revoked_at=now, revoked_reason=reason)
     )
     await session.execute(
         update(PortalSession)
@@ -130,7 +135,7 @@ async def _cut_off(session: AsyncSession, organisation: Organization, now: dt.da
         raise QuarantineError(msg)
     organisation.status = OrgStatus.QUARANTINED
     organisation.quarantined_at = now
-    return await _revoke_credentials(session, organisation, now)
+    return await revoke_credentials(session, organisation, now, reason="quarantine")
 
 
 async def _has_fresh_certificate(session: AsyncSession, organisation: Organization) -> bool:

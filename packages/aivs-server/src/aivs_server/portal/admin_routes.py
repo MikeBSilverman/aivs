@@ -578,6 +578,7 @@ async def remove_member_screen(
         org_id=org_id,
         now=await database_now(session),
         via="portal",
+        ended_by="operator",
     )
     response = redirect_within_portal(f"/portal/admin/circles/{circle_id}")
     if not closed:

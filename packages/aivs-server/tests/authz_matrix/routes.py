@@ -480,6 +480,28 @@ ROUTES: tuple[RouteCase, ...] = (
     ),
     RouteCase(
         "POST",
+        "/api/v1/orgs/{org_id}/offboard",
+        RouteClass.MEMBERSHIP,
+        _org(
+            "offboard",
+            "/offboard",
+            {"reason": "matrix: membership ended", "confirm_slug": "matrix-offboard"},
+        ),
+    ),
+    RouteCase(
+        "PUT",
+        "/api/v1/orgs/{org_id}/legal-hold",
+        RouteClass.MEMBERSHIP,
+        _org("hold", "/legal-hold", {"reason": "matrix: litigation hold"}),
+    ),
+    RouteCase(
+        "POST",
+        "/api/v1/orgs/{org_id}/legal-hold/lift",
+        RouteClass.MEMBERSHIP,
+        _org("lift", "/legal-hold/lift", {"reason": "matrix: litigation settled"}),
+    ),
+    RouteCase(
+        "POST",
         "/api/v1/orgs/{org_id}/reconnect",
         RouteClass.RECONNECT,
         _org("reconnect", "/reconnect", {"reason": "matrix: cleared"}),

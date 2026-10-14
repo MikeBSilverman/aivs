@@ -49,6 +49,7 @@ from __future__ import annotations
 import datetime as dt
 import uuid
 from dataclasses import dataclass
+from typing import Literal
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -181,6 +182,10 @@ def _refuse_unsafe_additions(
     quarantined = sorted(org.slug for org in organisations if org.status is OrgStatus.QUARANTINED)
     if quarantined:
         msg = f"quarantined organisations cannot change membership: {', '.join(quarantined)}"
+        raise CircleMembershipError(msg)
+    offboarded = sorted(org.slug for org in organisations if org.status is OrgStatus.OFFBOARDED)
+    if offboarded:
+        msg = f"offboarded organisations cannot be members: {', '.join(offboarded)}"
         raise CircleMembershipError(msg)
 
 
@@ -329,6 +334,10 @@ async def add_circle_members(
     return added
 
 
+#: Who closed a membership interval by hand. (``rule`` is reconciliation's own.)
+MembershipEnd = Literal["operator", "offboarding"]
+
+
 async def remove_circle_member(
     session: AsyncSession,
     ctx: AuthContext,
@@ -337,13 +346,15 @@ async def remove_circle_member(
     org_id: uuid.UUID,
     now: dt.datetime,
     via: str,
+    ended_by: MembershipEnd,
 ) -> bool:
     """Close an organisation's open membership interval. Returns whether one was open.
 
     Closed, never deleted. Content they collected is theirs and their receipts
     outlive the membership; if they rejoin, the new interval starts then, so the
     gap stays unreadable while the earlier interval's content does not vanish.
-    Recorded as an operator's act, which the rule will not undo.
+    ``ended_by`` says whose act closed it: an operator's, which the rule will
+    not undo, or the organisation's offboarding.
     """
     await _lock_circle(session, circle_id)
     membership = (
@@ -361,7 +372,7 @@ async def remove_circle_member(
         return False
 
     membership.left_at = now
-    membership.ended_by = "operator"
+    membership.ended_by = ended_by
     await record(
         session,
         action=AuditAction.CIRCLE_MEMBER_REMOVED,

@@ -162,3 +162,41 @@ async def test_walking_submission_ids_is_noticed_without_becoming_an_oracle(
         rules=[_rule("not_found_burst", 5)],
     )
     assert [finding.subject for finding in raised] == [str(walker_id)]
+
+
+@pytest.mark.requirement("SF-72")
+async def test_a_stolen_membership_session_offboarding_a_member_is_alerted_at_once(
+    client, session, make_org, make_cert, isac
+):
+    """Rule ``org_offboarded``. Offboarding is irreversible and destroys a
+    member's postures, so it cannot be refused to the role that holds it; what
+    stops a stolen session doing it quietly is an alert on every occurrence,
+    and what limits it is that only membership staff hold it at all."""
+    victim = await make_org("meridian-global", org_type=OrgType.GSIB)
+    victim_pem, _ = await make_cert(victim)
+    _isac_org, isac_headers = isac
+
+    # 1. A member's own certificate cannot do it, to itself or a peer.
+    refused = await client.post(
+        f"{API}/orgs/{victim.id}/offboard",
+        json={"reason": "leaving quietly, honest", "confirm_slug": victim.slug},
+        headers=proxy_headers(victim_pem),
+    )
+    assert refused.status_code == 403
+
+    # 2. The stolen membership session can, and the ISAC hears of it at once.
+    taken = await client.post(
+        f"{API}/orgs/{victim.id}/offboard",
+        json={"reason": "membership lapsed, per renewal", "confirm_slug": victim.slug},
+        headers=isac_headers,
+    )
+    assert taken.status_code == 200
+    raised = await run_detections(
+        session,
+        quarantine_policy="propose",
+        now=dt.datetime.now(dt.UTC),
+        rules=[_rule("org_offboarded", 1)],
+    )
+    assert [(finding.rule, finding.details["resource"]) for finding in raised] == [
+        ("org_offboarded", str(victim.id))
+    ]

@@ -235,6 +235,19 @@ class QuarantineRequest(_In):
     reason: Annotated[str, Field(min_length=10, max_length=1000)]
 
 
+class OffboardRequest(_In):
+    """Why an organisation is leaving, and its slug typed out: nothing reverses this."""
+
+    reason: Annotated[str, Field(min_length=10, max_length=1000)]
+    confirm_slug: Slug
+
+
+class LegalHoldRequest(_In):
+    """Why a hold is placed or lifted. Recorded in the audit log."""
+
+    reason: Annotated[str, Field(min_length=10, max_length=1000)]
+
+
 class ReconnectRequest(_In):
     reason: Annotated[str, Field(min_length=10, max_length=1000)]
     #: Whether content shared during the quarantine reaches the member.

@@ -242,9 +242,13 @@ it adds a principal row to the authorization matrix.
   advisory version in force at each instant, content-hashed.
 - **An `auditor` role** with an expiry, reading audit and receipts within
   its scope, never content.
-- **Offboarding** deletes operational data (posture, subscriptions), keeps
-  evidence and content, and pseudonymises people. Each later phase extends
-  the offboarding test with whatever it adds that can be revoked.
+- **Offboarding** (built, SF-72) deletes every operational row the data
+  inventory gives the organisation (postures, webhooks, portal sessions, TAXII
+  inbox statuses), keeps evidence and content, ends its credentials, closes
+  its memberships as `offboarding`, and pseudonymises its people. A legal hold
+  keeps the postures until it is lifted. `test_offboarding` reads the
+  inventory, so each later phase that adds an operational table is held to
+  it, and extends the test with whatever else it adds that can be revoked.
 
 ### 3.5 Phase I: documents
 

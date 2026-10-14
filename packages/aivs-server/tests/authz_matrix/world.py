@@ -228,9 +228,16 @@ async def build_world(f: Factories) -> tuple[World, dict[Principal, Credentials]
         ("quarantine_portal", OrgStatus.ACTIVE),
         ("suspend_portal", OrgStatus.ACTIVE),
         ("remove_portal", OrgStatus.ACTIVE),
+        ("offboard", OrgStatus.ACTIVE),
+        ("hold", OrgStatus.ACTIVE),
+        ("lift", OrgStatus.ACTIVE),
     ):
         orgs[name] = await f.make_org(f"matrix-{name.replace('_', '-')}", status=status)
     orgs["add_portal"] = await f.make_org("matrix-add-portal")
+    # Under a hold already, so lifting it is the request that succeeds.
+    orgs["lift"].legal_hold_since = dt.datetime.now(dt.UTC)
+    orgs["lift"].legal_hold_reason = "matrix: litigation hold"
+    await f.session.commit()
     orgs["automation"] = await f.make_org("matrix-automation", org_type=OrgType.AUTOMATION)
 
     # Quarantined an hour ago, with a certificate registered since: the state

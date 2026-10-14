@@ -53,6 +53,11 @@ def _refusal(organisation: Organization) -> str | None:
             "this organisation is quarantined; reconnect it, which requires a fresh "
             "certificate and a decision on the backlog"
         )
+    if organisation.status is OrgStatus.OFFBOARDED:
+        # Terminal: offboarding deleted its operational data and pseudonymised
+        # its people, and a reactivation would bring back neither. A returning
+        # firm is enrolled again.
+        return "this organisation has been offboarded; enrol it again if it rejoins"
     return None
 
 

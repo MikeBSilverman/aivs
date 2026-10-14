@@ -576,6 +576,31 @@ nature means the gap must not reach them. Earlier content is kept either way.
 Tell the member which you chose and why; a self-quarantine is also something
 they may have to report to their own regulator.
 
+### 7.2a A member leaves: offboarding
+
+Offboarding is the end of a membership, and **nothing reverses it**. A member
+that comes back is enrolled again, as a new organisation. If there is any
+legal matter open about the member, place a legal hold **first**: offboarding
+deletes the member's postures unless one is set.
+
+1. If needed, place the hold (membership staff):
+   `PUT /api/v1/orgs/{org_id}/legal-hold` with `{"reason": "..."}`.
+2. Offboard: `POST /api/v1/orgs/{org_id}/offboard` with
+   `{"reason": "...", "confirm_slug": "<the organisation's slug>"}`. The slug
+   typed out is the check that you meant this organisation.
+3. Every offboarding raises `org_offboarded`; expect the alert, and confirm it
+   to whoever watches them.
+4. When the matter closes, lift the hold:
+   `POST /api/v1/orgs/{org_id}/legal-hold/lift` with `{"reason": "..."}`. On an
+   offboarded organisation this deletes the postures the hold kept.
+
+What it does: every certificate and portal session ends; every open circle
+membership closes as `offboarding`; operators are pseudonymised (their ids stay,
+so the audit log still resolves); the contact email is cleared; postures,
+webhooks, portal sessions and TAXII inbox statuses are deleted (postures kept
+under a hold). Contributions, receipts and the audit log are kept: they are
+the record of what the member was sent, and its name stays on them.
+
 ### 7.3 Suspected certificate compromise
 
 1. Revoke in the **database**: `client_certificates.status = revoked`, with
@@ -838,6 +863,7 @@ Each finding is raised **once per rule window** and goes three ways:
 | `anonymity_reveal` | Any reveal of an anonymous submitter | Confirm the reveal was expected and that its recorded reason holds up. |
 | `distribution_paused` | Distribution paused instance-wide | Confirm someone on the incident bridge did it. |
 | `operator_bootstrapped` | The bootstrap command created an operator | Confirm who ran it on the host and why. An unexplained one is a host compromise (§7.5). |
+| `org_offboarded` | Any offboarding | Irreversible: confirm it was the agreed end of membership, not a mistyped quarantine. A stolen membership session offboarding a member is §7.5. |
 | `org_quarantined` | Any quarantine, including self-quarantine | Confirm the member knows, and start reconnection planning. |
 | `component_degraded` | A background job (embargo sweeper, webhook dispatcher, detections) has not succeeded for two of its intervals | Read the app log for that component's exception; `/readyz` names it and the error type. |
 

@@ -42,12 +42,24 @@ async def test_a_removal_waits_for_an_open_addition_to_the_same_circle_only(
     )
     other_circle, _done = await is_blocked(
         remove_circle_member(
-            elsewhere, isac_ctx, circle_id=quiet.id, org_id=leaver.id, now=now, via="api"
+            elsewhere,
+            isac_ctx,
+            circle_id=quiet.id,
+            org_id=leaver.id,
+            now=now,
+            via="api",
+            ended_by="operator",
         )
     )
     same_circle, task = await is_blocked(
         remove_circle_member(
-            remover, isac_ctx, circle_id=busy.id, org_id=leaver.id, now=now, via="api"
+            remover,
+            isac_ctx,
+            circle_id=busy.id,
+            org_id=leaver.id,
+            now=now,
+            via="api",
+            ended_by="operator",
         )
     )
     await adder.rollback()

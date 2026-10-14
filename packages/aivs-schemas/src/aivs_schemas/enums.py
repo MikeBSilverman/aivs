@@ -81,12 +81,18 @@ class OrgStatus(StrEnum):
     certificate and session is revoked; its memberships are untouched, because
     quarantine protects the member and the community, it does not change what
     the member is entitled to.
+
+    ``OFFBOARDED`` is the end: the organisation has left the ISAC. It is
+    terminal -- nothing writes another status over it -- because offboarding
+    deletes what a member keeps operationally and pseudonymises its people,
+    and a reactivated organisation would come back without either.
     """
 
     PENDING = "pending"
     ACTIVE = "active"
     SUSPENDED = "suspended"
     QUARANTINED = "quarantined"
+    OFFBOARDED = "offboarded"
 
 
 class QuarantineBacklog(StrEnum):

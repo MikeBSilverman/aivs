@@ -470,6 +470,18 @@ RULES: Final[tuple[Rule, ...]] = (
         ),
     ),
     Rule(
+        "org_offboarded",
+        "high",
+        dt.timedelta(hours=1),
+        1,
+        _every_occurrence(
+            "org_offboarded",
+            AuditAction.ORG_OFFBOARDED,
+            "high",
+            "an organisation was offboarded: credentials ended, postures deleted unless held",
+        ),
+    ),
+    Rule(
         "org_quarantined",
         "high",
         dt.timedelta(hours=1),

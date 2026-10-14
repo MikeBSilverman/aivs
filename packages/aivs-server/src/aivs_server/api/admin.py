@@ -28,6 +28,8 @@ from aivs_schemas.models import (
     CircleOut,
     InstanceControlChange,
     InstanceControlOut,
+    LegalHoldRequest,
+    OffboardRequest,
     OrganizationCreate,
     OrganizationOut,
     QuarantineRequest,
@@ -40,10 +42,12 @@ from aivs_server.auth.policy import (
     can_administer_circle,
     can_manage_org,
     can_manage_own_webhooks,
+    can_offboard_org,
     can_pause_distribution,
     can_quarantine_org,
     can_reconnect_org,
     can_resume_distribution,
+    can_set_legal_hold,
     is_isac_editor,
     is_isac_membership,
     is_isac_staff,
@@ -71,6 +75,12 @@ from aivs_server.services.circles import (
     resolve_organisations,
 )
 from aivs_server.services.instance import pause_distribution, resume_distribution
+from aivs_server.services.offboarding import (
+    OffboardingError,
+    lift_legal_hold,
+    offboard_org,
+    set_legal_hold,
+)
 from aivs_server.services.org_status import (
     OrgStatusError,
     change_org_status,
@@ -448,7 +458,13 @@ async def delete_circle_member(
     require(can_administer_circle(ctx, circle_id), "circle_membership_manage")
 
     closed = await remove_circle_member(
-        session, ctx, circle_id=circle_id, org_id=org_id, now=await database_now(session), via="api"
+        session,
+        ctx,
+        circle_id=circle_id,
+        org_id=org_id,
+        now=await database_now(session),
+        via="api",
+        ended_by="operator",
     )
     if not closed:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Membership not found")
@@ -632,6 +648,78 @@ async def quarantine(
     except QuarantineError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     await session.commit()
+    await session.refresh(organisation)
+    return organisation
+
+
+@router.post("/orgs/{org_id}/offboard", response_model=OrganizationOut)
+async def offboard(
+    org_id: uuid.UUID, payload: OffboardRequest, ctx: AuthenticatedContext, session: SessionDep
+) -> Organization:
+    """End an organisation's membership for good. See services.offboarding."""
+    require(can_offboard_org(ctx), "offboard_requires_isac_membership")
+    organisation = await load_org_for_update(session, org_id)
+    if organisation is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Organisation not found")
+    if payload.confirm_slug != organisation.slug:
+        # Irreversible, addressed by an id that is easy to paste wrongly: the
+        # slug typed out is the check that the operator meant this one.
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, detail="confirm_slug is not this organisation's slug"
+        )
+    try:
+        await offboard_org(
+            session,
+            ctx,
+            organisation=organisation,
+            reason=payload.reason,
+            now=await database_now(session),
+        )
+        await session.commit()
+    except OffboardingError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    await session.refresh(organisation)
+    return organisation
+
+
+@router.put("/orgs/{org_id}/legal-hold", response_model=OrganizationOut)
+async def place_legal_hold(
+    org_id: uuid.UUID, payload: LegalHoldRequest, ctx: AuthenticatedContext, session: SessionDep
+) -> Organization:
+    """Keep an organisation's data past offboarding until the hold is lifted."""
+    require(can_set_legal_hold(ctx), "legal_hold_requires_isac_membership")
+    organisation = await load_org_for_update(session, org_id)
+    if organisation is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Organisation not found")
+    try:
+        await set_legal_hold(
+            session,
+            ctx,
+            organisation=organisation,
+            reason=payload.reason,
+            now=await database_now(session),
+        )
+        await session.commit()
+    except OffboardingError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    await session.refresh(organisation)
+    return organisation
+
+
+@router.post("/orgs/{org_id}/legal-hold/lift", response_model=OrganizationOut)
+async def lift_hold(
+    org_id: uuid.UUID, payload: LegalHoldRequest, ctx: AuthenticatedContext, session: SessionDep
+) -> Organization:
+    """Lift a hold; on an offboarded organisation, what it kept is deleted now."""
+    require(can_set_legal_hold(ctx), "legal_hold_requires_isac_membership")
+    organisation = await load_org_for_update(session, org_id)
+    if organisation is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Organisation not found")
+    try:
+        await lift_legal_hold(session, ctx, organisation=organisation, reason=payload.reason)
+        await session.commit()
+    except OffboardingError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     await session.refresh(organisation)
     return organisation
 

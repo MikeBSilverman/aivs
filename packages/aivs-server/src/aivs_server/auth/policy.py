@@ -58,6 +58,7 @@ __all__ = [
     "can_confirm_proxy_filing",
     "can_manage_org",
     "can_manage_own_webhooks",
+    "can_offboard_org",
     "can_pause_distribution",
     "can_quarantine_org",
     "can_read_circle",
@@ -67,6 +68,7 @@ __all__ = [
     "can_resume_distribution",
     "can_reveal_submitter",
     "can_review_submissions",
+    "can_set_legal_hold",
     "can_submit_to_circle",
     "can_transition_submission",
     "can_view_instance_status",
@@ -429,8 +431,11 @@ def can_register_certificate(ctx: AuthContext, organisation: Organization) -> bo
     member's own admin may register only while its organisation is active.
     ISAC membership staff may register whatever the status: enrolment
     registers before activation, and reconnection requires a certificate
-    registered during the quarantine.
+    registered during the quarantine. Nobody registers one to an offboarded
+    organisation: that status is terminal.
     """
+    if organisation.status is OrgStatus.OFFBOARDED:
+        return False
     if is_isac_membership(ctx):
         return True
     return can_manage_org(ctx, organisation.id) and organisation.status is OrgStatus.ACTIVE
@@ -460,6 +465,21 @@ def can_quarantine_org(ctx: AuthContext, target_org_id: uuid.UUID) -> bool:
     if is_isac_membership(ctx) or is_isac_editor(ctx) or is_system_admin(ctx):
         return True
     return is_org_admin(ctx) and ctx.org_id == target_org_id
+
+
+def can_offboard_org(ctx: AuthContext) -> bool:
+    """End an organisation's membership of the ISAC, for good. Membership staff only.
+
+    Narrower than quarantine on purpose: quarantine is the safe direction and
+    anyone who notices may press it, but offboarding deletes what the member
+    keeps operationally and pseudonymises its people, and nothing reverses it.
+    """
+    return is_isac_membership(ctx)
+
+
+def can_set_legal_hold(ctx: AuthContext) -> bool:
+    """Place or lift a legal hold on an organisation's data. Membership staff only."""
+    return is_isac_membership(ctx)
 
 
 def can_reconnect_org(ctx: AuthContext) -> bool:

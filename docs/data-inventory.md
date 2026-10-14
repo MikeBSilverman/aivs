@@ -38,7 +38,7 @@ rather than deleting rows.
 | `acknowledgments` | evidence | Receipts: retrieved, acknowledged, actioned, per organisation. |
 | `audit_log` | evidence | Every security-relevant decision. Append-only. |
 | `circle_memberships` | evidence | Membership *intervals*, which decide what an organisation could ever have seen. |
-| `organizations` | evidence | The member record: name, type, status, STIX identity. Referenced by every receipt. |
+| `organizations` | evidence | The member record: name, type, status, STIX identity, and any legal hold with its reason. Referenced by every receipt. Its contact email is cleared at offboarding; its name is kept, because evidence names who it is about. |
 | `client_certificates` | evidence | Certificate fingerprint, the identity of record for every machine request; status and validity. No private key, ever. |
 | `operators` | pii | People: email, display name, roles, password hash, sealed TOTP seed, lockout state. |
 | `portal_sessions` | operational | Signed-in sessions: token hash, bound certificate, source IP, user agent, expiry. |

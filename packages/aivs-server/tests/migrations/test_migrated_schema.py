@@ -19,6 +19,7 @@ from __future__ import annotations
 import os
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 from alembic import command
@@ -239,6 +240,44 @@ def test_the_migrated_schema_refuses_a_posture_vex_would_reject(
                     ),
                     {"org": org_id},
                 )
+            connection.rollback()
+    finally:
+        engine.dispose()
+
+
+_LEAVER_ORG = "00000000-0000-4000-8000-000000000401"
+_LEAVER_CIRCLE = "00000000-0000-4000-8000-000000000402"
+_LEAVER_ROWS = (
+    "INSERT INTO organizations (id, name, slug, org_type, status, stix_identity_id) "
+    "VALUES (:org, 'Leaver', 'leaver-firm', 'gsib', 'offboarded', :identity)",
+    "INSERT INTO circles (id, slug, name, minimum_tlp, is_active) "
+    "VALUES (:circle, 'leaver-circle', 'Leaver circle', 'amber', true)",
+)
+
+
+def _close_interval_as(connection: Any, ended_by: str) -> None:
+    params = {"org": _LEAVER_ORG, "circle": _LEAVER_CIRCLE, "identity": f"identity--{_LEAVER_ORG}"}
+    for statement in _LEAVER_ROWS:
+        connection.execute(text(statement), params)
+    connection.execute(
+        text(
+            "INSERT INTO circle_memberships "
+            "(circle_id, org_id, role, joined_at, left_at, ended_by) "
+            "VALUES (:circle, :org, 'member', now() - interval '1 day', now(), :ended_by)"
+        ),
+        {**params, "ended_by": ended_by},
+    )
+
+
+def test_the_migrated_schema_knows_an_interval_closed_by_offboarding(migrated_url: str):
+    """A changed check constraint is invisible to ``alembic check``: attempted, not compared."""
+    engine = create_engine(migrated_url)
+    try:
+        with engine.connect() as connection:
+            _close_interval_as(connection, "offboarding")
+            connection.rollback()
+            with pytest.raises(DBAPIError, match="ended_by_known"):
+                _close_interval_as(connection, "unknown")
             connection.rollback()
     finally:
         engine.dispose()

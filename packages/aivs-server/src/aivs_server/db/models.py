@@ -112,12 +112,21 @@ class Organization(TimestampMixin, Base):
     #: reconnection to close the membership interval at the right moment if the
     #: backlog is not to be delivered.
     quarantined_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    #: A legal hold: while set, offboarding keeps what it would otherwise delete
+    #: (the organisation's postures), and lifting it on an offboarded
+    #: organisation deletes them then. Set and lifted by ISAC membership staff.
+    legal_hold_since: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    legal_hold_reason: Mapped[str | None] = mapped_column(Text)
     #: The org's STIX ``identity`` SDO id, used as ``created_by_ref`` on objects
     #: it submits (except where the submission is distributed anonymously).
     stix_identity_id: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
     contact_email: Mapped[str | None] = mapped_column(String(320), nullable=True)
 
     __table_args__ = (
+        CheckConstraint(
+            "(legal_hold_since IS NULL) = (legal_hold_reason IS NULL)",
+            name="legal_hold_has_reason",
+        ),
         CheckConstraint("slug ~ '^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$'", name="slug_format"),
         CheckConstraint(
             "stix_identity_id ~ '^identity--[0-9a-f-]{36}$'", name="stix_identity_format"
@@ -390,7 +399,7 @@ class CircleMembership(TimestampMixin, Base):
         CheckConstraint("left_at IS NULL OR left_at > joined_at", name="interval_ordered"),
         CheckConstraint("(left_at IS NULL) = (ended_by IS NULL)", name="ended_by_with_left_at"),
         CheckConstraint(
-            "ended_by IS NULL OR ended_by IN ('operator', 'rule')",
+            "ended_by IS NULL OR ended_by IN ('operator', 'rule', 'offboarding')",
             name="ended_by_known",
         ),
         Index("ix_circle_memberships_org_id_circle_id", "org_id", "circle_id"),

@@ -193,6 +193,15 @@ AIVS_TEST_DATABASE_URL="postgresql+psycopg://aivs@127.0.0.1:55432/aivs_ci" uv ru
 `conftest.py` now sets a `lock_timeout` so this fails in fifteen seconds with a
 message naming the cause instead of hanging. Do not remove it.
 
+**Several sessions can share one working tree, each owning separate files**
+(`terminal-*.md`, which git ignores, carry the task list). Each runs tests on its
+own database: `aivs_ci` and `aivs_ci2` for the helpers. Then a green suite in
+the shared tree tests everyone's uncommitted work together, not what one commit
+contains. Commit by explicit path, never `git add -A`. When a file holds another
+session's edits too, stage your hunk alone, by building the index copy from
+`HEAD` plus your change. Then verify the commit in a clean `git worktree` of
+`HEAD` before pushing.
+
 **Never point an analysis or review process at `aivs_test`.** A single read
 query that leaves its transaction open holds locks the suite needs. If a review
 needs database facts, give it its own database or have it compile SQL offline:

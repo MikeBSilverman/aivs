@@ -5,10 +5,11 @@ Two rules govern this module.
 **Fail closed.** Every default is the safe value, including ``environment``,
 which defaults to ``production``. A deployment that forgets to set something
 gets the strict behaviour, never the permissive one. The dev conveniences that
-would be dangerous in production (trusting identity headers without a proxy
-secret, permissive CORS, verbose errors) are individually gated *and*
-cross-checked in :meth:`Settings.validate_production_posture`, which refuses to
-construct a production ``Settings`` with any of them enabled.
+would be dangerous on a real deployment (trusting identity headers without a
+proxy secret, verbose errors, private webhook targets) are individually gated
+*and* cross-checked in :meth:`Settings.validate_production_posture`, which
+refuses to construct ``Settings`` with any of them enabled in any environment
+but ``dev`` -- staging and test included, not production alone.
 
 **Secrets never round-trip.** Anything sensitive is a ``SecretStr`` so that an
 accidental ``repr``, log line, or error page prints ``**********``. Most values
@@ -16,7 +17,7 @@ come from the environment; the key-encryption key, outside dev, comes from a
 file only its owner can read (``AIVS_SECRET_ENCRYPTION_KEY_FILE``), because the
 environment is shown by ``docker inspect``, ``/proc/<pid>/environ``, crash dumps
 and orchestration dashboards, and that key opens every sealed secret. There is
-deliberately no ``.env`` file support in production.
+deliberately no ``.env`` file support in any environment.
 """
 
 from __future__ import annotations
@@ -192,7 +193,7 @@ class Settings(BaseSettings):
     #: unconditionally overwrites the identity headers).
     proxy_shared_secret: SecretStr
     #: CIDRs the proxy may connect from. Empty means "do not check the peer
-    #: address" and is only permitted outside production.
+    #: address" and is permitted in ``dev`` alone.
     trusted_proxy_cidrs: list[str] = Field(default_factory=lambda: ["127.0.0.1/32"])
     #: Header names carrying the verified client certificate. Configurable
     #: because different proxies (nginx, envoy, HAProxy) spell them differently.
@@ -219,10 +220,10 @@ class Settings(BaseSettings):
     #: that is why the e2e tests go through nginx rather than trusting dev.
     issuing_ca_certificate_file: Path | None = None
 
-    # -- Development-only escape hatches (refused in production) -----------
-    #: Accept identity headers without a valid ``X-Proxy-Auth``. NEVER in prod.
+    # -- Development-only escape hatches (refused outside dev) -------------
+    #: Accept identity headers without a valid ``X-Proxy-Auth``. Dev only.
     dev_trust_unauthenticated_proxy: bool = False
-    #: Return exception detail in HTTP responses. NEVER in prod.
+    #: Return exception detail in HTTP responses. Dev only.
     dev_expose_error_detail: bool = False
 
     # -- Request limits ----------------------------------------------------
@@ -276,8 +277,8 @@ class Settings(BaseSettings):
     # -- Outbound webhooks --------------------------------------------------
     webhook_timeout_seconds: float = Field(default=5.0, gt=0, le=30)
     webhook_max_attempts: int = Field(default=5, ge=1, le=20)
-    #: Allow webhook delivery to private/loopback addresses. Test fixtures only;
-    #: in any real deployment this being true is an SSRF hole.
+    #: Allow webhook delivery to private/loopback addresses. Dev only; in any
+    #: real deployment this being true is an SSRF hole.
     dev_allow_private_webhook_targets: bool = False
     #: How often the dispatcher drains queued notifications. Short, because the
     #: whole point of pushing is that a member hears sooner than their next poll.
@@ -408,9 +409,9 @@ class Settings(BaseSettings):
         field validator.** Pydantic puts the *pre-coercion* input into
         ``ValidationError.input`` — the raw environment string, before
         ``SecretStr`` exists to mask it — so a field validator that raises on a
-        bad key prints that key in the error. The compose healthcheck runs
-        ``python -m aivs_server.config`` every 30 seconds and prints the
-        exception, so a single stray character in a *working* previous key,
+        bad key prints that key in the error. The container healthcheck
+        (``python -m aivs_server.healthcheck``) constructs these settings every
+        30 seconds and prints the refusal, so a single stray character in a *working* previous key,
         during the rotation window when it still opens every operator's second
         factor and every member's signing key, would publish it to the container
         health log and from there to the ISAC's log pipeline, repeatedly. An
@@ -597,10 +598,6 @@ class Settings(BaseSettings):
         return tuple(ipaddress.ip_network(c, strict=False) for c in self.trusted_proxy_cidrs)
 
     @property
-    def is_production(self) -> bool:
-        return self.environment == "production"
-
-    @property
     def secret_encryption_key_bytes(self) -> bytes:
         """The active key-encryption key. Validated at construction."""
         return _decode_kek(self.secret_encryption_key)
@@ -616,7 +613,7 @@ class Settings(BaseSettings):
         """Return whether ``peer_ip`` is an address the proxy may connect from.
 
         An empty allowlist means the check is disabled, which
-        :meth:`validate_production_posture` forbids in production.
+        :meth:`validate_production_posture` forbids outside dev.
         """
         if not self.trusted_proxy_cidrs:
             return True
@@ -642,8 +639,9 @@ def _redacted(exc: ValidationError) -> str:
     in the middle, so what survives into the message is the tail of a secret.
 
     ``str(ValidationError)`` therefore cannot be printed or logged, and this is
-    not hypothetical: the compose healthcheck runs ``python -m
-    aivs_server.config`` every 30 seconds, so one malformed value during a key
+    not hypothetical: the container healthcheck (``python -m
+    aivs_server.healthcheck``) constructs settings every 30 seconds and prints
+    the refusal, so one malformed value during a key
     rotation -- when the previous key still opens every operator's second factor
     and every member's signing key -- would publish it to the container health
     log and onward to the ISAC's log pipeline, indefinitely.
@@ -679,8 +677,11 @@ def get_settings() -> Settings:
 def _main() -> int:  # pragma: no cover - operational helper
     """Validate configuration and print a redacted summary.
 
-    Run as ``python -m aivs_server.config`` in a container's healthcheck or by
-    an operator verifying a deployment before cutting traffic over.
+    Run as ``python -m aivs_server.config`` by an operator verifying a
+    deployment before cutting traffic over (inside the app container, where the
+    configuration is: ``docker compose --env-file deploy/.env exec app python -m
+    aivs_server.config``). The container healthcheck is
+    ``aivs_server.healthcheck``, which also asks ``/readyz``.
     """
     try:
         settings = get_settings()

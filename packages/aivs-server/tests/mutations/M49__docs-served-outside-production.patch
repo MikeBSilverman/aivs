@@ -1,17 +1,17 @@
 Mutation M49: the interactive docs and /openapi.json are served everywhere but production, staging included
-Re-applies: a1236f8 "Resolve findings from the sharded security review and OWASP 2025 assessment"
+Re-applies: a1236f8 "Resolve findings from the sharded security review and OWASP 2025 assessment" (rewritten when Settings.is_production, which had no other caller, was deleted: the same condition, spelled out)
 
 Expect red: packages/aivs-server/tests/authz_matrix/test_authz_matrix.py::test_public_routes_are_exactly_the_intended_set
 
 diff --git a/packages/aivs-server/src/aivs_server/main.py b/packages/aivs-server/src/aivs_server/main.py
 --- a/packages/aivs-server/src/aivs_server/main.py
 +++ b/packages/aivs-server/src/aivs_server/main.py
-@@ -192,7 +192,7 @@
+@@ -213,7 +213,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
      # instance for a financial-sector ISAC mirrors production and holds real
      # embargoed intelligence; serving it an unauthenticated /openapi.json
      # publishes the entire admin surface and every response model.
 -    show_docs = settings.environment == "dev"
-+    show_docs = not settings.is_production
++    show_docs = settings.environment != "production"
  
      app = FastAPI(
          title="AIVS",

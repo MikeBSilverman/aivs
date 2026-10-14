@@ -89,7 +89,7 @@ def test_development_may_still_use_bypasses():
 def test_hardened_environment_starts_when_configured_safely():
     """The interlock must not be so broad that a correct deployment cannot start."""
     settings = Settings(**_settings(environment="staging"))
-    assert settings.is_production is False
+    assert settings.environment == "staging"
     assert settings.dev_trust_unauthenticated_proxy is False
 
 

@@ -1,0 +1,17 @@
+Mutation M356: the page never reads the stored depth preference: the dashboard choice is stored and displayed and enforced by nothing
+Re-applies: H2-1 (reading depth on the page)
+
+Expect red: packages/aivs-server/tests/unit/test_reading_depth.py::test_the_stored_preference_is_read_and_a_link_overrides_it
+
+diff --git a/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py b/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py
+--- a/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py
++++ b/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py
+@@ -142,7 +142,7 @@
+     page = await vulnerability_page(session, ctx, found[0], now=now)
+     if page is None:
+         raise _NOT_FOUND
+-    chosen = resolve_depth(depth, await stored_default_depth(session, ctx))
++    chosen = resolve_depth(depth, None)
+     # Before the read is recorded: "new since you last read" compares with the
+     # firm's last portal read, and this one would otherwise be it.
+     rendering = await _rendering(session, ctx, page, chosen, now=now)

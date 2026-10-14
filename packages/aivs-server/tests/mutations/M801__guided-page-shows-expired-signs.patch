@@ -6,8 +6,8 @@ Expect red: packages/aivs-server/tests/unit/test_guidance.py::test_an_expired_si
 diff --git a/packages/aivs-server/src/aivs_server/services/guidance.py b/packages/aivs-server/src/aivs_server/services/guidance.py
 --- a/packages/aivs-server/src/aivs_server/services/guidance.py
 +++ b/packages/aivs-server/src/aivs_server/services/guidance.py
-@@ -217,7 +217,7 @@
-         no_fix=_no_fix(actions),
+@@ -224,7 +224,7 @@
+         no_fix=_no_fix(actions, now),
          done_when=_done_when(actions),
          watch_for=tuple(
 -            _watch_for(obj, new_ids) for obj in indicators if is_current_indicator(obj, now)

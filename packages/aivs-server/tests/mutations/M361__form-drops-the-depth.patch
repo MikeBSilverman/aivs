@@ -1,0 +1,17 @@
+Mutation M361: a form sent from a depth returns to the standard page
+Re-applies: H2-1 (reading depth on the page)
+
+Expect red: packages/aivs-server/tests/unit/test_reading_depth.py::test_a_form_returns_to_the_depth_it_was_sent_from
+
+diff --git a/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py b/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py
+--- a/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py
++++ b/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py
+@@ -367,7 +367,7 @@
+         raise _NOT_FOUND
+     query = {"id": vulnerability}
+     if depth in {known.value for known in ReadingDepth}:
+-        query["depth"] = depth
++        pass
+     return redirect_within_portal(f"/portal/vulnerabilities?{urlencode(query)}")
+ 
+ 

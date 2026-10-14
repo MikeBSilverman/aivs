@@ -14,8 +14,8 @@ The view never shows a STIX type name or identifier (NFR-U5). "Indicator" and
 "watch for" and "do this".
 
 The caller passes only objects it may see -- the latest visible version of
-each, as :mod:`aivs_server.services.vulnerability_objects` gathers them -- so
-this module makes no visibility decision and needs no session. Everything it
+each, as the vulnerability page gathers them -- so this module makes no
+visibility decision and needs no session. Everything it
 renders is member-supplied text, which the template escapes (SF-29).
 """
 
@@ -147,6 +147,10 @@ _NO_FIX: Final[Mapping[str, str]] = {
     "none_available": "No fix is available yet.",
     "no_fix_planned": "The vendor does not plan to fix this.",
 }
+_STALE_NO_FIX: Final[str] = (
+    "The last word was that there is no fix, but nobody has confirmed that since "
+    "the date its author set. Ask the ISAC before relying on it."
+)
 
 _RESTART: Final[Mapping[str, str]] = {
     "none": "No restart needed.",
@@ -217,7 +221,7 @@ def guide(
         exploited=_exploited(intel),
         affected=tuple(_affected(product) for product in _products(intel)),
         steps=_steps(actions, now, new_ids),
-        no_fix=_no_fix(actions),
+        no_fix=_no_fix(actions, now),
         done_when=_done_when(actions),
         watch_for=tuple(
             _watch_for(obj, new_ids) for obj in indicators if is_current_indicator(obj, now)
@@ -422,13 +426,21 @@ def _step(action: StixObject, now: dt.datetime, new_ids: frozenset[str]) -> Step
     )
 
 
-def _no_fix(actions: Sequence[StixObject]) -> str | None:
+def _no_fix(actions: Sequence[StixObject], now: dt.datetime) -> str | None:
+    """What the reader is told when no step is shared: the statement that there is no fix.
+
+    A statement past its ``review_by`` is told as stale, the way readiness
+    reports it (``LAPSED``): repeating "no fix" as current would be a claim
+    nobody has re-checked.
+    """
     if any(_category(obj) in {"vendor_fix", "mitigation", "workaround"} for obj in actions):
         return None
-    for obj in actions:
-        statement = _NO_FIX.get(_category(obj) or "")
-        if statement:
-            return statement
+    statements = [obj for obj in actions if _category(obj) in _NO_FIX]
+    current = [obj for obj in statements if not is_due_for_review(obj, now)]
+    if current:
+        return _NO_FIX[_category(current[0]) or ""]
+    if statements:
+        return _STALE_NO_FIX
     return None
 
 

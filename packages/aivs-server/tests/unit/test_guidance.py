@@ -164,6 +164,20 @@ def test_a_statement_that_there_is_no_fix_is_shown_only_when_nothing_can_be_done
     assert guide(vuln, [no_fix, workaround], now=NOW).no_fix is None
 
 
+@pytest.mark.requirement("SF-8")
+def test_a_no_fix_statement_past_its_review_date_is_told_as_stale_not_repeated():
+    """The guided view and readiness give one answer: a lapsed "no fix" is
+    neither repeated as current nor turned into its opposite."""
+    vuln, _ = everything()
+    stale = action("none_available", "No fix yet", review_by="2026-09-01")
+    told = guide(vuln, [stale], now=NOW).no_fix
+    assert told is not None
+    assert "No fix is available yet." not in told
+    assert "Ask the ISAC" in told
+    current = action("no_fix_planned", "No fix planned", review_by="2026-12-01")
+    assert guide(vuln, [stale, current], now=NOW).no_fix == "The vendor does not plan to fix this."
+
+
 # ---------------------------------------------------------------------------
 # Freshness (SF-46; review_by)
 # ---------------------------------------------------------------------------

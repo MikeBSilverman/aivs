@@ -1,0 +1,32 @@
+Mutation M357: the technical depth serialises each object's latest stored version, not its latest visible one
+Re-applies: H2-1 (reading depth on the page)
+
+Expect red: packages/aivs-server/tests/unit/test_reading_depth.py::test_the_technical_record_shows_the_latest_version_the_reader_can_see
+
+diff --git a/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py b/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py
+--- a/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py
++++ b/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py
+@@ -40,7 +40,7 @@
+ from aivs_server.auth.deps import SessionDep, SettingsDep
+ from aivs_server.auth.policy import can_hold_evidence_pack, can_review_submissions
+ from aivs_server.db.clock import database_now
+-from aivs_server.db.models import OrgPosture
++from aivs_server.db.models import OrgPosture, StixObject
+ from aivs_server.portal.shared import (
+     base_context,
+     current_session,
+@@ -189,7 +189,13 @@
+     if depth is ReadingDepth.GUIDED:
+         rendering["guidance"] = await _guidance(session, ctx, page, now=now)
+     elif depth is ReadingDepth.TECHNICAL:
+-        rendering["record"] = _record(page)
++        # Each object's latest stored version, whoever it was distributed to.
++        ids = [page.vulnerability.stix_id, *(i.stix_id for v in page.related.values() for i in v)]
++        stored = await session.scalars(
++            select(StixObject).where(StixObject.stix_id.in_(ids)).order_by(StixObject.modified)
++        )
++        latest = {obj.stix_id: obj.raw for obj in stored}
++        rendering["record"] = json.dumps(list(latest.values()), indent=2, sort_keys=True)
+     return rendering
+ 
+ 

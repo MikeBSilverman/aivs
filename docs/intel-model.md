@@ -247,8 +247,9 @@ Built, except where a line says otherwise:
   vulnerability from its objects alone, in plain language, with no STIX
   type names (`services/guidance.py`, `templates/_guided.html`); `technical`
   is the raw STIX. The one stored preference is a per-operator
-  `default_depth`, because it has a reader the day it lands. *Wiring the
-  depths into the vulnerability page waits for that page.*
+  `default_depth`, read by the vulnerability page (`?depth=` overrides it).
+  Each depth is a rendering of the same visible objects; technical shows each
+  one's latest *visible* version, and history is the evidence pack's.
 - **`isac_assessment`** (`confirms | adds | contradicts | no_position`)
   states the ISAC's position relative to the public record, with the delta.
   Like readiness, it is relative to the caller: the guided view reads it from

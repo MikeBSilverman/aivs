@@ -530,3 +530,7 @@ td form {
   }
   footer { display: block; border-top: 1px solid #999999; }
 }
+
+/* Reading depth switch and the technical record (templates/vulnerability.html). */
+.depths { display: flex; gap: 0.8rem; font-size: 0.9rem; }
+.record { overflow-x: auto; white-space: pre; font-size: 0.85rem; max-height: 40rem; }

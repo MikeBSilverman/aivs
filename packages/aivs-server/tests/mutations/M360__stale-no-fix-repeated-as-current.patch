@@ -1,0 +1,17 @@
+Mutation M360: the guided view repeats a lapsed no-fix statement as current, against readiness's LAPSED
+Re-applies: H2-2 (one answer on one page)
+
+Expect red: packages/aivs-server/tests/unit/test_guidance.py::test_a_no_fix_statement_past_its_review_date_is_told_as_stale_not_repeated
+
+diff --git a/packages/aivs-server/src/aivs_server/services/guidance.py b/packages/aivs-server/src/aivs_server/services/guidance.py
+--- a/packages/aivs-server/src/aivs_server/services/guidance.py
++++ b/packages/aivs-server/src/aivs_server/services/guidance.py
+@@ -436,7 +436,7 @@
+     if any(_category(obj) in {"vendor_fix", "mitigation", "workaround"} for obj in actions):
+         return None
+     statements = [obj for obj in actions if _category(obj) in _NO_FIX]
+-    current = [obj for obj in statements if not is_due_for_review(obj, now)]
++    current = statements
+     if current:
+         return _NO_FIX[_category(current[0]) or ""]
+     if statements:

@@ -1,0 +1,17 @@
+Mutation M359: the guided page keeps the timeline, whose lines name STIX types
+Re-applies: H2-1 (reading depth on the page)
+
+Expect red: packages/aivs-server/tests/unit/test_reading_depth.py::test_the_guided_page_names_no_stix_type_and_no_stix_id_through_the_route
+
+diff --git a/packages/aivs-server/src/aivs_server/portal/templates/vulnerability.html b/packages/aivs-server/src/aivs_server/portal/templates/vulnerability.html
+--- a/packages/aivs-server/src/aivs_server/portal/templates/vulnerability.html
++++ b/packages/aivs-server/src/aivs_server/portal/templates/vulnerability.html
+@@ -147,7 +147,7 @@
+ {% endif %}
+ {% endif %}
+ 
+-{% if depth != "guided" %}
++{% if true %}
+ <div class="card">
+   <h2>Timeline</h2>
+   <div class="table-wrap">

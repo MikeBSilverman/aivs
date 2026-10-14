@@ -6,13 +6,11 @@ Expect red: packages/aivs-server/tests/abuse/test_platform_abuse.py::test_a_forg
 diff --git a/packages/aivs-server/src/aivs_server/auth/mtls.py b/packages/aivs-server/src/aivs_server/auth/mtls.py
 --- a/packages/aivs-server/src/aivs_server/auth/mtls.py
 +++ b/packages/aivs-server/src/aivs_server/auth/mtls.py
-@@ -161,10 +161,6 @@
+@@ -177,8 +177,6 @@ def client_address(
      anyone could have set it, and the peer -- the address actually talking to
      us -- is the honest answer. Informational only: no decision reads it.
      """
--    try:
--        _require_trusted_proxy(settings, peer_ip, headers.get(settings.header_proxy_auth))
--    except CertificateRejectedError:
+-    if not is_vouched_for_by_proxy(settings, headers, peer_ip):
 -        return peer_ip
      forwarded = headers.get(settings.header_real_ip, "").strip()
      try:

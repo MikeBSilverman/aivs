@@ -6,7 +6,7 @@ Expect red: packages/aivs-server/tests/authz_matrix/test_principal_matrix.py::te
 diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs-server/src/aivs_server/auth/policy.py
 --- a/packages/aivs-server/src/aivs_server/auth/policy.py
 +++ b/packages/aivs-server/src/aivs_server/auth/policy.py
-@@ -415,7 +415,7 @@
+@@ -473,7 +473,7 @@ def can_pause_distribution(ctx: AuthContext) -> bool:
  
  def can_resume_distribution(ctx: AuthContext) -> bool:
      """Start publishing again: an editorial decision."""
@@ -14,4 +14,4 @@ diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs
 +    return is_isac_editor(ctx) or is_system_admin(ctx)
  
  
- def _within_any(intervals: Intervals) -> ColumnElement[bool]:
+ def can_read_isac_records(ctx: AuthContext) -> bool:

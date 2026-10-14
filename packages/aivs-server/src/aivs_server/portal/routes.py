@@ -775,7 +775,7 @@ async def perform_action(
                 submission,
                 reason=None,
                 hourly_limit=settings.contribution_hourly_limit,
-                now=dt.datetime.now(dt.UTC),
+                now=await database_now(session),
             )
         elif verb == "validate":
             acknowledged = frozenset(

@@ -59,6 +59,7 @@ from aivs_schemas.extension.builders import format_stix_timestamp
 from aivs_server.audit.log import AuditAction, record, record_independently
 from aivs_server.auth.context import AuthContext
 from aivs_server.auth.policy import distribution_visibility_clause, writable_circle_ids
+from aivs_server.db.clock import database_now
 from aivs_server.db.models import (
     Circle,
     Distribution,
@@ -410,7 +411,7 @@ async def _validate_and_distribute(
         session,
         submission_id=submission.id,
         circle_ids=targets,
-        visible_at=dt.datetime.now(dt.UTC),
+        visible_at=await database_now(session),
     )
     await record(
         session,
@@ -440,7 +441,7 @@ async def _refuse_unless_published_in_the_isacs_view(
         .scalars()
         .all()
     )
-    now = dt.datetime.now(dt.UTC)
+    now = await database_now(session)
     for stix_id in sorted(external_references_by_type(raws, "vulnerability")):
         if not await published_in_the_isacs_view(
             session, stix_id, exclude_submission_id=submission.id, now=now

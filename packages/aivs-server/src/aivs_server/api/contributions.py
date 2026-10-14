@@ -36,6 +36,7 @@ from aivs_server.auth.policy import (
     is_isac_editor,
     require,
 )
+from aivs_server.db.clock import database_now
 from aivs_server.db.models import Circle
 from aivs_server.services.contributions import (
     ContributionRateLimitedError,
@@ -199,7 +200,7 @@ async def one_click(
             target_id=payload.target,
             kind=payload.kind,
             hourly_limit=settings.contribution_hourly_limit,
-            now=dt.datetime.now(dt.UTC),
+            now=await database_now(session),
         )
         await session.commit()
     except TargetNotFoundError:
@@ -225,7 +226,7 @@ async def set_posture(payload: PostureIn, ctx: AuthenticatedContext, session: Se
             ctx,
             vulnerability_id=payload.vulnerability,
             statement=payload.statement(),
-            now=dt.datetime.now(dt.UTC),
+            now=await database_now(session),
         )
         await session.commit()
     except TargetNotFoundError:
@@ -249,7 +250,7 @@ async def export_postures(ctx: AuthenticatedContext, session: SessionDep) -> dic
     Declared before ``/postures/{posture_id}``, which would otherwise take
     "openvex" for an id and refuse it as malformed.
     """
-    document = await openvex_document(session, ctx, now=dt.datetime.now(dt.UTC))
+    document = await openvex_document(session, ctx, now=await database_now(session))
     # The act, never the content or the number of statements: the audit log is
     # the ISAC's, and a count of postures is a fact about the firm's exposure.
     await record(
@@ -346,7 +347,7 @@ async def file_for_member(
             org_id=payload.on_behalf_of,
             consent_sha256=payload.consent_sha256,
             content=content,
-            now=dt.datetime.now(dt.UTC),
+            now=await database_now(session),
         )
         await session.commit()
     except _CLIENT_ERRORS as exc:

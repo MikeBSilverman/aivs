@@ -59,7 +59,10 @@ def skew_clock(monkeypatch: pytest.MonkeyPatch, module: types.ModuleType, offset
 
     fake = types.SimpleNamespace(**{name: getattr(dt, name) for name in dir(dt) if name[0] != "_"})
     fake.datetime = Skewed
-    monkeypatch.setattr(module, "dt", fake)
+    # ``raising=False``: a module that no longer reads the app clock has no ``dt``
+    # to replace, which is the property these tests are after, not a reason to
+    # stop testing it.
+    monkeypatch.setattr(module, "dt", fake, raising=False)
 
 
 def close_to(stamp: dt.datetime, reference: dt.datetime) -> bool:

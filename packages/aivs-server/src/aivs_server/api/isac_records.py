@@ -7,7 +7,6 @@ the published API does not already say.
 
 from __future__ import annotations
 
-import datetime as dt
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, status
@@ -15,6 +14,7 @@ from pydantic import BaseModel
 
 from aivs_server.auth.deps import AuthenticatedContext, SessionDep
 from aivs_server.auth.policy import can_read_isac_records
+from aivs_server.db.clock import database_now
 from aivs_server.services.isac_records import latest_isac_vulnerabilities
 
 __all__ = ["router"]
@@ -31,5 +31,5 @@ async def isac_vulnerabilities(ctx: AuthenticatedContext, session: SessionDep) -
     """The newest version of each of the ISAC's vulnerability records. Its automation only."""
     if not can_read_isac_records(ctx):
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Not found")
-    objects = await latest_isac_vulnerabilities(session, now=dt.datetime.now(dt.UTC))
+    objects = await latest_isac_vulnerabilities(session, now=await database_now(session))
     return IsacRecordsOut(objects=objects)

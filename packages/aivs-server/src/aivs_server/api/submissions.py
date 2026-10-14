@@ -11,7 +11,6 @@ of every target circle.
 
 from __future__ import annotations
 
-import datetime as dt
 import uuid
 from typing import Annotated
 
@@ -300,7 +299,7 @@ async def submit(
             submission,
             reason=payload.reason,
             hourly_limit=settings.contribution_hourly_limit,
-            now=dt.datetime.now(dt.UTC),
+            now=await database_now(session),
         )
         await session.commit()
     except _CLIENT_ERRORS as exc:

@@ -13,7 +13,6 @@ visibly, rather than silently appearing in every member's feed.
 
 from __future__ import annotations
 
-import datetime as dt
 import json
 import uuid
 from collections import defaultdict
@@ -39,6 +38,7 @@ from aivs_server.auth.policy import (
     readable_circle_ids,
 )
 from aivs_server.config import Settings
+from aivs_server.db.clock import database_now
 from aivs_server.db.models import Circle, TaxiiCollection
 from aivs_server.services.contributions import ContributionRateLimitedError
 from aivs_server.services.inbox import receive_envelope, status_of
@@ -664,7 +664,7 @@ async def add_objects(
             circle=circle,
             envelope=envelope,
             hourly_limit=settings.contribution_hourly_limit,
-            now=dt.datetime.now(dt.UTC),
+            now=await database_now(session),
         )
         await session.commit()
     except ContributionRateLimitedError:

@@ -43,6 +43,7 @@ from aivs_schemas.extension.builders import (
 from aivs_server.audit.log import AuditAction, record
 from aivs_server.auth.context import AuthContext
 from aivs_server.auth.policy import PolicyDeniedError, can_transition_submission, require
+from aivs_server.db.clock import database_now
 from aivs_server.db.models import Organization, StixObject, Submission, SubmissionTransition
 from aivs_server.services.disclosure import DisclosureScope, disclosure_problem
 from aivs_server.services.indexing import intel_index_fields
@@ -581,7 +582,7 @@ async def _refuse_contribution_problem(
     objects: list[Any],
 ) -> None:
     problem = await contribution_problem(
-        session, submission, objects, visible_to=visible_to, now=dt.datetime.now(dt.UTC)
+        session, submission, objects, visible_to=visible_to, now=await database_now(session)
     )
     if problem is not None:
         raise SubmissionError(problem)
@@ -873,7 +874,7 @@ async def check_content_rules(session: AsyncSession, submission: Submission) -> 
             session, raws, owner_org_id=submission.submitter_org_id
         ),
         await contribution_problem(
-            session, submission, raws, visible_to=None, now=dt.datetime.now(dt.UTC)
+            session, submission, raws, visible_to=None, now=await database_now(session)
         ),
     ):
         if problem is not None:

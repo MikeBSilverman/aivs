@@ -15,18 +15,20 @@ import uuid
 from typing import Any
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 
 from aivs_schemas.enums import CircleRole, OrgStatus, PostureStatus
+from aivs_server.api import contributions as contributions_api
 from aivs_server.audit.log import AuditAction
 from aivs_server.auth.context import AuthContext, AuthMethod, CircleGrant, MembershipInterval
-from aivs_server.db.models import AuditLog, OrgPosture
+from aivs_server.db.models import AuditLog, Distribution, OrgPosture, StixObject
 from aivs_server.services.posture import VexStatement, _suppress, record_posture
 from aivs_server.services.telemetry import K_ANONYMITY
 from tests.authz_matrix.test_authz_matrix import walk_routes
 from tests.conftest import proxy_headers
 from tests.unit.contribution_world import STAMP, seed
 from tests.unit.sharing_world import API, SharingWorld, build_sharing_world
+from tests.unit.test_one_clock import skew_clock
 
 pytestmark = pytest.mark.db
 
@@ -409,3 +411,41 @@ def test_the_total_is_shown_only_when_every_count_is():
 
     assert {count.value for count in summary.by_status.values()} == {K_ANONYMITY}
     assert summary.total.value == K_ANONYMITY * len(PostureStatus)
+
+
+@pytest.mark.requirement("SF-10")
+async def test_a_fast_app_clock_does_not_show_a_member_an_embargo_early(
+    client, session, world, monkeypatch
+):
+    """The posture's visibility check reads the database's clock, as the TAXII readers do.
+
+    On a replica two hours fast, an app-clock "now" passed an embargo that is
+    still an hour away, and the member could record a posture on it -- which
+    told it the embargoed record existed.
+    """
+    embargoed = f"vulnerability--{uuid.uuid4()}"
+    submission = await seed(
+        session,
+        world.isac_org,
+        {
+            "type": "vulnerability",
+            "spec_version": "2.1",
+            "id": embargoed,
+            "created": STAMP,
+            "modified": STAMP,
+            "name": "Still under embargo",
+        },
+        circle=world.circle,
+    )
+    await session.execute(
+        update(Distribution)
+        .where(Distribution.submission_id == submission.id)
+        .values(date_added=func.now() + dt.timedelta(hours=1))
+    )
+    await session.commit()
+    skew_clock(monkeypatch, contributions_api, dt.timedelta(hours=2))
+
+    response = await set_posture(client, world.member.person, embargoed)
+
+    assert response.status_code == 404
+    assert await session.scalar(select(StixObject.id).where(StixObject.stix_id == embargoed))

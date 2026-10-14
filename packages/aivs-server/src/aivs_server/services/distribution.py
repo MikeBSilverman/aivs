@@ -21,10 +21,12 @@ restrictiveness; content looser than that is refused rather than quietly
 downgraded.
 
 **The content rules hold at the moment of release.** Owner-only versioning,
-the disclosure split and TLP inheritance were checked at validate; they are
-checked again here, because the target's state can change in between -- a
-disclosure withdrawn, a newer version distributed by its owner -- and this is
-the last point at which the content can still be refused. The submission's TLP
+the disclosure split, TLP inheritance and others' registered identifiers were
+checked at validate; they are checked again here, because the target's state
+can change in between -- a disclosure withdrawn, a newer version distributed
+by its owner -- and, for content distributed now, this is the last point at
+which it can still be refused. An embargo's release asks the same question
+again (``services.content_rules``, ``services.embargo``). The submission's TLP
 marking is then stamped onto every object, as attribution is.
 
 **Anonymity is applied to the stored object.** When a submitter asks to be
@@ -53,16 +55,12 @@ from aivs_server.db.models import (
     StixObject,
     Submission,
 )
+from aivs_server.services.content_rules import content_problem
 from aivs_server.services.embargo import record_embargo
 from aivs_server.services.markings import stamp_tlp_marking
-from aivs_server.services.ownership import foreign_owned_versions_problem
 from aivs_server.services.proxy_filing import awaiting_confirmation_problem
 from aivs_server.services.publication import earliest_publication_instant, hold_publication_lock
-from aivs_server.services.submissions import (
-    contribution_problem,
-    foreign_identity_ids,
-    self_identifying_problem,
-)
+from aivs_server.services.submissions import self_identifying_problem
 from aivs_server.taxii.resources import truncate_to_taxii_precision
 
 __all__ = ["DistributionError", "DistributionResult", "distribute_submission"]
@@ -147,19 +145,6 @@ async def _apply_attribution(
     Reassigned rather than deleted: an object with no attribution at all is more
     suspicious to a consumer than one attributed to whoever vouched for it.
     """
-    # Checked again here, not only at ingest: an organisation can be enrolled
-    # with that identifier after the bundle was stored, and distribution is the
-    # last point at which the bundle can still be refused.
-    impersonated = await foreign_identity_ids(
-        session, (stored.raw for stored in objects), submitter_org_id=submission.submitter_org_id
-    )
-    if impersonated:
-        msg = (
-            "identity objects may not use an identifier registered to another "
-            f"organisation: {', '.join(impersonated)}"
-        )
-        raise DistributionError(msg)
-
     if submission.distribute_anonymously:
         # Checked again here, not only at ingest. Distribution is the last point
         # at which the anonymity promise can still be kept, and the flag can be
@@ -192,16 +177,12 @@ async def _apply_attribution(
 async def _refuse_content_problems(
     session: AsyncSession, submission: Submission, objects: list[StixObject], *, now: dt.datetime
 ) -> None:
-    """Owner-only versioning, the disclosure split and TLP inheritance, as they stand now."""
-    raws = [stored.raw for stored in objects]
-    for problem in (
-        await foreign_owned_versions_problem(
-            session, raws, owner_org_id=submission.submitter_org_id
-        ),
-        await contribution_problem(session, submission, raws, visible_to=None, now=now),
-    ):
-        if problem is not None:
-            raise DistributionError(problem)
+    """The content rules as they stand now: see ``services.content_rules``."""
+    problem = await content_problem(
+        session, submission, [stored.raw for stored in objects], now=now
+    )
+    if problem is not None:
+        raise DistributionError(problem)
 
 
 def _stamp_markings(submission: Submission, objects: list[StixObject]) -> None:

@@ -472,7 +472,7 @@ is frozen, and is constructed exactly once per process.
 
 | Component | Purpose | Failure behaviour |
 | --- | --- | --- |
-| Embargo sweeper (APScheduler, `AIVS_EMBARGO_SWEEP_INTERVAL_SECONDS`, default 30s) | Flips `embargoes.status` to `released` and fires notifications when `release_at` passes. | Not the enforcement point. Content becomes visible on the `date_added <= now` comparison regardless. A dead sweeper delays *notification*, not *release*. |
+| Embargo sweeper (APScheduler, `AIVS_EMBARGO_SWEEP_INTERVAL_SECONDS`, default 30s) | Flips `embargoes.status` to `released` and fires notifications when `release_at` passes; holds a pending embargo whose content no longer passes the distribution-time rules. | Not the enforcement point. Content becomes visible on the `date_added <= now` comparison regardless. A dead sweeper delays *notification*, not *release* -- and cannot hold, so a rule that stops holding while it is down is reported at release (`content_problem`), not prevented. |
 | Webhook delivery (`notify/`) | HMAC-signed POSTs to member-registered HTTPS endpoints. | Retried up to `AIVS_WEBHOOK_MAX_ATTEMPTS` (default 5) with a `AIVS_WEBHOOK_TIMEOUT_SECONDS` (default 5s) timeout; `consecutive_failures` tracked per webhook; every attempt recorded in `webhook_deliveries`. |
 
 Webhook URLs are constrained to `https://` by a database check constraint, and

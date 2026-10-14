@@ -432,6 +432,18 @@ Operationally this means:
   status flips and notifications self-heals on restart.
 - A sweeper outage means members are not **notified**. Alert on it, but do not
   treat it as a disclosure incident.
+- The sweeper also re-checks every embargo still on its timer against the
+  content rules distribution checked (ownership, the disclosure split, TLP
+  inheritance, others' registered identifiers). One that no longer passes --
+  the target moved back out of disclosure, a referent re-marked stricter -- is
+  **held**: an `embargo.held` audit row and a warning name the rule, the
+  embargo's policy becomes `manual` with no release time, and its content
+  waits. Decide: fix the cause and release it early (which checks again and
+  says why if it still refuses), or extend it to put it back on a timer.
+- A rule that stops holding within one sweep interval of the release time, or
+  while the sweeper is down, cannot be caught before the clock releases the
+  content. The release's `embargo.released` row then carries
+  `content_problem`; treat that as a handling incident for the content named.
 
 ### Extending
 

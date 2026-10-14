@@ -181,8 +181,9 @@ async def _queue_telemetry_milestones() -> None:
 
 
 async def _sweep_embargoes() -> None:
-    """Mark embargoes released once due. Bookkeeping only: content becomes
-    visible the instant its ``date_added`` passes, whether or not this runs."""
+    """Hold pending embargoes whose content no longer passes, and mark due ones
+    released. Releasing is bookkeeping: content becomes visible the instant its
+    ``date_added`` passes, whether or not this runs. See services.embargo."""
     async with session_scope() as session:
         await sweep_due_embargoes(session)
 

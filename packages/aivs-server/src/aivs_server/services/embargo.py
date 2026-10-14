@@ -29,6 +29,28 @@ On moving ``date_added`` around, which looks symmetric and is not:
 * **Extending after release is not**, because members already hold the content.
   Retracting visibility would be a false promise, exactly as withdrawal is after
   distribution.
+
+**Release re-checks the content rules** (``services.content_rules``) that
+distribution checked, because an embargo runs for days and what they are
+decided by moves: a target withdrawn from disclosure, a referent re-marked
+stricter. Release used to rely on the check made at distribution (W-P1).
+
+* Early release is an operator's act, so it re-checks and refuses, saying why.
+* A timer releases by the clock, with no transaction to refuse in -- the
+  property that lets the sweeper be down (NFR-A3). So the sweeper re-checks
+  every embargo still on its timer on every pass, and one that no longer passes
+  is *held* before its time arrives: its rows move to
+  ``HELD_UNTIL_RELEASED``, out of the clock's reach, the embargo becomes
+  ``manual`` with no release time, and the ISAC is told (an ``embargo.held``
+  audit row and a warning). An operator then releases it early, which
+  re-checks again, or extends it, which puts it back on a timer. Holding moves
+  content later, so it runs during a pause, as an extension may.
+* What this cannot catch: a rule that stops holding within one sweep interval
+  of the release time, or while the sweeper is down. That content becomes
+  readable on time, as NFR-A3 promises; the release is still recorded, and
+  ``content_problem`` in its audit row says what no longer holds, so the ISAC
+  learns of it. Closing that window means making release a write the sweeper
+  performs, which trades NFR-A3 away; that is a decision, not a fix.
 """
 
 from __future__ import annotations
@@ -36,6 +58,7 @@ from __future__ import annotations
 import datetime as dt
 import logging
 import uuid
+from typing import Final
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -43,30 +66,37 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from aivs_schemas.enums import EmbargoPolicy, EmbargoStatus
 from aivs_server.audit.log import AuditAction, record
 from aivs_server.auth.context import AuthContext
-from aivs_server.db.models import Distribution, Embargo
+from aivs_server.db.models import Distribution, Embargo, StixObject, Submission
 from aivs_server.notify.events import (
     circle_ids_for_submission,
     queue_visibility_notifications,
 )
+from aivs_server.services.content_rules import content_problem
 from aivs_server.services.publication import (
-    PublicationPausedError,
     earliest_publication_instant,
     hold_publication_lock,
+    publication_paused,
 )
 from aivs_server.taxii.resources import truncate_to_taxii_precision
 
 __all__ = [
+    "HELD_UNTIL_RELEASED",
     "EmbargoError",
     "extend_embargo",
     "record_embargo",
     "release_embargo_now",
+    "release_problem",
     "sweep_due_embargoes",
 ]
 
 logger = logging.getLogger(__name__)
 
-#: One tick of the precision TAXII timestamps carry. Used to place an
-#: early-released row strictly ahead of every cursor that can already exist.
+#: Where a held embargo's rows wait. Beyond any timer, so the clock never
+#: releases them; and still a future ``date_added``, so everything that reads
+#: "embargoed" as ``date_added > now`` (the ownership and disclosure rules, the
+#: AI gate's previous version) goes on reading it that way. Moving rows here is
+#: safe for the reason extension is: they are not yet visible.
+HELD_UNTIL_RELEASED: Final[dt.datetime] = dt.datetime(9999, 12, 31, tzinfo=dt.UTC)
 
 
 class EmbargoError(ValueError):
@@ -159,6 +189,14 @@ async def release_embargo_now(
         # release_at. Recording an *early* release now would misstate when they
         # could, in the record that exists to say exactly that.
         return await _record_elapsed_release(session, ctx, embargo, reason=reason)
+    problem = await release_problem(session, submission_id, now=now)
+    if problem is not None:
+        logger.warning(
+            "early release refused: the content no longer passes the rules distribution checked",
+            extra={"submission_id": str(submission_id), "reason": problem},
+        )
+        msg = f"not released: {problem}"
+        raise EmbargoError(msg)
 
     # Only rows still in the future move; anything already visible keeps the
     # timestamp members have been polling against.
@@ -287,6 +325,8 @@ async def extend_embargo(
     previous = embargo.release_at
     embargo.release_at = target
     embargo.status = EmbargoStatus.EXTENDED
+    # A held embargo goes back on a timer, and the sweeper checks it again.
+    embargo.policy = EmbargoPolicy.TIMER
 
     await record(
         session,
@@ -303,31 +343,119 @@ async def extend_embargo(
     return embargo
 
 
+async def release_problem(
+    session: AsyncSession, submission_id: uuid.UUID, *, now: dt.datetime
+) -> str | None:
+    """Why this submission's held content may not become readable now, or ``None``."""
+    submission = await session.get(Submission, submission_id)
+    if submission is None:
+        return "the embargoed submission no longer exists"
+    raws = list(
+        (
+            await session.execute(
+                select(StixObject.raw).where(StixObject.submission_id == submission_id)
+            )
+        ).scalars()
+    )
+    return await content_problem(session, submission, raws, now=now)
+
+
 async def sweep_due_embargoes(session: AsyncSession, *, now: dt.datetime | None = None) -> int:
-    """Mark embargoes whose time has arrived as released. Returns the count.
+    """Hold what no longer passes, then mark what has come due released. Returns the count released.
 
-    Bookkeeping only. The content became visible the instant its ``date_added``
-    passed, whether or not this ever runs — so a sweeper that has been down for
-    a week leaks nothing, and catches up in one pass when it returns.
+    Releasing is bookkeeping. The content became visible the instant its
+    ``date_added`` passed, whether or not this ever runs -- so a sweeper that
+    has been down for a week leaks nothing, and catches up in one pass when it
+    returns. It exists so the operator console and the audit trail say
+    ``released`` rather than ``pending`` for content members can already read,
+    and so the release is announced.
 
-    It exists so the operator console and the audit trail say ``released``
-    rather than ``pending`` for content members can already read, and so the
-    release is announced.
+    Holding is not bookkeeping: it is the only check a timer gets before the
+    clock releases it. See the module docstring.
 
     It takes the publication lock and the rows' locks, like every other writer
     of an embargo. Without them an extension committing between this read and
     its write was overwritten: the embargo said released, members were told to
     poll for content still held, and both operator controls then refused it as
-    already released. While distribution is paused it does nothing at all, so
-    no member is told that anything exists; it catches up on resume.
+    already released. While distribution is paused it releases nothing, so no
+    member is told that anything exists, and catches up on resume; it still
+    holds, because resuming makes every timer that elapsed during the pause
+    readable at once, before a later pass could.
     """
-    try:
-        locked_at = await hold_publication_lock(session, refuse_while_paused=True)
-    except PublicationPausedError:
-        await session.rollback()
-        return 0
+    # Not refused while paused: holding moves content later. Releasing is
+    # skipped below instead.
+    locked_at = await hold_publication_lock(session, refuse_while_paused=False)
     now = now or locked_at
 
+    held = await _hold_timers_that_no_longer_pass(session, now=now)
+    released = 0 if await publication_paused(session) else await _release_due(session, now=now)
+
+    # Always: the commit is also what releases the publication lock.
+    await session.commit()
+    if held or released:
+        logger.info("embargo sweep held %d and released %d submission(s)", held, released)
+    return released
+
+
+async def _hold_timers_that_no_longer_pass(session: AsyncSession, *, now: dt.datetime) -> int:
+    """Hold every embargo still on its timer whose content no longer passes. Returns the count.
+
+    One embargo's refusal is a hold, never an exception, so it cannot stop the
+    pass reaching the others.
+    """
+    pending = (
+        (
+            await session.execute(
+                select(Embargo)
+                .where(
+                    Embargo.policy == EmbargoPolicy.TIMER,
+                    Embargo.status.in_((EmbargoStatus.PENDING, EmbargoStatus.EXTENDED)),
+                    Embargo.release_at > now,
+                )
+                .with_for_update()
+            )
+        )
+        .scalars()
+        .all()
+    )
+    held = 0
+    for embargo in pending:
+        problem = await release_problem(session, embargo.submission_id, now=now)
+        if problem is not None:
+            await _hold(session, embargo, problem=problem, now=now)
+            held += 1
+    return held
+
+
+async def _hold(session: AsyncSession, embargo: Embargo, *, problem: str, now: dt.datetime) -> None:
+    """Take an embargo off its timer until an operator decides, and say why."""
+    await session.execute(
+        update(Distribution)
+        .where(Distribution.submission_id == embargo.submission_id, Distribution.date_added > now)
+        .values(date_added=HELD_UNTIL_RELEASED)
+    )
+    originally_due = embargo.release_at
+    embargo.policy = EmbargoPolicy.MANUAL
+    embargo.release_at = None
+    await record(
+        session,
+        action=AuditAction.EMBARGO_HELD,
+        actor_type="system",
+        resource_type="submission",
+        resource_id=str(embargo.submission_id),
+        details={
+            "reason": problem,
+            "originally_due": originally_due.isoformat() if originally_due else None,
+        },
+    )
+    logger.warning(
+        "embargo held: its content no longer passes the rules distribution checked",
+        extra={"submission_id": str(embargo.submission_id), "reason": problem},
+    )
+
+
+async def _release_due(session: AsyncSession, *, now: dt.datetime) -> int:
+    """Record and announce every embargo whose time has arrived. Returns the count."""
     due = (
         (
             await session.execute(
@@ -343,35 +471,46 @@ async def sweep_due_embargoes(session: AsyncSession, *, now: dt.datetime | None 
         .scalars()
         .all()
     )
-
     for embargo in due:
-        embargo.status = EmbargoStatus.RELEASED
-        embargo.released_at = embargo.release_at
-        # The third moment content becomes visible, and the one nobody is
-        # watching: a timed release happens without an operator present, so if
-        # the sweeper does not queue the notification, nothing does.
-        await queue_visibility_notifications(
-            session,
-            submission_id=embargo.submission_id,
-            circle_ids=await circle_ids_for_submission(session, embargo.submission_id),
-            visible_at=embargo.release_at or now,
-            now=now,
-        )
-        await record(
-            session,
-            action=AuditAction.EMBARGO_RELEASED,
-            actor_type="system",
-            resource_type="submission",
-            resource_id=str(embargo.submission_id),
-            details={
-                "released_at": embargo.release_at.isoformat() if embargo.release_at else None,
-                "early": False,
-            },
-        )
-
-    # Always: the commit is also what releases the publication lock.
-    await session.commit()
-    if due:
-        logger.info("embargo sweep released %d submission(s)", len(due))
-
+        await _record_timed_release(session, embargo, now=now)
     return len(due)
+
+
+async def _record_timed_release(
+    session: AsyncSession, embargo: Embargo, *, now: dt.datetime
+) -> None:
+    """Mark one elapsed embargo released, announce it, and report a rule it now fails."""
+    embargo.status = EmbargoStatus.RELEASED
+    embargo.released_at = embargo.release_at
+    # The third moment content becomes visible, and the one nobody is
+    # watching: a timed release happens without an operator present, so if
+    # the sweeper does not queue the notification, nothing does.
+    await queue_visibility_notifications(
+        session,
+        submission_id=embargo.submission_id,
+        circle_ids=await circle_ids_for_submission(session, embargo.submission_id),
+        visible_at=embargo.release_at or now,
+        now=now,
+    )
+    details: dict[str, object] = {
+        "released_at": embargo.release_at.isoformat() if embargo.release_at else None,
+        "early": False,
+    }
+    # Already readable by the clock, so not retracted; but a rule that stopped
+    # holding inside the last sweep interval (or while this was down) is the
+    # ISAC's to know about.
+    problem = await release_problem(session, embargo.submission_id, now=now)
+    if problem is not None:
+        details["content_problem"] = problem
+        logger.warning(
+            "embargo released by its timer although its content no longer passes the rules",
+            extra={"submission_id": str(embargo.submission_id), "reason": problem},
+        )
+    await record(
+        session,
+        action=AuditAction.EMBARGO_RELEASED,
+        actor_type="system",
+        resource_type="submission",
+        resource_id=str(embargo.submission_id),
+        details=details,
+    )

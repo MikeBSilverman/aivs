@@ -40,7 +40,8 @@ run hundreds of times a year and complete in milliseconds; a read waits at most
 the length of one. The wait is bounded by the engine's ``lock_timeout``, so a
 stuck writer surfaces as an error, not as a hang.
 
-Writers: ``distribute_submission``, ``release_embargo_now``, ``extend_embargo``.
+Writers: ``distribute_submission``, ``release_embargo_now``, ``extend_embargo``,
+and ``sweep_due_embargoes`` (which holds an embargo by moving its rows later).
 Readers: the four TAXII listings that compute ``X-TAXII-Date-Added-Last``.
 A new writer or reader of ``distributions.date_added`` belongs on that list.
 """

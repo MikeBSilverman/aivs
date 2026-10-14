@@ -148,6 +148,7 @@ class AuditAction:
     EMBARGO_SET = "embargo.set"
     EMBARGO_RELEASED = "embargo.released"
     EMBARGO_EXTENDED = "embargo.extended"
+    EMBARGO_HELD = "embargo.held"
 
     # Content access
     OBJECTS_RETRIEVED = "taxii.objects_retrieved"

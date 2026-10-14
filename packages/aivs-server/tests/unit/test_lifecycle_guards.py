@@ -142,6 +142,7 @@ async def test_the_bootstrap_on_a_live_instance_needs_an_explicit_flag_and_is_re
 
     alerted = await run_detections(
         session,
+        quarantine_policy="propose",
         now=dt.datetime.now(dt.UTC),
         rules=[r for r in RULES if r.name == "operator_bootstrapped"],
     )

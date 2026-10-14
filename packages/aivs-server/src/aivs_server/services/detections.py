@@ -21,9 +21,10 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
+import uuid
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Final
+from typing import Any, Final, Literal
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -41,8 +42,17 @@ from aivs_server.db.models import (
 )
 from aivs_server.notify.dispatcher import KEY_UNAVAILABLE_ERROR
 from aivs_server.observability import HEARTBEATS
+from aivs_server.services.org_status import load_org_for_update
+from aivs_server.services.quarantine import QuarantineError, quarantine_org_automatically
 
-__all__ = ["EVENT_DETECTION_RAISED", "RULES", "Finding", "run_detections"]
+__all__ = [
+    "EVENT_DETECTION_RAISED",
+    "PROPOSED_QUARANTINE",
+    "RULES",
+    "Finding",
+    "QuarantinePolicy",
+    "run_detections",
+]
 
 security_logger = logging.getLogger("aivs_server.security")
 
@@ -67,6 +77,14 @@ class Finding:
     count: int = 1
     details: dict[str, Any] = field(default_factory=dict)
 
+
+#: How a rule's proposed quarantine is acted on: shown on the status page for a
+#: human to confirm, or applied at once. The ISAC chooses; the default is the
+#: one that does less (plan, Phase A).
+QuarantinePolicy = Literal["propose", "enforce"]
+
+#: ``details["proposed_action"]`` on a finding that recommends a quarantine.
+PROPOSED_QUARANTINE: Final[str] = "quarantine"
 
 RuleCheck = Callable[[AsyncSession, dt.datetime, dt.timedelta, int], Awaitable[list[Finding]]]
 
@@ -277,6 +295,8 @@ async def _bulk_retrieval(
             subject=str(org_id),
             summary=f"one organisation retrieved {count} submissions in {window}",
             count=int(count),
+            # A scraped archive is a stolen certificate until shown otherwise.
+            details={"proposed_action": PROPOSED_QUARANTINE, "proposed_org": str(org_id)},
         )
         for org_id, count in rows
     ]
@@ -495,8 +515,29 @@ async def _emit(session: AsyncSession, finding: Finding, now: dt.datetime) -> No
     await _queue_alert(session, finding, now)
 
 
+async def _enforce_quarantine(session: AsyncSession, finding: Finding, now: dt.datetime) -> None:
+    """Apply a proposed quarantine. Refusals (the ISAC itself, an organisation
+    not active) are logged and leave the finding as a proposal."""
+    organisation = await load_org_for_update(session, uuid.UUID(finding.details["proposed_org"]))
+    if organisation is None:
+        return
+    try:
+        await quarantine_org_automatically(
+            session, organisation=organisation, rule=finding.rule, now=now
+        )
+    except QuarantineError as exc:
+        security_logger.warning(
+            "proposed quarantine not applied",
+            extra={"rule": finding.rule, "reason": str(exc)},
+        )
+
+
 async def run_detections(
-    session: AsyncSession, *, now: dt.datetime, rules: Sequence[Rule] = RULES
+    session: AsyncSession,
+    *,
+    now: dt.datetime,
+    quarantine_policy: QuarantinePolicy,
+    rules: Sequence[Rule] = RULES,
 ) -> list[Finding]:
     """Evaluate every rule once; raise what is new. Returns what was raised. Commits."""
     raised: list[Finding] = []
@@ -505,6 +546,11 @@ async def run_detections(
             if await _already_raised(session, finding, now, rule.window):
                 continue
             await _emit(session, finding, now)
+            if (
+                quarantine_policy == "enforce"
+                and finding.details.get("proposed_action") == PROPOSED_QUARANTINE
+            ):
+                await _enforce_quarantine(session, finding, now)
             raised.append(finding)
     await session.commit()
     return raised

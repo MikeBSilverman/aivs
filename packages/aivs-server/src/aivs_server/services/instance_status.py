@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from typing import Any, Final
 from urllib.parse import urlsplit
 
-from sqlalchemy import func, select
+from sqlalchemy import String, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aivs_schemas.enums import AckType, CertStatus, EmbargoStatus, OrgStatus, OrgType
@@ -70,6 +70,7 @@ class InstanceStatus:
     silent_members: list[dict[str, Any]]
     failing_webhooks: list[dict[str, Any]]
     detections: list[dict[str, Any]]
+    proposed_quarantines: list[dict[str, Any]]
     key_fingerprint: str
     key_algorithm: str
     secrets_needing_rewrap: int
@@ -223,6 +224,30 @@ async def _recent_detections(session: AsyncSession, now: dt.datetime) -> list[di
     ]
 
 
+async def _proposed_quarantines(session: AsyncSession, now: dt.datetime) -> list[dict[str, Any]]:
+    """Quarantines a detection recommended for an organisation still active.
+
+    Only under the ``propose`` policy is a human asked; under ``enforce`` the
+    organisation is already quarantined and drops out of this list.
+    """
+    proposed_org = AuditLog.details["proposed_org"].astext
+    rows = await session.execute(
+        select(AuditLog.at, AuditLog.details["rule"].astext, Organization.id, Organization.slug)
+        .join(Organization, func.cast(Organization.id, String) == proposed_org)
+        .where(
+            AuditLog.action == AuditAction.DETECTION_RAISED,
+            AuditLog.at >= now - _DETECTION_LOOKBACK,
+            AuditLog.details["proposed_action"].astext == "quarantine",
+            Organization.status == OrgStatus.ACTIVE,
+        )
+        .order_by(AuditLog.at.desc())
+    )
+    return [
+        {"at": at, "rule": rule, "org_id": str(org_id), "org": slug}
+        for at, rule, org_id, slug in rows.all()
+    ]
+
+
 async def _secrets_needing_rewrap(session: AsyncSession, box: SecretBox) -> int:
     """Sealed values not on the active key and algorithm. Reads headers only."""
     seeds = (
@@ -260,6 +285,7 @@ async def gather_status(
         silent_members=await _silent_members(session, now),
         failing_webhooks=await _failing_webhooks(session),
         detections=await _recent_detections(session, now),
+        proposed_quarantines=await _proposed_quarantines(session, now),
         key_fingerprint=box.active_fingerprint,
         key_algorithm=box.algorithm.name,
         secrets_needing_rewrap=await _secrets_needing_rewrap(session, box),

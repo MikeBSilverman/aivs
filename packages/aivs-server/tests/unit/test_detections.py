@@ -49,7 +49,9 @@ async def test_an_address_over_the_threshold_raises_and_one_under_does_not(sessi
     )
     await session.commit()
 
-    raised = await run_detections(session, now=NOW, rules=[_rule("auth_failure_burst", 3)])
+    raised = await run_detections(
+        session, quarantine_policy="propose", now=NOW, rules=[_rule("auth_failure_burst", 3)]
+    )
 
     assert [(f.rule, f.subject, f.count) for f in raised] == [
         ("auth_failure_burst", "203.0.113.9", 3)
@@ -63,7 +65,9 @@ async def test_repeated_login_failures_against_one_account_raise(session):
     )
     await session.commit()
 
-    raised = await run_detections(session, now=NOW, rules=[_rule("login_failure_burst", 3)])
+    raised = await run_detections(
+        session, quarantine_policy="propose", now=NOW, rules=[_rule("login_failure_burst", 3)]
+    )
 
     assert [f.subject for f in raised] == ["acct-a"]
 
@@ -98,7 +102,9 @@ async def test_one_organisation_retrieving_far_more_than_members_do_raises(sessi
     session.add_all([receipt(normal.id, s) for s in submissions[:2]])
     await session.commit()
 
-    raised = await run_detections(session, now=NOW, rules=[_rule("bulk_retrieval", 3)])
+    raised = await run_detections(
+        session, quarantine_policy="propose", now=NOW, rules=[_rule("bulk_retrieval", 3)]
+    )
 
     assert [f.subject for f in raised] == [str(scraper.id)]
 
@@ -116,7 +122,9 @@ async def test_every_reveal_raises_and_old_ones_do_not(session):
     )
     await session.commit()
 
-    raised = await run_detections(session, now=NOW, rules=[_rule("anonymity_reveal", 1)])
+    raised = await run_detections(
+        session, quarantine_policy="propose", now=NOW, rules=[_rule("anonymity_reveal", 1)]
+    )
 
     assert [f.details["resource"] for f in raised] == ["sub-recent"]
 
@@ -126,7 +134,9 @@ async def test_a_degraded_component_raises_and_a_healthy_one_does_not(session):
     HEARTBEATS.register("healthy", dt.timedelta(seconds=30), now=NOW - dt.timedelta(minutes=10))
     HEARTBEATS.success("healthy", now=NOW - dt.timedelta(seconds=10))
 
-    raised = await run_detections(session, now=NOW, rules=[_rule("component_degraded", 1)])
+    raised = await run_detections(
+        session, quarantine_policy="propose", now=NOW, rules=[_rule("component_degraded", 1)]
+    )
 
     assert [f.subject for f in raised] == ["stalled"]
 
@@ -138,8 +148,10 @@ async def test_a_finding_raises_once_per_window_and_again_after_it(session):
     await session.commit()
     rule = _rule("auth_failure_burst", 3)
 
-    first = await run_detections(session, now=NOW, rules=[rule])
-    again = await run_detections(session, now=NOW + dt.timedelta(minutes=1), rules=[rule])
+    first = await run_detections(session, quarantine_policy="propose", now=NOW, rules=[rule])
+    again = await run_detections(
+        session, quarantine_policy="propose", now=NOW + dt.timedelta(minutes=1), rules=[rule]
+    )
     session.add_all(
         [
             _audit(AuditAction.AUTH_FAILURE, source_ip="198.51.100.1", at=NOW + rule.window)
@@ -148,7 +160,10 @@ async def test_a_finding_raises_once_per_window_and_again_after_it(session):
     )
     await session.commit()
     later = await run_detections(
-        session, now=NOW + rule.window + dt.timedelta(minutes=1), rules=[rule]
+        session,
+        quarantine_policy="propose",
+        now=NOW + rule.window + dt.timedelta(minutes=1),
+        rules=[rule],
     )
 
     assert len(first) == 1
@@ -184,7 +199,9 @@ async def test_a_finding_is_audited_logged_as_ocsf_and_cef_and_sent_to_the_isac_
     await session.commit()
 
     with caplog.at_level(logging.WARNING, logger="aivs_server.security"):
-        await run_detections(session, now=NOW, rules=[_rule("auth_failure_burst", 3)])
+        await run_detections(
+            session, quarantine_policy="propose", now=NOW, rules=[_rule("auth_failure_burst", 3)]
+        )
 
     audit = (
         (await session.execute(select(AuditLog).where(AuditLog.action == "detection.raised")))

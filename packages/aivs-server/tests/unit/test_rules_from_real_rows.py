@@ -34,7 +34,12 @@ def _rule(name: str, threshold: int | None = None) -> list[Rule]:
 
 
 async def _raised(session, name: str, threshold: int | None = None) -> list[str]:
-    found = await run_detections(session, now=dt.datetime.now(dt.UTC), rules=_rule(name, threshold))
+    found = await run_detections(
+        session,
+        quarantine_policy="propose",
+        now=dt.datetime.now(dt.UTC),
+        rules=_rule(name, threshold),
+    )
     return [finding.subject for finding in found]
 
 

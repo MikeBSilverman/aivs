@@ -41,6 +41,7 @@ from aivs_schemas.models import CircleCreate, OrganizationCreate
 from aivs_server.audit.log import AuditAction, record
 from aivs_server.auth.deps import SessionDep, SettingsDep
 from aivs_server.auth.policy import (
+    can_quarantine_org,
     can_view_instance_status,
     is_isac_editor,
     is_isac_membership,
@@ -76,6 +77,7 @@ from aivs_server.services.org_status import (
     change_org_status,
     load_org_for_update,
 )
+from aivs_server.services.quarantine import QuarantineError, quarantine_org
 
 __all__ = ["router"]
 
@@ -192,6 +194,41 @@ async def enrol_org(
         return response
 
     set_notice(response, settings, "info", f"Enrolled {slug}. Activate it to grant access.")
+    return response
+
+
+@router.post("/orgs/{org_id}/quarantine")
+async def quarantine_screen(
+    org_id: uuid.UUID,
+    request: Request,
+    settings: SettingsDep,
+    session: SessionDep,
+    csrf_token: Annotated[str, Form()],
+    reason: Annotated[str, Form(min_length=1, max_length=500)],
+) -> Response:
+    """Confirm a quarantine a detection proposed, through the API's service.
+
+    Declared before ``/orgs/{org_id}/{action}``, which would otherwise match
+    "quarantine" first and answer 404.
+    """
+    ctx, csrf_hash = await current_session(request, settings, session)
+    require_csrf(csrf_token, csrf_hash)
+    require(can_quarantine_org(ctx, org_id), "portal_quarantine")
+
+    organization = await load_org_for_update(session, org_id)
+    if organization is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Not found")
+    response = redirect_within_portal("/portal/admin/status")
+    try:
+        await quarantine_org(
+            session, ctx, organisation=organization, reason=reason, now=dt.datetime.now(dt.UTC)
+        )
+    except QuarantineError as exc:
+        await session.rollback()
+        set_notice(response, settings, "error", f"Not quarantined: {exc}.")
+        return response
+    await session.commit()
+    set_notice(response, settings, "info", f"{organization.slug} is quarantined.")
     return response
 
 

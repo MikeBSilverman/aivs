@@ -60,7 +60,10 @@ async def test_a_stolen_certificate_paging_the_archive_is_noticed_then_cut_off(
 
     # 2. The detection names the thief's organisation, and only it.
     raised = await run_detections(
-        session, now=dt.datetime.now(dt.UTC), rules=[_rule("bulk_retrieval", 5)]
+        session,
+        quarantine_policy="propose",
+        now=dt.datetime.now(dt.UTC),
+        rules=[_rule("bulk_retrieval", 5)],
     )
     assert [finding.subject for finding in raised] == [str(victim.id)]
 
@@ -102,7 +105,10 @@ async def test_a_probe_burst_is_attributed_to_the_prober_not_to_the_proxy(
 
     # 2. The detection names the prober's address, and not the member's.
     raised = await run_detections(
-        session, now=dt.datetime.now(dt.UTC), rules=[_rule("auth_failure_burst", 4)]
+        session,
+        quarantine_policy="propose",
+        now=dt.datetime.now(dt.UTC),
+        rules=[_rule("auth_failure_burst", 4)],
     )
     assert [finding.subject for finding in raised] == ["198.51.100.66"]
 
@@ -118,7 +124,10 @@ async def test_a_forged_client_address_is_not_believed(client, session, ca):
         await client.get(f"{API}/whoami", headers=_from("192.0.2.1", forged))
 
     raised = await run_detections(
-        session, now=dt.datetime.now(dt.UTC), rules=[_rule("auth_failure_burst", 3)]
+        session,
+        quarantine_policy="propose",
+        now=dt.datetime.now(dt.UTC),
+        rules=[_rule("auth_failure_burst", 3)],
     )
     assert [finding.subject for finding in raised] != ["192.0.2.1"]
     assert len(raised) == 1, "still noticed, against the real peer"
@@ -146,6 +155,9 @@ async def test_walking_submission_ids_is_noticed_without_becoming_an_oracle(
     assert {r.status_code for r in responses} == {404}
     assert {r.text for r in absent} == {existing.text}, "a hidden id reads exactly as an absent one"
     raised = await run_detections(
-        session, now=dt.datetime.now(dt.UTC), rules=[_rule("not_found_burst", 5)]
+        session,
+        quarantine_policy="propose",
+        now=dt.datetime.now(dt.UTC),
+        rules=[_rule("not_found_burst", 5)],
     )
     assert [finding.subject for finding in raised] == [str(walker_id)]

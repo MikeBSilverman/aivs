@@ -118,6 +118,28 @@
 <div class="card">
   <h2>Needs attention</h2>
 
+  <h3>Quarantines a detection proposed</h3>
+  {% if status.proposed_quarantines %}
+    <p class="muted">A detection recommends cutting these organisations off. Confirm only after
+       checking with the member (runbook &sect;7.2); the quarantine revokes every
+       certificate and session they hold.</p>
+    <ul>
+      {% for proposal in status.proposed_quarantines %}
+        <li data-proposed="{{ proposal.org }}"><span class="mono">{{ proposal.org }}</span>
+            &mdash; <span class="mono">{{ proposal.rule }}</span> at
+            <span class="mono">{{ proposal.at }}</span>
+          <form method="post" action="/portal/admin/orgs/{{ proposal.org_id }}/quarantine" class="inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="reason" value="confirming detection {{ proposal.rule }}">
+            <button type="submit" class="linklike">Quarantine</button>
+          </form>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <div class="empty">None.</div>
+  {% endif %}
+
   <h3>Certificates expiring within 30 days</h3>
   {% if status.expiring_certificates %}
     <ul>

@@ -154,7 +154,7 @@ def background_components(settings: Settings) -> list[BackgroundComponent]:
         BackgroundComponent(
             "detections",
             dt.timedelta(seconds=settings.detection_interval_seconds),
-            _run_detections,
+            lambda: _run_detections(settings),
         ),
     ]
 
@@ -171,9 +171,13 @@ async def _dispatch_webhooks(settings: Settings) -> None:
         await dispatch_pending(session, settings)
 
 
-async def _run_detections() -> None:
+async def _run_detections(settings: Settings) -> None:
     async with session_scope() as session:
-        await run_detections(session, now=dt.datetime.now(dt.UTC))
+        await run_detections(
+            session,
+            now=dt.datetime.now(dt.UTC),
+            quarantine_policy=settings.detection_quarantine_policy,
+        )
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:

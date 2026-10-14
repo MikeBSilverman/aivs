@@ -30,7 +30,12 @@ from aivs_server.db.models import (
     PortalSession,
 )
 
-__all__ = ["QuarantineError", "quarantine_org", "reconnect_org"]
+__all__ = [
+    "QuarantineError",
+    "quarantine_org",
+    "quarantine_org_automatically",
+    "reconnect_org",
+]
 
 
 class QuarantineError(ValueError):
@@ -66,6 +71,49 @@ async def quarantine_org(
     now: dt.datetime,
 ) -> None:
     """Cut an organisation off now. Does not commit."""
+    certificates = await _cut_off(session, organisation, now)
+    await record(
+        session,
+        action=AuditAction.ORG_QUARANTINED,
+        ctx=ctx,
+        resource_type="organization",
+        resource_id=str(organisation.id),
+        details={
+            "reason": reason,
+            "certificates_revoked": certificates,
+            "self_quarantine": ctx.org_id == organisation.id,
+        },
+    )
+
+
+async def quarantine_org_automatically(
+    session: AsyncSession, *, organisation: Organization, rule: str, now: dt.datetime
+) -> None:
+    """Quarantine on a detection, when the ISAC has configured ``enforce``.
+
+    The same cut-off as a human's, refused in the same cases, and recorded as
+    the system acting on a named rule, so the audit trail never makes an
+    automatic quarantine look like a decision someone took. Does not commit.
+    """
+    certificates = await _cut_off(session, organisation, now)
+    await record(
+        session,
+        action=AuditAction.ORG_QUARANTINED,
+        actor_type="system",
+        actor_id=f"detection:{rule}",
+        resource_type="organization",
+        resource_id=str(organisation.id),
+        details={
+            "reason": f"detection {rule}, quarantine policy enforce",
+            "certificates_revoked": certificates,
+            "self_quarantine": False,
+            "automatic": True,
+        },
+    )
+
+
+async def _cut_off(session: AsyncSession, organisation: Organization, now: dt.datetime) -> int:
+    """Refuse what may not be quarantined, else revoke everything. Returns certificates revoked."""
     if organisation.org_type is OrgType.ADMIN:
         # It would revoke every ISAC credential, and reconnection needs an ISAC
         # human: only SQL could undo it. The instance-wide stop is the pause.
@@ -81,19 +129,7 @@ async def quarantine_org(
         raise QuarantineError(msg)
     organisation.status = OrgStatus.QUARANTINED
     organisation.quarantined_at = now
-    certificates = await _revoke_credentials(session, organisation, now)
-    await record(
-        session,
-        action=AuditAction.ORG_QUARANTINED,
-        ctx=ctx,
-        resource_type="organization",
-        resource_id=str(organisation.id),
-        details={
-            "reason": reason,
-            "certificates_revoked": certificates,
-            "self_quarantine": ctx.org_id == organisation.id,
-        },
-    )
+    return await _revoke_credentials(session, organisation, now)
 
 
 async def _has_fresh_certificate(session: AsyncSession, organisation: Organization) -> bool:

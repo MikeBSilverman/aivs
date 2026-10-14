@@ -1,0 +1,20 @@
+Mutation M732: migrating names the application role but grants it nothing beyond the audit tables and refuses no unsafe role
+Re-applies: alembic/env.py before D-C1: AIVS_APP_DB_ROLE reached only migration c185fd428721
+
+Expect red: packages/aivs-server/tests/migrations/test_app_role_grants.py::test_the_app_role_may_read_and_change_ordinary_tables
+Expect red: packages/aivs-server/tests/migrations/test_app_role_grants.py::test_migrating_refuses_a_superuser_as_the_app_role
+Expect red: packages/aivs-server/tests/migrations/test_app_role_grants.py::test_migrating_refuses_a_member_of_the_owning_role
+Expect red: packages/aivs-server/tests/migrations/test_app_role_grants.py::test_migrating_refuses_an_app_role_that_does_not_exist
+
+diff --git a/packages/aivs-server/alembic/env.py b/packages/aivs-server/alembic/env.py
+--- a/packages/aivs-server/alembic/env.py
++++ b/packages/aivs-server/alembic/env.py
+@@ -84,7 +84,7 @@ def do_run_migrations(connection: Connection) -> None:
+         # revision: the grants then cover whatever this run created, and a
+         # role named late is put right by the next upgrade. See db/grants.py.
+         app_role = os.environ.get(APP_ROLE_ENV_VAR, "").strip()
+-        if app_role:
++        if app_role and not app_role:
+             grant_app_role(connection, app_role)
+ 
+ 

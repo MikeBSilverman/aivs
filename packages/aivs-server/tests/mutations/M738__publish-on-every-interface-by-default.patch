@@ -1,0 +1,17 @@
+Mutation M738: the proxy publishes on every interface unless told otherwise
+Re-applies: docker-compose.yml before D-P1
+
+Expect red: packages/aivs-server/tests/unit/test_deployment_contract.py::test_the_published_address_must_be_chosen
+
+diff --git a/docker-compose.yml b/docker-compose.yml
+--- a/docker-compose.yml
++++ b/docker-compose.yml
+@@ -122,7 +122,7 @@ services:
+     # AIVS_BIND_PORT exists for hosts where 443 is already taken; members dial
+     # whatever it is, so AIVS_PUBLIC_BASE_URL must carry it when it is not 443.
+     ports:
+-      - "${AIVS_BIND_ADDRESS:?set AIVS_BIND_ADDRESS in deploy/.env (the overlay address, or 0.0.0.0 deliberately)}:${AIVS_BIND_PORT:-443}:8443"
++      - "${AIVS_BIND_ADDRESS:-0.0.0.0}:${AIVS_BIND_PORT:-443}:8443"
+ 
+     environment:
+       # Consumed by deploy/nginx/templates/10-proxy-auth.conf.template at

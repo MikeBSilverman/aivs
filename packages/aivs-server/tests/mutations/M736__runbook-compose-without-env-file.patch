@@ -1,0 +1,19 @@
+Mutation M736: the runbook's rotation re-seal runs docker compose without --env-file, which compose refuses before doing anything
+Re-applies: docs/operator-runbook.md section 7.4 step 3 before D-C3
+
+Expect red: packages/aivs-server/tests/unit/test_deployment_contract.py::test_every_documented_compose_command_names_the_env_file_and_real_targets[docs/operator-runbook.md]
+
+diff --git a/docs/operator-runbook.md b/docs/operator-runbook.md
+--- a/docs/operator-runbook.md
++++ b/docs/operator-runbook.md
+@@ -622,9 +622,7 @@ environment, so do not set `AIVS_SECRET_ENCRYPTION_KEY` or
+    docker compose --env-file deploy/.env \
+      -f docker-compose.yml -f docker-compose.rotation.yml \
+      exec app python -m aivs_server.rewrap_secrets            # report
+-   docker compose --env-file deploy/.env \
+-     -f docker-compose.yml -f docker-compose.rotation.yml \
+-     exec app python -m aivs_server.rewrap_secrets --apply    # re-seal
++   docker compose exec app python -m aivs_server.rewrap_secrets --apply    # re-seal
+    ```
+ 
+ 4. Re-run the report. **Only when it shows `stale=0` and `unopenable=0`**, start

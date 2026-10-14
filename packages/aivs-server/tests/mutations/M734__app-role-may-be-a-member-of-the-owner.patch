@@ -1,0 +1,17 @@
+Mutation M734: a role that is a member of the tables' owner is accepted as the application role, and can SET ROLE and disable the triggers
+Re-applies: db/grants.py checking rolsuper alone
+
+Expect red: packages/aivs-server/tests/migrations/test_app_role_grants.py::test_migrating_refuses_a_member_of_the_owning_role
+
+diff --git a/packages/aivs-server/src/aivs_server/db/grants.py b/packages/aivs-server/src/aivs_server/db/grants.py
+--- a/packages/aivs-server/src/aivs_server/db/grants.py
++++ b/packages/aivs-server/src/aivs_server/db/grants.py
+@@ -66,7 +66,7 @@ def _refuse_unsafe_role(connection: Connection, role: str) -> None:
+             SELECT EXISTS (
+                 SELECT 1 FROM pg_class c
+                 JOIN pg_namespace n ON n.oid = c.relnamespace
+-                WHERE n.nspname = :schema AND pg_has_role(:role, c.relowner, 'MEMBER')
++                WHERE n.nspname = :schema AND pg_has_role(:role, c.relowner, 'MEMBER') AND false
+             )
+             """
+         ),

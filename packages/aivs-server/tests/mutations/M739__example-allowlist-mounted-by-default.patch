@@ -1,0 +1,22 @@
+Mutation M739: the example allowlist, which admits every RFC 1918 range, is mounted unless the operator edits the compose file
+Re-applies: docker-compose.yml before D-P1
+
+Expect red: packages/aivs-server/tests/unit/test_deployment_contract.py::test_the_allowlist_is_the_operators_file_and_must_exist
+
+diff --git a/docker-compose.yml b/docker-compose.yml
+--- a/docker-compose.yml
++++ b/docker-compose.yml
+@@ -153,12 +153,7 @@ services:
+       # everyone. Naming a file is required, and create_host_path is off, so a
+       # missing allowlist is a start-up failure rather than an absent control
+       # nobody notices, and Docker cannot quietly mount an empty directory.
+-      - type: bind
+-        source: ${AIVS_NGINX_ALLOWLIST:?set AIVS_NGINX_ALLOWLIST in deploy/.env to the ABSOLUTE path of your allowlist (deploy/nginx/allowlist.conf.example explains the choices)}
+-        target: /etc/nginx/allowlist.conf
+-        read_only: true
+-        bind:
+-          create_host_path: false
++      - ./deploy/nginx/allowlist.conf.example:/etc/nginx/allowlist.conf:ro
+       # CA material: the trust anchor, the server certificate and its key.
+       # Read-only, so a compromised proxy cannot alter the set of CAs it trusts.
+       - ca_material:/etc/nginx/ca:ro

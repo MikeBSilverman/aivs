@@ -1,0 +1,17 @@
+Mutation M731: the db healthcheck is pg_isready, which never signs in, under a comment saying it checks the role
+Re-applies: docker-compose.yml as shipped before D-C6 (review fb88ef6, Deployment)
+
+Expect red: packages/aivs-server/tests/unit/test_deployment_contract.py::test_the_db_healthcheck_signs_in_as_the_application_role
+
+diff --git a/docker-compose.yml b/docker-compose.yml
+--- a/docker-compose.yml
++++ b/docker-compose.yml
+@@ -483,7 +483,7 @@ services:
+       # `$$` defers expansion to the container, which holds these variables,
+       # so the password is not written a second time into the healthcheck's
+       # own definition.
+-      test: ["CMD-SHELL", "PGPASSWORD=\"$$AIVS_DB_APP_PASSWORD\" psql -h 127.0.0.1 -U \"$$AIVS_DB_APP_USER\" -d \"$$POSTGRES_DB\" -qAtc 'SELECT 1' >/dev/null"]
++      test: ["CMD-SHELL", "pg_isready -q -U \"${AIVS_DB_USER:-aivs}\" -d \"${AIVS_DB_NAME:-aivs}\""]
+       interval: 10s
+       timeout: 5s
+       retries: 5

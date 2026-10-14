@@ -1,0 +1,18 @@
+Mutation M733: the blanket grant gives the application role UPDATE and DELETE on the append-only tables, leaving only the trigger between it and history
+Re-applies: the first form of db/grants.py, which granted on ALL TABLES and stripped nothing
+
+Expect red: packages/aivs-server/tests/migrations/test_app_role_grants.py::test_the_app_role_holds_no_privilege_to_change_history[update-audit_log]
+Expect red: packages/aivs-server/tests/migrations/test_app_role_grants.py::test_the_app_role_holds_no_privilege_to_change_history[delete-submission_transitions]
+
+diff --git a/packages/aivs-server/src/aivs_server/db/grants.py b/packages/aivs-server/src/aivs_server/db/grants.py
+--- a/packages/aivs-server/src/aivs_server/db/grants.py
++++ b/packages/aivs-server/src/aivs_server/db/grants.py
+@@ -115,7 +115,7 @@ def _grant_statements(role: str, append_only_tables: list[str]) -> list[str]:
+     ]
+     statements.extend(
+         f"REVOKE UPDATE, DELETE, TRUNCATE ON {_SCHEMA}.{_quote(table)} FROM {quoted_role}"
+-        for table in append_only_tables
++        for table in append_only_tables[:0]
+     )
+     return statements
+ 

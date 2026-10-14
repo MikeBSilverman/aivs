@@ -1,0 +1,17 @@
+Mutation M737: the runbook bootstraps the first operator with python on the host, where neither the configuration nor the database is
+Re-applies: docs/operator-runbook.md section 1.3 before D-C2
+
+Expect red: packages/aivs-server/tests/unit/test_deployment_contract.py::test_the_runbook_runs_nothing_against_the_stack_from_the_host
+
+diff --git a/docs/operator-runbook.md b/docs/operator-runbook.md
+--- a/docs/operator-runbook.md
++++ b/docs/operator-runbook.md
+@@ -124,7 +124,7 @@ certificate goes in on stdin, then the bootstrap reads it from there:
+ ```bash
+ docker compose --env-file deploy/.env exec -T app sh -c 'cat > /tmp/isac.crt' \
+     < deploy/ca/out/clients/example-isac/example-isac.crt
+-docker compose --env-file deploy/.env exec app python -m aivs_server.bootstrap_operator \
++python -m aivs_server.bootstrap_operator \
+     --org-slug example-isac --org-name "Example ISAC" \
+     --email ops@example-isac.org --name "Ops Lead" \
+     --role system_admin --role isac_editor --role isac_membership \

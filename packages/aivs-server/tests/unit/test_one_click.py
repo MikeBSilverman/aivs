@@ -529,3 +529,47 @@ async def test_a_members_own_record_saying_published_does_not_open_the_fast_lane
 
     assert submission.state is SubmissionState.SUBMITTED
     assert submission.lane is SubmissionLane.REVIEW
+
+
+async def _transition_reasons(session, submission: Submission) -> list[str | None]:
+    return list(
+        (
+            await session.execute(
+                select(SubmissionTransition.reason).where(
+                    SubmissionTransition.submission_id == submission.id
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+
+@pytest.mark.requirement("SF-66")
+@pytest.mark.parametrize("hidden_as", ["validated", "distributed-elsewhere"])
+async def test_a_newer_isac_version_no_longer_published_sends_the_click_to_review_unexplained(
+    client, session, isac_org, make_circle, world, hidden_as
+):
+    """Public is the ISAC's current record, as the ISAC sees it, not as the member does.
+
+    The member sees the ISAC's version saying ``published``. A newer one says
+    the disclosure is back to ``reserved`` -- validated and not yet out, or out
+    only to a circle the member is not in. A click is ``own_estate``, so the
+    disclosure split never re-reads the record from the ISAC's view, and the
+    click was published on the strength of a state the ISAC had moved on from.
+    The pair is the first test in this module, with no newer version.
+    """
+    newer = vulnerability_raw(world.published, cve_status="reserved", modified=LATER)
+    if hidden_as == "validated":
+        await seed(session, isac_org, newer, circle=None, state=SubmissionState.VALIDATED)
+    else:
+        await seed(session, isac_org, newer, circle=await make_circle("staff-only"))
+
+    response = await one_click(client, world.member.person, world.published)
+    submission = await _filed(session, response)
+
+    assert submission.state is SubmissionState.SUBMITTED
+    assert submission.lane is SubmissionLane.REVIEW
+    assert "reserved" not in response.text
+    reasons = await _transition_reasons(session, submission)
+    assert reasons[-1] == NEEDS_AN_EDITOR

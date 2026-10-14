@@ -61,7 +61,7 @@ from aivs_server.db.models import (
 from aivs_server.services.ownership import ISAC_OWNER_TYPES
 from aivs_server.services.references import external_references_by_type
 
-__all__ = ["DisclosureScope", "cve_status", "disclosure_problem"]
+__all__ = ["DisclosureScope", "cve_status", "disclosure_problem", "published_in_the_isacs_view"]
 
 #: One refusal for a target that is absent, invisible to the caller, or not the
 #: ISAC's. Identical in every case, because any difference is an existence
@@ -139,6 +139,21 @@ async def _canonical_current(
         )
     raw: Mapping[str, Any] | None = (await session.execute(query)).scalars().first()
     return raw
+
+
+async def published_in_the_isacs_view(
+    session: AsyncSession, stix_id: str, *, exclude_submission_id: uuid.UUID, now: dt.datetime
+) -> bool:
+    """Whether the ISAC's current record of ``stix_id``, every version it holds, says published.
+
+    The question the disclosure split asks of a third-party contribution, asked
+    for a shortcut lane, whose ``own_estate`` contributions the split skips:
+    a validated or embargoed newer version the member cannot see may have
+    moved the record back from ``published``.
+    """
+    scope = DisclosureScope(visible_to=None, exclude_submission_id=exclude_submission_id, now=now)
+    current = await _canonical_current(session, stix_id, scope)
+    return current is not None and cve_status(current) == "published"
 
 
 async def _vendor_party_acknowledges(

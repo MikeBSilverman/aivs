@@ -66,11 +66,11 @@ from aivs_server.db.models import (
     TaxiiStatus,
 )
 from aivs_server.notify.events import queue_visibility_notifications
-from aivs_server.services.disclosure import cve_status
+from aivs_server.services.disclosure import cve_status, published_in_the_isacs_view
 from aivs_server.services.distribution import DistributionError, distribute_submission
 from aivs_server.services.ownership import ISAC_OWNER, owner_key
 from aivs_server.services.publication import PublicationPausedError
-from aivs_server.services.references import referenced_ids
+from aivs_server.services.references import external_references_by_type, referenced_ids
 from aivs_server.services.submissions import (
     SubmissionError,
     apply_transition,
@@ -363,6 +363,7 @@ async def _validate_and_distribute(
     circle_ids: Iterable[uuid.UUID],
 ) -> None:
     await check_content_rules(session, submission)
+    await _refuse_unless_published_in_the_isacs_view(session, submission)
     reason = f"{lane.value} lane: published without review"
     if submission.state is SubmissionState.DRAFT:
         await record_transition(session, ctx, submission, SubmissionState.SUBMITTED, reason=reason)
@@ -385,6 +386,33 @@ async def _validate_and_distribute(
         resource_id=str(submission.id),
         details={"lane": lane.value, "circles": [str(circle_id) for circle_id in targets]},
     )
+
+
+async def _refuse_unless_published_in_the_isacs_view(
+    session: AsyncSession, submission: Submission
+) -> None:
+    """Every vulnerability the contribution is about is still published, as the ISAC sees it.
+
+    The lane rule read "public" from the member's view, which cannot see a
+    newer validated or embargoed version; this is the same question from the
+    ISAC's. Its refusal goes to review like the other ISAC-view checks.
+    """
+    raws = (
+        (
+            await session.execute(
+                select(StixObject.raw).where(StixObject.submission_id == submission.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    now = dt.datetime.now(dt.UTC)
+    for stix_id in sorted(external_references_by_type(raws, "vulnerability")):
+        if not await published_in_the_isacs_view(
+            session, stix_id, exclude_submission_id=submission.id, now=now
+        ):
+            msg = f"the ISAC's current record of {stix_id} does not say published"
+            raise SubmissionError(msg)
 
 
 async def contribute(

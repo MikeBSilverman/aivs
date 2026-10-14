@@ -20,7 +20,7 @@ diff --git a/packages/aivs-server/src/aivs_server/services/content_rules.py b/pa
 diff --git a/packages/aivs-server/src/aivs_server/services/submissions.py b/packages/aivs-server/src/aivs_server/services/submissions.py
 --- a/packages/aivs-server/src/aivs_server/services/submissions.py
 +++ b/packages/aivs-server/src/aivs_server/services/submissions.py
-@@ -869,9 +869,6 @@ async def check_content_rules(session: AsyncSession, submission: Submission) ->
+@@ -870,9 +870,6 @@ async def check_content_rules(session: AsyncSession, submission: Submission) ->
      """
      raws = await _stored_raws(session, submission)
      for problem in (
@@ -28,5 +28,5 @@ diff --git a/packages/aivs-server/src/aivs_server/services/submissions.py b/pack
 -            session, raws, owner_org_id=submission.submitter_org_id
 -        ),
          await contribution_problem(
-             session, submission, raws, visible_to=None, now=dt.datetime.now(dt.UTC)
+             session, submission, raws, visible_to=None, now=await database_now(session)
          ),

@@ -1,0 +1,19 @@
+Mutation M700: any active caller reads the firm-by-firm receipts
+Re-applies: the submitter (and, past the 404, anyone) reading which firms collected its submission
+
+Expect red: packages/aivs-server/tests/unit/test_policy.py::test_named_receipts_are_the_isacs_alone
+Expect red: packages/aivs-server/tests/unit/test_admin_and_receipts.py::test_the_submitter_reads_counts_not_the_firms
+
+diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs-server/src/aivs_server/auth/policy.py
+index 00954b7..a801f9f 100644
+--- a/packages/aivs-server/src/aivs_server/auth/policy.py
++++ b/packages/aivs-server/src/aivs_server/auth/policy.py
+@@ -339,7 +339,7 @@ def can_view_submission_receipts(ctx: AuthContext) -> bool:
+     the named rows as well made that suppression decorative: a "fewer than 5"
+     beside a list of the four firms.
+     """
+-    return is_active(ctx) and can_review_submissions(ctx)
++    return is_active(ctx)
+ 
+ 
+ def can_transition_submission(

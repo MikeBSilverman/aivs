@@ -345,7 +345,7 @@ async def test_a_member_cannot_acknowledge_content_never_delivered_to_them(
 
 
 async def test_receipts_record_retrieval_then_action(
-    client, member, make_circle, join_circle, make_collection, publish
+    client, isac, member, make_circle, join_circle, make_collection, publish
 ):
     """The regulatory artefact, end to end: delivered, then acted on.
 
@@ -353,7 +353,7 @@ async def test_receipts_record_retrieval_then_action(
     (only ISAC staff may), so the member here is a recipient, as in life.
     """
     org, pem = await member()
-    submitter, submitter_pem = await member("atlantic-clearing")
+    submitter, _submitter_pem = await member("atlantic-clearing")
     circle = await make_circle("section9")
     await join_circle(org, circle)
     collection = await make_collection(circle)
@@ -376,10 +376,9 @@ async def test_receipts_record_retrieval_then_action(
     )
     assert actioned.status_code == 201
 
-    # The submitter reads the receipts; recipients never see each other's.
-    receipts = await client.get(
-        f"{API}/submissions/{submission.id}/receipts", headers=proxy_headers(submitter_pem)
-    )
+    # The ISAC reads the receipts; members never see each other's.
+    _isac_org, isac_headers = isac
+    receipts = await client.get(f"{API}/submissions/{submission.id}/receipts", headers=isac_headers)
     assert receipts.status_code == 200
     by_type = {entry["ack_type"]: entry for entry in receipts.json()}
     assert by_type[AckType.RETRIEVED.value]["via"] == "taxii"
@@ -416,6 +415,43 @@ async def test_receipts_are_not_visible_to_other_members(
     )
     assert invented.status_code == 404
     assert real.text == invented.text, "a real id must be indistinguishable from an invented one"
+
+
+@pytest.mark.requirement("SF-15")
+async def test_the_submitter_reads_counts_not_the_firms(
+    client, member, make_circle, join_circle, make_collection, publish
+):
+    """A submitter learns how many engaged, never which firms.
+
+    Each receipt is the receiving member's record. A submitter reading them by
+    name would make telemetry's suppression decorative ("fewer than 5" beside
+    the list of four). The pair: the same caller's telemetry answers.
+    """
+    submitter, submitter_pem = await member("atlantic-clearing")
+    reader, reader_pem = await member("meridian-global")
+    circle = await make_circle("section9")
+    await join_circle(reader, circle)
+    collection = await make_collection(circle)
+    submission, _obj, _dist = await publish(submitter, circle)
+    feed = await client.get(
+        f"/taxii2/aivs/collections/{collection.id}/objects/", headers=proxy_headers(reader_pem)
+    )
+    assert feed.status_code == 200
+
+    named = await client.get(
+        f"{API}/submissions/{submission.id}/receipts", headers=proxy_headers(submitter_pem)
+    )
+    invented = await client.get(
+        f"{API}/submissions/{uuid.uuid4()}/receipts", headers=proxy_headers(submitter_pem)
+    )
+    assert named.status_code == 404
+    assert named.text == invented.text
+
+    counts = await client.get(
+        f"{API}/submissions/{submission.id}/telemetry", headers=proxy_headers(submitter_pem)
+    )
+    assert counts.status_code == 200
+    assert "meridian-global" not in counts.text
 
 
 async def test_the_isac_can_read_receipts(client, isac, member, make_circle, join_circle, publish):

@@ -71,7 +71,7 @@ Every role is interpreted in `auth.policy` and nowhere else.
 
 | Role | Held at | Grants |
 | --- | --- | --- |
-| `analyst` | a member firm | Act within their own organization: create and edit drafts, submit, read the circles the org belongs to, record acknowledgments, view their org's own submissions and receipts. |
+| `analyst` | a member firm | Act within their own organization: create and edit drafts, submit, read the circles the org belongs to, record acknowledgments, view their org's own submissions and their telemetry (counts, never firms). |
 | `org_admin` | a member firm | Administer **their own organization only** — its operators, its certificates (`can_manage_org(ctx, target) → target == ctx.org_id`). |
 | `isac_analyst` | the hosting ISAC | The review queue and every submission's workflow record and receipts. Never validates, distributes or changes an embargo. |
 | `isac_editor` | the hosting ISAC | The editorial verbs: validate, distribute, release or extend an embargo; create circles. Also sees what an `isac_analyst` sees. |
@@ -217,7 +217,8 @@ caller's org belongs to, at the role shown.
 | **Submissions** |
 | Create a draft | N | Y (own org) | Y (own org) | Y (own org) | Y | Y |
 | View submission workflow record | N | own only | own only | own only | `isac_analyst`, `isac_editor` (all) | own only |
-| View submission receipts | N | own only | own only | own only | `isac_analyst`, `isac_editor` (all) | own only |
+| View submission receipts (firm by firm) | N | N | N | N | `isac_analyst`, `isac_editor` (all) | N |
+| View submission telemetry (k-suppressed counts) | N | own only | own only | own only | own only | own only |
 | `draft` → `submitted` | N | own | own | own | N¹ | N¹ |
 | `submitted` → `validated` | N | N | N | N | **`isac_editor`** | **N** |
 | `validated` → `distributed` | N | N | N | N | **`isac_editor`** | **N** |
@@ -283,7 +284,7 @@ rotation against the native API with the outgoing certificate.
 | `writable_circle_ids(ctx)` | Which may they contribute to? | Circles where the role is contributor or circle admin. |
 | `can_view_submission(ctx, s)` | May they see the workflow record? | Active **and** (`can_review_submissions`, or `s.submitter_org_id == ctx.org_id`). For an anonymous submission the record omits the submitter for everyone but the submitter. |
 | `can_reveal_submitter(ctx)` | May they name an anonymous submitter? | `is_isac_editor(ctx)`. Requires a reason; audited as `anonymity.reveal` with the reason and without the identity. |
-| `can_view_submission_receipts(ctx, s)` | May they see who retrieved it? | Same rule. Restricted because receipts reveal which firms attend to which threats. |
+| `can_view_submission_receipts(ctx)` | May they see, firm by firm, who retrieved it? | Active **and** `can_review_submissions`. Not the submitter: each receipt is the receiving member's record, which one member never produces to another (sharing agreement §9). The submitter reads k-suppressed telemetry instead; with the named rows as well, that suppression was decorative. |
 | `can_transition_submission(ctx, s, target)` | May they make this move? | The move must be legal in `SUBMISSION_TRANSITIONS` **and** the caller must hold the right to that specific target. |
 | `can_manage_org(ctx, target)` | May they administer this org? | Active **and** (system admin, or org admin over their own org). |
 | `distribution_visibility_clause(ctx, now)` | Which rows may they read? | The SQL predicate below. |
@@ -387,12 +388,16 @@ content; an "own record" is the member's posture or TAXII status.
 | Class | member cert | member analyst | member org_admin | peer cert | admin-org cert | ISAC analyst | ISAC editor | ISAC membership | system_admin |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | listing | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| filing | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| own settings | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| health | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | circle content | ✓ | ✓ | ✓ | ✓ | 404 | 404 | 404 | 404 | 404 |
 | submission record | ✓ | ✓ | ✓ | 404 | 404 | ✓ | ✓ | 404 | 404 |
-| filing | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| telemetry | ✓ | ✓ | ✓ | 404 | 404 | 404 | 404 | 404 | 404 |
+| receipt record | 404 | 404 | 404 | 404 | 404 | ✓ | ✓ | 404 | 404 |
 | draft edit | ✓ | ✓ | ✓ | 404 | 404 | 403 | 403 | 404 | 404 |
 | withdraw | ✓ | ✓ | ✓ | 404 | 404 | 403 | ✓ | 404 | 404 |
-| receipt | ✓ | ✓ | ✓ | ✓ | 404 | 404 | 404 | 404 | 404 |
+| receipt | 403 | 403 | 403 | ✓ | 404 | 404 | 404 | 404 | 404 |
 | editorial verb | 403 | 403 | 403 | 404 | 404 | 403 | ✓ | 404 | 404 |
 | review queue (portal) | sign in | 404 | 404 | sign in | sign in | ✓ | ✓ | 404 | 404 |
 | membership verb | 403 | 403 | 403 | 403 | 403 | 403 | 403 | ✓ | 403 |
@@ -404,8 +409,6 @@ content; an "own record" is the member's posture or TAXII status.
 | pause | 403 | 403 | 403 | 403 | 403 | 403 | ✓ | 403 | ✓ |
 | resume | 403 | 403 | 403 | 403 | 403 | 403 | ✓ | 403 | 403 |
 | status page (portal) | sign in | 403 | 403 | sign in | sign in | 403 | 403 | ✓ | ✓ |
-| own settings | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| webhook delete | ✓ | ✓ | ✓ | 404 | 404 | 404 | 404 | 404 | 404 |
 | content response | ✓ | ✓ | ✓ | ✓ | 404 | 404 | 404 | 404 | 404 |
 | own record | ✓ | ✓ | ✓ | 404 | 404 | 404 | 404 | 404 | 404 |
 | posture summary | 404 | 404 | 404 | 404 | 404 | ✓ | ✓ | 404 | 404 |
@@ -413,6 +416,8 @@ content; an "own record" is the member's posture or TAXII status.
 | post moderation | 403 | 403 | 403 | 403 | 403 | 403 | ✓ | 403 | 403 |
 | proxy filing | 403 | 403 | 403 | 403 | 403 | 403 | ✓ | 403 | 403 |
 | proxy confirm | ✓ | ✓ | ✓ | 404 | 404 | 403 | 403 | 404 | 404 |
+| webhook register | ✓ | 403 | ✓ | ✓ | 403 | 403 | 403 | 403 | ✓ |
+| webhook delete | ✓ | 403 | ✓ | 404 | 403 | 403 | 403 | 403 | 404 |
 
 How to read the deny cells:
 

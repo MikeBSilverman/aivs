@@ -94,12 +94,63 @@
   </div>
 </div>
 
+{% if lint_hits is not none %}
+<div class="card">
+  <h2>Before you submit</h2>
+  {% if lint_hits %}
+    <p class="muted">
+      These may say more about who you are, or who was affected, than you mean
+      to share. Nothing is changed for you: edit the draft if you want them out.
+    </p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Where</th><th>Looks like</th><th>Text</th></tr></thead>
+        <tbody>
+          {% for hit in lint_hits %}
+            <tr>
+              <td class="mono">{{ hit.field }}</td>
+              <td>{{ hit.kind }}</td>
+              <td class="mono">{{ hit.text }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="empty">Nothing in the text looks like it names you or a victim.</div>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if telemetry is not none %}
+<div class="card">
+  <h2>What happened to it</h2>
+  <p class="muted">
+    Counts of organisations, never which ones. A small number is shown as
+    "fewer than" rather than exactly, so no one reader can be picked out.
+  </p>
+  <table>
+    <tbody>
+      {% for row in telemetry.rows %}
+        <tr>
+          <th>{{ row.label }}</th>
+          <td>{% if row.value is not none %}{{ row.value }}{% else %}<span class="muted">{{ row.withheld }}</span>{% endif %}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if telemetry.later %}
+    <p class="muted">Coming later: {{ telemetry.later | join("; ") }}.</p>
+  {% endif %}
+</div>
+{% endif %}
+
 {% if receipts is not none %}
 <div class="card">
   <h2>Receipts</h2>
   <p class="muted">
-    Who received this and what they did about it. Visible to you as the
-    submitter, and to the hosting ISAC — not to other members.
+    Who received this and what they did about it, firm by firm. Visible to the
+    ISAC's reviewers only: each row is the receiving member's record.
   </p>
   {% if receipts %}
     <div class="table-wrap">

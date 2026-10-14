@@ -328,18 +328,18 @@ def can_view_submission(ctx: AuthContext, submission: Submission) -> bool:
     return submission.submitter_org_id == ctx.org_id
 
 
-def can_view_submission_receipts(ctx: AuthContext, submission: Submission) -> bool:
-    """Return whether the caller may see who retrieved and acknowledged a submission.
+def can_view_submission_receipts(ctx: AuthContext) -> bool:
+    """Return whether the caller may see, firm by firm, who retrieved and acted on it.
 
-    Restricted to the submitter and the hosting ISAC. Receipts reveal which
-    member firms are paying attention to which threats, which is exactly the
-    kind of inference other members must not be able to draw about each other.
+    The ISAC's reviewers only. Receipts reveal which member firms attend to
+    which threats; each row is the *receiving* member's record, and one
+    member's receipts are never produced to another without process (sharing
+    agreement section 9). The submitter is another member, so it gets the
+    k-suppressed counts of ``services/telemetry.py`` instead. Letting it read
+    the named rows as well made that suppression decorative: a "fewer than 5"
+    beside a list of the four firms.
     """
-    if not is_active(ctx):
-        return False
-    if can_review_submissions(ctx):
-        return True
-    return submission.submitter_org_id == ctx.org_id
+    return is_active(ctx) and can_review_submissions(ctx)
 
 
 def can_transition_submission(

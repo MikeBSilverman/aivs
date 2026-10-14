@@ -180,7 +180,7 @@ Worth pulling out, because it is the actor most people underestimate.
 | Read content before its embargo lifts. | `Distribution.date_added <= now`, evaluated in SQL on every read. Not scheduler-dependent. |
 | Distribute their own submission without ISAC review. | `can_transition_submission` grants `validated` and `distributed` **only** to a system administrator. |
 | Submit into a circle they only read. | `can_submit_to_circle` requires `contributor`. |
-| Learn who read their submission — or anyone else's. | `can_view_submission_receipts` is restricted to the submitter and the ISAC. |
+| Learn who read their submission — or anyone else's. | `can_view_submission_receipts` is restricted to the ISAC's reviewers. The submitter sees counts only, each withheld below k (`services/telemetry.py`, SF-15); it once read the named receipts too, which made that suppression decorative. |
 | Keep access after being suspended. | `is_active(ctx)` is the first check in **every** predicate. Setting `status = suspended` takes effect on their next request; no cache to invalidate, no token to expire. |
 | Smuggle unvalidated content into other members' TIPs via a STIX extension. | `assert_extensions_allowed()` allowlists exactly two extension ids (AIVS's own and TLP 2.0). This exists because `stix2.parse(allow_custom=False)` **does not** reject unknown `extension-definition--` property extensions — verified against stix2 3.0.2, it passes the body through as an opaque dict. See [`stix-extension.md`](stix-extension.md). |
 | Poison the corpus with plausible false findings. | The ISAC's `validated` checkpoint, and human judgement. **Nothing technical stops this.** |

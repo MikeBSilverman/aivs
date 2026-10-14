@@ -72,6 +72,7 @@ from aivs_server.portal.shared import (
     stamp,
     tlp_label,
 )
+from aivs_server.portal.submitter_view import lint_hits, telemetry_rows
 from aivs_server.services.contributions import submit_submission
 from aivs_server.services.distribution import DistributionError, distribute_submission
 from aivs_server.services.provenance import consequential_changes
@@ -490,7 +491,7 @@ async def submission_detail(
     actions, circles = await _available_actions(session, ctx, submission)
 
     receipts: list[dict[str, Any]] | None = None
-    if can_view_submission_receipts(ctx, submission):
+    if can_view_submission_receipts(ctx):
         rows = (
             await session.execute(
                 select(
@@ -539,6 +540,8 @@ async def submission_detail(
             "actions": actions,
             "distribute_circles": circles,
             "receipts": receipts,
+            "telemetry": await telemetry_rows(session, ctx, submission),
+            "lint_hits": await lint_hits(session, ctx, submission),
             "csrf_token": request.cookies.get("aivs_csrf", ""),
         }
     )

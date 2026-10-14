@@ -420,10 +420,12 @@ member X, and here is when they collected it".
   submission per day. Without it, a member polling every minute would write 1,440
   rows a day per submission and drown the useful signal.
 
-Receipts are visible to the submitter and the hosting ISAC only
+Receipts, firm by firm, are visible to the hosting ISAC's reviewers only
 (`can_view_submission_receipts`). They reveal which member firms are paying
 attention to which threats — exactly the inference other members must not be able
-to draw about each other.
+to draw about each other, and the submitter is another member. What the submitter
+gets is telemetry: how many organisations could see, collected, acknowledged and
+acted on its submission, each count withheld below k (`services/telemetry.py`).
 
 ---
 

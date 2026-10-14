@@ -1,0 +1,17 @@
+Mutation M701: the portal shows telemetry to whoever opens the submission
+Re-applies: the submitter-only rule enforced by the API but not by the portal page
+
+Expect red: packages/aivs-server/tests/unit/test_portal.py::test_the_isac_reads_receipts_on_the_detail_screen
+
+diff --git a/packages/aivs-server/src/aivs_server/portal/submitter_view.py b/packages/aivs-server/src/aivs_server/portal/submitter_view.py
+--- a/packages/aivs-server/src/aivs_server/portal/submitter_view.py
++++ b/packages/aivs-server/src/aivs_server/portal/submitter_view.py
+@@ -48,8 +48,6 @@
+     session: AsyncSession, ctx: AuthContext, submission: Submission
+ ) -> dict[str, Any] | None:
+     """The submitter's telemetry, or ``None`` for anyone else or before distribution."""
+-    if submission.submitter_org_id != ctx.org_id:
+-        return None
+     telemetry = await submission_telemetry(session, submission)
+     if not telemetry.distributed:
+         return None

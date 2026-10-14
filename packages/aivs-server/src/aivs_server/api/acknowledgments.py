@@ -153,7 +153,7 @@ async def receipts(
     # existence oracle over the submission namespace for any authenticated
     # member -- the one thing those sibling paths take care to avoid, and which
     # this endpoint would otherwise undo for the whole namespace.
-    if submission is None or not can_view_submission_receipts(ctx, submission):
+    if submission is None or not can_view_submission_receipts(ctx):
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Submission not found")
 
     rows = (

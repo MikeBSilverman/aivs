@@ -411,7 +411,8 @@ async def test_a_workflow_action_requires_the_form_token(client, analyst, sessio
     assert after == before, "a rejected action must not write history"
 
 
-async def test_the_detail_screen_shows_history_and_receipts(client, analyst):
+@pytest.mark.requirement("SF-15")
+async def test_the_detail_screen_shows_history_but_not_receipts_to_the_submitter(client, analyst):
     _org, operator, secret, pem = analyst
     await sign_in(client, operator, secret, pem)
     created = await client.post(
@@ -429,7 +430,74 @@ async def test_the_detail_screen_shows_history_and_receipts(client, analyst):
     detail = await client.get(created.headers["location"], headers=proxy_headers(pem))
     assert detail.status_code == 200
     assert "History" in detail.text
-    assert "Receipts" in detail.text, "the submitter may see who collected their finding"
+    assert "Receipts" not in detail.text, "firm-by-firm receipts are the ISAC's alone"
+
+
+@pytest.mark.requirement("SF-15")
+async def test_the_isac_reads_receipts_on_the_detail_screen(
+    client, analyst, isac_operator, make_org, make_circle, join_circle, publish
+):
+    """The pair to the submitter's refusal: the same screen, an ISAC reviewer.
+
+    Another firm is in the circle, so the submission has reach and the
+    submitter would see telemetry: the reviewer must not.
+    """
+    org, _operator, _secret, _pem = analyst
+    _isac_org, isac, isac_secret, isac_pem = isac_operator
+    circle = await make_circle("section9")
+    await join_circle(org, circle)
+    await join_circle(await make_org("atlantic-clearing"), circle)
+    submission, _obj, _dist = await publish(org, circle)
+    await sign_in(client, isac, isac_secret, isac_pem)
+
+    detail = await client.get(
+        f"/portal/submissions/{submission.id}", headers=proxy_headers(isac_pem)
+    )
+    assert detail.status_code == 200
+    assert "Receipts" in detail.text
+    assert "What happened to it" not in detail.text, "telemetry is the submitter's"
+
+
+@pytest.mark.requirement("SF-15")
+async def test_the_submitter_sees_counts_withheld_below_k(
+    client, analyst, make_org, make_circle, join_circle, publish
+):
+    org, operator, secret, pem = analyst
+    circle = await make_circle("section9")
+    await join_circle(org, circle)
+    for slug in ("atlantic-clearing", "harbour-mutual"):
+        await join_circle(await make_org(slug), circle)
+    submission, _obj, _dist = await publish(org, circle)
+    await sign_in(client, operator, secret, pem)
+
+    detail = await client.get(f"/portal/submissions/{submission.id}", headers=proxy_headers(pem))
+    assert "What happened to it" in detail.text
+    assert "shown once at least 5 organisations could see it" in detail.text
+    assert "atlantic-clearing" not in detail.text
+    assert "harbour-mutual" not in detail.text
+
+
+async def test_a_draft_points_at_text_that_may_identify_the_submitter(client, analyst):
+    """The lint, on the draft page, while the submitter can still change it."""
+    _org, operator, secret, pem = analyst
+    await sign_in(client, operator, secret, pem)
+    created = await client.post(
+        "/portal/submit",
+        data={
+            "title": "Seen on our gateway",
+            "summary": "First seen on 10.20.0.7 at Meridian-Global",
+            "discovery_scope": "own_product",
+            "tlp": "amber",
+            "bundle": bundle(),
+            "csrf_token": csrf_of(client),
+        },
+        headers=proxy_headers(pem),
+    )
+
+    detail = await client.get(created.headers["location"], headers=proxy_headers(pem))
+    assert "Before you submit" in detail.text
+    assert "an internal address" in detail.text
+    assert "your organisation&#39;s name" in detail.text
 
 
 async def test_another_firms_submission_is_not_found(

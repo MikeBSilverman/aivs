@@ -47,6 +47,10 @@ class RouteClass(enum.StrEnum):
     #: ISAC included (it has the receipts; a count to the wrong reader is a
     #: disclosure of who engaged).
     TELEMETRY = "telemetry"
+    #: Firm-by-firm receipts on a submission: the ISAC's reviewers; everyone
+    #: else 404, the submitter included (each row is the receiving member's
+    #: record; the submitter gets telemetry).
+    RECEIPT_RECORD = "receipt record"
     #: Filing a new submission: every active caller.
     FILING = "filing"
     #: Amending or sending a draft: its submitter; a reviewer who can see it 403.
@@ -252,7 +256,7 @@ ROUTES: tuple[RouteCase, ...] = (
     RouteCase(
         "GET",
         "/api/v1/submissions/{submission_id}/receipts",
-        RouteClass.SUBMISSION_RECORD,
+        RouteClass.RECEIPT_RECORD,
         _sub("read", "/receipts"),
     ),
     RouteCase("GET", "/portal/", RouteClass.LISTING, _fixed("/portal/"), is_portal=True),

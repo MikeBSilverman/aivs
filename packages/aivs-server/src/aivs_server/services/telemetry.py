@@ -51,11 +51,13 @@ K_ANONYMITY: Final[int] = 5
 
 EVENT_SUBMISSION_TELEMETRY: Final[str] = "submission.telemetry"
 
-#: Named so a reader knows what is coming, rather than reading a zero.
+#: Named so a reader knows what is coming, rather than reading a zero. Said
+#: without a phase or a date: this text reaches members, and a promise of when
+#: is a claim that goes stale while nobody is looking at it.
 LATER: Final[tuple[str, ...]] = (
-    "opinions on the content (with contributions on public CVEs)",
-    "posture outcomes such as fixed or not affected (with member posture)",
-    "citations by an ISAC advisory (with text documents)",
+    "how many organisations agree or disagree with it",
+    "how many report it fixed or not affecting them",
+    "citations by an ISAC advisory",
 )
 
 

@@ -19,6 +19,7 @@ from __future__ import annotations
 import enum
 import json
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -93,6 +94,7 @@ EXPECTED: Mapping[RouteClass, Mapping[Principal, Outcome]] = {
     RouteClass.CIRCLE_CONTENT: _allow(*_MEMBER, P.PEER_MACHINE, otherwise=N),
     RouteClass.SUBMISSION_RECORD: _allow(*_MEMBER, P.ISAC_ANALYST, P.ISAC_EDITOR, otherwise=N),
     RouteClass.TELEMETRY: _allow(*_MEMBER, otherwise=N),
+    RouteClass.RECEIPT_RECORD: _allow(P.ISAC_ANALYST, P.ISAC_EDITOR, otherwise=N),
     RouteClass.DRAFT_EDIT: {
         **_allow(*_MEMBER, otherwise=N),
         P.ISAC_ANALYST: F,
@@ -335,3 +337,49 @@ async def test_each_principal_gets_exactly_its_row(principal, app, factories):
                 )
 
     assert not wrong, f"{principal} does not get its row:\n  " + "\n  ".join(wrong)
+
+
+# ---------------------------------------------------------------------------
+# The documented table is this table
+# ---------------------------------------------------------------------------
+_AUTHZ_DOC = Path(__file__).resolve().parents[4] / "docs" / "authz-model.md"
+
+#: The documented table's columns, in order.
+_DOC_COLUMNS: tuple[Principal, ...] = (
+    P.MEMBER_MACHINE,
+    P.MEMBER_ANALYST,
+    P.MEMBER_ORG_ADMIN,
+    P.PEER_MACHINE,
+    P.ADMIN_CERTIFICATE,
+    P.ISAC_ANALYST,
+    P.ISAC_EDITOR,
+    P.ISAC_MEMBERSHIP,
+    P.SYSTEM_ADMIN,
+)
+_DOC_CELLS: Mapping[str, Outcome] = {"✓": A, "sign in": S, "401": U, "403": F, "404": N}
+
+
+def _documented_rows() -> dict[str, tuple[Outcome, ...]]:
+    rows: dict[str, tuple[Outcome, ...]] = {}
+    for line in _AUTHZ_DOC.read_text(encoding="utf-8").splitlines():
+        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        if len(cells) != len(_DOC_COLUMNS) + 1 or cells[1] not in _DOC_CELLS:
+            continue
+        label = cells[0].removesuffix(" (portal)")
+        rows[label] = tuple(_DOC_CELLS[cell] for cell in cells[1:])
+    return rows
+
+
+def test_the_documented_table_is_the_asserted_one():
+    """``docs/authz-model.md`` states this matrix; the two must not drift.
+
+    They did: the documented ``receipt`` and ``webhook delete`` rows still
+    showed cells the matrix had changed, and two classes were missing, so a
+    member's counsel reading the doc got a policy the server no longer had.
+    """
+    documented = _documented_rows()
+    asserted = {
+        str(route_class): tuple(EXPECTED[route_class][principal] for principal in _DOC_COLUMNS)
+        for route_class in EXPECTED
+    }
+    assert documented == asserted

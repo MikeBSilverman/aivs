@@ -58,6 +58,7 @@ async def _receipt(session, org, submission, ack_type=AckType.RETRIEVED):
     await session.commit()
 
 
+@pytest.mark.requirement("SF-15")
 async def test_below_k_every_number_is_withheld(session, shared):
     submission, _s, _pem, readers, _c = await shared(K_ANONYMITY - 1)
     await _receipt(session, readers[0], submission)
@@ -69,6 +70,7 @@ async def test_below_k_every_number_is_withheld(session, shared):
     assert "at least 5" in telemetry.retrieved.withheld
 
 
+@pytest.mark.requirement("SF-15")
 async def test_at_k_zero_and_k_are_exact_and_between_reads_fewer_than_k(session, shared):
     submission, submitter, _pem, readers, _c = await shared(K_ANONYMITY + 1)
     for reader in readers[:2]:
@@ -100,6 +102,7 @@ async def test_a_member_that_joined_after_release_is_not_reach(
     assert telemetry.reach.value == K_ANONYMITY
 
 
+@pytest.mark.requirement("SF-15")
 async def test_only_the_submitter_may_read_it(client, shared, isac, make_cert):
     submission, _s, pem, readers, _c = await shared(K_ANONYMITY)
     peer_pem, _ = await make_cert(readers[0])
@@ -140,6 +143,7 @@ async def _telemetry_events(session) -> list[str]:
 
 
 @pytest.mark.parametrize(("readers", "announced"), [(K_ANONYMITY, ["first_retrieval"]), (2, [])])
+@pytest.mark.requirement("SF-15")
 async def test_a_milestone_is_announced_once_and_never_below_k(
     session, shared, secret_box, readers, announced
 ):

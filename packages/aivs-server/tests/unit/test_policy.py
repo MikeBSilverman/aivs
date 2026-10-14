@@ -132,7 +132,7 @@ def test_inactive_orgs_are_denied_everywhere(status):
     assert can_submit_to_circle(ctx, CIRCLE) is False
     assert can_administer_circle(ctx, CIRCLE) is False
     assert can_view_submission(ctx, draft) is False
-    assert can_view_submission_receipts(ctx, draft) is False
+    assert can_view_submission_receipts(ctx) is False
     assert can_transition_submission(ctx, draft, SubmissionState.SUBMITTED) is False
     assert can_manage_org(ctx, ORG) is False
     assert readable_circle_ids(ctx) == frozenset()
@@ -397,16 +397,18 @@ def test_submissions_are_visible_to_their_submitter_and_the_isac():
     assert can_view_submission(context(org_id=OTHER_ORG), record) is False
 
 
-def test_receipts_are_visible_to_their_submitter_and_the_isac_only():
-    """Not to a fellow circle member.
+@pytest.mark.requirement("SF-15")
+def test_named_receipts_are_the_isacs_alone():
+    """Not the submitter's, and not a fellow circle member's.
 
     Which firms attend to which threats is not an inference members may draw
-    about one another.
+    about one another, and the submitter is a member: it gets k-suppressed
+    telemetry. The pair: the ISAC's analyst reads them.
     """
-    record = submission(state=SubmissionState.DISTRIBUTED)
     peer = context(org_id=OTHER_ORG, circles={CIRCLE: CircleRole.MEMBER})
-    assert can_view_submission_receipts(context(), record) is True
-    assert can_view_submission_receipts(peer, record) is False
+    assert can_view_submission_receipts(context()) is False
+    assert can_view_submission_receipts(peer) is False
+    assert can_view_submission_receipts(isac_human(OperatorRole.ISAC_ANALYST)) is True
 
 
 # ---------------------------------------------------------------------------

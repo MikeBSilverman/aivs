@@ -18,9 +18,12 @@ Organization ──< CircleMembership >── Circle ──1..n──> TaxiiColl
 ```
 
 **Organization** — a member firm, or the hosting ISAC itself. Carries an
-`org_type` (`gsib`, `section9`, `crit_infra`, `admin`) and a `status`
-(`pending`, `active`, `suspended`). The `admin` org is the tenant operator, not a
-sharing participant.
+`org_type` and a `status` (`pending`, `active`, `suspended`, `quarantined`).
+The `admin` org is the tenant operator, not a sharing participant, and there is
+exactly one. Members are `gsib`, `section9` or `crit_infra`, which are the only
+types a membership *rule* can admit. `vendor` and `government` may be added to a
+circle by name only. `researcher` and `automation` contribute and never read: no
+path can make them a circle member (`CIRCLE_ELIGIBLE_ORG_TYPES`, SF-62).
 
 **Circle** — the unit of trust tiering. Named, slugged, with an `is_active` flag
 and a `minimum_tlp` floor. Membership is an explicit `circle_memberships` row
@@ -342,11 +345,89 @@ too).
 ## 9. Testing the model
 
 `policy.py` exists as a single module for one reason: `tests/authz_matrix`
-enumerates every route against every caller shape and asserts the exact outcome,
-and that proof is only worth something if there is one place where the rules
-live. The `authz` pytest marker (declared in the workspace `pyproject.toml`) tags
-those tests as "the deny-by-default proof".
+proves the rules from outside, and that proof is only worth something if there
+is one place where the rules live. The `authz` pytest marker tags those tests.
 
-If you add a route, add its row to the matrix. If you need a rule the module does
-not express, add the predicate here rather than inline in the router — an
-authorization rule that lives in a handler is a rule nothing tests.
+There are two proofs, and they answer different questions.
+
+**The door** (`test_authz_matrix.py`). Every route is called with no
+credentials, a forged proxy secret, and a suspended organisation's certificate,
+using placeholder identifiers that resolve to nothing. Each must be refused.
+Because nothing resolves, this also shows that refusal comes before any lookup:
+a 404 there would mean the lookup happened first. The set of routes that answer
+anonymously is pinned exactly, in both directions.
+
+**The matrix** (`test_principal_matrix.py`). Fourteen kinds of caller
+(`principals.py`) are sent to every route (`routes.py`), against a seeded
+instance whose targets exist (`world.py`). Every answer is compared with one
+expected outcome per (principal, route class, surface). The targets are real,
+so an allowed caller succeeds. The matrix therefore fails when a role **loses**
+a power it should have, as well as when it gains one. Guards fail the build
+when a walked route has no class, a class is empty, or a surface drops below
+its floor.
+
+Two rules apply before the table:
+
+- **Refused at the door.** Anonymous, forged proxy secret, and pending,
+  suspended or quarantined organisations get 401 on the machine surface and a
+  redirect to sign in on the portal, on every class except health and sign-in.
+- **The portal needs a person.** A certificate with no signed-in human is
+  redirected to sign in on every portal route.
+
+Health (`/healthz`, `/readyz`, `/metrics`) answers everyone. Sign-in is the
+same for every caller: the form renders, a wrong password is refused with 403,
+and signing out lands on the sign-in page.
+
+For every other caller, by route class (✓ allowed). "member" filed the
+submissions the routes address; "peer" is another member of the same circle;
+ISAC staff are not members of that circle.
+
+| Class | member cert | member analyst | member org_admin | peer cert | admin-org cert | ISAC analyst | ISAC editor | ISAC membership | system_admin |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| listing | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| circle content | ✓ | ✓ | ✓ | ✓ | 404 | 404 | 404 | 404 | 404 |
+| submission record | ✓ | ✓ | ✓ | 404 | 404 | ✓ | ✓ | 404 | 404 |
+| filing | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| draft edit | ✓ | ✓ | ✓ | 404 | 404 | 403 | 403 | 404 | 404 |
+| withdraw | ✓ | ✓ | ✓ | 404 | 404 | 403 | ✓ | 404 | 404 |
+| receipt | ✓ | ✓ | ✓ | ✓ | 404 | 404 | 404 | 404 | 404 |
+| editorial verb | 403 | 403 | 403 | 404 | 404 | 403 | ✓ | 404 | 404 |
+| review queue (portal) | sign in | 404 | 404 | sign in | sign in | ✓ | ✓ | 404 | 404 |
+| membership verb | 403 | 403 | 403 | 403 | 403 | 403 | 403 | ✓ | 403 |
+| quarantine | 403 | 403 | 403 | 403 | 403 | 403 | ✓ | ✓ | ✓ |
+| reconnect | 403 | 403 | 403 | 403 | 403 | 403 | ✓ | ✓ | 403 |
+| certificate revoke | 404 | 404 | 404 | 404 | 404 | 404 | 404 | ✓ | 404 |
+| circle create | 403 | 403 | 403 | 403 | 403 | 403 | ✓ | 403 | 403 |
+| circle screens (portal) | sign in | 403 | 403 | sign in | sign in | 403 | ✓ | ✓ | 403 |
+| pause | 403 | 403 | 403 | 403 | 403 | 403 | ✓ | 403 | ✓ |
+| resume | 403 | 403 | 403 | 403 | 403 | 403 | ✓ | 403 | 403 |
+| status page (portal) | sign in | 403 | 403 | sign in | sign in | 403 | 403 | ✓ | ✓ |
+| own settings | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| webhook delete | ✓ | ✓ | ✓ | 404 | 404 | 404 | 404 | 404 | 404 |
+
+How to read the deny cells:
+
+- **404 vs 403 is deliberate.** An identifier the caller cannot see answers 404,
+  so an endpoint is never an existence oracle (CLAUDE.md §5). 403 means the
+  caller can see the thing and may not act on it. For example, an ISAC analyst
+  can read a draft and may not edit it.
+- **Each class is one policy.** Where two routes under one heading answer
+  differently, such as `withdraw` (which admits an editor) and `submit` (which
+  does not), they are separate classes rather than one class with exceptions.
+
+The matrix does not claim:
+
+- what a listing *contains*. It proves the listing answers; filtering is a
+  clause test.
+- visibility within content a caller may read.
+- audit content.
+- any principal that does not exist yet. The member SSO session, the auditor,
+  automation, researcher and government organisations, and delegated providers
+  are listed in `principals.py` with the phase that adds them, and are not
+  faked.
+
+If you add a route, `test_every_walked_route_is_in_exactly_one_class` fails
+until you give it a class. If it fits no class, that is a new policy: add the
+class and its row. If you need a rule the module does not express, add the
+predicate here rather than inline in the router. An authorization rule that
+lives in a handler is a rule nothing tests.

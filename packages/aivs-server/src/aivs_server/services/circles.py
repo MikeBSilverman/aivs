@@ -45,7 +45,12 @@ from dataclasses import dataclass
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from aivs_schemas.enums import RULE_ELIGIBLE_ORG_TYPES, CircleRole, OrgStatus
+from aivs_schemas.enums import (
+    CIRCLE_ELIGIBLE_ORG_TYPES,
+    RULE_ELIGIBLE_ORG_TYPES,
+    CircleRole,
+    OrgStatus,
+)
 from aivs_server.audit.log import AuditAction, record
 from aivs_server.auth.context import AuthContext
 from aivs_server.db.models import Circle, CircleMembership, Organization
@@ -149,6 +154,15 @@ def _refuse_unsafe_additions(
 ) -> None:
     if joined_at is not None and joined_at > now:
         msg = "a membership cannot start in the future"
+        raise CircleMembershipError(msg)
+    ineligible = sorted(
+        org.slug for org in organisations if org.org_type not in CIRCLE_ELIGIBLE_ORG_TYPES
+    )
+    if ineligible:
+        msg = (
+            "these organisations contribute but never read a circle, so cannot be "
+            f"members: {', '.join(ineligible)}"
+        )
         raise CircleMembershipError(msg)
     quarantined = sorted(org.slug for org in organisations if org.status is OrgStatus.QUARANTINED)
     if quarantined:

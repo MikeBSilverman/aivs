@@ -43,7 +43,7 @@ an afternoon.
 | --- | --- |
 | Signed membership agreement | Covers TLP handling, embargo obligations, and the own-product/own-estate/AI-system attestation if you intend to submit. |
 | Organization legal name and a short slug | The slug is lowercase alphanumeric with hyphens, 3–64 characters, database-enforced: `^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$`. Pick something durable — `meridian-global`, not `mg-test2`. |
-| Organization type | `gsib`, `section9`, or `crit_infra`. Determines which circles you are eligible for. |
+| Organization type | `gsib`, `section9`, or `crit_infra` for a member firm. Determines which circles you are eligible for. (A vendor, government partner, researcher or the ISAC's own automation is enrolled with its own type, which governs whether it can read circles at all.) |
 | A technical contact and a security contact | Different people, ideally. |
 | Egress IP ranges, or a WireGuard public key | Which one depends on the ISAC's mode. |
 | Where TAXII content lands | TIP, SIEM, ticketing. Decide before you generate certificates — it determines how many you need. |

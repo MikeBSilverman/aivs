@@ -53,6 +53,19 @@ class OrgType(StrEnum):
     SECTION9 = "section9"
     CRIT_INFRA = "crit_infra"
     ADMIN = "admin"
+    #: Contributes defence content about its own products. No special tier:
+    #: access like any organisation's, and vendor groups are circles an editor
+    #: names explicitly.
+    VENDOR = "vendor"
+    #: An individual or academic researcher, under terms of contribution rather
+    #: than the membership agreement. Contributes; never reads a circle.
+    RESEARCHER = "researcher"
+    #: A machine identity of the ISAC's own, such as the KEV enrichment script.
+    #: Files submissions like anyone, which an editor reviews; never a reader.
+    AUTOMATION = "automation"
+    #: A government partner. Added to a circle only by name, never by a rule,
+    #: and receipts naming one are a disclosure question before an enrolment.
+    GOVERNMENT = "government"
 
 
 class OrgStatus(StrEnum):
@@ -93,6 +106,16 @@ class QuarantineBacklog(StrEnum):
 #: surfaces use, a database check, and reconciliation itself.
 RULE_ELIGIBLE_ORG_TYPES: frozenset[OrgType] = frozenset(
     {OrgType.GSIB, OrgType.SECTION9, OrgType.CRIT_INFRA}
+)
+
+#: Organisation types that may be a circle member at all, by rule or by name
+#: (SF-62). Membership is how content is *read*: researchers and automation
+#: contribute and never read, and a type that is not here cannot be added by
+#: any path. Vendors and government may be added by name only; they are not in
+#: RULE_ELIGIBLE_ORG_TYPES. The hosting ISAC's own organisation stays eligible,
+#: as it always has been, for the circles it reads by membership.
+CIRCLE_ELIGIBLE_ORG_TYPES: frozenset[OrgType] = RULE_ELIGIBLE_ORG_TYPES | frozenset(
+    {OrgType.ADMIN, OrgType.VENDOR, OrgType.GOVERNMENT}
 )
 
 

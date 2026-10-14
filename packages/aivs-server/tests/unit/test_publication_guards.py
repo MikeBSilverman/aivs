@@ -25,7 +25,7 @@ from aivs_server.services.distribution import distribute_submission
 from aivs_server.services.embargo import release_embargo_now, sweep_due_embargoes
 from aivs_server.services.publication import hold_publication_lock
 from aivs_server.taxii.resources import truncate_to_taxii_precision
-from tests.conftest import StubEndpoint, is_blocked, proxy_headers
+from tests.conftest import StubEndpoint, is_blocked, proxy_headers, runs_unblocked
 
 pytestmark = pytest.mark.db
 
@@ -268,14 +268,14 @@ async def test_a_taxii_page_waits_for_an_open_publication_and_not_otherwise(
     objects = f"/taxii2/aivs/collections/{collection.id}/objects/"
     headers = proxy_headers(pem)
 
-    idle, _task = await is_blocked(client.get(objects, headers=headers))
+    idle, _task = await runs_unblocked(client.get(objects, headers=headers))
     holder = open_session()
     await hold_publication_lock(holder, refuse_while_paused=True)
     blocked, task = await is_blocked(client.get(objects, headers=headers))
     await holder.rollback()
     page = await asyncio.wait_for(task, timeout=5)
 
-    assert idle is False
+    assert idle is True
     assert blocked is True, "a cursor-issuing read must wait for the publication"
     assert page.status_code == 200
 
@@ -333,7 +333,7 @@ async def test_a_pause_waits_for_a_publication_already_under_way(open_session, i
 
     holder, pauser, idle = open_session(), open_session(), open_session()
 
-    unhindered, _done = await is_blocked(
+    unhindered, _done = await runs_unblocked(
         pause_distribution(idle, isac_ctx, reason="drill", now=NOW)
     )
     await idle.rollback()
@@ -344,5 +344,5 @@ async def test_a_pause_waits_for_a_publication_already_under_way(open_session, i
     await holder.rollback()
     await asyncio.wait_for(task, timeout=5)
 
-    assert unhindered is False
+    assert unhindered is True
     assert blocked is True

@@ -810,10 +810,17 @@ async def isac_machine(isac_org, make_cert):
 # ---------------------------------------------------------------------------
 # Concurrency and outbound-delivery helpers, shared across modules
 # ---------------------------------------------------------------------------
-#: Long enough that a writer which is *not* blocked has certainly finished, short
-#: enough to keep the suite fast. A blocked writer stays blocked indefinitely, so
-#: the margin only has to cover the unblocked case.
+#: How long ``is_blocked`` watches an operation that is expected to wait. A
+#: blocked writer stays blocked indefinitely, so this only has to be long enough
+#: for an unblocked one to finish on a quiet machine.
 _SETTLE_SECONDS = 0.5
+#: How long ``runs_unblocked`` gives an operation that is expected *not* to wait.
+#: It was ``_SETTLE_SECONDS`` too, which made "not blocked" a timing assertion:
+#: with other suites loading the shared cluster, an unblocked TAXII read took
+#: over half a second and failed as "blocked", in the full suite and alone. Any
+#: lock holder in these tests releases only after the check, so an operation that
+#: wrongly waits still fails, just later.
+_UNBLOCKED_SECONDS = 10.0
 
 
 @pytest.fixture
@@ -883,6 +890,12 @@ async def is_blocked(operation: Awaitable[Any]) -> tuple[bool, asyncio.Task[Any]
     task = asyncio.ensure_future(operation)
     done, _ = await asyncio.wait({task}, timeout=_SETTLE_SECONDS)
     return task not in done, task
+
+
+async def runs_unblocked(operation: Awaitable[Any]) -> tuple[bool, asyncio.Task[Any]]:
+    task = asyncio.ensure_future(operation)
+    done, _ = await asyncio.wait({task}, timeout=_UNBLOCKED_SECONDS)
+    return task in done, task
 
 
 class StubEndpoint(httpx.AsyncBaseTransport):

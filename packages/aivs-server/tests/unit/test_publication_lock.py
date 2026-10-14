@@ -29,7 +29,7 @@ from aivs_server.db import models
 from aivs_server.services.distribution import distribute_submission
 from aivs_server.services.embargo import release_embargo_now
 from aivs_server.services.publication import wait_for_publications
-from tests.conftest import is_blocked
+from tests.conftest import is_blocked, runs_unblocked
 
 pytestmark = pytest.mark.db
 
@@ -82,8 +82,8 @@ async def test_a_distribution_proceeds_when_none_is_in_flight(
     only_id = await make_validated("only")
     writer = open_session()
 
-    blocked, task = await is_blocked(_distribute(writer, isac_ctx, only_id, circle.id))
-    assert not blocked
+    finished, task = await runs_unblocked(_distribute(writer, isac_ctx, only_id, circle.id))
+    assert finished
     await task
 
 
@@ -109,8 +109,8 @@ async def test_a_paging_read_proceeds_when_nothing_is_in_flight(open_session):
 
     # Shared with another reader too: readers must never queue behind readers.
     await wait_for_publications(other_reader)
-    blocked, task = await is_blocked(wait_for_publications(reader))
-    assert not blocked
+    finished, task = await runs_unblocked(wait_for_publications(reader))
+    assert finished
     await task
 
 

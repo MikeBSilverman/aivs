@@ -647,7 +647,9 @@ restore test on a schedule you actually keep.
 Three ways in, all reading the same health registry
 (`aivs_server/observability.py`), so they cannot disagree:
 
-- **`/readyz`**: 503 only when the database is unreachable; a degraded
+- **`/readyz`**: 503 when the database is unreachable, and outside `dev` when
+  the app is connected to it as a superuser, the tables' owner or a member of
+  the owner (any of which can undo the append-only triggers); a degraded
   background component is named in `components` while the probe stays 200.
   The app container's healthcheck (`python -m aivs_server.healthcheck`) asks
   it on loopback, so `docker compose ps` shows a database outage; an

@@ -419,6 +419,22 @@ async def app(settings: Settings, engine: Any, _schema: None) -> AsyncIterator[A
 
 
 @pytest.fixture
+def safe_database_role(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Readiness sees the connection as a safe application role, for tests that need a 200.
+
+    The suite connects as the cluster's superuser, which outside dev readiness
+    refuses. This stands in for the deployment's application role rather than
+    making the instance ``dev``, so nothing else about the request changes. The
+    check itself is tested against real roles in ``test_readiness_role.py``.
+    """
+
+    async def _no_problem(_session: Any) -> None:
+        return None
+
+    monkeypatch.setattr("aivs_server.api.meta.connection_role_problem", _no_problem)
+
+
+@pytest.fixture
 async def client(app: Any) -> AsyncIterator[AsyncClient]:
     """HTTP client speaking to the app in-process.
 

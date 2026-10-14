@@ -400,7 +400,8 @@ docker compose --env-file deploy/.env ps
   `Settings` and therefore exercises every validator including
   `validate_production_posture`, then asks `/readyz` on loopback. A container
   running with a dev bypass enabled, or a malformed CIDR, reports unhealthy
-  rather than quietly serving, and so does one that cannot reach its database.
+  rather than quietly serving, and so does one that cannot reach its database
+  or is connected to it as a role that could rewrite the audit log.
 - **proxy** — `GET /healthz` on an internal listener that requires no client
   certificate and is restricted to loopback and the backend subnet. It answers
   from nginx itself, so a slow database does not roll the proxy's health state

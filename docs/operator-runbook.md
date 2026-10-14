@@ -905,9 +905,12 @@ the platform, so alert on the collector's side when the stream goes quiet.
   privileges at all, or with whatever an older run left. The shipped `migrate`
   service always sets it; a migration run any other way must too.
 - **Running the app as a database superuser or as the tables' owner** voids the
-  append-only guarantee entirely, and the application will not tell you. The
-  shipped stack connects as `AIVS_DB_APP_USER`, the migrate step refuses to
-  grant to a role that is either, and §1.1 checks what is actually connected.
+  append-only guarantee entirely. The shipped stack connects as
+  `AIVS_DB_APP_USER`, the migrate step refuses to grant to a role that is
+  either, and outside `dev` `/readyz` answers 503 (`"database": "refused"`, the
+  role and reason in the app log) while the app is connected as one, so the
+  container reports unhealthy and the proxy does not start. §1.1 checks what is
+  actually connected.
 - **Distributing to a wider circle than intended** cannot be undone.
 - **Deleting a circle** with distributed content will fail on a `RESTRICT`
   foreign key. Deactivate instead. The failure is the schema working correctly.

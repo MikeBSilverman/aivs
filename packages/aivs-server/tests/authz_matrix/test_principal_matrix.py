@@ -328,7 +328,7 @@ async def _call(http: AsyncClient, route: RouteCase, world: Any, credentials: An
 
 @pytest.mark.requirement("NFR-S1", "NFR-S2")
 @pytest.mark.parametrize("principal", list(Principal), ids=lambda p: p.name.lower())
-async def test_each_principal_gets_exactly_its_row(principal, app, factories):
+async def test_each_principal_gets_exactly_its_row(principal, app, factories, safe_database_role):
     world, credentials = await build_world(factories)
     mine = credentials[principal]
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import logging
 from typing import Any
 
 from fastapi import APIRouter, Response, status
@@ -10,6 +11,7 @@ from fastapi.responses import PlainTextResponse
 from sqlalchemy import text
 
 from aivs_server.auth.deps import AuthenticatedContext, SessionDep, SettingsDep
+from aivs_server.db.grants import connection_role_problem
 from aivs_server.observability import HEARTBEATS, render_metrics
 from aivs_server.services.instance_status import pending_deliveries, pending_embargoes
 
@@ -40,6 +42,8 @@ __all__ = ["public_router", "router"]
 #: routes are exactly the intended set.
 public_router = APIRouter(tags=["meta"])
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api/v1", tags=["meta"])
 
 
@@ -55,15 +59,19 @@ async def healthz() -> dict[str, str]:
 
 
 @public_router.get("/readyz")
-async def readyz(session: SessionDep, response: Response) -> dict[str, Any]:
+async def readyz(session: SessionDep, settings: SettingsDep, response: Response) -> dict[str, Any]:
     """Readiness probe: can this instance actually serve traffic, and is every
     background component running?
 
-    503 only when the database is unreachable -- that is when a load balancer
-    should take the instance out. A degraded background component (the embargo
-    sweeper, the dispatcher, the detection rules) keeps the instance serving but
-    is reported by name with its reason, so "up" and "every part working" are
-    never the same answer.
+    503 when the database is unreachable -- that is when a load balancer should
+    take the instance out -- and, outside dev, when the application is connected
+    as a role that could undo the append-only triggers: a superuser, the
+    tables' owner, or a member of it. The audit trail's guarantee rests on that
+    deployment fact, and the stack does not start its proxy until the app is
+    ready. A degraded background component (the embargo sweeper, the
+    dispatcher, the detection rules) keeps the instance serving but is reported
+    by name with its reason, so "up" and "every part working" are never the
+    same answer.
     """
     try:
         await session.execute(text("SELECT 1"))
@@ -71,6 +79,14 @@ async def readyz(session: SessionDep, response: Response) -> dict[str, Any]:
         # reason belongs in the logs rather than in an unauthenticated response.
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
         return {"status": "unavailable", "database": "unreachable"}
+    if settings.environment != "dev":
+        problem = await connection_role_problem(session)
+        if problem is not None:
+            # Which role, and why, to the log; the unauthenticated body says
+            # only that the connection was refused.
+            logger.error("not ready: the database connection's %s", problem)
+            response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+            return {"status": "unavailable", "database": "refused"}
     components = HEARTBEATS.report(now=dt.datetime.now(dt.UTC))
     degraded = any(component.state == "degraded" for component in components)
     return {

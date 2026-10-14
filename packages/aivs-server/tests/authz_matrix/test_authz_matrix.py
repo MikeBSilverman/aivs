@@ -212,7 +212,7 @@ async def test_public_routes_are_exactly_the_intended_set(app):
     )
 
 
-async def test_the_health_probes_actually_answer(client):
+async def test_the_health_probes_actually_answer(client, safe_database_role):
     """The orchestrator contract, which nothing else exercises.
 
     A liveness probe that started returning 401 would take the instance out of

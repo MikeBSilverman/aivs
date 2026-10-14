@@ -262,7 +262,9 @@ def test_metrics_report_each_component_and_the_backlogs():
 
 
 @pytest.mark.requirement("NFR-O3")
-async def test_readyz_names_a_degraded_component_without_failing_the_probe(client):
+async def test_readyz_names_a_degraded_component_without_failing_the_probe(
+    client, safe_database_role
+):
     """Degraded background work keeps the instance serving; it is reported by
     name, so "up" and "every part working" are never the same answer. Times are
     relative to the real clock, which /readyz reads."""

@@ -25,8 +25,9 @@ from __future__ import annotations
 from typing import Final
 
 from sqlalchemy import Connection, text
+from sqlalchemy.ext.asyncio import AsyncSession
 
-__all__ = ["APP_ROLE_ENV_VAR", "UnsafeAppRoleError", "grant_app_role"]
+__all__ = ["APP_ROLE_ENV_VAR", "UnsafeAppRoleError", "connection_role_problem", "grant_app_role"]
 
 #: Names the role the application connects as. The same variable migration
 #: ``c185fd428721`` reads.
@@ -47,39 +48,64 @@ def grant_app_role(connection: Connection, role: str) -> None:
         connection.execute(text(statement))
 
 
-def _refuse_unsafe_role(connection: Connection, role: str) -> None:
-    is_superuser = connection.execute(
-        text("SELECT rolsuper FROM pg_roles WHERE rolname = :role"), {"role": role}
-    ).scalar_one_or_none()
+#: The two questions that decide whether a role could undo the triggers. Asked
+#: by the migration step of the role it is about to grant, and by readiness of
+#: the role the application is connected as: one text, so the two cannot drift.
+_IS_SUPERUSER: Final = text("SELECT rolsuper FROM pg_roles WHERE rolname = :role")
+_HOLDS_AN_OWNER: Final = text(
+    """
+    SELECT EXISTS (
+        SELECT 1 FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = :schema AND pg_has_role(:role, c.relowner, 'MEMBER')
+    )
+    """
+)
+
+
+def _role_problem(role: str, *, is_superuser: bool | None, holds_an_owner: bool) -> str | None:
+    """Why ``role`` could undo the append-only triggers, or ``None`` if it could not."""
     if is_superuser is None:
-        msg = (
-            f"application role {role!r} does not exist; create it before migrating "
-            "(deploy/db/init/10-app-role.sh)"
-        )
-        raise UnsafeAppRoleError(msg)
+        return f"role {role!r} does not exist"
     if is_superuser:
-        msg = f"application role {role!r} is a superuser, which can drop the append-only triggers"
-        raise UnsafeAppRoleError(msg)
-    holds_an_owner = connection.execute(
-        text(
-            """
-            SELECT EXISTS (
-                SELECT 1 FROM pg_class c
-                JOIN pg_namespace n ON n.oid = c.relnamespace
-                WHERE n.nspname = :schema AND pg_has_role(:role, c.relowner, 'MEMBER')
-            )
-            """
-        ),
-        {"role": role, "schema": _SCHEMA},
-    ).scalar_one()
+        return f"role {role!r} is a superuser, which can drop the append-only triggers"
     if holds_an_owner:
         # Membership is enough: a member of the owning role can SET ROLE to it
         # and then disable a trigger, exactly as the owner can.
-        msg = (
-            f"application role {role!r} owns, or is a member of a role that owns, "
+        return (
+            f"role {role!r} owns, or is a member of a role that owns, "
             "the schema's tables, and could drop the append-only triggers"
         )
-        raise UnsafeAppRoleError(msg)
+    return None
+
+
+def _refuse_unsafe_role(connection: Connection, role: str) -> None:
+    params = {"role": role, "schema": _SCHEMA}
+    is_superuser = connection.execute(_IS_SUPERUSER, params).scalar_one_or_none()
+    # pg_has_role raises for a role that does not exist, so only ask of one that does.
+    holds_an_owner = is_superuser is not None and bool(
+        connection.execute(_HOLDS_AN_OWNER, params).scalar_one()
+    )
+    problem = _role_problem(role, is_superuser=is_superuser, holds_an_owner=holds_an_owner)
+    if problem is None:
+        return
+    if is_superuser is None:
+        problem += "; create it before migrating (deploy/db/init/10-app-role.sh)"
+    msg = f"application {problem}"
+    raise UnsafeAppRoleError(msg)
+
+
+async def connection_role_problem(session: AsyncSession) -> str | None:
+    """Why the role ``session`` is connected as could undo the triggers, or ``None``.
+
+    ``current_user``, not the login: a connection that has done ``SET ROLE`` acts
+    with the role it set.
+    """
+    role = (await session.execute(text("SELECT current_user"))).scalar_one()
+    params = {"role": role, "schema": _SCHEMA}
+    is_superuser = (await session.execute(_IS_SUPERUSER, params)).scalar_one_or_none()
+    holds_an_owner = bool((await session.execute(_HOLDS_AN_OWNER, params)).scalar_one())
+    return _role_problem(role, is_superuser=is_superuser, holds_an_owner=holds_an_owner)
 
 
 def _append_only_tables(connection: Connection) -> list[str]:

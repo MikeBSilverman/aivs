@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any, Final
 
 from fastapi import HTTPException, Request, Response, status
+from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 from itsdangerous import BadSignature, URLSafeTimedSerializer
 
@@ -41,6 +42,7 @@ __all__ = [
     "current_session",
     "operator_name",
     "redirect_to_login",
+    "redirect_within_portal",
     "render",
     "require_csrf",
     "set_notice",
@@ -221,3 +223,19 @@ def tlp_label(value: Any) -> str:
 
 def stamp(value: dt.datetime | None) -> str:
     return value.strftime("%Y-%m-%d %H:%M") if value else ""
+
+
+def redirect_within_portal(path: str) -> RedirectResponse:
+    """A 303 to a page of this portal, and nowhere else.
+
+    Every portal redirect is built from constants and typed path parameters
+    today, so none can be steered off-site. This makes that a checked property
+    rather than an observation: a later caller handing in a string from a form
+    or a query cannot turn the portal into an open redirect, which a phishing
+    page would use to borrow the instance's address.
+    """
+    is_local = path.startswith("/portal/") and "//" not in path and "\\" not in path
+    if not is_local:
+        msg = f"refusing to redirect outside the portal: {path!r}"
+        raise ValueError(msg)
+    return RedirectResponse(path, status_code=status.HTTP_303_SEE_OTHER)

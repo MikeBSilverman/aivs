@@ -21,7 +21,7 @@ import uuid
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Form, HTTPException, Request, Response, status
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse
 from pydantic import ValidationError
 from sqlalchemy import func, select
 
@@ -65,6 +65,7 @@ from aivs_server.portal.shared import (
     client_fingerprint,
     current_session,
     operator_name,
+    redirect_within_portal,
     render,
     require_csrf,
     set_notice,
@@ -194,7 +195,7 @@ async def login(
         source_ip=request_source_ip(request, settings),
     )
 
-    response = RedirectResponse("/portal/", status_code=status.HTTP_303_SEE_OTHER)
+    response = redirect_within_portal("/portal/")
     response.set_cookie(
         settings.session_cookie_name,
         established.token,
@@ -282,7 +283,7 @@ async def logout(
             request_id=request.scope.get("aivs_request_id"),
             source_ip=request_source_ip(request, settings),
         )
-    response = RedirectResponse("/portal/login", status_code=status.HTTP_303_SEE_OTHER)
+    response = redirect_within_portal("/portal/login")
     response.delete_cookie(settings.session_cookie_name, path="/portal")
     response.delete_cookie("aivs_csrf", path="/portal")
     return response
@@ -659,9 +660,7 @@ async def perform_action(
             "portal_distribute",
         )
 
-    response = RedirectResponse(
-        f"/portal/submissions/{submission_id}", status_code=status.HTTP_303_SEE_OTHER
-    )
+    response = redirect_within_portal(f"/portal/submissions/{submission_id}")
 
     try:
         # Form parsing lives inside the try: its failures ("select at least one
@@ -809,6 +808,4 @@ async def submit_finding(
             "be stored. Check the length of names and descriptions in the bundle."
         )
 
-    return RedirectResponse(
-        f"/portal/submissions/{submission.id}", status_code=status.HTTP_303_SEE_OTHER
-    )
+    return redirect_within_portal(f"/portal/submissions/{submission.id}")

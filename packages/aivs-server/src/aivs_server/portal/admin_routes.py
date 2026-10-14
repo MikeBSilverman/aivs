@@ -31,7 +31,7 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Form, HTTPException, Request, Response, status
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse
 from pydantic import ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -58,6 +58,7 @@ from aivs_server.portal.shared import (
     base_context,
     current_session,
     operator_name,
+    redirect_within_portal,
     render,
     require_csrf,
     set_notice,
@@ -79,10 +80,6 @@ from aivs_server.services.org_status import (
 __all__ = ["router"]
 
 router = APIRouter(prefix="/portal/admin", tags=["portal-admin"])
-
-
-def _redirect(path: str) -> RedirectResponse:
-    return RedirectResponse(path, status_code=status.HTTP_303_SEE_OTHER)
 
 
 def _parse_names(raw: str) -> tuple[list[uuid.UUID], list[str]]:
@@ -164,7 +161,7 @@ async def enrol_org(
     require_csrf(csrf_token, csrf_hash)
     require(is_isac_membership(ctx), "portal_admin_orgs")
 
-    response = _redirect("/portal/admin/orgs")
+    response = redirect_within_portal("/portal/admin/orgs")
     try:
         # Through the API's request model, so the portal cannot enrol what the
         # API refuses -- a second ISAC among it.
@@ -230,12 +227,12 @@ async def org_status(
         )
     except OrgStatusError as exc:
         await session.rollback()
-        refused = _redirect("/portal/admin/orgs")
+        refused = redirect_within_portal("/portal/admin/orgs")
         set_notice(refused, settings, "error", f"Not changed: {exc}.")
         return refused
     await session.commit()
 
-    response = _redirect("/portal/admin/orgs")
+    response = redirect_within_portal("/portal/admin/orgs")
     set_notice(
         response, settings, "info", f"{organization.slug} is now {organization.status.value}."
     )
@@ -306,7 +303,7 @@ async def create_circle_screen(
     require_csrf(csrf_token, csrf_hash)
     require(is_isac_editor(ctx), "portal_admin_circles")
 
-    response = _redirect("/portal/admin/circles")
+    response = redirect_within_portal("/portal/admin/circles")
     try:
         # The API's request model, so the portal cannot store a rule the API
         # would refuse. It took raw form strings straight into the column,
@@ -464,7 +461,7 @@ async def add_members_screen(
     if circle is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Not found")
 
-    response = _redirect(f"/portal/admin/circles/{circle_id}")
+    response = redirect_within_portal(f"/portal/admin/circles/{circle_id}")
     org_ids, org_slugs = _parse_names(roster)
 
     try:
@@ -523,7 +520,7 @@ async def remove_member_screen(
     closed = await remove_circle_member(
         session, ctx, circle_id=circle_id, org_id=org_id, now=dt.datetime.now(dt.UTC), via="portal"
     )
-    response = _redirect(f"/portal/admin/circles/{circle_id}")
+    response = redirect_within_portal(f"/portal/admin/circles/{circle_id}")
     if not closed:
         set_notice(response, settings, "error", "That organisation is not a member.")
         return response

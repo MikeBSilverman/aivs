@@ -1,7 +1,9 @@
 # Onboarding a member firm
 
-For the engineer at a member firm who will actually wire this up. You have done
-this for other feeds; this one is a TAXII 2.1 server behind mutual TLS, with two
+For the engineer at a member firm who will actually wire this up. AIVS is the
+platform your ISAC runs to manage vulnerability intelligence with its members
+and vendors; what you connect to today is its first lane, pre-CVE early warning
+under embargo, delivered over TAXII 2.1. You have done this for other feeds; this one is a TAXII 2.1 server behind mutual TLS, with two
 differences worth knowing before you start:
 
 1. **You need a client certificate issued by the ISAC**, not an API key. Your
@@ -222,7 +224,7 @@ Expected:
 ```json
 {
   "title": "Example Financial ISAC",
-  "description": "Pre-CVE AI vulnerability sharing for member firms.",
+  "description": "ISAC vulnerability intelligence, from pre-CVE early warning onward",
   "default": "https://aivs.example.org/taxii2/aivs/",
   "api_roots": ["https://aivs.example.org/taxii2/aivs/"]
 }
@@ -436,11 +438,16 @@ circle. Reading a circle does not imply writing to it.
 | `ai_system` | An AI-system vulnerability generally — prompt injection, model supply chain, agentic tooling. |
 
 **What AIVS does not accept:** undisclosed vulnerabilities in an uninvolved third
-party's software. There is no `discovery_scope` value for it. This is not
+party's software. No `discovery_scope` you can file covers it. This is not
 squeamishness — distributing someone else's unpatched vulnerability without their
 consent creates coordinated-disclosure and tortious-interference exposure for
 you and for the ISAC. If you have found something in a vendor's product, that is
-a coordinated disclosure to the vendor, and AIVS is not the channel for it.
+a coordinated disclosure to the vendor, and today AIVS is not the channel for it.
+A planned change will let the ISAC carry a coordinated disclosure with the vendor
+recorded as a party to the case, and let members contribute detections and
+workarounds for vulnerabilities once they are public, whoever's software they are
+in. Neither is built; until they are, the three scopes above are all the server
+accepts.
 
 Your `discovery_scope` selection is an **attestation**. The ISAC reviews it, but
 it cannot verify it, and the membership agreement makes a false attestation a

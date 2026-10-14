@@ -8,6 +8,14 @@ still files it correctly. The extension adds the properties a pre-CVE finding
 needs and STIX has no place for — how an AI system found it, what it affects,
 what the embargo is, and where it sits relative to CVE publication.
 
+This extension serves the pre-CVE lane, which is the front of what AIVS covers:
+the platform is meant to follow a vulnerability from that first finding through
+CVE issuance to the detection, mitigation and verification work that follows.
+The later stages are planned as an additive version 2.0 of this extension —
+vocabularies for remediation, detection and exploitation status taken from
+existing standards rather than invented — and nothing of it is built. Version
+1.0 below is what the server accepts today.
+
 Implementation: `packages/aivs-schemas/src/aivs_schemas/extension/`.
 
 ---
@@ -122,18 +130,16 @@ only.
 | --- | --- | --- | --- |
 | `extension_type` | string | `const: "property-extension"` | STIX-mandated. |
 | `aivs_schema_version` | string | `^[0-9]+\.[0-9]+$` | Version of this extension schema the object was authored against. Consumers use it to decide whether they understand the payload. Currently `"1.0"`. |
-| `ai_discovery_method` | string | enum, below | How the finding was discovered. |
 | `discovery_scope` | string | `own_product` \| `own_estate` \| `ai_system` | The submitter's relationship to the affected system. |
 | `cve_status` | string | `pre-cve` \| `requested` \| `assigned` \| `published` | Where the finding sits relative to public CVE issuance. |
 | `affected_products` | array | 1–200 items, shape below | What is affected. |
 
-`ai_discovery_method` values (hyphenated, matching STIX style):
-`sast-harness`, `dast`, `fuzzing`, `exploit-chain-search`, `model-audit`,
-`red-team`, `manual-review`, `other`.
-
 `discovery_scope` is the field that keeps AIVS clear of the coordinated-
-disclosure consent problem. There is deliberately no value meaning "a third
-party's software":
+disclosure consent problem. The extension accepts no value meaning "a third
+party's software". The server's enum reserves two for the planned split by
+disclosure (`disclosed_third_party`, `coordinated_disclosure`), and every path
+refuses them, with the text an unknown value gets, until that split's
+enforcement lands:
 
 | Value | Meaning |
 | --- | --- |
@@ -165,6 +171,7 @@ one and not the other.
 
 | Property | Type | Constraints | Meaning |
 | --- | --- | --- | --- |
+| `ai_discovery_method` | string | enum, below | How the finding was discovered, when an AI system discovered it. Optional within 1.0 (relaxing a constraint needs no version bump, section 6): defence content on a public CVE need not have been AI-discovered. |
 | `ai_model_name` | string | ≤ 200 | Model that performed or led the discovery. |
 | `ai_harness_name` | string | ≤ 200 | Harness or tool wrapping the model. |
 | `ai_harness_version` | string | ≤ 100 | |
@@ -179,6 +186,10 @@ one and not the other.
 | `workaround_available` | boolean | | |
 | `cve_id` | string | `^CVE-[0-9]{4}-[0-9]{4,}$` | |
 | `exploit_chain_position` | integer | 1–100 | 1-based position within an exploit chain. |
+
+`ai_discovery_method` values (hyphenated, matching STIX style):
+`sast-harness`, `dast`, `fuzzing`, `exploit-chain-search`, `model-audit`,
+`red-team`, `manual-review`, `other`.
 
 ### Conditional rules
 

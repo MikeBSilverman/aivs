@@ -1,11 +1,28 @@
 # End-to-end encryption and bring-your-own-key
 
-**Status:** design agreed, implementation scheduled after Phase 5.
+**Status:** design only, unbuilt. **Optional and deferred** — not scheduled
+against a phase.
 **Decision owner:** Mike Silverman.
 
-This document specifies how AIVS carries submission content that the hosting
-infrastructure cannot read, and how that interacts with embargo, key rotation,
-and the Traffic Light Protocol.
+**The default is server-readable content.** AIVS is the platform an ISAC runs to
+manage intelligence across the whole life of a vulnerability, and most of what
+that asks of the server — deduplication, enrichment, "what's available" for a
+vulnerability, telemetry back to the submitter, sector-level analytics — needs
+the server to read what it holds. That is worth more to an ISAC and its members
+than a host that cannot read, so the decision is that the server reads content,
+and content at rest is protected by the volume and backup encryption the
+deployment requires (`deployment-topology.md`; `data-inventory.md` lists what
+each table holds). Secrets — TOTP seeds, webhook signing keys — are sealed in
+the application today (`auth/secretbox.py`).
+
+What follows is kept as the design for an ISAC that wants, for some content,
+the stronger promise that its host cannot read it: how AIVS would carry
+submission content that the hosting infrastructure cannot read, and how that
+interacts with embargo, key rotation, and the Traffic Light Protocol. Where it
+says "the claim AIVS makes", read "the claim AIVS would make, with this
+enabled". Nothing elsewhere in the documentation excludes a feature on the
+grounds that BYOK might be on; when it is built, that is the work of deciding
+which features it constrains.
 
 ---
 
@@ -23,9 +40,10 @@ administrator gets ciphertext. The residual risk moves from *content disclosure*
 to *metadata disclosure and denial of service*, which is a category change, not
 an increment.
 
-It is also the feature that makes the managed-hosting business defensible.
-"Aequora operates your instance and cannot read your members' submissions" is a
-claim an ISAC can repeat to its own board.
+For a managed deployment it would also let an ISAC tell its own board that
+"Aequora operates our instance and cannot read our members' submissions". The
+cost is everything the server can no longer do with content it cannot read,
+which is why it is an option and not the default.
 
 ---
 
@@ -104,16 +122,42 @@ ISAC on a specific finding should not be sharing that finding through the ISAC.
 
 ## 4. Cryptographic construction
 
-Deliberately boring. Nothing here is novel; every primitive is standard and every
-format is one a bank's cryptography reviewer already recognises.
+Deliberately boring, and **post-quantum from the first line**. Sealed payloads
+are exactly the content a harvest-now-decrypt-later adversary wants — embargoed
+findings that stay valuable for years — so a classical-only key wrap would be
+obsolete on the day it shipped. An earlier draft of this section specified
+ECDH-ES on P-384; it was changed before anything was built (`pqc-readiness.md`).
 
 ```
 content key  CEK  = 32 random bytes (os.urandom)
 ciphertext        = AES-256-GCM(CEK, payload, aad = binding)
-per recipient     = ECDH-ES + A256KW wrap of CEK to that principal's public key
-serialisation     = JWE General JSON Serialization (RFC 7516), multi-recipient
-recipient curve   = P-384, matching the certificate authority in deploy/ca/
+per recipient     = hybrid KEM: X25519 + ML-KEM-768 (FIPS 203), the CEK wrapped
+                    under the combined shared secret
+serialisation     = JWE General JSON Serialization (RFC 7516), multi-recipient,
+                    the key-management algorithm named per recipient
+alternative       = P-384 + ML-KEM-1024, for a member whose profile (CNSA 2.0)
+                    requires it
 ```
+
+**Hybrid, not ML-KEM alone.** The classical half keeps today's security if
+ML-KEM is broken; the ML-KEM half keeps it against a quantum adversary. That is
+the same reasoning, and the same pairing, as the proxy's TLS key exchange.
+
+**Which standard carries it is chosen when this is built.** HPKE (RFC 9180)
+with a hybrid KEM, as profiled for JOSE by the IETF HPKE-for-JOSE work, and the
+JOSE ML-KEM drafts are both candidates; neither was final when this was
+written. The choice goes to whichever is published and supported by vetted
+libraries at the time. What is fixed now is the property that makes that
+choice reversible: **the algorithm is named in the envelope**, per recipient,
+exactly as `secretbox` names its algorithm in every value it writes (CLAUDE.md
+§5). A later change of algorithm is then a re-wrap run at leisure, not a format
+break, and an algorithm id once used is never reused.
+
+**Encryption keys are not certificate keys.** A recipient's KEM key pair is
+separate from the key behind its client certificate. The certificate
+authenticates a connection; the KEM key opens content. Keeping them apart means
+the certificate fleet can move to ML-DSA on its own schedule, and a revoked
+certificate does not orphan content sealed to its holder.
 
 **Format: JWE General JSON Serialization.** Multi-recipient is native to it, it
 is a published standard, and vendors bringing their own key can use existing
@@ -144,7 +188,7 @@ A new table, `encryption_keys`:
 | `principal_type` | `organization` or `operator` |
 | `principal_id` | The org or operator |
 | `public_key` | SPKI DER. **Public material only — private keys never reach AIVS** |
-| `algorithm` | `ECDH-ES+A256KW` / P-384 |
+| `algorithm` | The key-management algorithm id (section 4), e.g. the X25519 + ML-KEM-768 hybrid |
 | `status` | `active`, `retired`, `revoked` |
 | `valid_from`, `retired_at` | Bounds the window in which this key was current |
 
@@ -328,8 +372,8 @@ requested is maintenance acquired without adoption.
 
 ### Order of work, and one prerequisite
 
-Secrets at rest first — BYOK does not close that hole and it is the live one.
-Then the format note and unwrap in the reference client, then the sidecar, then
+Secrets at rest came first, because BYOK does not close that hole; that is done
+(`auth/secretbox.py`). If this is built: the format note and unwrap in the reference client, then the sidecar, then
 portal RED decryption, then connectors on demand.
 
 **`packages/aivs-client` needs its own test suite before the sidecar, not

@@ -196,7 +196,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(
         title="AIVS",
-        summary="Pre-CVE AI vulnerability sharing",
+        summary="ISAC vulnerability intelligence, from pre-CVE early warning onward",
         version="0.1.0",
         lifespan=lifespan,
         docs_url="/docs" if show_docs else None,

@@ -1,7 +1,7 @@
 [project]
 name = "aivs-server"
 version = "0.1.0"
-description = "AIVS sharing server: TAXII 2.1 endpoints, native API, and analyst portal"
+description = "AIVS server, the platform an ISAC runs to manage vulnerability intelligence: TAXII 2.1 endpoints, native API, and portal"
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "Apache-2.0" }

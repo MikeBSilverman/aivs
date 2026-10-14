@@ -3,7 +3,9 @@
 > **This is not legal advice, and it was not written by a lawyer.**
 >
 > It is a structural outline: the topics a membership agreement for an AIVS
-> instance needs to cover, and the technical facts about how the system actually
+> instance — the platform an ISAC runs to manage vulnerability intelligence with
+> its members and vendors, of which pre-CVE early warning is the first lane —
+> needs to cover, and the technical facts about how the system actually
 > behaves that counsel needs in order to draft accurate obligations. Nothing here
 > is drafting language. Every clause must be written, reviewed, and adapted to
 > the hosting ISAC's jurisdiction, corporate form, existing member agreements,
@@ -78,9 +80,11 @@ of coordinated-disclosure consent problems and tortious interference exposure.
 
 ### The technical fact
 
-AIVS accepts submissions in exactly three scopes, enforced by a non-nullable
-database column and a JSON Schema enum. There is deliberately no value for "a
-third party's software":
+AIVS accepts submissions in exactly three scopes, enforced at every ingest
+surface, by the extension's JSON Schema enum, and by a non-nullable database
+column. No accepted value means "a third party's software" (the database type
+also holds two values reserved for the planned change described at the end of
+this section, which every surface refuses as it refuses an unknown value):
 
 | Scope | Meaning |
 | --- | --- |
@@ -93,6 +97,19 @@ its truth. The ISAC reviews before distributing, but a reviewer cannot establish
 that a firm actually builds a product or operates an estate. The contractual
 attestation is therefore not a formality — it is the primary control, with the
 review as a secondary one.
+
+> **Planned change counsel should know about.** The three scopes above draw the
+> line by ownership, which fits early warning. The platform's wider goal —
+> members and vendors contributing defence intelligence about vulnerabilities
+> in software they do not own — needs the line drawn by **disclosure**: once a
+> vulnerability is public, anyone may contribute detections, workarounds and
+> sightings about it; before disclosure the three scopes hold, plus
+> `coordinated_disclosure` (the vendor is a party to the case, recorded by the
+> ISAC, or a GOLD EAGLE/VINCE identifier is attached). **This is not built**;
+> the software accepts only the three scopes today. When it is, this section
+> needs redrafting, and the attestation likely narrows to the contributions
+> that carry real risk — pre-disclosure findings and coordinated disclosures —
+> rather than every post.
 
 ### What the agreement should address
 

@@ -1,7 +1,7 @@
 [project]
 name = "aivs-schemas"
 version = "0.1.0"
-description = "AIVS shared contract: enums, API models, and the STIX 2.1 pre-CVE extension"
+description = "AIVS shared contract for ISAC vulnerability intelligence: enums, API models, and the STIX 2.1 pre-CVE extension"
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "Apache-2.0" }

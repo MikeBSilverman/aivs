@@ -4,6 +4,14 @@ Scope: one AIVS instance — the Python application, its PostgreSQL database, it
 reverse proxy, and the network path member firms reach it over. Analysis is
 STRIDE per trust boundary.
 
+AIVS is the platform an ISAC runs to manage intelligence across the whole life
+of a vulnerability, from a pre-CVE finding under embargo to the defence work
+that follows. This model covers what is built, which is the pre-CVE lane and
+the machinery around it. Each later stage adds its surface and its adversary
+rows here in the commit that builds it — not earlier, because a row for a
+control that does not exist reads as a control, and not later, because a
+surface with no named adversary has not been threat-modelled.
+
 The mitigations listed are those **implemented in this repository** and
 verifiable in the code cited. Where a control is deployment guidance rather than
 code, it says so. Residual risk sections are deliberately blunt; a threat model
@@ -185,8 +193,10 @@ party's web server.
 
 The structural controls around it are:
 
-1. The enum has no value for third-party software, so a submitter must
-   affirmatively mis-state their relationship rather than merely omit it.
+1. No accepted scope describes third-party software, so a submitter must
+   affirmatively mis-state their relationship rather than merely omit it. (Two
+   values are reserved in the storage type for the planned split by disclosure;
+   every ingest surface refuses them exactly as it refuses an unknown value.)
 2. The ISAC reviews before distributing (`submitted` → `validated` →
    `distributed`).
 3. The membership agreement makes the attestation contractual, so a false claim

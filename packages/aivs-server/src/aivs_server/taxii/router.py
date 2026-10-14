@@ -175,7 +175,7 @@ async def discovery(
     return _taxii_response(
         resources.discovery_resource(
             title=settings.instance_name,
-            description="AIVS pre-CVE AI vulnerability sharing",
+            description="ISAC vulnerability intelligence, from pre-CVE early warning onward",
             api_roots=[f"{base}/{API_ROOT}/"],
             default=f"{base}/{API_ROOT}/",
         )

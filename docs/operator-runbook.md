@@ -1,7 +1,11 @@
 # AIVS operator runbook
 
-For ISAC staff running an AIVS instance. Assumes you have read
-[`deployment-topology.md`](deployment-topology.md) and the instance is stood up.
+For ISAC staff running an AIVS instance — the platform the ISAC uses to manage
+vulnerability intelligence with its members and vendors, from pre-CVE early
+warning onward. Today that means the pre-CVE lane: submissions, review,
+distribution under embargo, and the record of who received what. Assumes you
+have read [`deployment-topology.md`](deployment-topology.md) and the instance is
+stood up.
 
 The ISAC's powers are split across four roles and you may hold several:
 `isac_editor` validates and distributes embargoed content and changes embargoes;
@@ -268,7 +272,9 @@ Work the `submitted` queue. For each submission:
 **The last row is where the real risk sits.** `ai_system` is the broadest
 category and the easiest to stretch. A finding in "vendor X's chatbot product"
 submitted by a firm that neither builds nor operates it is a third-party
-disclosure regardless of the AI framing, and AIVS is not the channel for it.
+disclosure regardless of the AI framing, and today AIVS is not the channel for
+it — the planned split by disclosure (`coordinated_disclosure`, with the vendor
+recorded by an `isac_editor` as a party to the case) is not built.
 
 If scope is wrong or unclear, **reject and ask**. AIVS cannot verify a
 `discovery_scope` claim, and your review plus the contractual attestation are the
@@ -496,6 +502,8 @@ collector, a stolen laptop, an intrusion -- quarantine it:
 session it holds is revoked. Its circle memberships are untouched: quarantine
 protects the member and the community; it does not change what it is entitled
 to. A member's own `org_admin` can quarantine their firm without asking you.
+The `bulk_retrieval` detection can also propose a quarantine, or apply one
+itself, depending on `AIVS_DETECTION_QUARANTINE_POLICY` (§9.1).
 
 Reconnecting is yours alone: `POST /api/v1/orgs/{id}/reconnect`. It refuses
 until the member has a freshly registered certificate -- the old ones stay
@@ -752,7 +760,8 @@ Each finding is raised **once per rule window** and goes three ways:
 | --- | --- | --- |
 | `auth_failure_burst` | 20 refused authentications from one address in 10 min | Check whether it is a member's collector with an expired certificate before you assume probing. |
 | `login_failure_burst` | 10 failed portal logins against one account in 15 min | The account locks at 5 failures, so 10 means someone kept going through the lockout. Contact the operator out of band. |
-| `bulk_retrieval` | One organisation retrieves 200 distinct submissions in 1 h | Treat as a possibly stolen certificate (§7.3). If it is confirmed, quarantine (§7.2). |
+| `bulk_retrieval` | One organisation retrieves 200 distinct submissions in 1 h | Treat as a possibly stolen certificate (§7.3). The finding **proposes a quarantine** of that organisation; what happens next depends on `AIVS_DETECTION_QUARANTINE_POLICY` (below the table). |
+| `signing_key_unavailable` | Any notification is held because its webhook's signing key cannot be opened (per endpoint; raised again every 6 h while it lasts) | The cause is our configuration, not the member's endpoint: check the key-encryption key file, and during a rotation the previous key too (§7.4). Until it opens, that member hears nothing. |
 | `not_found_burst` | One organisation gets 50 "not found" answers in 10 min | Someone is walking identifiers. Ask the member whether a misconfigured client explains it. If not, treat it as §7.3. |
 | `first_distribution_to_circle` | An operator distributes to a circle they have never distributed to before | The checker's look: confirm the circle was the intended audience. |
 | `anonymity_reveal` | Any reveal of an anonymous submitter | Confirm the reveal was expected and that its recorded reason holds up. |
@@ -760,6 +769,24 @@ Each finding is raised **once per rule window** and goes three ways:
 | `operator_bootstrapped` | The bootstrap command created an operator | Confirm who ran it on the host and why. An unexplained one is a host compromise (§7.5). |
 | `org_quarantined` | Any quarantine, including self-quarantine | Confirm the member knows, and start reconnection planning. |
 | `component_degraded` | A background job (embargo sweeper, webhook dispatcher, detections) has not succeeded for two of its intervals | Read the app log for that component's exception; `/readyz` names it and the error type. |
+
+**Who acts on a proposed quarantine** is the ISAC's choice, set once in
+`AIVS_DETECTION_QUARANTINE_POLICY`:
+
+- `propose` (the default, and the setting that does less): `/portal/admin/status`
+  lists the proposal — organisation, rule, time — while the organisation is
+  still active, and an operator allowed to quarantine confirms it with one
+  click. That runs the same quarantine as §7.2, recorded as that operator's
+  decision.
+- `enforce`: the organisation is quarantined as soon as the finding is raised,
+  through the same checks and certificate revocation as §7.2, but recorded with
+  the actor `detection:bulk_retrieval`, so an automatic quarantine never reads
+  as a person's decision. The ISAC's own organisation is never quarantined this
+  way; the refusal is logged and the finding stays a proposal.
+
+Choose `enforce` only if a wrongly quarantined member — cut off until you
+reconnect it — is a smaller cost to your community than a stolen certificate
+paging the archive until someone reads the status page.
 
 `component_degraded` cannot report the detection loop's own death. That is
 why the same health registry is also exposed on `/readyz` (a JSON

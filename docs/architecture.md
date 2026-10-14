@@ -1,9 +1,24 @@
 # AIVS architecture
 
-AIVS is a pre-CVE vulnerability sharing system. It carries structured, embargoed
-early warning about AI-discovered vulnerabilities between a hosting ISAC and its
-member firms, in the window *before* a CVE exists. It is deployed as
-"ISAC-in-a-box": one instance, one ISAC, one tenant.
+AIVS is the platform an ISAC runs to manage intelligence across the whole life
+of a vulnerability — from a pre-CVE, AI-discovered finding under embargo,
+through CVE issuance and enrichment, to the detection, mitigation, control and
+verification work defenders do — with the ISAC, its members and vendors
+creating, cultivating, reviewing and distributing it together. It is deployed
+as "ISAC-in-a-box": one instance, one ISAC, one tenant.
+
+What is built today is the first stage of that life: structured, embargoed
+early warning about AI-discovered vulnerabilities, carried between a hosting
+ISAC and its member firms in the window *before* a CVE exists. The later
+stages reuse its machinery — circles, embargoes, attribution, receipts, the
+editorial checkpoint — rather than adding a second one. The README's status
+table says which stages are built, designed or planned.
+
+**The name.** "AIVS" is the product's name for now, and no rename is decided.
+Whatever it is later called, the internal `aivs` names — packages, modules,
+settings, database objects, the ciphertext magic — stay as they are, because
+they are on disk and in members' configuration where a rename would break
+things and gain nothing.
 
 This document describes the system as it is built — the packages, the request
 lifecycle, and the two or three design decisions that are load-bearing enough
@@ -125,13 +140,25 @@ Every submission carries a non-nullable `discovery_scope`, one of:
 | `own_estate` | A vulnerability in the submitter's own deployed environment. |
 | `ai_system` | An AI-system vulnerability generally — prompt injection, model supply chain, agentic tooling. Disclosure norms here are still unformed; this is the white space ISACs have not covered. |
 
-There is deliberately no fourth value for "someone else's software". AIVS is not
+No accepted value means "someone else's software". AIVS is not
 a channel for undisclosed vulnerabilities in uninvolved third parties' products,
 because that would create coordinated-disclosure consent and tortious-
 interference exposure for both the submitter and the hosting ISAC. The enum
 enforces the shape of the claim; the ISAC's `validated` checkpoint enforces its
 plausibility. **AIVS cannot verify the claim itself** — see
 [`threat-model.md`](threat-model.md).
+
+The line drawn here is by ownership, which fits the pre-CVE lane. The wider
+goal needs a line drawn by **disclosure** instead: once a vulnerability is
+public, anyone may contribute defence intelligence about it; before disclosure
+the three scopes above hold, plus `coordinated_disclosure` (the vendor is a
+recorded party to the case, or a GOLD EAGLE/VINCE identifier is attached).
+That split is planned, not built. The two new values, `disclosed_third_party`
+and `coordinated_disclosure`, are reserved in the storage type so the rule that
+admits them can ship without a type change; until it does,
+`ACCEPTED_DISCOVERY_SCOPES` holds only the three values in the table, and every
+ingest surface refuses a reserved value exactly as it refuses an unknown one — a
+distinct refusal would advertise a capability that does not exist.
 
 ---
 

@@ -5,8 +5,10 @@
 **Downstream:** GOLD EAGLE fronts CERT/CC's VINCE — see §4a, which supersedes
 parts of the §3 sketch.
 
-AIVS covers the window *before* CVE publication. GOLD EAGLE helps firms issue
-CVEs at scale. Today those are two tools; this integration makes them one
+AIVS is the platform an ISAC runs to manage intelligence across the whole life
+of a vulnerability, and its first lane — the one built today — is the window
+*before* CVE publication. GOLD EAGLE helps firms issue CVEs at scale. Today
+those are two tools; this integration makes them one
 pipeline, so a finding travels from private early warning to public disclosure
 without being re-keyed, and the public identifier finds its way back to the
 members who were warned first.
@@ -90,11 +92,9 @@ Mapping is mostly mechanical: `affected_products[]` → `affected[]` (vendor,
 product, versions), `cvss_v4_vector` → `metrics[].cvssV4_0`, `name` and
 description → `descriptions[]`, references → `references[]`.
 
-**Deliberately not exported:** anything sealed. If end-to-end encryption ships
-first, the sealed payload is unreadable to the server and must not be part of an
-export; only the cleartext triage metadata maps to a CVE record. That is the
-correct outcome anyway — a CVE record is a public document and reproduction
-detail does not belong in one.
+**Deliberately not exported:** reproduction and exploit-chain detail. Only the
+triage metadata maps to a CVE record, because a CVE record is a public document
+and reproduction detail does not belong in one.
 
 ### Return path
 

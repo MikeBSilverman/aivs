@@ -1,13 +1,29 @@
 # Identity federation and passkeys
 
-**Status:** design agreed, unbuilt.
+**Status:** design agreed, unbuilt. **Changed in part by a later decision for
+member users** — see the next paragraph before relying on anything below.
 **Decision owner:** Mike Silverman.
 
 How humans authenticate to the portal. Machine authentication is unaffected —
 collectors present client certificates and never see any of this.
 
-Read `auth/sessions.py` first. The certificate binding it describes is a
-precondition for everything here, not something federation replaces.
+**Member users will sign in over ordinary TLS (planned).** AIVS is meant to be
+the platform an ISAC and *all* its members work in, and a client certificate
+behind an overlay network is within reach of a few dozen member firms with a
+PKI team, not of the rest. So the member tenant described here is to be built
+first, and its users will reach the member portal on a separate public TLS
+listener: the ISAC's IdP and a second factor, no client certificate, no local
+passwords, and sessions capped below `TLP:RED` with embargoed pre-CVE content
+kept on the certificate-bound path. Certificates stay for machine collectors,
+ISAC staff, and anything `TLP:RED`. Everything below about the two tenants, the
+issuer deciding authority, JIT provisioning and passkeys stands; what changes is
+that, **for member users only**, the certificate binding is no longer a
+precondition.
+
+Read `auth/sessions.py` first. On the certificate-bound listener — staff, and
+member sessions until the change above is built — the certificate binding it
+describes is a precondition for everything here, not something federation
+replaces.
 
 ---
 

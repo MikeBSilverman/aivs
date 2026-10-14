@@ -1,9 +1,20 @@
 # AIVS deployment topology
 
-AIVS is "ISAC-in-a-box": one instance serves one ISAC and its members. There is
-no multi-tenant mode, and adding one is not on the roadmap — the isolation
-guarantee an ISAC needs is a separate database, a separate CA, and a separate
-host, not a tenant column.
+AIVS is "ISAC-in-a-box": one instance serves one ISAC and its members.
+**Single-tenant per instance.** There is no multi-tenant mode, and adding one is
+not on the roadmap — the isolation guarantee an ISAC needs is a separate
+database, a separate CA, and a separate host, not a tenant column.
+
+**Many ISACs means federation between instances, never a tenant column.** The
+product is meant to serve several ISACs, and nothing here may design that out;
+but the way it serves them is one instance each, exchanging what their
+agreements allow over interfaces both sides control — TAXII between instances,
+say, or private set intersection for "is another ISAC seeing this?"
+(`open-decisions.md`). A shared database
+would make one ISAC's isolation depend on every query being right about every
+other ISAC, which is the guarantee an ISAC is buying. Nothing for federation is
+built, and there is deliberately no `instance_id` setting until something reads
+one.
 
 Two hosting modes exist. They differ in who holds the keys and who carries the
 pager, not in the software.

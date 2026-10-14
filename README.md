@@ -1,17 +1,44 @@
-# AIVS — pre-CVE AI vulnerability sharing
+# AIVS — the ISAC's vulnerability desk
 
-**ISAC-in-a-box for the disclosure window that does not exist yet.**
+**One page per vulnerability: what it is, whether you are affected, what to do,
+how to verify — and proof that you were told.**
 
-AIVS is a sharing system for AI-discovered vulnerabilities in the phase *before*
-a CVE is published: structured, embargoed early warning delivered to GSIBs,
-Section 9 firms, and other critical infrastructure operators, over standard
-TAXII 2.1 and STIX 2.1.
+AIVS is the platform an ISAC runs to manage intelligence across the whole life
+of a vulnerability — from a pre-CVE, AI-discovered finding under embargo,
+through CVE issuance and enrichment, to the detection, mitigation, control and
+verification work defenders do — with the ISAC, its members and vendors
+creating, cultivating, reviewing and distributing it together.
 
-It is deployed **by an ISAC**, for its own members. Apache-2.0 licensed.
+That is the goal. What exists today is the front of it: **pre-CVE early
+warning**, with the trust machinery every later stage reuses — circles,
+server-enforced embargoes, anonymity, receipts, and a human editorial
+checkpoint. The [status table](#status) says what is built, what is designed,
+and what is planned. This README describes a feature as present only when it is
+in the code.
+
+It is deployed **by an ISAC**, for its own members, over standard TAXII 2.1 and
+STIX 2.1. Apache-2.0 licensed.
 
 ---
 
-## The problem
+## Why a vulnerability desk
+
+A member firm does not need another feed. For each vulnerability that matters
+to its sector it needs one place that answers the questions its own teams ask —
+is this real, are we exposed, what do we do, how do we know it worked — and,
+afterwards, a record that the warning arrived. Today those answers are spread
+across vendor advisories, NVD, KEV, mailing lists and phone calls, and the
+record mostly does not exist.
+
+The ISAC is the right author of that page: it holds the trust relationships,
+the agreements and the sector's view. Members and vendors are the right
+contributors: they hold the detections, workarounds and sightings. The product
+is the page; everything else is who may write to it, who may read it, and the
+receipt.
+
+---
+
+## The first lane: pre-CVE early warning
 
 Frontier AI models have made vulnerability discovery cheap. Firms running model-
 driven analysis over their own code and their own estates are finding more, and
@@ -19,16 +46,17 @@ finding it faster — including multi-step exploit chains that no single scanner
 would have flagged. A separate effort, GOLD EAGLE, helps firms convert that
 output into CVEs at scale.
 
-That leaves a gap AIVS fills. Between the moment a firm knows about a
-vulnerability and the moment a CVE is published, there is a window — days to
-months — in which the finding is real, the risk is live, and there is no
-structured way to warn peers who are exposed to the same thing. Today that
-warning travels by phone call and mailing list, if it travels at all.
+Between the moment a firm knows about a vulnerability and the moment a CVE is
+published, there is a window — days to months — in which the finding is real,
+the risk is live, and there is no structured way to warn peers who are exposed
+to the same thing. Today that warning travels by phone call and mailing list, if
+it travels at all.
 
 Financial-sector ISACs have not addressed AI-driven vulnerability intelligence.
 The AI-system category in particular — prompt injection, model supply chain,
 agentic tooling — has no disclosure norms at all, and it is precisely where large
-firms are now most exposed and least served. That is the white space.
+firms are now most exposed and least served. No one else covers this lane, which
+is why it stays the front of the lifecycle rather than being replaced by it.
 
 ---
 
@@ -39,9 +67,9 @@ gates, the test-database isolation rule, and the correctness rules that exist
 because the opposite was written first — each one with the failure that
 produced it, so the reasoning survives the next refactor.
 
-## What AIVS is
+## What AIVS does today
 
-A single-tenant sharing server an ISAC runs for its members:
+A single-tenant server an ISAC runs for its members:
 
 - **TAXII 2.1** content delivery, so a member's existing TIP connects with a
   certificate and a collection id. No bespoke client required.
@@ -60,10 +88,10 @@ A single-tenant sharing server an ISAC runs for its members:
 - **An append-only audit trail**, enforced by database triggers rather than by
   application convention.
 
-### What AIVS is deliberately not
+### What AIVS accepts, and what it does not
 
-It is **not a channel for undisclosed vulnerabilities in uninvolved third
-parties' software.** v1 accepts three scopes, and there is no fourth:
+Today it is **not a channel for undisclosed vulnerabilities in uninvolved third
+parties' software.** The server accepts three scopes and refuses every other value:
 
 | Scope | Meaning |
 | --- | --- |
@@ -78,6 +106,18 @@ restriction is enforced structurally by the `discovery_scope` field **and** by t
 workflow: a member firm can upload content but can never distribute it. Only the
 hosting ISAC moves a submission `submitted → validated → distributed`. That human
 checkpoint is a design feature.
+
+**Planned: the split by disclosure.** The wider goal needs contributions about
+other parties' software, and the line that keeps them lawful is disclosure, not
+ownership. Once a vulnerability is public, any member or vendor may contribute
+defence intelligence about it — a detection, a workaround, a sighting. Before
+disclosure the restriction above stays, with one addition,
+`coordinated_disclosure`: the vendor is a party to the case, recorded by the
+ISAC, or a GOLD EAGLE/VINCE identifier is attached. Until that is built the
+server accepts only the three scopes in the table; the two new values exist in
+the database type so the rule that admits them can ship without a type change,
+and every surface refuses them exactly as it refuses a value it has never
+heard of.
 
 ---
 
@@ -213,6 +253,12 @@ uv run ruff check . && uv run mypy . && uv run bandit -c pyproject.toml -r packa
 | [Operator runbook](docs/operator-runbook.md) | ISAC staff: first run, review and distribution, embargoes, backup, incidents |
 | [Identity federation](docs/identity-federation.md) | Two ISAC-operated IdP tenants, OIDC, JIT provisioning, passkeys — design, unbuilt |
 | [Sharing agreement outline](docs/sharing-agreement-outline.md) | A non-lawyer's skeleton for counsel to draft from |
+| [Encryption design](docs/encryption-design.md) | Content sealed to its recipients (BYOK) — optional and deferred; design, unbuilt |
+| [Post-quantum readiness](docs/pqc-readiness.md) | Every cryptographic use, whether it is quantum-safe, and what changes when |
+| [Data inventory](docs/data-inventory.md) | Every table's data class, what protects it at rest, and what happens when a member leaves |
+| [GOLD EAGLE integration](docs/gold-eagle-integration.md) | CVE handoff and return path — design, not scheduled |
+| [Open decisions](docs/open-decisions.md) | Choices not yet made, and the record of those that were |
+| [Commercial terms](docs/commercial-terms.md) | What an ISAC will ask of a hosted or supported deployment — draft for counsel |
 
 ---
 
@@ -262,12 +308,59 @@ connect as a non-superuser that does not own those tables.
 
 ## Status
 
-Pre-1.0 and under active development. The shared contract (`aivs-schemas`), the
-data model, the mTLS identity layer, the authorization policy module, and the
-append-only audit enforcement are implemented. Treat enum values and the STIX
-extension as stable — they are wire contracts, persisted in PostgreSQL enum types
-and consumed by member firms' clients. Adding a value is a compatible change;
+Pre-1.0 and under active development. Treat enum values and the STIX extension
+as stable — they are wire contracts, persisted in PostgreSQL enum types and
+consumed by member firms' clients. Adding a value is a compatible change;
 renaming or removing one is not.
+
+**Built** means in the code with tests. **Designed** means a design document
+exists and nothing is built. **Planned** means it is on the roadmap, listed in
+build order, and nothing is built.
+
+| Capability | Status |
+| --- | --- |
+| TAXII 2.1 server; STIX 2.1 with the pre-CVE property extension | Built |
+| Sharing circles with TLP 2.0 floors; explicit and rule-based membership, held as intervals so that joining grants participation, not the archive | Built |
+| Server-enforced embargoes: release instant, extension, early release | Built |
+| Human-only editorial checkpoint; ISAC roles `isac_editor`, `isac_analyst`, `isac_membership`, `system_admin` | Built |
+| Anonymous distribution with server-assigned attribution, and an audited reveal | Built |
+| Receipts of retrieval and acknowledgment | Built |
+| Contentless webhooks ("poll to collect") | Built |
+| Analyst portal: password + TOTP, sessions bound to the client certificate | Built |
+| Append-only audit trail, enforced by trigger | Built |
+| Detection rules over the platform's own audit log, emitted as OCSF and CEF; syslog/TLS log forwarding; `/readyz`, `/metrics` and an admin status page | Built |
+| Pause distribution; quarantine an organisation, including on a detection's proposal (or automatically, if the ISAC chooses) | Built |
+| Hybrid post-quantum TLS key exchange (X25519MLKEM768 first) | Built in the proxy configuration and pinned by test; negotiation verified by hand, end-to-end test planned. See [`pqc-readiness.md`](docs/pqc-readiness.md) |
+| Secrets sealed at rest under a named, rotatable algorithm and key | Built |
+| Reproducible CycloneDX SBOM | Built |
+| Member CLI: `aivs enroll`, `poll`, `submit`, `ack` | Built |
+| Federated identity for people (the ISAC's own IdP tenants, passkeys) | Designed — [`identity-federation.md`](docs/identity-federation.md) |
+| Content sealed to its recipients (BYOK) | Designed; **optional and deferred** — [`encryption-design.md`](docs/encryption-design.md) |
+| GOLD EAGLE CVE handoff and return path | Designed, not scheduled — [`gold-eagle-integration.md`](docs/gold-eagle-integration.md) |
+| Contributions on public CVEs: one canonical page per vulnerability, "what's available" (remediation, mitigation, detection, validation), the split by disclosure, the vendor as a case party, KEV enrichment, telemetry back to the submitter | Planned — next |
+| Members sign in with the ISAC's SSO and a second factor over ordinary TLS; certificates stay for machines, ISAC staff and `TLP:RED` | Planned |
+| Depth ("tell me what to do" through raw objects), print, IoC pack, Sigma conversion | Planned |
+| Member posture and evidence packs | Planned |
+| Text documents (advisories) with versions, comments, proposals and document-only grants | Planned |
+| Approved-MSSP programme | Planned |
+| Directory integration with the ISAC's AD / Entra ID | Planned |
+| Platform detections published to the ISAC as STIX sightings; a cryptographic bill of materials beside the SBOM | Planned |
+| Real-time co-editing; fraud TTPs and fraud entities; AI assist (controlled models only) | Later — designed when a member asks |
+
+### How success will be measured
+
+These are the measures the product is built to move. **None is collected yet**;
+each lists what has to exist before it can be.
+
+| Measure | Why it matters | Collectable once |
+| --- | --- | --- |
+| Lead time versus NVD and KEV | The number that justifies the dues: how much earlier members knew | KEV enrichment and the canonical vulnerability page |
+| Share of advisories with something to do (readiness not `none`) | Whether the page answers "what do we do" | "What's available" |
+| Analyst minutes per advisory | Whether the ISAC's staff scale | Canonical page and the review queue's timings |
+| Contributions per member per quarter | Whether members share, not only read | Contributions on public CVEs |
+| Share of members with at least one contribution a month; median time to first contribution; 30-day repeat rate | Breadth, so one large firm's volume cannot stand in for participation | Contributions on public CVEs |
+| Telemetry-back rate | Whether submitters learn that what they posted mattered | Telemetry back to the submitter |
+| Evidence packs produced | Whether "prove you were told" is being used | Evidence packs |
 
 ---
 

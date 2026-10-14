@@ -76,6 +76,7 @@ from aivs_server.services.publication import (
     earliest_publication_instant,
     hold_publication_lock,
     publication_paused,
+    release_out_of_range,
 )
 from aivs_server.taxii.resources import truncate_to_taxii_precision
 
@@ -277,6 +278,9 @@ async def extend_embargo(
     if release_at.tzinfo is None:
         msg = "release_at must be timezone-aware"
         raise EmbargoError(msg)
+    too_late = release_out_of_range(release_at)
+    if too_late is not None:
+        raise EmbargoError(too_late)
 
     target = truncate_to_taxii_precision(release_at)
     if target <= now:

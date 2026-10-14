@@ -59,7 +59,11 @@ from aivs_server.services.content_rules import content_problem
 from aivs_server.services.embargo import record_embargo
 from aivs_server.services.markings import stamp_tlp_marking
 from aivs_server.services.proxy_filing import awaiting_confirmation_problem
-from aivs_server.services.publication import earliest_publication_instant, hold_publication_lock
+from aivs_server.services.publication import (
+    earliest_publication_instant,
+    hold_publication_lock,
+    release_out_of_range,
+)
 from aivs_server.services.submissions import self_identifying_problem
 from aivs_server.taxii.resources import truncate_to_taxii_precision
 
@@ -214,6 +218,9 @@ def _validate_release_time(release_at: dt.datetime | None, now: dt.datetime) -> 
     if release_at.tzinfo is None:
         msg = "release_at must be timezone-aware"
         raise DistributionError(msg)
+    too_late = release_out_of_range(release_at)
+    if too_late is not None:
+        raise DistributionError(too_late)
     if release_at < now:
         msg = (
             f"release_at is in the past ({release_at.isoformat()}); an embargo cannot "

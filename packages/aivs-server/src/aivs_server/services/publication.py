@@ -59,14 +59,38 @@ from aivs_server.db.models import InstanceControl
 from aivs_server.taxii.resources import truncate_to_taxii_precision
 
 __all__ = [
+    "LATEST_RELEASE",
     "PublicationPausedError",
     "earliest_publication_instant",
     "hold_publication_lock",
     "publication_paused",
+    "release_out_of_range",
     "wait_for_publications",
 ]
 
 _ONE_MILLISECOND: Final[dt.timedelta] = dt.timedelta(milliseconds=1)
+
+#: The last instant an embargo may be set to release. Below the embargo
+#: sweeper's "held, not on a timer" sentinel (9999-12-31), so a timer never
+#: reads as a hold, and well inside what Python can load back.
+LATEST_RELEASE: Final[dt.datetime] = dt.datetime(9999, 1, 1, tzinfo=dt.UTC)
+
+
+def release_out_of_range(release_at: dt.datetime) -> str | None:
+    """Why ``release_at`` cannot be stored as a release time, or ``None``.
+
+    ``9999-12-31T23:59-01:00`` is a valid aware datetime whose UTC instant is
+    past Python's range: it was accepted, stored, and then failed to load on
+    every later read of the embargo -- including the sweeper's, every pass,
+    for every embargo on the instance.
+    """
+    try:
+        instant = release_at.astimezone(dt.UTC)
+    except OverflowError:
+        return "release_at is past the latest time an embargo can hold"
+    if instant >= LATEST_RELEASE:
+        return f"release_at must be before {LATEST_RELEASE.date().isoformat()}"
+    return None
 
 
 class PublicationPausedError(RuntimeError):

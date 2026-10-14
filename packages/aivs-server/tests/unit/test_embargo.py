@@ -29,6 +29,7 @@ from aivs_server.services.embargo import (
     release_embargo_now,
     sweep_due_embargoes,
 )
+from aivs_server.services.publication import release_out_of_range
 from tests.conftest import proxy_headers
 
 pytestmark = pytest.mark.db
@@ -253,6 +254,35 @@ async def test_extending_into_the_past_is_refused(client, embargoed):
         headers=embargoed["isac_headers"],
     )
     assert response.status_code == 409
+
+
+@pytest.mark.requirement("SF-7")
+@pytest.mark.parametrize(
+    "release_at",
+    ["9999-12-31T23:59:00-01:00", "9999-06-01T00:00:00+00:00"],
+    ids=["past-pythons-range-in-utc", "at-the-hold-sentinel"],
+)
+async def test_an_extension_past_the_latest_release_is_refused_and_the_sweeper_still_runs(
+    client, session, embargoed, release_at
+):
+    """Stored, the first one failed to load on every read of the embargo --
+    the sweeper's included, every pass, for every embargo on the instance."""
+    response = await client.post(
+        f"{API}/{embargoed['submission_id']}/embargo/extend",
+        json={"circle_ids": [str(uuid.uuid4())], "release_at": release_at},
+        headers=embargoed["isac_headers"],
+    )
+
+    assert response.status_code == 409
+    assert "release_at" in response.text
+    await sweep_due_embargoes(session, now=dt.datetime.now(dt.UTC))
+
+
+def test_a_release_inside_the_range_is_accepted():
+    """The pair: an ordinary future time, in any zone, is in range."""
+    soon = dt.datetime.now(dt.timezone(dt.timedelta(hours=-5))) + dt.timedelta(days=3)
+
+    assert release_out_of_range(soon) is None
 
 
 # ---------------------------------------------------------------------------

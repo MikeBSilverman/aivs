@@ -242,7 +242,14 @@ the shared tree tests everyone's uncommitted work together, not what one commit
 contains. Commit by explicit path, never `git add -A`. When a file holds another
 session's edits too, stage your hunk alone, by building the index copy from
 `HEAD` plus your change. Then verify the commit in a clean `git worktree` of
-`HEAD` before pushing.
+`HEAD` before pushing. Helper sessions deliver a finished task as a patch
+against a named `HEAD`, verified in a clean worktree of that `HEAD` plus the
+patch alone. Separating two sessions' hunks after the fact is how a commit
+once carried another session's unfinished requirement rows. The main thread
+alone orders migrations, since two sessions adding one on the same parent fork
+`alembic heads` and every migrated-schema test errors. And when a run fails on
+an import nobody you know of changed, check `git status` before debugging: a
+shared tree can hold another session mid-edit.
 
 **Push the commit you verified, not the branch.** A worktree check of one
 commit followed by `git push origin main` pushed two more commits that had
@@ -433,6 +440,11 @@ submitter's own `identity` SDO, and any reference to its registered identifier
 outside `created_by_ref` (a `where_sighted_refs` naming itself passed until the
 Phase A review). The residual limit, free text, is documented rather than papered
 over.
+
+**A rule about a type applies whether or not its extension is present.** An
+indicator rule (an expiry is required) checked only when the AIVS extension was
+present could be avoided by leaving the extension off. Type policy runs on the
+STIX type.
 
 **Check the property against the state, not against the request that changed it.**
 `distribute_anonymously` was validated only inside the code path that stored a

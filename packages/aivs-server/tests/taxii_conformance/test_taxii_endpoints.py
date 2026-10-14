@@ -103,6 +103,25 @@ async def test_collections_lists_only_readable_circles(
     assert listed == {str(collection.id)}
 
 
+async def test_a_collection_that_cannot_be_read_is_not_listed(
+    client, member, make_circle, join_circle, make_collection
+):
+    """Listing and fetching agree: what 404s on fetch is not advertised in the list.
+
+    The listing filtered on the circle alone, so a collection marked
+    ``can_read=false`` was offered to every member of its circle and then
+    answered 404 when they followed it.
+    """
+    org, pem, _circle, readable = await member()
+    second = await make_circle("withheld-circle")
+    await join_circle(org, second)
+    await make_collection(second, title="Withheld feed", can_read=False)
+
+    listed = await client.get("/taxii2/aivs/collections/", headers=proxy_headers(pem))
+
+    assert [entry["id"] for entry in listed.json()["collections"]] == [str(readable.id)]
+
+
 async def test_empty_collections_omits_the_key(client, make_org, make_cert):
     """Section 5.1.1: an empty result omits ``collections`` entirely."""
     org = await make_org("no-circles")

@@ -20,7 +20,7 @@ from collections import defaultdict
 from typing import Annotated, Any, Final
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from sqlalchemy import select
+from sqlalchemy import ColumnElement, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aivs_schemas.enums import AckVia
@@ -111,6 +111,23 @@ def _taxii_response(payload: dict[str, Any], status_code: int = 200) -> Response
 # ---------------------------------------------------------------------------
 # Collection resolution
 # ---------------------------------------------------------------------------
+def _served_collection() -> tuple[ColumnElement[bool], ...]:
+    """The conditions under which a collection is served at all, to anyone.
+
+    One definition for the listing and the lookup. The listing once checked
+    the circle alone, so a collection marked ``can_read=false`` was offered to
+    every member of its circle and then answered 404 when they followed it.
+    ``can_read`` is enforced, not merely advertised: it was once stored and
+    displayed but never consulted, so a collection marked unreadable served its
+    circle's full content anyway.
+    """
+    return (
+        TaxiiCollection.is_active.is_(True),
+        TaxiiCollection.can_read.is_(True),
+        Circle.is_active.is_(True),
+    )
+
+
 async def _load_readable_collection(
     session: AsyncSession, ctx: AuthContext, collection_id: uuid.UUID
 ) -> tuple[TaxiiCollection, Circle, Intervals]:
@@ -130,17 +147,7 @@ async def _load_readable_collection(
         await session.execute(
             select(TaxiiCollection, Circle)
             .join(Circle, Circle.id == TaxiiCollection.circle_id)
-            .where(
-                TaxiiCollection.id == collection_id,
-                TaxiiCollection.is_active.is_(True),
-                # Enforced, not merely advertised. _collection_payload reports
-                # can_read to the client and can_write is intersected with a
-                # policy predicate one line below it; this flag was stored and
-                # displayed but never consulted, so a collection marked
-                # unreadable served its circle's full content anyway.
-                TaxiiCollection.can_read.is_(True),
-                Circle.is_active.is_(True),
-            )
+            .where(TaxiiCollection.id == collection_id, *_served_collection())
         )
     ).first()
 
@@ -235,11 +242,7 @@ async def list_collections(
             await session.execute(
                 select(TaxiiCollection)
                 .join(Circle, Circle.id == TaxiiCollection.circle_id)
-                .where(
-                    TaxiiCollection.circle_id.in_(circle_ids),
-                    TaxiiCollection.is_active.is_(True),
-                    Circle.is_active.is_(True),
-                )
+                .where(TaxiiCollection.circle_id.in_(circle_ids), *_served_collection())
                 .order_by(TaxiiCollection.title)
             )
         )

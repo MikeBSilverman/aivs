@@ -21,8 +21,9 @@ scripts/mutation-check.sh M17 M18    # some, by id
 MUTATION_CHECK_VERBOSE=1 scripts/mutation-check.sh   # show pytest's tail for anything not killed
 ```
 
-It uses `AIVS_TEST_DATABASE_URL`, defaulting to `aivs_ci`, never the primary
-suite's database (CLAUDE.md section 3). It writes no bytecode and clears
+It refuses to run without `AIVS_TEST_DATABASE_URL`, and there is no default:
+name a database no other run is using (CLAUDE.md section 3). The default was
+`aivs_ci` until a run from one session truncated tables under another. It writes no bytecode and clears
 `__pycache__` before each run, because a cached `.pyc` of the same size and
 second as the previous mutation runs that mutation instead (CLAUDE.md section 2).
 

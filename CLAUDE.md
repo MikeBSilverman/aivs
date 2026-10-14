@@ -291,6 +291,13 @@ make the instance `dev` instead, which changes what else the request is held to.
 setting overrides the `app` fixture and swaps `app.state.settings` for a
 `model_copy`; overriding `settings` itself raises `ScopeMismatch`.
 
+**The local database trusts every login; CI's checks passwords.** A test that
+creates a role and connects as it passes here with no password and fails every
+connection in CI (the app-role grant tests did, on a pushed main). Give such a
+role a password and put it in the URL. To reproduce a CI-only database failure,
+run CI's own Postgres image by digest with `POSTGRES_PASSWORD` on a spare port
+and point `AIVS_TEST_DATABASE_URL` at it.
+
 **Measure coverage on a frozen tree.** coverage.py reads the source at report
 time, so a file another session edits during the run is reported against its
 new text. One run in the shared tree showed `policy.py` at 35% with every test

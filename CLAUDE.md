@@ -251,6 +251,10 @@ alone orders migrations, since two sessions adding one on the same parent fork
 an import nobody you know of changed, check `git status` before debugging: a
 shared tree can hold another session mid-edit.
 
+**Settings are session-scoped in the suite.** A module needing a different
+setting overrides the `app` fixture and swaps `app.state.settings` for a
+`model_copy`; overriding `settings` itself raises `ScopeMismatch`.
+
 **Measure coverage on a frozen tree.** coverage.py reads the source at report
 time, so a file another session edits during the run is reported against its
 new text. One run in the shared tree showed `policy.py` at 35% with every test
@@ -373,6 +377,18 @@ an oracle.
 **Validate-time rules live in `apply_transition`, not in a route.** The API and
 the portal both reach validation through it; a rule placed in one route is a
 rule the other door skips.
+
+**A shortcut inherits every check of the path it shortcuts.** The one-click fast
+lane skips the editor, not the circle's contributor role -- but as first written
+it published into every circle the member could *read*, because "who may
+contribute here" was enforced only in the TAXII write path. When a new path
+reaches the same effect as an existing one, list the checks the old path makes
+and route through them.
+
+**Authorization comes before format.** The TAXII inbox first answered 415 before
+its 404/403 checks. A uniform 415 is no oracle, but "refused before anything
+about the resource is looked at" stops being true, and the next format check
+may not be uniform. Order: who may, then the content type, then the body.
 
 **Anything id-addressable answers 404, never 403.** Distinguishing "exists but
 forbidden" from "does not exist" turns an endpoint into an existence oracle over
@@ -578,6 +594,11 @@ in the same transaction needs an explicit `await session.flush()`.
 **An empty `ARRAY[]` has no inferable element type.** `Column != []` compiles to
 an untyped `ARRAY[]` that Postgres cannot compare, so the filter matches nothing
 and says nothing. Use `func.cardinality(col) > 0`.
+
+**`col.not_in(<empty>)` matches every row.** A mutation meant to make automation
+"own everything" returned an empty owner set; every id became foreign, the
+refusal still fired, and the mutation survived with no test gap at all. When a
+mutation survives, first check that the defect it writes actually runs.
 
 **Stored ciphertext says how it was made.** Every value `auth/secretbox.py`
 writes carries a format version, an algorithm id and a key fingerprint. That is

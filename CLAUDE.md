@@ -163,7 +163,11 @@ read audit `details` by key and were tested on hand-built rows, so renaming
 suite green. The same review found the heartbeat tests registering names by
 hand (deleting a background job changed nothing), and migration tests that
 checked a trigger's *name* (a trigger that raised a NOTICE passed). Drive the
-real write, then read; attempt the operation the control refuses.
+real write, then read; attempt the operation the control refuses. A seeded
+row is a hand-built row too: the KEV script's tests seeded the ISAC's record
+straight into the database, without the review stamp validation writes, so a
+script that would have been refused on every real record passed. Where a
+fixture must seed, build the row with the writer's own functions.
 
 **Mutation proofs are files, and they are re-run.** Each security fix's
 "re-apply the defect" proof is a patch in `packages/aivs-server/tests/mutations/`,
@@ -248,7 +252,11 @@ session's edits too, stage your hunk alone, by building the index copy from
 `HEAD` plus your change. Then verify the commit in a clean `git worktree` of
 `HEAD` before pushing. Helper sessions deliver a finished task as a patch
 against a named `HEAD`, verified in a clean worktree of that `HEAD` plus the
-patch alone. Separating two sessions' hunks after the fact is how a commit
+patch alone. Patches live under `.git/` (for example `.git/aivs-patches/`),
+not `/tmp`: a reboot cleared `/tmp` and took every delivered patch and
+worktree with it, while commits survived. And a commit is not verified until
+its run *finished*: one whose check died with that reboot carried a migration
+that failed on every fresh install. Separating two sessions' hunks after the fact is how a commit
 once carried another session's unfinished requirement rows. The main thread
 alone orders migrations, since two sessions adding one on the same parent fork
 `alembic heads` and every migrated-schema test errors. And when a run fails on
@@ -675,6 +683,12 @@ locally fails the build.
 Replace the generated docstring with the reasoning when a migration exists for a
 non-obvious correctness reason — `6439704af276` (the paging key) is the model to
 follow. A reviewer should not have to reconstruct why a column exists.
+
+**A new enum value cannot be used in the transaction that added it.**
+Migrations here share one transaction, so a later revision whose index
+predicate or default names the value fails with `UnsafeNewEnumValueUsage` on
+a fresh install, and passes on any instance that already had it. Run that step
+in `op.get_context().autocommit_block()` (`219524b682c5`).
 
 **An enum value is a migration, and `alembic check` does not see it.** The suite
 builds its schema from the Python enums, so a value added without

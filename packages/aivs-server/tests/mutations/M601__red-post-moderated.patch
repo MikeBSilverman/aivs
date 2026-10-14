@@ -1,0 +1,19 @@
+Mutation M601: a RED post-moderated contribution is published unread
+Re-applies: the referent-only TLP check (Phase E review)
+
+Expect red: packages/aivs-server/tests/unit/test_post_moderation.py::test_a_red_note_waits_for_review_though_its_target_is_not_red
+
+diff --git a/packages/aivs-server/src/aivs_server/services/contributions.py b/packages/aivs-server/src/aivs_server/services/contributions.py
+index 4a4166b..117de1c 100644
+--- a/packages/aivs-server/src/aivs_server/services/contributions.py
++++ b/packages/aivs-server/src/aivs_server/services/contributions.py
+@@ -458,7 +458,8 @@ async def submit_submission(
+         .scalars()
+         .all()
+     )
+-    if TLP(submission.tlp) is TLP.RED or not _post_moderable(raws, ctx):
++    if not _post_moderable(raws, ctx):
++
+         # RED is named people on named devices: it is never published unread,
+         # whatever the referents' TLP. Checking only the targets let a RED note
+         # on a GREEN record reach a whole circle with no editor.

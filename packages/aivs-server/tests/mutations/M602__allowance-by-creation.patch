@@ -1,0 +1,19 @@
+Mutation M602: the allowance counts drafts by when they were made
+Re-applies: counting by created_at (Phase E review)
+
+Expect red: packages/aivs-server/tests/unit/test_post_moderation.py::test_drafts_made_earlier_still_spend_the_allowance_when_published
+
+diff --git a/packages/aivs-server/src/aivs_server/services/contributions.py b/packages/aivs-server/src/aivs_server/services/contributions.py
+index 4a4166b..a41a922 100644
+--- a/packages/aivs-server/src/aivs_server/services/contributions.py
++++ b/packages/aivs-server/src/aivs_server/services/contributions.py
+@@ -227,7 +227,8 @@ async def within_hourly_allowance(
+         .where(
+             Submission.submitter_org_id == org_id,
+             Submission.lane != SubmissionLane.REVIEW,
+-            Submission.distributed_at >= since,
++            Submission.created_at >= since,
++
+         )
+     )
+     inbox = await session.scalar(

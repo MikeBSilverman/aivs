@@ -1,0 +1,22 @@
+Mutation M603: the allowance is counted without the organisation's lock
+Re-applies: the check-then-act race (Phase E review)
+
+Expect red: packages/aivs-server/tests/unit/test_post_moderation.py::test_the_allowance_is_counted_under_the_organisations_lock
+
+diff --git a/packages/aivs-server/src/aivs_server/services/contributions.py b/packages/aivs-server/src/aivs_server/services/contributions.py
+index 4a4166b..b175f7a 100644
+--- a/packages/aivs-server/src/aivs_server/services/contributions.py
++++ b/packages/aivs-server/src/aivs_server/services/contributions.py
+@@ -216,11 +216,8 @@ async def within_hourly_allowance(
+     counting by creation let drafts made an hour earlier be submitted together
+     against an empty allowance.
+     """
+-    await session.execute(
+-        text("SELECT pg_advisory_xact_lock(:space, hashtext(:org))"),
+-        {"space": _ALLOWANCE_LOCK_SPACE, "org": str(org_id)},
+-    )
+     since = now - _HOUR
++
+     unreviewed = await session.scalar(
+         select(func.count())
+         .select_from(Submission)

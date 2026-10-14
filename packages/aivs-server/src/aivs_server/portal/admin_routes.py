@@ -41,6 +41,7 @@ from aivs_schemas.models import CircleCreate, OrganizationCreate
 from aivs_server.audit.log import AuditAction, record
 from aivs_server.auth.deps import SessionDep, SettingsDep
 from aivs_server.auth.policy import (
+    can_administer_circle,
     can_quarantine_org,
     can_view_instance_status,
     is_isac_editor,
@@ -509,7 +510,9 @@ async def add_members_screen(
     """
     ctx, csrf_hash = await current_session(request, settings, session)
     require_csrf(csrf_token, csrf_hash)
-    require(is_isac_membership(ctx), "portal_admin_circles")
+    # The API's predicate, so the two doors cannot drift: delegation, if it
+    # returns, is reintroduced there and reaches both.
+    require(can_administer_circle(ctx, circle_id), "portal_admin_circles")
 
     circle = await session.get(Circle, circle_id)
     if circle is None:
@@ -569,7 +572,7 @@ async def remove_member_screen(
     """Remove one organisation from a circle."""
     ctx, csrf_hash = await current_session(request, settings, session)
     require_csrf(csrf_token, csrf_hash)
-    require(is_isac_membership(ctx), "portal_admin_circles")
+    require(can_administer_circle(ctx, circle_id), "portal_admin_circles")
 
     closed = await remove_circle_member(
         session,

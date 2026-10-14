@@ -495,7 +495,7 @@ async def submission_detail(
 ) -> Response:
     """One submission, its history, and the actions this analyst may take."""
     ctx, csrf_hash = await current_session(request, settings, session)
-    submission = await load_submission(session, submission_id)
+    submission = await load_submission(session, submission_id, for_update=False)
     if submission is None or not can_view_submission(ctx, submission):
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Not found")
 

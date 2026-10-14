@@ -98,7 +98,7 @@ async def _require_visible_submission(
     ctx: AuthenticatedContext,
     submission_id: uuid.UUID,
     *,
-    for_update: bool = False,
+    for_update: bool,
 ) -> Submission:
     """Load a submission the caller may see, or 404.
 
@@ -185,7 +185,7 @@ async def get_submission(
     submission_id: uuid.UUID, ctx: AuthenticatedContext, session: SessionDep
 ) -> SubmissionDetail:
     """Full view of one submission, including its workflow history."""
-    submission = await _require_visible_submission(session, ctx, submission_id)
+    submission = await _require_visible_submission(session, ctx, submission_id, for_update=False)
 
     stix_ids = list(
         (
@@ -492,7 +492,7 @@ async def reveal_submitter(
     and *not* the identity revealed: the log is read by auditors whose scope
     must not include every anonymous submitter by way of the audit trail.
     """
-    submission = await _require_visible_submission(session, ctx, submission_id)
+    submission = await _require_visible_submission(session, ctx, submission_id, for_update=False)
     require(can_reveal_submitter(ctx), "reveal_requires_isac_editor")
     if not submission.distribute_anonymously:
         raise HTTPException(

@@ -878,7 +878,7 @@ async def check_content_rules(session: AsyncSession, submission: Submission) -> 
 
 
 async def load_submission(
-    session: AsyncSession, submission_id: uuid.UUID, *, for_update: bool = False
+    session: AsyncSession, submission_id: uuid.UUID, *, for_update: bool
 ) -> Submission | None:
     """Fetch a submission by id, or ``None``.
 
@@ -894,8 +894,13 @@ async def load_submission(
     seconds apart. Losing that update distributes content the submitter
     retracted, and writes a transition history whose ``from_state`` never
     existed.
+
+    No default: the choice is stated where a reviewer reads the caller. The
+    locked load also refreshes a submission already in the session, which the
+    lock alone does not -- the guards would otherwise run on the state the
+    request first read.
     """
     query = select(Submission).where(Submission.id == submission_id)
     if for_update:
-        query = query.with_for_update()
+        query = query.with_for_update().execution_options(populate_existing=True)
     return (await session.execute(query)).scalar_one_or_none()

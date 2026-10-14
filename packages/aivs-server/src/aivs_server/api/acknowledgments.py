@@ -61,7 +61,8 @@ async def acknowledge(
     the record being paddable. Repeating the same assertion on the same day is
     idempotent and returns the existing row.
     """
-    submission = await load_submission(session, payload.submission_id)
+    # Unlocked: an acknowledgment is a row of its own; the submission is only read.
+    submission = await load_submission(session, payload.submission_id, for_update=False)
     if submission is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Submission not found")
 
@@ -147,7 +148,7 @@ async def receipts(
     and a count. That shape answers the regulatory question ("when did they first
     have it") without reproducing every individual poll.
     """
-    submission = await load_submission(session, submission_id)
+    submission = await load_submission(session, submission_id, for_update=False)
     # Absent and not-permitted are reported identically, matching
     # `_require_visible_submission` and the acknowledgment gate below. Answering
     # 403 for a real id and 404 for an invented one would make this endpoint an

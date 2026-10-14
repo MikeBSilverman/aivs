@@ -265,7 +265,9 @@ async def revoke_certificate(
     """
     # Locked: two concurrent revocations otherwise both read active and both
     # write a revocation audit row.
-    row = await session.get(ClientCertificate, certificate_id, with_for_update=True)
+    row = await session.get(
+        ClientCertificate, certificate_id, with_for_update=True, populate_existing=True
+    )
     # Absent and forbidden collapse to the same answer, as everywhere else that
     # is addressable by id. Answering 404 for an unknown certificate and 403 for
     # another organisation's turned this endpoint into an existence oracle over
@@ -610,7 +612,7 @@ async def quarantine(
 ) -> Organization:
     """Cut an organisation off now: status, certificates and sessions. See services.quarantine."""
     require(can_quarantine_org(ctx, org_id), "quarantine")
-    organisation = await session.get(Organization, org_id, with_for_update=True)
+    organisation = await load_org_for_update(session, org_id)
     if organisation is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Organisation not found")
     try:
@@ -634,7 +636,7 @@ async def reconnect(
 ) -> Organization:
     """Return a quarantined organisation to service, on fresh credentials."""
     require(can_reconnect_org(ctx), "reconnect_requires_isac")
-    organisation = await session.get(Organization, org_id, with_for_update=True)
+    organisation = await load_org_for_update(session, org_id)
     if organisation is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Organisation not found")
     try:

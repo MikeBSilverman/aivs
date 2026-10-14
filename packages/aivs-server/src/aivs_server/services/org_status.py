@@ -26,12 +26,18 @@ class OrgStatusError(ValueError):
 
 
 async def load_org_for_update(session: AsyncSession, org_id: uuid.UUID) -> Organization | None:
-    """Load an organisation with its row locked.
+    """Load an organisation with its row locked, its attributes read under the lock.
 
     Status changes are read-modify-write. Without the lock, a suspension that
     read ``active`` overwrote a quarantine committing in between.
+
+    ``populate_existing`` because the lock alone does not refresh an object
+    already in the session: ``resolve_session`` loads the caller's own
+    organisation first, and sessions keep what they load. A member
+    quarantining itself after the ISAC suspended it read ``active``, and wrote
+    ``quarantined`` over ``suspended``.
     """
-    return await session.get(Organization, org_id, with_for_update=True)
+    return await session.get(Organization, org_id, with_for_update=True, populate_existing=True)
 
 
 def _refusal(organisation: Organization) -> str | None:

@@ -317,6 +317,16 @@ needs database facts, give it its own database or have it compile SQL offline:
 str(query.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}))
 ```
 
+**One open transaction anywhere on the cluster stalls the audit stream, in
+tests too.** The stream serves only below `pg_snapshot_xmin(pg_current_snapshot())`,
+and that horizon is the oldest running transaction in *any* database on the
+cluster. So a stream test's outcome depends on other suites' work: a defect where
+the stream served back its own reads passed for a day because concurrent suites
+held the horizon back, and failed every time on an idle cluster. A stream test
+writes a marker and polls until the marker is served, and any loop that pages
+"to the end" is bounded and fails rather than spins. In production the same fact
+is residual risk R19 (runbook §9.6 says how to find the stalling connection).
+
 Databases in use: `aivs_dev` (migrations), `aivs_test` (primary suite),
 `aivs_ci` (concurrent runs), `aivs_demo` (`demo/seed.py`, which refuses to touch
 the test database).
@@ -390,6 +400,21 @@ compares `date_added`; a page cut in one order and resumed in the other skipped
 a version for good. Every paged listing sorts on `(date_added, seq)`, one row
 per thing listed, so `added_after`, `next` and the date-added headers all mean
 the same position.
+
+**A cursor a consumer follows pages in commit order, not insert order.** An
+identity id is assigned at insert and committed whenever, so a row from a slow
+transaction can commit below a cursor that has already passed it. The audit and
+receipt streams page on `(xact_id, id)` and serve only below the snapshot's
+`xmin`: a late row is served late, never skipped. TAXII gets the same guarantee
+from the publication lock and `earliest_publication_instant`.
+
+**A log that records its own reading does not serve those records back.** Every
+page of `/api/v1/audit/events` wrote an `audit.read` row and the stream returned
+it, so a client draining to empty was handed its previous read on every poll and
+never finished; the suite spun for an hour at 4.7 GB. The stream leaves
+`audit.read` out for every reader (two pollers would otherwise feed each other),
+and the rows stay in the log for `auditor_bulk_read`. Excluding them is a stated
+limit of the stream, written in its API description, not a silent gap.
 
 **Stamp the next millisecond, never the current one.** `added_after` is a
 strict comparison at TAXII's millisecond precision, and a reader in the current
@@ -579,6 +604,14 @@ a field, ask what the other branch does with it.
 resource, and consulted by nothing. `can_write` was advertised as true with no
 TAXII write endpoint behind it. A security control that only appears in a
 response body is worse than its absence, because it reads as enforced.
+
+**Prove "never content" with a principal, not a predicate.** The auditor role
+was closed in every policy predicate (`is_active` excluded it) and still read its
+firm's submissions, postures and OpenVEX export, through routes that key on
+`ctx.org_id` without asking policy. Adding auditor principals to the authorization
+matrix found them on the first run. A role that should reach almost nothing is
+refused at the door (`get_auth_context`, `current_session`) and let through by
+name (`AuditorContext`), so a route written later is closed to it as well.
 
 **Placeholders must be too short, too malformed, or too obviously fake to pass
 validation.** `deploy/env.example` shipped secrets long enough to clear the

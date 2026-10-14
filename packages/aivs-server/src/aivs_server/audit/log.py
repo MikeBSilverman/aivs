@@ -137,6 +137,7 @@ class AuditAction:
     SUBMISSION_PROXY_CONFIRMED = "submission.proxy_confirmed"
     CONTRIBUTION_PUBLISHED = "contribution.published"
     CONTRIBUTION_RATE_LIMITED = "contribution.rate_limited"
+    CONTRIBUTION_SENT_TO_REVIEW = "contribution.sent_to_review"
     CIRCLE_POST_MODERATION_SET = "circle.post_moderation_set"
     POSTURE_RECORDED = "posture.recorded"
     TAXII_INBOX_RECEIVED = "taxii.inbox_received"

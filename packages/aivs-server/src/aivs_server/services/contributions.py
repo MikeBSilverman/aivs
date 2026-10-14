@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import datetime as dt
 import enum
+import logging
 import uuid
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
@@ -92,6 +93,8 @@ __all__ = [
     "submit_submission",
     "within_hourly_allowance",
 ]
+
+logger = logging.getLogger(__name__)
 
 #: Object types a post-moderated circle may take without review.
 POST_MODERABLE_TYPES: Final[frozenset[str]] = frozenset({"note", "opinion", "sighting", "grouping"})
@@ -338,10 +341,41 @@ async def publish_without_review(
             await _validate_and_distribute(
                 session, ctx, submission, lane=lane, circle_ids=circle_ids
             )
-    except _REVIEW_INSTEAD:
+    except _REVIEW_INSTEAD as refusal:
         await _file_for_review(session, ctx, submission)
+        await _keep_the_reason(session, ctx, submission, lane=lane, refusal=refusal)
         return False
     return True
+
+
+async def _keep_the_reason(
+    session: AsyncSession,
+    ctx: AuthContext,
+    submission: Submission,
+    *,
+    lane: SubmissionLane,
+    refusal: Exception,
+) -> None:
+    """Record which rule sent a shortcut to review, where only the ISAC reads it.
+
+    The audit row carries the reason, for the editor who picks it up. The log
+    line carries the submission and the kind of refusal only: the reason
+    names objects, and logs leave the platform beside the caller's identity.
+    """
+    rule = type(refusal).__name__
+    logger.info(
+        "shortcut sent to review: %s",
+        rule,
+        extra={"submission_id": str(submission.id), "lane": lane.value, "rule": rule},
+    )
+    await record(
+        session,
+        action=AuditAction.CONTRIBUTION_SENT_TO_REVIEW,
+        ctx=ctx,
+        resource_type="submission",
+        resource_id=str(submission.id),
+        details={"lane": lane.value, "rule": rule, "reason": str(refusal)},
+    )
 
 
 async def _file_for_review(session: AsyncSession, ctx: AuthContext, submission: Submission) -> None:

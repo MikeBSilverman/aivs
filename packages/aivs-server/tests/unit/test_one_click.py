@@ -10,6 +10,7 @@ fast lane, and the one changed in exactly that respect that does not.
 from __future__ import annotations
 
 import datetime as dt
+import logging
 import uuid
 
 import pytest
@@ -26,8 +27,15 @@ from aivs_schemas.enums import (
     SubmissionLane,
     SubmissionState,
 )
+from aivs_server.audit.log import AuditAction
 from aivs_server.auth.context import AuthContext, AuthMethod, CircleGrant, MembershipInterval
-from aivs_server.db.models import Distribution, StixObject, Submission, SubmissionTransition
+from aivs_server.db.models import (
+    AuditLog,
+    Distribution,
+    StixObject,
+    Submission,
+    SubmissionTransition,
+)
 from aivs_server.services.contributions import NEEDS_AN_EDITOR, Target, fast_lane_problem
 from tests.unit.contribution_world import LATER, STAMP, seed, vulnerability_raw
 from tests.unit.sharing_world import SharingWorld, build_sharing_world, one_click
@@ -573,3 +581,55 @@ async def test_a_newer_isac_version_no_longer_published_sends_the_click_to_revie
     assert "reserved" not in response.text
     reasons = await _transition_reasons(session, submission)
     assert reasons[-1] == NEEDS_AN_EDITOR
+
+
+@pytest.mark.requirement("SF-66")
+async def test_the_rule_that_sent_a_click_to_review_is_kept_for_the_isac_and_logged_without_it(
+    client, session, isac_org, make_circle, world, caplog
+):
+    """The member is told one constant reason; the ISAC keeps the real one.
+
+    ``publish_without_review`` swallowed the refusal, so an editor looking at
+    a click filed for review had nothing to say why, and no log line recorded
+    the decision. The reason goes in the audit row, which only the ISAC
+    reads; the log line names the submission and the kind of rule, never the
+    reason, which names objects. The member's own transition history keeps
+    only ``NEEDS_AN_EDITOR``.
+    """
+    staff_only = await make_circle("staff-only")
+    await seed(
+        session,
+        isac_org,
+        vulnerability_raw(world.published, cve_status="published", modified=LATER),
+        circle=staff_only,
+        tlp=TLP.AMBER_STRICT,
+    )
+
+    with caplog.at_level(logging.INFO, logger="aivs_server.services.contributions"):
+        response = await one_click(client, world.member.person, world.published)
+    submission = await _filed(session, response)
+
+    kept = (
+        await session.execute(
+            select(AuditLog.details).where(
+                AuditLog.action == AuditAction.CONTRIBUTION_SENT_TO_REVIEW,
+                AuditLog.resource_id == str(submission.id),
+            )
+        )
+    ).scalar_one()
+    assert kept["lane"] == SubmissionLane.FAST.value
+    assert "looser than" in kept["reason"]
+    decisions = [
+        record
+        for record in caplog.records
+        if record.name == "aivs_server.services.contributions"
+        and str(submission.id) in str(vars(record))
+    ]
+    assert len(decisions) == 1
+    assert "SubmissionError" in str(vars(decisions[0]))
+    assert "strict" not in str(vars(decisions[0])).lower()
+    assert world.published not in str(vars(decisions[0]))
+    assert await _transition_reasons(session, submission) == [
+        "created",
+        NEEDS_AN_EDITOR,
+    ]

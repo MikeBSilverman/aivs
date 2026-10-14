@@ -1,0 +1,17 @@
+Mutation M643: a person signed in at the automation organisation reads the ISAC's records
+Re-applies: can_read_isac_records by organisation type alone
+
+Expect red: packages/aivs-server/tests/unit/test_enrich_kev.py::test_a_person_at_the_automation_organisation_reads_nothing
+
+diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs-server/src/aivs_server/auth/policy.py
+--- a/packages/aivs-server/src/aivs_server/auth/policy.py
++++ b/packages/aivs-server/src/aivs_server/auth/policy.py
+@@ -494,8 +494,6 @@ def can_read_isac_records(ctx: AuthContext) -> bool:
+     return (
+         is_active(ctx)
+         and ctx.org_type is OrgType.AUTOMATION
+-        and ctx.auth_method is AuthMethod.MTLS
+-        and ctx.operator_id is None
+     )
+ 
+ 

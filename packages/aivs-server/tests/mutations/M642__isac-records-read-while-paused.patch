@@ -1,0 +1,16 @@
+Mutation M642: the automation reads the ISAC's records while distribution is paused
+Re-applies: the pause term's absence (Phase E review, test integrity)
+
+Expect red: packages/aivs-server/tests/unit/test_enrich_kev.py::test_nothing_is_read_while_distribution_is_paused
+
+diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs-server/src/aivs_server/auth/policy.py
+--- a/packages/aivs-server/src/aivs_server/auth/policy.py
++++ b/packages/aivs-server/src/aivs_server/auth/policy.py
+@@ -513,7 +513,6 @@ def isac_record_read_clause(now: dt.datetime) -> ColumnElement[bool]:
+         Distribution.date_added <= now,
+         Submission.state.in_(tuple(VISIBLE_SUBMISSION_STATES)),
+         Submission.tlp != TLP.RED,
+-        _distribution_not_paused(),
+     )
+ 
+ 

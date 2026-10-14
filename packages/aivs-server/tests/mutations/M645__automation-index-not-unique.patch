@@ -1,0 +1,17 @@
+Mutation M645: the migration's one-automation index does not refuse a second
+Re-applies: a non-unique index of the right name
+
+Expect red: packages/aivs-server/tests/migrations/test_migrated_schema.py::test_the_migrated_schema_refuses_a_second_isac_organisation[automation]
+
+diff --git a/packages/aivs-server/alembic/versions/20261014_0725_219524b682c5_one_automation_organisation.py b/packages/aivs-server/alembic/versions/20261014_0725_219524b682c5_one_automation_organisation.py
+--- a/packages/aivs-server/alembic/versions/20261014_0725_219524b682c5_one_automation_organisation.py
++++ b/packages/aivs-server/alembic/versions/20261014_0725_219524b682c5_one_automation_organisation.py
+@@ -43,7 +43,7 @@ def upgrade() -> None:
+             "uq_organizations_one_automation",
+             "organizations",
+             ["org_type"],
+-            unique=True,
++            unique=False,
+             postgresql_where=sa.text("org_type = 'automation'"),
+         )
+ 

@@ -20,7 +20,13 @@ from aivs_schemas.enums import OrgType, SubmissionLane, SubmissionState
 from aivs_server.audit.log import AuditAction
 from aivs_server.db.models import AuditLog, Circle, Submission, SubmissionTransition
 from aivs_server.services.contributions import within_hourly_allowance
-from tests.unit.contribution_world import STAMP, bundle_of, course_of_action_about, seed
+from tests.unit.contribution_world import (
+    STAMP,
+    bundle_of,
+    course_of_action_about,
+    opinion_about,
+    seed,
+)
 from tests.unit.sharing_world import API, SharingWorld, build_sharing_world, one_click
 
 pytestmark = pytest.mark.db
@@ -224,6 +230,30 @@ async def test_a_grouping_is_post_moderated_only_as_a_request_for_information(
 
     assert rfi.state is SubmissionState.DISTRIBUTED
     assert campaign.state is SubmissionState.SUBMITTED
+
+
+@pytest.mark.requirement("SF-66")
+async def test_a_post_moderated_circle_still_sends_a_vendors_opinion_to_review(
+    client, session, world
+):
+    """The circle's choice lifts the prose rule, not the vendor rule.
+
+    A vendor arguing a product down -- possibly its own -- is what an editor is
+    for, whatever the circle chose. The one-click lane refuses it by the click's
+    type; post-moderation sees the objects, so it is refused there separately.
+    """
+    await post_moderation(client, world, enabled=True)
+
+    opinion = await file_and_submit(
+        client, session, world.vendor.person, [opinion_about(world.published, opinion="disagree")]
+    )
+    note = await file_and_submit(
+        client, session, world.vendor.person, [note_about(world.published)]
+    )
+
+    assert opinion.state is SubmissionState.SUBMITTED
+    assert opinion.lane is SubmissionLane.REVIEW
+    assert note.state is SubmissionState.DISTRIBUTED
 
 
 # ---------------------------------------------------------------------------

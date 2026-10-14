@@ -10,6 +10,7 @@ from aivs_schemas.enums import TLP, OrgType
 from aivs_schemas.tlp import marking_id_for
 from tests.conftest import proxy_headers
 from tests.unit.contribution_world import (
+    LATER,
     STAMP,
     distribute,
     file,
@@ -156,3 +157,45 @@ async def test_a_stricter_referent_the_member_cannot_see_passes_ingest_and_is_re
 
     assert validated.status_code == 409
     assert "looser than objects it references" in validated.json()["title"]
+
+
+async def tightened_after_validation(client, session, world, tlp: str):
+    """An opinion validated on an AMBER record, then an AMBER+STRICT version is distributed.
+
+    Returns the distribution's response: the referent changed between the
+    editor's check and publication, and distribution is the last place to see it.
+    """
+    target = await strict_record(session, world, "circle", TLP.AMBER)
+    filed = await file(client, world["pem"], [opinion_about(target)], tlp=tlp)
+    assert filed.status_code == 201, filed.text
+    validated = await submit_and_validate(client, world["pem"], filed.json()["id"], world["editor"])
+    assert validated.status_code == 200, validated.text
+    await seed(
+        session,
+        world["isac_org"],
+        vulnerability_raw(target, cve_status="published", modified=LATER),
+        circle=world["circle"],
+        tlp=TLP.AMBER_STRICT,
+    )
+    return await distribute(client, filed.json()["id"], world["editor"], world["circle"])
+
+
+@pytest.mark.requirement("SF-49")
+async def test_a_contribution_its_referent_has_since_outgrown_is_refused_at_distribution(
+    client, session, world
+):
+    """Validated AMBER on an AMBER record; the record is AMBER+STRICT by distribution."""
+    refused = await tightened_after_validation(client, session, world, "amber")
+
+    assert refused.status_code == 409
+    assert "looser than objects it references" in refused.json()["title"]
+
+
+@pytest.mark.requirement("SF-49")
+async def test_a_contribution_as_strict_as_its_strictest_referent_is_distributed(
+    client, session, world
+):
+    """The pair: AMBER+STRICT equals the new version and is stricter than the old one."""
+    distributed = await tightened_after_validation(client, session, world, "amber_strict")
+
+    assert distributed.status_code == 200, distributed.text

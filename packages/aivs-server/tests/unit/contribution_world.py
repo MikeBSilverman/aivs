@@ -48,6 +48,7 @@ async def seed(
     circle: models.Circle | None,
     tlp: TLP = TLP.AMBER,
     state: SubmissionState = SubmissionState.DISTRIBUTED,
+    discovery_scope: DiscoveryScope = DiscoveryScope.OWN_ESTATE,
 ) -> models.Submission:
     """One submission carrying ``raw``, distributed to ``circle`` if one is given."""
     now = dt.datetime.now(dt.UTC)
@@ -56,7 +57,7 @@ async def seed(
         submitter_org_id=org.id,
         state=state,
         tlp=tlp,
-        discovery_scope=DiscoveryScope.OWN_ESTATE,
+        discovery_scope=discovery_scope,
         title=raw.get("name", "seeded"),
         distributed_at=now if state is SubmissionState.DISTRIBUTED else None,
     )

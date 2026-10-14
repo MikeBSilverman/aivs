@@ -14,10 +14,17 @@ import uuid
 import pytest
 from sqlalchemy import select
 
-from aivs_schemas.enums import TLP, OrgType, SubmissionLane, SubmissionState
+from aivs_schemas.enums import (
+    TLP,
+    CircleRole,
+    DiscoveryScope,
+    OrgType,
+    SubmissionLane,
+    SubmissionState,
+)
 from aivs_server.db.models import Distribution, StixObject, Submission, SubmissionTransition
 from aivs_server.services.contributions import NEEDS_AN_EDITOR
-from tests.unit.contribution_world import LATER, seed, vulnerability_raw
+from tests.unit.contribution_world import LATER, STAMP, seed, vulnerability_raw
 from tests.unit.sharing_world import SharingWorld, build_sharing_world, one_click
 
 pytestmark = pytest.mark.db
@@ -146,6 +153,169 @@ async def test_a_reader_only_member_waits_for_review(client, session, world):
 
     assert submission.state is SubmissionState.SUBMITTED
     assert await _distributed_to(session, submission) == set()
+
+
+@pytest.mark.requirement("SF-66")
+async def test_the_fast_lane_publishes_only_into_the_circles_the_member_contributes_to(
+    client, session, make_circle, join_circle, world
+):
+    """The record reached two of the member's circles; it contributes to one, reads the other.
+
+    A click is published at once -- the member contributes somewhere the record
+    is -- but only there. Asking "may it contribute anywhere the record went?"
+    and then publishing everywhere the record went put an unreviewed click in
+    front of a circle whose editor never let the member write to it.
+    """
+    read_only = await make_circle("government-liaison")
+    await join_circle(world.member.org, read_only, role=CircleRole.MEMBER)
+    target = f"vulnerability--{uuid.uuid4()}"
+    record = await seed(
+        session,
+        world.isac_org,
+        vulnerability_raw(target, cve_status="published"),
+        circle=world.circle,
+    )
+    await _also_distribute(session, record, read_only)
+
+    submission = await _filed(session, await one_click(client, world.member.person, target))
+
+    assert submission.state is SubmissionState.DISTRIBUTED
+    assert await _distributed_to(session, submission) == {world.circle.id}
+
+
+async def _also_distribute(session, record: Submission, circle) -> None:
+    stored = await session.scalar(select(StixObject).where(StixObject.submission_id == record.id))
+    first = await session.scalar(
+        select(Distribution).where(Distribution.stix_object_id == stored.id)
+    )
+    session.add(
+        Distribution(
+            stix_object_id=stored.id,
+            circle_id=circle.id,
+            submission_id=record.id,
+            date_added=first.date_added,
+        )
+    )
+    await session.commit()
+
+
+# ---------------------------------------------------------------------------
+# A contribution on public content is public content
+# ---------------------------------------------------------------------------
+def _note_on(target: str) -> dict:
+    return {
+        "type": "note",
+        "spec_version": "2.1",
+        "id": f"note--{uuid.uuid4()}",
+        "created": STAMP,
+        "modified": STAMP,
+        "content": "Seen against our gateway since Tuesday.",
+        "object_refs": [target],
+    }
+
+
+async def _seed_note(session, world, scope: DiscoveryScope) -> str:
+    """Another firm's note on the ISAC's published record, filed under ``scope``."""
+    note = _note_on(world.published)
+    await seed(session, world.vendor.org, note, circle=world.circle, discovery_scope=scope)
+    return note["id"]
+
+
+@pytest.mark.requirement("SF-66")
+async def test_a_click_on_a_disclosed_third_party_contribution_is_published_at_once(
+    client, session, world
+):
+    """``disclosed_third_party`` reached distribution only because its target was public."""
+    note = await _seed_note(session, world, DiscoveryScope.DISCLOSED_THIRD_PARTY)
+
+    submission = await _filed(session, await one_click(client, world.member.person, note))
+
+    assert submission.state is SubmissionState.DISTRIBUTED
+    assert submission.lane is SubmissionLane.FAST
+
+
+@pytest.mark.requirement("SF-66")
+async def test_a_click_on_a_contribution_from_a_members_own_estate_waits_for_review(
+    client, session, world
+):
+    """The same note filed as the firm's own experience says nothing about being public.
+
+    Only a vulnerability's own record can say "published"; anything else is
+    public because of the scope it was filed under, and ``own_estate`` may be
+    about content nobody has disclosed. The pair is the test above.
+    """
+    note = await _seed_note(session, world, DiscoveryScope.OWN_ESTATE)
+
+    submission = await _filed(session, await one_click(client, world.member.person, note))
+
+    assert submission.state is SubmissionState.SUBMITTED
+    assert submission.lane is SubmissionLane.REVIEW
+
+
+# ---------------------------------------------------------------------------
+# The click's TLP
+# ---------------------------------------------------------------------------
+@pytest.mark.requirement("SF-66", "SF-49")
+async def test_a_click_takes_the_strictest_tlp_among_the_versions_the_member_sees(
+    client, session, world
+):
+    """An older AMBER+STRICT version and a newer AMBER one, both in the member's circle.
+
+    The click repeats that the record exists, so it is at least as strict as
+    every version of it the member holds -- not the latest one's TLP, which
+    would make it looser than the older version and refused from the ISAC's
+    view.
+    """
+    target = f"vulnerability--{uuid.uuid4()}"
+    await seed(
+        session,
+        world.isac_org,
+        vulnerability_raw(target, cve_status="published"),
+        circle=world.circle,
+        tlp=TLP.AMBER_STRICT,
+    )
+    await seed(
+        session,
+        world.isac_org,
+        vulnerability_raw(target, cve_status="published", modified=LATER),
+        circle=world.circle,
+        tlp=TLP.AMBER,
+    )
+
+    submission = await _filed(session, await one_click(client, world.member.person, target))
+
+    assert submission.tlp is TLP.AMBER_STRICT
+    assert submission.state is SubmissionState.DISTRIBUTED
+
+
+@pytest.mark.requirement("SF-66", "SF-49")
+async def test_a_stricter_version_the_member_cannot_see_does_not_set_the_clicks_tlp(
+    client, session, isac_org, make_circle, world
+):
+    """The member's own submission would otherwise carry a TLP it never saw.
+
+    A newer AMBER+STRICT version sits in a circle the member is not in. Taking
+    the strictest TLP across every version made the click AMBER+STRICT, which
+    the member reads back on its own submission -- the hidden version's
+    existence and marking, delivered to the one firm not cleared for it.
+    """
+    staff_only = await make_circle("staff-only")
+    await seed(
+        session,
+        isac_org,
+        vulnerability_raw(world.published, cve_status="published", modified=LATER),
+        circle=staff_only,
+        tlp=TLP.AMBER_STRICT,
+    )
+
+    submission = await _filed(
+        session, await one_click(client, world.member.person, world.published)
+    )
+    shown = await client.get(f"/api/v1/submissions/{submission.id}", headers=world.member.person)
+
+    assert submission.tlp is TLP.AMBER
+    assert shown.status_code == 200, shown.text
+    assert shown.json()["tlp"] == TLP.AMBER.value
 
 
 # ---------------------------------------------------------------------------

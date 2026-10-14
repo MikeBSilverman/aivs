@@ -243,6 +243,103 @@ async def test_a_machine_raising_a_score_is_not_consequential(client, world):
     assert validated.status_code == 200, validated.text
 
 
+def assessed(stix_id: str, *, modified: str, **properties: object) -> dict:
+    """A vulnerability with 2.0 extension properties: SSVC values, a novel vector."""
+    return {
+        "type": "vulnerability",
+        "spec_version": "2.1",
+        "id": stix_id,
+        "created": STAMP,
+        "modified": modified,
+        "name": "Assessed finding",
+        "extensions": {
+            AIVS_INTEL_EXTENSION_ID: {
+                "extension_type": "property-extension",
+                "aivs_schema_version": "2.0",
+                "discovery_scope": "own_product",
+                "cve_status": "pre-cve",
+                "affected_products": [{"vendor": "Acme", "product": "Gateway"}],
+                **properties,
+            }
+        },
+    }
+
+
+async def revise_distributed(client, world, before: dict, after: dict):
+    """The machine files ``before``, an editor distributes it, then it files ``after``."""
+    first, validated = await validate_filing(client, world, world["robot_pem"], [before])
+    assert validated.status_code == 200, validated.text
+    assert (await distribute(client, first, world["editor"], world["circle"])).status_code == 200
+    _second, response = await validate_filing(client, world, world["robot_pem"], [after])
+    return response
+
+
+@pytest.mark.requirement("SF-6")
+async def test_a_machine_asserting_a_novel_attack_vector_needs_an_editor_to_name_it(client, world):
+    """An assertion on its own, with no earlier version: a new class of attack is news."""
+    finding = assessed(f"vulnerability--{uuid.uuid4()}", modified=STAMP, novel_attack_vector=True)
+
+    _id, refused = await validate_filing(client, world, world["robot_pem"], [finding])
+
+    assert refused.status_code == 409
+    assert f"{finding['id']}:novel_attack_vector" in refused.json()["title"]
+
+
+@pytest.mark.requirement("SF-6")
+async def test_a_machine_saying_the_vector_is_not_novel_needs_no_acknowledgement(client, world):
+    """The pair: the property present and false asserts nothing."""
+    finding = assessed(f"vulnerability--{uuid.uuid4()}", modified=STAMP, novel_attack_vector=False)
+
+    _id, validated = await validate_filing(client, world, world["robot_pem"], [finding])
+
+    assert validated.status_code == 200, validated.text
+
+
+@pytest.mark.requirement("SF-6")
+async def test_a_machine_lowering_the_ssvc_decision_members_hold_needs_naming(client, world):
+    shared = f"vulnerability--{uuid.uuid4()}"
+
+    refused = await revise_distributed(
+        client,
+        world,
+        assessed(shared, modified=STAMP, ssvc_decision="Act"),
+        assessed(shared, modified=LATER, ssvc_decision="Attend"),
+    )
+
+    assert refused.status_code == 409
+    assert f"{shared}:ssvc_decision" in refused.json()["title"]
+
+
+@pytest.mark.requirement("SF-6")
+async def test_a_machine_lowering_ssvc_exploitation_members_hold_needs_naming(client, world):
+    shared = f"vulnerability--{uuid.uuid4()}"
+
+    refused = await revise_distributed(
+        client,
+        world,
+        assessed(shared, modified=STAMP, ssvc_exploitation="active"),
+        assessed(shared, modified=LATER, ssvc_exploitation="poc"),
+    )
+
+    assert refused.status_code == 409
+    assert f"{shared}:ssvc_exploitation" in refused.json()["title"]
+
+
+@pytest.mark.requirement("SF-6")
+async def test_a_machine_raising_ssvc_values_is_not_consequential(client, world):
+    """SSVC values compare by CISA's urgency order, not as any change: the pair of the two above."""
+    shared = f"vulnerability--{uuid.uuid4()}"
+
+    validated = await revise_distributed(
+        client,
+        world,
+        assessed(shared, modified=STAMP, ssvc_decision="Track", ssvc_exploitation="none"),
+        assessed(shared, modified=LATER, ssvc_decision="Act", ssvc_exploitation="active"),
+    )
+
+    assert validated.status_code == 200, validated.text
+
+
 # ---------------------------------------------------------------------------
 # The portal: each change is a checkbox the editor ticks by name
 # ---------------------------------------------------------------------------

@@ -32,6 +32,7 @@ from sqlalchemy.orm import aliased
 
 from aivs_schemas.enums import AckType, OrgType
 from aivs_server.audit.log import AuditAction, record
+from aivs_server.db.clock import database_now
 from aivs_server.db.models import (
     Acknowledgment,
     AuditLog,
@@ -545,15 +546,18 @@ async def _emit(session: AsyncSession, finding: Finding, now: dt.datetime) -> No
     await _queue_alert(session, finding, now)
 
 
-async def _enforce_quarantine(session: AsyncSession, finding: Finding, now: dt.datetime) -> None:
+async def _enforce_quarantine(session: AsyncSession, finding: Finding) -> None:
     """Apply a proposed quarantine. Refusals (the ISAC itself, an organisation
     not active) are logged and leave the finding as a proposal."""
     organisation = await load_org_for_update(session, uuid.UUID(finding.details["proposed_org"]))
     if organisation is None:
         return
     try:
+        # The database's clock, read under the organisation's lock, not the
+        # detection run's: the quarantine's start becomes a membership edge,
+        # compared with date_added (see db.clock).
         await quarantine_org_automatically(
-            session, organisation=organisation, rule=finding.rule, now=now
+            session, organisation=organisation, rule=finding.rule, now=await database_now(session)
         )
     except QuarantineError as exc:
         security_logger.warning(
@@ -580,7 +584,7 @@ async def run_detections(
                 quarantine_policy == "enforce"
                 and finding.details.get("proposed_action") == PROPOSED_QUARANTINE
             ):
-                await _enforce_quarantine(session, finding, now)
+                await _enforce_quarantine(session, finding)
             raised.append(finding)
     await session.commit()
     return raised

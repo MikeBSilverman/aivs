@@ -91,7 +91,8 @@ async def register_certificate(
 
     ``organisation`` is loaded with ``load_org_for_update`` and ``now`` read
     after it: the row is stamped with ``now`` rather than the database's
-    transaction start, so it is on the same clock as ``quarantined_at``. A
+    transaction start, so it is on the same clock as ``quarantined_at`` --
+    the database's, read after the lock, from every caller (``db.clock``). A
     registration whose transaction opened before a quarantine and waited on its
     lock was otherwise stamped earlier than the quarantine it followed.
     """

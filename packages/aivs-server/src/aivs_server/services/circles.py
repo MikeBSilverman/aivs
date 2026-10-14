@@ -29,11 +29,19 @@ choices keep that edge safe:
    reinstated on the next pass.
 
 3. **A new membership starts now, not at the beginning of time.**
-   ``joined_at`` defaults to the moment the row is written, so a firm enrolled
+   ``joined_at`` is the moment the row is written, so a firm enrolled
    today receives what is shared from today. Without that bound, a rule would
    hand every newly enrolled organisation the circle's entire back catalogue —
    which is precisely why this module could not be written until
    ``visible_content_clause`` learned about membership start.
+
+**Every edge of an interval is the database's clock.** ``joined_at`` and
+``left_at`` are compared with ``date_added``, which is stamped on the
+database's clock (``db.clock``). Rule rows took the column default (the
+database's transaction start) while removals took the app's clock, so a
+replica an hour fast closed an interval an hour late: the member could not be
+re-added for that hour, and the hour it was out became readable. The callers
+pass ``database_now``; the column default is never relied on.
 """
 
 from __future__ import annotations
@@ -53,6 +61,7 @@ from aivs_schemas.enums import (
 )
 from aivs_server.audit.log import AuditAction, record
 from aivs_server.auth.context import AuthContext
+from aivs_server.db.clock import database_now
 from aivs_server.db.models import Circle, CircleMembership, Organization
 
 __all__ = [
@@ -292,10 +301,11 @@ async def add_circle_members(
     for org in organisations:
         current = existing.get(org.id)
         if current is None:
-            membership = CircleMembership(circle_id=circle.id, org_id=org.id, role=role)
-            if joined_at is not None:
-                membership.joined_at = joined_at
-            session.add(membership)
+            session.add(
+                CircleMembership(
+                    circle_id=circle.id, org_id=org.id, role=role, joined_at=joined_at or now
+                )
+            )
             added.append(org.id)
         elif joined_at is not None and current.joined_at != joined_at:
             current.joined_at = joined_at
@@ -465,7 +475,9 @@ async def reconcile_circle(
     await _lock_circle(session, circle.id)
     if not circle.auto_member_org_types:
         return ReconcileResult()
-    now = now or dt.datetime.now(dt.UTC)
+    # The database's clock, read under the circle's lock; ``now`` is injectable
+    # for tests only. See the module docstring.
+    now = now or await database_now(session)
 
     open_rows = await _open_memberships(session, circle.id)
     excluded = await _orgs_removed_by_operator(session, circle)
@@ -479,6 +491,7 @@ async def reconcile_circle(
                 org_id=org_id,
                 role=CircleRole.MEMBER,
                 managed_by_rule=True,
+                joined_at=now,
             )
         )
 

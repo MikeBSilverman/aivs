@@ -140,11 +140,13 @@ async def _has_fresh_certificate(session: AsyncSession, organisation: Organizati
     quarantine's revoking UPDATE ran stayed active, and would have counted as
     fresh although it was registered on the compromised side of the line.
 
-    Both sides are the application's clock, read under the organisation's row
-    lock (``register_certificate`` stamps ``created_at`` with its ``now``).
-    Comparing the database's transaction start with the application's clock
-    let a registration's stamp land on either side of the quarantine it
-    raced.
+    Both sides are one clock, read under the organisation's row lock
+    (``register_certificate`` stamps ``created_at`` with its ``now``). Comparing
+    the database's transaction start with the application's clock let a
+    registration's stamp land on either side of the quarantine it raced. The
+    callers pass the database's clock (``db.clock``), not the application's,
+    because ``quarantined_at`` is also a membership edge compared with
+    ``date_added``.
     """
     found = await session.scalar(
         select(ClientCertificate.id)

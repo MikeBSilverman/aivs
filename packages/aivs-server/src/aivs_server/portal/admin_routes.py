@@ -48,6 +48,7 @@ from aivs_server.auth.policy import (
     require,
 )
 from aivs_server.auth.secretbox import SecretBox
+from aivs_server.db.clock import database_now
 from aivs_server.db.models import (
     Circle,
     CircleMembership,
@@ -234,7 +235,7 @@ async def quarantine_screen(
     response = redirect_within_portal("/portal/admin/status")
     try:
         await quarantine_org(
-            session, ctx, organisation=organization, reason=reason, now=dt.datetime.now(dt.UTC)
+            session, ctx, organisation=organization, reason=reason, now=await database_now(session)
         )
     except QuarantineError as exc:
         await session.rollback()
@@ -527,7 +528,7 @@ async def add_members_screen(
             organisations=organisations,
             role=CircleRole(role),
             joined_at=backdate,
-            now=dt.datetime.now(dt.UTC),
+            now=await database_now(session),
         )
         await session.commit()
     except (CircleMembershipError, ValueError) as exc:
@@ -571,7 +572,12 @@ async def remove_member_screen(
     require(is_isac_membership(ctx), "portal_admin_circles")
 
     closed = await remove_circle_member(
-        session, ctx, circle_id=circle_id, org_id=org_id, now=dt.datetime.now(dt.UTC), via="portal"
+        session,
+        ctx,
+        circle_id=circle_id,
+        org_id=org_id,
+        now=await database_now(session),
+        via="portal",
     )
     response = redirect_within_portal(f"/portal/admin/circles/{circle_id}")
     if not closed:

@@ -20,10 +20,13 @@ import pytest
 from sqlalchemy import select, update
 
 from aivs_schemas.enums import OrgType
+from aivs_server.api import admin as admin_api
 from aivs_server.db import models
 from aivs_server.db.clock import database_now
+from aivs_server.services import circles as circles_service
 from aivs_server.services import distribution as distribution_service
 from aivs_server.services import embargo as embargo_service
+from aivs_server.services.circles import reconcile_circle
 from aivs_server.services.distribution import distribute_submission
 from aivs_server.services.embargo import EmbargoError, extend_embargo, release_embargo_now
 from aivs_server.taxii import router as taxii_router
@@ -200,3 +203,138 @@ async def test_a_reader_ahead_of_the_writers_neither_shows_an_embargo_nor_skips_
     assert first.status_code == 200
     assert "embargoed" not in {item["name"] for item in first.json().get("objects", [])}
     assert {item["name"] for item in second.json().get("objects", [])} == {"distributed next"}
+
+
+# ---------------------------------------------------------------------------
+# Membership intervals (L-P3)
+# ---------------------------------------------------------------------------
+async def test_a_removal_on_a_fast_app_clock_withholds_the_gap_and_allows_a_rejoin(
+    client,
+    session,
+    monkeypatch,
+    isac,
+    make_org,
+    make_cert,
+    make_circle,
+    join_circle,
+    make_collection,
+    publish,
+):
+    """The interval closed an hour in the future: the member could not be re-added
+    for that hour (the new interval overlapped it), and once it was, the hour it
+    was out would have been readable."""
+    _isac_org, isac_headers = isac
+    member = await make_org("meridian-global", org_type=OrgType.GSIB)
+    pem, _ = await make_cert(member)
+    circle = await make_circle("sector")
+    await join_circle(member, circle)
+    collection = await make_collection(circle)
+    publisher = await make_org("atlantic-clearing", org_type=OrgType.GSIB)
+    await publish(publisher, circle, name="before", date_added=await database_now(session) - HOUR)
+    skew_clock(monkeypatch, admin_api, HOUR)
+
+    removed = await client.delete(
+        f"/api/v1/circles/{circle.id}/members/{member.id}", headers=isac_headers
+    )
+    await publish(
+        publisher,
+        circle,
+        name="while out",
+        date_added=await database_now(session) + dt.timedelta(milliseconds=1),
+    )
+    rejoined = await client.post(
+        f"/api/v1/circles/{circle.id}/members",
+        json={"org_ids": [str(member.id)]},
+        headers=isac_headers,
+    )
+    await publish(
+        publisher,
+        circle,
+        name="after rejoining",
+        date_added=await database_now(session) + dt.timedelta(milliseconds=1),
+    )
+    feed = await client.get(
+        f"/taxii2/aivs/collections/{collection.id}/objects/", headers=proxy_headers(pem)
+    )
+
+    assert (removed.status_code, rejoined.status_code) == (204, 204), rejoined.text
+    names = {item["name"] for item in feed.json().get("objects", [])}
+    assert names == {"before", "after rejoining"}
+
+
+async def test_a_rule_opens_and_closes_membership_on_the_database_clock(
+    session, monkeypatch, make_org, make_circle
+):
+    circle = await make_circle("section9")
+    circle.auto_member_org_types = ["section9"]
+    org = await make_org("regional-bank", org_type=OrgType.SECTION9)
+    await session.commit()
+    skew_clock(monkeypatch, circles_service, HOUR)
+
+    await reconcile_circle(session, None, circle=circle)
+    await session.commit()
+    org.org_type = OrgType.GSIB
+    await session.flush()
+    await reconcile_circle(session, None, circle=circle)
+    await session.commit()
+
+    reference = await database_now(session)
+    row = (
+        await session.execute(
+            select(models.CircleMembership).where(models.CircleMembership.org_id == org.id)
+        )
+    ).scalar_one()
+    assert close_to(row.joined_at, reference)
+    assert row.left_at is not None
+    assert close_to(row.left_at, reference), "the interval closed on the app's clock"
+
+
+async def test_quarantine_and_reconnection_stamp_the_database_clock(
+    client, session, monkeypatch, isac, make_org, make_cert, make_circle, join_circle, ca
+):
+    """The quarantine's start is the edge of the gap a new interval withholds."""
+    _isac_org, isac_headers = isac
+    member = await make_org("meridian-global", org_type=OrgType.GSIB)
+    await make_cert(member)
+    circle = await make_circle("sector")
+    await join_circle(member, circle)
+    skew_clock(monkeypatch, admin_api, HOUR)
+
+    quarantined = await client.post(
+        f"/api/v1/orgs/{member.id}/quarantine",
+        json={"reason": "collector host compromised"},
+        headers=isac_headers,
+    )
+    fresh_pem, _fp, _cert = ca.issue("meridian-global-after-incident")
+    registered = await client.post(
+        f"/api/v1/orgs/{member.id}/certificates",
+        json={"certificate_pem": fresh_pem},
+        headers=isac_headers,
+    )
+    reconnected = await client.post(
+        f"/api/v1/orgs/{member.id}/reconnect",
+        json={"reason": "collector rebuilt", "backlog": "new_interval"},
+        headers=isac_headers,
+    )
+
+    assert (quarantined.status_code, registered.status_code, reconnected.status_code) == (
+        200,
+        201,
+        200,
+    ), reconnected.text
+    reference = await database_now(session)
+    intervals = (
+        (
+            await session.execute(
+                select(models.CircleMembership)
+                .where(models.CircleMembership.org_id == member.id)
+                .order_by(models.CircleMembership.joined_at)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    closed, reopened = intervals
+    assert closed.left_at is not None
+    assert close_to(closed.left_at, reference), "the gap began on the app's clock"
+    assert close_to(reopened.joined_at, reference), "the new interval began on the app's clock"

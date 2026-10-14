@@ -51,6 +51,7 @@ from aivs_server.auth.policy import (
 )
 from aivs_server.auth.secretbox import SecretBox, SecretPurpose
 from aivs_server.auth.sessions import revoke_sessions_for_certificate
+from aivs_server.db.clock import database_now
 from aivs_server.db.models import (
     Circle,
     ClientCertificate,
@@ -239,7 +240,7 @@ async def register_certificate(
             certificate_pem=payload.certificate_pem,
             label=payload.label,
             issuing_ca=settings.issuing_ca_certificate,
-            now=dt.datetime.now(dt.UTC),
+            now=await database_now(session),
         )
     except CertificateRegistrationError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
@@ -421,7 +422,7 @@ async def add_circle_member(
             organisations=organisations,
             role=payload.role,
             joined_at=payload.joined_at,
-            now=dt.datetime.now(dt.UTC),
+            now=await database_now(session),
         )
         await session.commit()
     except MembershipStartRefusedError as exc:
@@ -447,7 +448,7 @@ async def delete_circle_member(
     require(can_administer_circle(ctx, circle_id), "circle_membership_manage")
 
     closed = await remove_circle_member(
-        session, ctx, circle_id=circle_id, org_id=org_id, now=dt.datetime.now(dt.UTC), via="api"
+        session, ctx, circle_id=circle_id, org_id=org_id, now=await database_now(session), via="api"
     )
     if not closed:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Membership not found")
@@ -626,7 +627,7 @@ async def quarantine(
             ctx,
             organisation=organisation,
             reason=payload.reason,
-            now=dt.datetime.now(dt.UTC),
+            now=await database_now(session),
         )
     except QuarantineError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
@@ -651,7 +652,7 @@ async def reconnect(
             organisation=organisation,
             backlog=payload.backlog,
             reason=payload.reason,
-            now=dt.datetime.now(dt.UTC),
+            now=await database_now(session),
         )
     except QuarantineError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc

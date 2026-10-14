@@ -323,6 +323,10 @@ class CircleMembership(TimestampMixin, Base):
     #: a certificate rotation, must be able to keep the history it legitimately
     #: had. ``created_at`` records when the row was written and must go on
     #: meaning only that.
+    #:
+    #: Every writer sets it, from the database's clock (``db.clock``); the
+    #: server default is the transaction's start, which is a different instant
+    #: from the one ``left_at`` and ``date_added`` are read at.
     joined_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

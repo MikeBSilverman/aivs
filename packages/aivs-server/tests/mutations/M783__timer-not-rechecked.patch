@@ -1,0 +1,19 @@
+Mutation M783: the sweeper lets a timer run whose content no longer passes
+Re-applies: W-P1, services/embargo.py before 75c032d
+
+Expect red: packages/aivs-server/tests/unit/test_embargo_release_rechecks.py::test_the_sweeper_holds_an_embargo_whose_content_no_longer_passes
+Expect red: packages/aivs-server/tests/unit/test_embargo_release_rechecks.py::test_a_pause_does_not_postpone_a_hold
+Expect red: packages/aivs-server/tests/unit/test_embargo_release_rechecks.py::test_the_sweeper_holds_an_embargo_whose_referent_was_re_marked_stricter
+
+diff --git a/packages/aivs-server/src/aivs_server/services/embargo.py b/packages/aivs-server/src/aivs_server/services/embargo.py
+--- a/packages/aivs-server/src/aivs_server/services/embargo.py
++++ b/packages/aivs-server/src/aivs_server/services/embargo.py
+@@ -421,7 +421,7 @@ async def _hold_timers_that_no_longer_pass(session: AsyncSession, *, now: dt.dat
+     held = 0
+     for embargo in pending:
+         problem = await release_problem(session, embargo.submission_id, now=now)
+-        if problem is not None:
++        if False:
+             await _hold(session, embargo, problem=problem, now=now)
+             held += 1
+     return held

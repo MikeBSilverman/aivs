@@ -1,0 +1,19 @@
+Mutation M772: early release stamps the released rows from the app process's clock
+Re-applies: R-P1, services/embargo.py before 954f12e
+
+Expect red: packages/aivs-server/tests/unit/test_one_clock.py::test_early_release_stamps_on_the_database_clock
+
+diff --git a/packages/aivs-server/src/aivs_server/services/embargo.py b/packages/aivs-server/src/aivs_server/services/embargo.py
+--- a/packages/aivs-server/src/aivs_server/services/embargo.py
++++ b/packages/aivs-server/src/aivs_server/services/embargo.py
+@@ -157,8 +157,8 @@ async def release_embargo_now(
+     """
+     # The lock first, and the clock is the database's, read under it: see
+     # services.publication. ``now`` is injectable for tests only.
+-    locked_at = await hold_publication_lock(session, refuse_while_paused=True)
+-    now = now or locked_at
++    await hold_publication_lock(session, refuse_while_paused=True)
++    now = now or dt.datetime.now(dt.UTC)
+     # The next millisecond, not this one. A released row keeps the `seq` it was
+     # given when it was *distributed*, which is necessarily lower than that of
+     # anything distributed since -- so the monotonic tiebreaker does not help

@@ -1,0 +1,18 @@
+Mutation M774: the objects listing computes visibility and its cursor on the app process's clock
+Re-applies: R-P1, taxii/router.py before 954f12e
+
+Expect red: packages/aivs-server/tests/unit/test_one_clock.py::test_a_reader_ahead_of_the_writers_neither_shows_an_embargo_nor_skips_a_row
+
+diff --git a/packages/aivs-server/src/aivs_server/taxii/router.py b/packages/aivs-server/src/aivs_server/taxii/router.py
+--- a/packages/aivs-server/src/aivs_server/taxii/router.py
++++ b/packages/aivs-server/src/aivs_server/taxii/router.py
+@@ -336,7 +336,8 @@ async def list_objects(
+     # "now" is the database's clock, read under the lock: a replica's own
+     # clock running fast showed embargoes early and issued cursors above rows
+     # still to be stamped. See services.publication.
+-    now = await wait_for_publications(session)
++    await wait_for_publications(session)
++    now = dt.datetime.now(dt.UTC)
+ 
+     rows = list(
+         (

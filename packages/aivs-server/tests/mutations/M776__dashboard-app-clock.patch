@@ -1,0 +1,17 @@
+Mutation M776: the portal dashboard lists content by the app process's clock
+Re-applies: R-P1, portal/routes.py before 954f12e
+
+Expect red: packages/aivs-server/tests/unit/test_one_clock.py::test_the_portal_dashboard_lists_no_embargo_early_on_a_fast_clock
+
+diff --git a/packages/aivs-server/src/aivs_server/portal/routes.py b/packages/aivs-server/src/aivs_server/portal/routes.py
+--- a/packages/aivs-server/src/aivs_server/portal/routes.py
++++ b/packages/aivs-server/src/aivs_server/portal/routes.py
+@@ -307,7 +307,7 @@ async def dashboard(request: Request, settings: SettingsDep, session: SessionDep
+     ctx, _csrf_hash = await current_session(request, settings, session)
+     # The database's clock, which date_added is stamped on: a replica running
+     # fast would list embargoed content early (see db.clock).
+-    now = await database_now(session)
++    now = dt.datetime.now(dt.UTC)
+     circle_grants = readable_circle_grants(ctx)
+ 
+     available = 0

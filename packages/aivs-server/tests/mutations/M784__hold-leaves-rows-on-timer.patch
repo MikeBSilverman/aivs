@@ -1,0 +1,17 @@
+Mutation M784: a hold records itself but leaves the rows where the clock will release them
+Re-applies: W-P1 -- a hold that only changes the record, as the embargo row is only bookkeeping
+
+Expect red: packages/aivs-server/tests/unit/test_embargo_release_rechecks.py::test_the_sweeper_holds_an_embargo_whose_content_no_longer_passes
+
+diff --git a/packages/aivs-server/src/aivs_server/services/embargo.py b/packages/aivs-server/src/aivs_server/services/embargo.py
+--- a/packages/aivs-server/src/aivs_server/services/embargo.py
++++ b/packages/aivs-server/src/aivs_server/services/embargo.py
+@@ -432,7 +432,7 @@ async def _hold(session: AsyncSession, embargo: Embargo, *, problem: str, now: d
+     await session.execute(
+         update(Distribution)
+         .where(Distribution.submission_id == embargo.submission_id, Distribution.date_added > now)
+-        .values(date_added=HELD_UNTIL_RELEASED)
++        .values(date_added=Distribution.date_added)
+     )
+     originally_due = embargo.release_at
+     embargo.policy = EmbargoPolicy.MANUAL

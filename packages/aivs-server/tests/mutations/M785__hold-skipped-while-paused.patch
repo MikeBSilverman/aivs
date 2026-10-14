@@ -1,0 +1,17 @@
+Mutation M785: the sweeper holds nothing while paused, so resuming releases failing content
+Re-applies: W-P1 -- the sweeper's earlier "does nothing at all while paused"
+
+Expect red: packages/aivs-server/tests/unit/test_embargo_release_rechecks.py::test_a_pause_does_not_postpone_a_hold
+
+diff --git a/packages/aivs-server/src/aivs_server/services/embargo.py b/packages/aivs-server/src/aivs_server/services/embargo.py
+--- a/packages/aivs-server/src/aivs_server/services/embargo.py
++++ b/packages/aivs-server/src/aivs_server/services/embargo.py
+@@ -387,7 +387,7 @@ async def sweep_due_embargoes(session: AsyncSession, *, now: dt.datetime | None
+     locked_at = await hold_publication_lock(session, refuse_while_paused=False)
+     now = now or locked_at
+ 
+-    held = await _hold_timers_that_no_longer_pass(session, now=now)
++    held = 0 if await publication_paused(session) else await _hold_timers_that_no_longer_pass(session, now=now)
+     released = 0 if await publication_paused(session) else await _release_due(session, now=now)
+ 
+     # Always: the commit is also what releases the publication lock.

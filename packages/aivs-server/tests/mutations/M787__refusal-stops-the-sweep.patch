@@ -1,0 +1,17 @@
+Mutation M787: one embargo's refusal raises and stops the sweeper releasing the others
+Re-applies: W-P1 -- the refusal written as an exception, as early release's is
+
+Expect red: packages/aivs-server/tests/unit/test_embargo_release_rechecks.py::test_a_held_embargo_does_not_stop_the_sweeper_releasing_another
+
+diff --git a/packages/aivs-server/src/aivs_server/services/embargo.py b/packages/aivs-server/src/aivs_server/services/embargo.py
+--- a/packages/aivs-server/src/aivs_server/services/embargo.py
++++ b/packages/aivs-server/src/aivs_server/services/embargo.py
+@@ -422,7 +422,7 @@ async def _hold_timers_that_no_longer_pass(session: AsyncSession, *, now: dt.dat
+     for embargo in pending:
+         problem = await release_problem(session, embargo.submission_id, now=now)
+         if problem is not None:
+-            await _hold(session, embargo, problem=problem, now=now)
++            raise EmbargoError(problem)
+             held += 1
+     return held
+ 

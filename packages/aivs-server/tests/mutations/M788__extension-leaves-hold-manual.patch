@@ -1,0 +1,16 @@
+Mutation M788: extending a held embargo leaves it waiting for an operator, off any timer
+Re-applies: W-P1 -- extend before 75c032d never changed the policy
+
+Expect red: packages/aivs-server/tests/unit/test_embargo_release_rechecks.py::test_extending_a_held_embargo_puts_it_back_on_a_timer
+
+diff --git a/packages/aivs-server/src/aivs_server/services/embargo.py b/packages/aivs-server/src/aivs_server/services/embargo.py
+--- a/packages/aivs-server/src/aivs_server/services/embargo.py
++++ b/packages/aivs-server/src/aivs_server/services/embargo.py
+@@ -326,7 +326,6 @@ async def extend_embargo(
+     embargo.release_at = target
+     embargo.status = EmbargoStatus.EXTENDED
+     # A held embargo goes back on a timer, and the sweeper checks it again.
+-    embargo.policy = EmbargoPolicy.TIMER
+ 
+     await record(
+         session,

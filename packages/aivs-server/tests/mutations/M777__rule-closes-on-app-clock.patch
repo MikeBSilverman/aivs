@@ -1,0 +1,17 @@
+Mutation M777: a rule closes membership intervals on the app process's clock
+Re-applies: L-P3, services/circles.py before bbd8ff7
+
+Expect red: packages/aivs-server/tests/unit/test_one_clock.py::test_a_rule_opens_and_closes_membership_on_the_database_clock
+
+diff --git a/packages/aivs-server/src/aivs_server/services/circles.py b/packages/aivs-server/src/aivs_server/services/circles.py
+--- a/packages/aivs-server/src/aivs_server/services/circles.py
++++ b/packages/aivs-server/src/aivs_server/services/circles.py
+@@ -477,7 +477,7 @@ async def reconcile_circle(
+         return ReconcileResult()
+     # The database's clock, read under the circle's lock; ``now`` is injectable
+     # for tests only. See the module docstring.
+-    now = now or await database_now(session)
++    now = now or dt.datetime.now(dt.UTC)
+ 
+     open_rows = await _open_memberships(session, circle.id)
+     excluded = await _orgs_removed_by_operator(session, circle)

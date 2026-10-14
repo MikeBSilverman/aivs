@@ -1,0 +1,17 @@
+Mutation M770: every immediate distribution is recorded as an embargo due a millisecond later
+Re-applies: af8e27f's parent: `embargoed` decided as `date_added > now`, which the next-millisecond stamp always satisfies
+
+Expect red: packages/aivs-server/tests/unit/test_embargo.py::test_an_immediate_distribution_is_not_an_embargo
+
+diff --git a/packages/aivs-server/src/aivs_server/services/distribution.py b/packages/aivs-server/src/aivs_server/services/distribution.py
+--- a/packages/aivs-server/src/aivs_server/services/distribution.py
++++ b/packages/aivs-server/src/aivs_server/services/distribution.py
+@@ -305,7 +305,7 @@ async def distribute_submission(
+     # least a millisecond ahead of `now`, and testing against `now` recorded
+     # every immediate distribution as an embargo, which the sweeper then
+     # "released" and announced to every member a second time.
+-    embargoed = date_added > earliest
++    embargoed = date_added > now
+ 
+     circles = await _resolve_target_circles(session, submission, circle_ids)
+     found = {circle.id for circle in circles}

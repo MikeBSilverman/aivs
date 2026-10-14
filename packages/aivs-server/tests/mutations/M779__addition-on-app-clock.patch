@@ -1,0 +1,17 @@
+Mutation M779: the API opens a membership on the app process's clock
+Re-applies: L-P3, api/admin.py before bbd8ff7
+
+Expect red: packages/aivs-server/tests/unit/test_one_clock.py::test_a_removal_on_a_fast_app_clock_withholds_the_gap_and_allows_a_rejoin
+
+diff --git a/packages/aivs-server/src/aivs_server/api/admin.py b/packages/aivs-server/src/aivs_server/api/admin.py
+--- a/packages/aivs-server/src/aivs_server/api/admin.py
++++ b/packages/aivs-server/src/aivs_server/api/admin.py
+@@ -422,7 +422,7 @@ async def add_circle_member(
+             organisations=organisations,
+             role=payload.role,
+             joined_at=payload.joined_at,
+-            now=await database_now(session),
++            now=dt.datetime.now(dt.UTC),
+         )
+         await session.commit()
+     except MembershipStartRefusedError as exc:

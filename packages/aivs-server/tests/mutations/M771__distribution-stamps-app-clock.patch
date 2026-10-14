@@ -1,0 +1,19 @@
+Mutation M771: distribution stamps date_added from the app process's clock
+Re-applies: R-P1, services/distribution.py before 954f12e
+
+Expect red: packages/aivs-server/tests/unit/test_one_clock.py::test_distribution_stamps_date_added_on_the_database_clock
+
+diff --git a/packages/aivs-server/src/aivs_server/services/distribution.py b/packages/aivs-server/src/aivs_server/services/distribution.py
+--- a/packages/aivs-server/src/aivs_server/services/distribution.py
++++ b/packages/aivs-server/src/aivs_server/services/distribution.py
+@@ -279,8 +279,8 @@ async def distribute_submission(
+     """
+     # The lock first, and the clock is the database's, read under it: see
+     # services.publication. ``now`` is injectable for tests only.
+-    locked_at = await hold_publication_lock(session, refuse_while_paused=True)
+-    now = now or locked_at
++    await hold_publication_lock(session, refuse_while_paused=True)
++    now = now or dt.datetime.now(dt.UTC)
+ 
+     if submission.state is not SubmissionState.VALIDATED:
+         msg = (

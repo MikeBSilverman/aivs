@@ -1,0 +1,17 @@
+Mutation M786: a timer released although its content no longer passes is recorded as an ordinary release
+Re-applies: W-P1, services/embargo.py before 75c032d
+
+Expect red: packages/aivs-server/tests/unit/test_embargo_release_rechecks.py::test_an_elapsed_embargo_whose_content_no_longer_passes_is_reported
+
+diff --git a/packages/aivs-server/src/aivs_server/services/embargo.py b/packages/aivs-server/src/aivs_server/services/embargo.py
+--- a/packages/aivs-server/src/aivs_server/services/embargo.py
++++ b/packages/aivs-server/src/aivs_server/services/embargo.py
+@@ -501,7 +501,7 @@ async def _record_timed_release(
+     # ISAC's to know about.
+     problem = await release_problem(session, embargo.submission_id, now=now)
+     if problem is not None:
+-        details["content_problem"] = problem
++        pass
+         logger.warning(
+             "embargo released by its timer although its content no longer passes the rules",
+             extra={"submission_id": str(embargo.submission_id), "reason": problem},

@@ -1,0 +1,17 @@
+Mutation M782: early release relies on the content check made at distribution
+Re-applies: W-P1, services/embargo.py before 75c032d
+
+Expect red: packages/aivs-server/tests/unit/test_embargo_release_rechecks.py::test_early_release_refuses_content_whose_target_left_disclosure
+
+diff --git a/packages/aivs-server/src/aivs_server/services/embargo.py b/packages/aivs-server/src/aivs_server/services/embargo.py
+--- a/packages/aivs-server/src/aivs_server/services/embargo.py
++++ b/packages/aivs-server/src/aivs_server/services/embargo.py
+@@ -190,7 +190,7 @@ async def release_embargo_now(
+         # could, in the record that exists to say exactly that.
+         return await _record_elapsed_release(session, ctx, embargo, reason=reason)
+     problem = await release_problem(session, submission_id, now=now)
+-    if problem is not None:
++    if False:
+         logger.warning(
+             "early release refused: the content no longer passes the rules distribution checked",
+             extra={"submission_id": str(submission_id), "reason": problem},

@@ -1,0 +1,19 @@
+Mutation M775: the sweeper decides what is due on the app process's clock
+Re-applies: R-P1, services/embargo.py before 954f12e
+
+Expect red: packages/aivs-server/tests/unit/test_one_clock.py::test_the_sweeper_decides_what_is_due_on_the_database_clock
+
+diff --git a/packages/aivs-server/src/aivs_server/services/embargo.py b/packages/aivs-server/src/aivs_server/services/embargo.py
+--- a/packages/aivs-server/src/aivs_server/services/embargo.py
++++ b/packages/aivs-server/src/aivs_server/services/embargo.py
+@@ -384,8 +384,8 @@ async def sweep_due_embargoes(session: AsyncSession, *, now: dt.datetime | None
+     """
+     # Not refused while paused: holding moves content later. Releasing is
+     # skipped below instead.
+-    locked_at = await hold_publication_lock(session, refuse_while_paused=False)
+-    now = now or locked_at
++    await hold_publication_lock(session, refuse_while_paused=False)
++    now = now or dt.datetime.now(dt.UTC)
+ 
+     held = await _hold_timers_that_no_longer_pass(session, now=now)
+     released = 0 if await publication_paused(session) else await _release_due(session, now=now)

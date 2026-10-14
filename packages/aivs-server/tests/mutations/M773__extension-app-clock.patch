@@ -1,0 +1,19 @@
+Mutation M773: extension decides what is already visible on the app process's clock
+Re-applies: R-P1, services/embargo.py before 954f12e
+
+Expect red: packages/aivs-server/tests/unit/test_one_clock.py::test_an_extension_on_a_lagging_app_clock_cannot_retract_released_content
+
+diff --git a/packages/aivs-server/src/aivs_server/services/embargo.py b/packages/aivs-server/src/aivs_server/services/embargo.py
+--- a/packages/aivs-server/src/aivs_server/services/embargo.py
++++ b/packages/aivs-server/src/aivs_server/services/embargo.py
+@@ -272,8 +272,8 @@ async def extend_embargo(
+     # "already visible" tests below compare against it, and a replica whose
+     # own clock lagged would find content members already hold still in the
+     # future, and move it back there. See services.publication.
+-    locked_at = await hold_publication_lock(session, refuse_while_paused=False)
+-    now = now or locked_at
++    await hold_publication_lock(session, refuse_while_paused=False)
++    now = now or dt.datetime.now(dt.UTC)
+     if release_at.tzinfo is None:
+         msg = "release_at must be timezone-aware"
+         raise EmbargoError(msg)

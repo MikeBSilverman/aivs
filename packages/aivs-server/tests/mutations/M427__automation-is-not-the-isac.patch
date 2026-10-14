@@ -5,14 +5,17 @@ Expect red: packages/aivs-server/tests/unit/test_ownership.py::test_the_isacs_au
 Expect red: packages/aivs-server/tests/unit/test_enrich_kev.py::test_the_version_the_script_builds_is_validated_by_an_editor
 
 diff --git a/packages/aivs-server/src/aivs_server/services/ownership.py b/packages/aivs-server/src/aivs_server/services/ownership.py
+index 9165768..b5e7afe 100644
 --- a/packages/aivs-server/src/aivs_server/services/ownership.py
 +++ b/packages/aivs-server/src/aivs_server/services/ownership.py
-@@ -46,7 +46,7 @@
+@@ -65,8 +65,9 @@ def owner_key(submitter_org_id: Any) -> ColumnElement[str]:
  async def _owners_like(session: AsyncSession, org_id: uuid.UUID) -> set[uuid.UUID]:
      """``org_id`` and every organisation whose versions count as its own."""
      org_type = await session.scalar(select(Organization.org_type).where(Organization.id == org_id))
--    if org_type not in _ISAC_OWNER_TYPES:
+-    if org_type not in ISAC_OWNER_TYPES:
 +    if True:
          return {org_id}
++
      isac = await session.execute(
-         select(Organization.id).where(Organization.org_type.in_(tuple(_ISAC_OWNER_TYPES)))
+         select(Organization.id).where(Organization.org_type.in_(tuple(ISAC_OWNER_TYPES)))
+     )

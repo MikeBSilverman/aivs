@@ -6,11 +6,11 @@ Expect red: packages/aivs-schemas/tests/test_extension_2_0.py::test_2_0_registra
 diff --git a/packages/aivs-schemas/src/aivs_schemas/extension/builders.py b/packages/aivs-schemas/src/aivs_schemas/extension/builders.py
 --- a/packages/aivs-schemas/src/aivs_schemas/extension/builders.py
 +++ b/packages/aivs-schemas/src/aivs_schemas/extension/builders.py
-@@ -307,7 +307,6 @@
+@@ -310,7 +310,6 @@
          ("kev_date_added", StringProperty()),
          ("kev_due_date", StringProperty()),
          ("kev_ransomware_use", EnumProperty(allowed=list(_KEV_RANSOMWARE_USE))),
 -        ("novel_attack_vector", BooleanProperty()),
+         ("isac_assessment", EnumProperty(allowed=list(_ISAC_ASSESSMENT))),
+         ("isac_assessment_delta", ListProperty(DictionaryProperty(spec_version="2.1"))),
          # course-of-action
-         ("category", EnumProperty(allowed=list(_REMEDIATION_CATEGORY))),
-         ("restart_required", EnumProperty(allowed=list(_RESTART_REQUIRED))),

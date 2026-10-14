@@ -1,0 +1,16 @@
+Mutation M869: what reaches a sandbox counts as reach
+Re-applies: Phase H, T10b (connection health, sandbox, enrolment) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_sandbox_and_enrolment.py::test_what_reaches_a_sandbox_is_no_reach[True-None]
+
+diff --git a/packages/aivs-server/src/aivs_server/services/telemetry.py b/packages/aivs-server/src/aivs_server/services/telemetry.py
+--- a/packages/aivs-server/src/aivs_server/services/telemetry.py
++++ b/packages/aivs-server/src/aivs_server/services/telemetry.py
+@@ -186,7 +186,6 @@
+             # A sandbox is for testing a member's connection; what reaches it
+             # is no reach, and counting it would let an exercise read as
+             # engagement.
+-            Circle.is_sandbox.is_(False),
+             _is_counted(CircleMembership.org_id, submission.submitter_org_id),
+         )
+     )

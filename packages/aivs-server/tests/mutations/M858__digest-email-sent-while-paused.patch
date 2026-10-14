@@ -1,0 +1,17 @@
+Mutation M858: digest email goes out while distribution is paused
+Re-applies: Phase H, T10a (cadence and digest) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_digest_email.py::test_nothing_is_emailed_while_distribution_is_paused
+
+diff --git a/packages/aivs-server/src/aivs_server/notify/email.py b/packages/aivs-server/src/aivs_server/notify/email.py
+--- a/packages/aivs-server/src/aivs_server/notify/email.py
++++ b/packages/aivs-server/src/aivs_server/notify/email.py
+@@ -68,7 +68,7 @@
+     session: AsyncSession, settings: Settings, *, now: dt.datetime | None = None
+ ) -> int:
+     """Attempt every digest email that is due. Returns the number sent. Commits once."""
+-    if settings.smtp_host is None or await publication_paused(session):
++    if settings.smtp_host is None:
+         return 0
+     now = now or dt.datetime.now(dt.UTC)
+     due = (

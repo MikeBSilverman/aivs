@@ -6,12 +6,12 @@ Expect red: packages/aivs-server/tests/unit/test_circle_groups.py::test_a_rule_n
 diff --git a/packages/aivs-server/src/aivs_server/services/circles.py b/packages/aivs-server/src/aivs_server/services/circles.py
 --- a/packages/aivs-server/src/aivs_server/services/circles.py
 +++ b/packages/aivs-server/src/aivs_server/services/circles.py
-@@ -385,7 +385,7 @@
+@@ -417,7 +417,7 @@
      excluded = await _orgs_removed_by_operator(session, circle)
      eligible = await _orgs_matching_rule(session, circle)
  
 -    added = sorted(eligible - set(open_rows) - excluded, key=str)
 +    added = sorted(eligible - set(open_rows), key=str)
+     types = await _org_types(session, added)
      for org_id in added:
          session.add(
-             CircleMembership(

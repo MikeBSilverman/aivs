@@ -1,0 +1,116 @@
+{# Guided depth for one vulnerability: include with `guidance` in context.
+
+   Rendered from services/guidance.py's Guidance and nothing else, so it shows
+   only what the caller may see. Every value is member-supplied text and is
+   autoescaped (SF-29). No STIX type name or identifier appears here, in the
+   template's own words or in what it is handed (NFR-U5): the reader's words are
+   "do this", "watch for", "you are done when". #}
+<section class="guided">
+  <div class="card">
+    <h2>What this is</h2>
+    <p class="guided-title">{{ guidance.title }}</p>
+    {% if guidance.severity %}<p>{{ guidance.severity }}</p>{% endif %}
+    {% if guidance.exploited %}<p class="guided-alert">{{ guidance.exploited }}</p>{% endif %}
+    {% if guidance.urgency %}<p><strong>{{ guidance.urgency }}</strong></p>{% endif %}
+    {% if guidance.summary %}<p>{{ guidance.summary }}</p>{% endif %}
+  </div>
+
+  <div class="card">
+    <h2>Are you affected?</h2>
+    {% if guidance.affected %}
+      <p>You are affected if you run:</p>
+      <ul>
+        {% for product in guidance.affected %}
+          <li>
+            <strong>{{ product.name }}</strong>{% if product.versions %}, {{ product.versions }}{% endif %}.
+            {% if product.fixed_in %}Fixed in {{ product.fixed_in }}.{% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="muted">The report does not name the affected products yet.</p>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2>What to do, in order</h2>
+    {% if guidance.steps %}
+      <ol class="guided-steps">
+        {% for step in guidance.steps %}
+          <li>
+            <span class="guided-kind">{{ step.kind }}</span>
+            {% if step.is_new %}<span class="badge guided-new">New since you last read</span>{% endif %}
+            <p><strong>{{ step.title }}</strong></p>
+            {% if step.detail %}<p>{{ step.detail }}</p>{% endif %}
+            {% if step.restart %}<p>{{ step.restart }}</p>{% endif %}
+            {% if step.review_overdue %}
+              <p class="guided-alert">This advice is past the date its author set for re-checking it. Confirm it with the ISAC before relying on it.</p>
+            {% endif %}
+            <p class="muted guided-provenance">{{ step.provenance }}</p>
+          </li>
+        {% endfor %}
+      </ol>
+    {% elif guidance.no_fix %}
+      <p>{{ guidance.no_fix }}</p>
+    {% else %}
+      <p class="muted">No action has been shared with you yet.</p>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2>How to know you are done</h2>
+    {% if guidance.done_when %}
+      <ul>
+        {% for check in guidance.done_when %}<li>{{ check }}</li>{% endfor %}
+      </ul>
+    {% else %}
+      <p class="muted">No check has been shared yet. Ask the ISAC how to confirm the change took effect.</p>
+    {% endif %}
+  </div>
+
+  {% if guidance.watch_for %}
+    <div class="card">
+      <h2>Signs to watch for</h2>
+      <ul>
+        {% for sign in guidance.watch_for %}
+          <li>
+            {% if sign.is_new %}<span class="badge guided-new">New since you last read</span>{% endif %}
+            <strong>{{ sign.title }}</strong>{% if sign.detail %}: {{ sign.detail }}{% endif %}
+            <span class="muted">Current until {{ sign.valid_until }}.</span>
+            <span class="muted guided-provenance">{{ sign.provenance }}</span>
+          </li>
+        {% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+
+  {% if guidance.if_it_goes_wrong %}
+    <div class="card">
+      <h2>If the change causes trouble</h2>
+      <ul>
+        {% for step in guidance.if_it_goes_wrong %}
+          <li><strong>{{ step.title }}</strong>{% if step.detail %}: {{ step.detail }}{% endif %}</li>
+        {% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+
+  {% if guidance.assessment %}
+    <div class="card">
+      <h2>The ISAC's view of the public record</h2>
+      <p>{{ guidance.assessment.statement }}</p>
+      {% if guidance.assessment.differences %}
+        <table>
+          <thead><tr><th>On</th><th>Public record</th><th>ISAC</th></tr></thead>
+          <tbody>
+            {% for line in guidance.assessment.differences %}
+              <tr><td>{{ line.what }}</td><td>{{ line.public_says }}</td><td>{{ line.isac_says }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% endif %}
+    </div>
+  {% endif %}
+
+  <p class="muted no-print">To keep a copy, print this page from your browser: the printed layout leaves out the navigation.</p>
+</section>

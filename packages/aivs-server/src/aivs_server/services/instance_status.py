@@ -36,6 +36,7 @@ from aivs_server.db.models import (
     WebhookDelivery,
 )
 from aivs_server.observability import HEARTBEATS, ComponentReport
+from aivs_server.services.connection_health import StaleConnection, stale_connections
 
 __all__ = [
     "CERTIFICATE_WARNING",
@@ -68,6 +69,7 @@ class InstanceStatus:
     quarantined: list[dict[str, Any]]
     expiring_certificates: list[dict[str, Any]]
     silent_members: list[dict[str, Any]]
+    stale_connections: list[StaleConnection]
     failing_webhooks: list[dict[str, Any]]
     detections: list[dict[str, Any]]
     proposed_quarantines: list[dict[str, Any]]
@@ -283,6 +285,7 @@ async def gather_status(
         quarantined=await _quarantined(session),
         expiring_certificates=await _expiring_certificates(session, now),
         silent_members=await _silent_members(session, now),
+        stale_connections=await stale_connections(session, now),
         failing_webhooks=await _failing_webhooks(session),
         detections=await _recent_detections(session, now),
         proposed_quarantines=await _proposed_quarantines(session, now),

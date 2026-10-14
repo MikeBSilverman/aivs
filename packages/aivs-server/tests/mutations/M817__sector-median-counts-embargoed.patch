@@ -1,0 +1,16 @@
+Mutation M817: the sector median counts content still under embargo
+Re-applies: Phase F (T8) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_lead_time.py::test_content_still_under_embargo_is_not_in_the_sector_median
+
+diff --git a/packages/aivs-server/src/aivs_server/services/lead_time.py b/packages/aivs-server/src/aivs_server/services/lead_time.py
+--- a/packages/aivs-server/src/aivs_server/services/lead_time.py
++++ b/packages/aivs-server/src/aivs_server/services/lead_time.py
+@@ -321,7 +321,6 @@
+             Submission.state.in_(tuple(VISIBLE_SUBMISSION_STATES)),
+             # A sandbox's content is an exercise, not the ISAC's timing.
+             Circle.is_sandbox.is_(False),
+-            Distribution.date_added <= now,
+         )
+     )
+ 

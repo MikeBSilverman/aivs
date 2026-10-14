@@ -1,0 +1,17 @@
+Mutation M882: a digest line about a pinned record does not say so
+Re-applies: Phase H, T10c (sector events) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_sector_events.py::test_a_digest_line_about_a_pinned_record_says_so
+
+diff --git a/packages/aivs-server/src/aivs_server/notify/digest.py b/packages/aivs-server/src/aivs_server/notify/digest.py
+--- a/packages/aivs-server/src/aivs_server/notify/digest.py
++++ b/packages/aivs-server/src/aivs_server/notify/digest.py
+@@ -131,7 +131,7 @@
+         f"an item about {', '.join(item.products)}" if item.products else "an item"
+     )
+     updated = f" (updated {item.updates} times)" if item.updates > 1 else ""
+-    pinned = "SECTOR EVENT: " if item.sector_event else ""
++    pinned = ""
+     return (
+         f"- [{TLP_NAMES[item.marking]}] {pinned}{about}{updated}: "
+         f"{_link(base_url, item.collection_id)}"

@@ -273,6 +273,23 @@ class RevealRequest(_In):
     reason: Annotated[str, Field(min_length=10, max_length=1000)]
 
 
+class RevokeRequest(_In):
+    """Why content published without review is being revoked."""
+
+    #: Recorded in the audit log, where a member asking why its post went is
+    #: answered.
+    reason: Annotated[str, Field(min_length=10, max_length=1000)]
+
+
+class RevokeOut(_Out):
+    """What a revocation published."""
+
+    submission_id: uuid.UUID
+    revoked_ids: list[str]
+    circle_count: int
+    date_added: dt.datetime
+
+
 class RevealOut(_Out):
     """The submitter of an anonymous submission, for the editor who asked."""
 
@@ -383,6 +400,9 @@ class CircleCreate(_In):
     name: DisplayName
     description: Annotated[str, Field(max_length=2000)] | None = None
     minimum_tlp: TLP = TLP.AMBER
+    #: A sandbox circle, for TIP verification and exercises; its content counts
+    #: in no figure the ISAC reports.
+    is_sandbox: bool = False
     #: Organisation types whose active members join automatically. Empty means
     #: membership is entirely manual. Members added by the rule receive content
     #: shared from the moment they join, never the circle's back catalogue.
@@ -408,6 +428,7 @@ class CircleOut(_Out):
     description: str | None
     minimum_tlp: TLP
     is_active: bool
+    is_sandbox: bool = False
     auto_member_org_types: list[str] = []
 
 
@@ -422,7 +443,9 @@ class CircleMemberAdd(_In):
 
     org_ids: Annotated[list[uuid.UUID], Field(max_length=500)] = []
     org_slugs: Annotated[list[Slug], Field(max_length=500)] = []
-    role: CircleRole = CircleRole.MEMBER
+    #: ``None`` gives each organisation its type's default: a sector member
+    #: contributes, a vendor or government body reads (``default_circle_role``).
+    role: CircleRole | None = None
     #: Backdate the membership start. For restoration only -- an organisation
     #: re-added after an administrative mistake, or moved during a certificate
     #: rotation, keeping the history it legitimately had. It grants access to

@@ -1,0 +1,17 @@
+Mutation M853: digests go out while distribution is paused
+Re-applies: Phase H, T10a (cadence and digest) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_digest.py::test_nothing_is_sent_while_paused_and_the_notices_wait
+
+diff --git a/packages/aivs-server/src/aivs_server/notify/digest.py b/packages/aivs-server/src/aivs_server/notify/digest.py
+--- a/packages/aivs-server/src/aivs_server/notify/digest.py
++++ b/packages/aivs-server/src/aivs_server/notify/digest.py
+@@ -190,8 +190,6 @@
+     Commits once. While distribution is paused nothing is sent and nothing is
+     dropped: the notices wait, as the content does.
+     """
+-    if await publication_paused(session):
+-        return 0
+     org_ids = (await session.scalars(select(PendingNotice.org_id).distinct())).all()
+     sent = 0
+     for org_id in org_ids:

@@ -234,6 +234,8 @@ _SSVC_AUTOMATABLE: Final[tuple[str, ...]] = ("yes", "no")
 _SSVC_TECHNICAL_IMPACT: Final[tuple[str, ...]] = ("partial", "total")
 _SSVC_DECISION: Final[tuple[str, ...]] = ("Track", "Track*", "Attend", "Act")
 _KEV_RANSOMWARE_USE: Final[tuple[str, ...]] = ("Known", "Unknown")
+#: Ours: the ISAC's position relative to the public record (Appendix D).
+_ISAC_ASSESSMENT: Final[tuple[str, ...]] = ("confirms", "adds", "contradicts", "no_position")
 _REMEDIATION_CATEGORY: Final[tuple[str, ...]] = (
     "vendor_fix",
     "mitigation",
@@ -303,17 +305,21 @@ _ACTION_TYPE: Final[tuple[str, ...]] = (
         ("epss_score", FloatProperty(min=0, max=1)),
         ("epss_percentile", FloatProperty(min=0, max=1)),
         ("epss_date", StringProperty()),
+        ("nvd_published", StringProperty()),
         ("kev_listed", BooleanProperty()),
         ("kev_date_added", StringProperty()),
         ("kev_due_date", StringProperty()),
         ("kev_ransomware_use", EnumProperty(allowed=list(_KEV_RANSOMWARE_USE))),
         ("novel_attack_vector", BooleanProperty()),
+        ("isac_assessment", EnumProperty(allowed=list(_ISAC_ASSESSMENT))),
+        ("isac_assessment_delta", ListProperty(DictionaryProperty(spec_version="2.1"))),
         # course-of-action
         ("category", EnumProperty(allowed=list(_REMEDIATION_CATEGORY))),
         ("restart_required", EnumProperty(allowed=list(_RESTART_REQUIRED))),
         ("action_type", EnumProperty(allowed=list(_ACTION_TYPE))),
         ("residual_risk", StringProperty()),
         ("validation_check", DictionaryProperty(spec_version="2.1")),
+        ("review_by", StringProperty()),
         # indicator
         ("telemetry_sources", ListProperty(StringProperty)),
         ("false_positive_notes", StringProperty()),

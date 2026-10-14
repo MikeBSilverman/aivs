@@ -1,0 +1,17 @@
+Mutation M884: a reading depth is stored for an organisation offboarded since the request authenticated
+Re-applies: T10 rebased onto c2b17ba (org_still_active, offboarding) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_member_settings.py::test_a_reading_depth_is_stored_only_for_a_member[True]
+
+diff --git a/packages/aivs-server/src/aivs_server/services/member_settings.py b/packages/aivs-server/src/aivs_server/services/member_settings.py
+--- a/packages/aivs-server/src/aivs_server/services/member_settings.py
++++ b/packages/aivs-server/src/aivs_server/services/member_settings.py
+@@ -48,7 +48,7 @@
+     session: AsyncSession, ctx: AuthContext, depth: ReadingDepth | None
+ ) -> bool:
+     """Store the signed-in person's reading depth; ``False`` if their organisation has gone."""
+-    if ctx.operator_id is None or not await org_still_active(session, ctx.org_id):
++    if ctx.operator_id is None:
+         return False
+     operator = await session.get(Operator, ctx.operator_id)
+     if operator is None:

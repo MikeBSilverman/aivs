@@ -1,0 +1,17 @@
+Mutation M820: the stop button also stops the retraction that prompted it
+Re-applies: Phase E slice-4 follow-ups (T8 A1, A2) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_revocation.py::test_an_editor_can_revoke_while_paused_and_members_see_the_revocation_on_resume
+
+diff --git a/packages/aivs-server/src/aivs_server/services/revocation.py b/packages/aivs-server/src/aivs_server/services/revocation.py
+--- a/packages/aivs-server/src/aivs_server/services/revocation.py
++++ b/packages/aivs-server/src/aivs_server/services/revocation.py
+@@ -137,7 +137,7 @@
+         )
+         raise SubmissionError(msg)
+     _refuse_unrevocable(submission)
+-    locked_at = await hold_publication_lock(session, refuse_while_paused=False)
++    locked_at = await hold_publication_lock(session, refuse_while_paused=True)
+     now = now or locked_at
+     stamp = earliest_publication_instant(now)
+ 

@@ -70,10 +70,12 @@
     </label>
     <label>Role
       <select name="role">
+        <option value="" selected>by organisation type</option>
         {% for value in roles %}<option value="{{ value }}">{{ value }}</option>{% endfor %}
       </select>
       <span class="muted">
-        Members read; contributors also submit. <code>circle_admin</code> is
+        Members read; contributors also submit. By type, banks and other sector
+        members contribute and vendors and government bodies read. <code>circle_admin</code> is
         historical and confers what contributor does &mdash; admitting an
         organisation to a circle is yours alone.
       </span>

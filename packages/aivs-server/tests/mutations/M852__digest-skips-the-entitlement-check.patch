@@ -1,0 +1,17 @@
+Mutation M852: a digest is sent to a member that left after the notice was held
+Re-applies: Phase H, T10a (cadence and digest) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_digest.py::test_a_member_that_left_before_the_digest_is_not_told
+
+diff --git a/packages/aivs-server/src/aivs_server/notify/digest.py b/packages/aivs-server/src/aivs_server/notify/digest.py
+--- a/packages/aivs-server/src/aivs_server/notify/digest.py
++++ b/packages/aivs-server/src/aivs_server/notify/digest.py
+@@ -238,7 +238,7 @@
+         return False
+     # Inactive, or due: either way these notices are spent now. An organisation
+     # that cannot read is not owed a later digest of what it could not read.
+-    entitled = await _still_entitled(session, org, notices)
++    entitled = list(notices)
+     await session.execute(
+         delete(PendingNotice).where(PendingNotice.id.in_([n.id for n in notices]))
+     )

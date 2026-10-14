@@ -1,0 +1,17 @@
+Mutation M827: the KEV script writes to the stream that was stdout when it was imported
+Re-applies: Phase E slice-4 follow-ups (T8 A3, A4) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_enrich_kev.py::test_run_reports_how_many_records_it_skipped_on_the_1_0_extension
+
+diff --git a/scripts/enrich-kev.py b/scripts/enrich-kev.py
+--- a/scripts/enrich-kev.py
++++ b/scripts/enrich-kev.py
+@@ -144,7 +144,7 @@
+     return str(created["id"])
+ 
+ 
+-def _say(line: str, stream: TextIO | None = None) -> None:
++def _say(line: str, stream: TextIO | None = sys.__stdout__) -> None:
+     # Looked up at the call, not bound as a default: a default is evaluated once,
+     # at import, and output redirected after that went to the old stream.
+     (stream or sys.stdout).write(line + "\n")

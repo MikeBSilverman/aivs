@@ -1,0 +1,18 @@
+Mutation M802: a pack cell a spreadsheet would run is written as it came
+Re-applies: Phase F (T8) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_vulnerability_exports.py::test_a_cell_a_spreadsheet_would_run_is_written_as_text
+Expect red: packages/aivs-server/tests/unit/test_vulnerability_exports.py::test_a_formula_in_an_indicator_name_reaches_the_csv_inert
+
+diff --git a/packages/aivs-server/src/aivs_server/services/ioc_pack.py b/packages/aivs-server/src/aivs_server/services/ioc_pack.py
+--- a/packages/aivs-server/src/aivs_server/services/ioc_pack.py
++++ b/packages/aivs-server/src/aivs_server/services/ioc_pack.py
+@@ -143,7 +143,7 @@
+ 
+ def spreadsheet_safe(value: str) -> str:
+     """``value``, made inert if a spreadsheet would read it as a formula."""
+-    return f"'{value}" if value.startswith(_FORMULA_PREFIXES) else value
++    return value
+ 
+ 
+ def _is_packable(indicator: Mapping[str, Any], now: dt.datetime) -> bool:

@@ -494,3 +494,39 @@ button.linklike {
 td form {
   display: inline;
 }
+
+/* Guided depth (templates/_guided.html). */
+.guided-title { font-size: 1.15rem; font-weight: 600; }
+.guided-alert { color: var(--danger); }
+.guided-kind {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.guided-new { background: #eaf1f8; color: var(--brand-deep); margin-left: 0.4rem; }
+.guided-steps li { margin-bottom: 0.9rem; }
+.guided-provenance { font-size: 0.85rem; }
+
+/*
+ * Print: the export a reviewer files with a change ticket, via the browser's
+ * own "save as PDF" -- no server-side renderer, no dependency.
+ *
+ * Navigation, forms and buttons go; the content, its TLP marking and the
+ * footer's handling note stay. Browsers drop background colours when printing
+ * unless told otherwise, and a TLP badge is white text on black: without
+ * print-color-adjust it would print as an empty box, and a printed TLP:RED
+ * page without its marking is the page that gets forwarded.
+ */
+@media print {
+  .masthead, nav, form, button, .button, .no-print { display: none !important; }
+  body { background: #ffffff; color: #000000; }
+  main { max-width: none; padding: 0; }
+  .card { border: 1px solid #999999; box-shadow: none; break-inside: avoid; }
+  a { color: inherit; text-decoration: none; }
+  .tlp, .badge.tlp {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  footer { display: block; border-top: 1px solid #999999; }
+}

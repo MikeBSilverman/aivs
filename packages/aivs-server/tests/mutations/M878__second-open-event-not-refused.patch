@@ -1,0 +1,17 @@
+Mutation M878: a second open event on one vulnerability is not refused before the database
+Re-applies: Phase H, T10c (sector events) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_sector_events.py::test_one_open_event_per_vulnerability_and_a_closed_one_frees_it
+
+diff --git a/packages/aivs-server/src/aivs_server/services/sector_events.py b/packages/aivs-server/src/aivs_server/services/sector_events.py
+--- a/packages/aivs-server/src/aivs_server/services/sector_events.py
++++ b/packages/aivs-server/src/aivs_server/services/sector_events.py
+@@ -85,7 +85,7 @@
+     if not await _is_distributed_isac_record(session, vulnerability_stix_id):
+         msg = "only a distributed ISAC vulnerability record can be pinned as a sector event"
+         raise SectorEventError(msg)
+-    if await _open_event(session, vulnerability_stix_id) is not None:
++    if False:
+         msg = "that vulnerability is already pinned; close the open event first"
+         raise SectorEventError(msg)
+     event = SectorEvent(

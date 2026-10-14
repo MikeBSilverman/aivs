@@ -1,0 +1,17 @@
+Mutation M866: a collection title is written into a snippet as given
+Re-applies: Phase H, T10b (connection health, sandbox, enrolment) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_connection_health.py::test_a_collection_title_cannot_break_out_of_its_comment
+
+diff --git a/packages/aivs-server/src/aivs_server/services/tip_config.py b/packages/aivs-server/src/aivs_server/services/tip_config.py
+--- a/packages/aivs-server/src/aivs_server/services/tip_config.py
++++ b/packages/aivs-server/src/aivs_server/services/tip_config.py
+@@ -98,7 +98,7 @@
+ 
+ def _titles(collections: Sequence[CollectionRef]) -> str:
+     """The readable collections as comment lines; a title cannot end the comment."""
+-    lines = "".join(f"#   {c.collection_id}  {' '.join(c.title.split())}\n" for c in collections)
++    lines = "".join(f"#   {c.collection_id}  {c.title}\n" for c in collections)
+     return "# Collections you can read:\n" + (lines or "#   (none)\n")
+ 
+ 

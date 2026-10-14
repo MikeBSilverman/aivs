@@ -2,6 +2,12 @@
 {% block title %}Dashboard &middot; {{ instance_name }}{% endblock %}
 
 {% block content %}
+{% for event in pinned %}
+  <div class="notice notice-error" data-sector-event="{{ event.event_id }}">
+    <strong>Sector event:</strong> {{ event.title }}
+    <span class="muted">&middot; pinned {{ event.opened_at.strftime("%Y-%m-%d %H:%M") }} &middot; latest version {{ event.updated }}</span>
+  </div>
+{% endfor %}
 <div class="page-head">
   <h1>Dashboard</h1>
   <p>{{ org_name }}</p>
@@ -87,5 +93,19 @@
       Nothing has been distributed to your circles yet.
     </div>
   {% endif %}
+</div>
+<div class="card">
+  <h2>Reading depth</h2>
+  <p class="muted">How vulnerability pages open when a link does not say. Guided explains each one in plain steps; standard is the full record; technical adds the raw data.</p>
+  <form method="post" action="/portal/preferences/depth" class="actions">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <select name="depth" aria-label="Reading depth">
+      <option value="" {% if not default_depth %}selected{% endif %}>No preference (standard)</option>
+      {% for depth in depths %}
+        <option value="{{ depth.value }}" {% if default_depth == depth %}selected{% endif %}>{{ depth.value | capitalize }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit" class="button">Save</button>
+  </form>
 </div>
 {% endblock %}

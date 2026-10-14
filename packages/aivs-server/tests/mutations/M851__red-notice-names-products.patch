@@ -1,0 +1,17 @@
+Mutation M851: a notice about RED content names its products
+Re-applies: Phase H, T10a (cadence and digest) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_digest.py::test_a_red_notice_names_no_products
+
+diff --git a/packages/aivs-server/src/aivs_server/notify/events.py b/packages/aivs-server/src/aivs_server/notify/events.py
+--- a/packages/aivs-server/src/aivs_server/notify/events.py
++++ b/packages/aivs-server/src/aivs_server/notify/events.py
+@@ -194,7 +194,7 @@
+     ).all()
+     subject = str(vulnerabilities[0]["id"]) if vulnerabilities else f"submission:{submission.id}"
+     products: list[str] = []
+-    if submission.tlp is not TLP.RED:
++    if True:
+         for raw in vulnerabilities:
+             products.extend(name for name in affected_product_names(raw) if name not in products)
+     pinned = await subjects_in_open_events(session, [subject])

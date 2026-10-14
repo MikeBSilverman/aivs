@@ -1,0 +1,17 @@
+Mutation M819: reviewed content is revoked like content published without review
+Re-applies: Phase E slice-4 follow-ups (T8 A1, A2) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_revocation.py::test_reviewed_content_is_not_revoked_this_way
+
+diff --git a/packages/aivs-server/src/aivs_server/services/revocation.py b/packages/aivs-server/src/aivs_server/services/revocation.py
+--- a/packages/aivs-server/src/aivs_server/services/revocation.py
++++ b/packages/aivs-server/src/aivs_server/services/revocation.py
+@@ -67,7 +67,7 @@
+ 
+ 
+ def _refuse_unrevocable(submission: Submission) -> None:
+-    if submission.lane not in REVOCABLE_LANES:
++    if False:
+         msg = (
+             "only content published without review is revoked this way; reviewed "
+             "content is retracted by a new version, filed and reviewed"

@@ -1,0 +1,18 @@
+Mutation M863: any signed-in person sets the organisation's cadence and mailbox
+Re-applies: Phase H, T10a (cadence and digest) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/authz_matrix/test_principal_matrix.py::test_each_principal_gets_exactly_its_row[member_analyst]
+Expect red: packages/aivs-server/tests/authz_matrix/test_principal_matrix.py::test_each_principal_gets_exactly_its_row[admin_certificate]
+
+diff --git a/packages/aivs-server/src/aivs_server/api/notification_settings.py b/packages/aivs-server/src/aivs_server/api/notification_settings.py
+--- a/packages/aivs-server/src/aivs_server/api/notification_settings.py
++++ b/packages/aivs-server/src/aivs_server/api/notification_settings.py
+@@ -61,7 +61,7 @@
+     A mailbox needs a digest cadence: email is a digest channel, and one email
+     per submission is the flood the cadence exists to stop.
+     """
+-    require(can_manage_own_webhooks(ctx), "notification_settings")
++    require(True, "notification_settings")
+     if payload.digest_email is not None:
+         if _MAILBOX.match(payload.digest_email) is None:
+             raise HTTPException(

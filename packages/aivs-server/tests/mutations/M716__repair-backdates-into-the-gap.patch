@@ -8,7 +8,7 @@ Expect red: packages/aivs-server/tests/unit/test_quarantine.py::test_a_repair_ca
 diff --git a/packages/aivs-server/src/aivs_server/services/circles.py b/packages/aivs-server/src/aivs_server/services/circles.py
 --- a/packages/aivs-server/src/aivs_server/services/circles.py
 +++ b/packages/aivs-server/src/aivs_server/services/circles.py
-@@ -315,8 +315,6 @@ async def add_circle_members(
+@@ -321,8 +321,6 @@
      # offboarded firm with an open interval nothing ever closes.
      _refuse_unsafe_additions(await _locked_for_share(session, organisations), joined_at, now)
      existing = await _open_memberships(session, circle.id)
@@ -16,4 +16,4 @@ diff --git a/packages/aivs-server/src/aivs_server/services/circles.py b/packages
 -        await _refuse_starts_in_a_gap(session, circle.id, existing, organisations, joined_at, now)
  
      added: list[uuid.UUID] = []
-     repaired: list[uuid.UUID] = []
+     roles: dict[str, str] = {}

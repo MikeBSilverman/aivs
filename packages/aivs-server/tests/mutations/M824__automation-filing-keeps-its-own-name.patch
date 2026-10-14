@@ -1,0 +1,17 @@
+Mutation M824: a KEV version the ISAC's automation files is distributed under the automation's identity, not the ISAC's
+Re-applies: Phase E slice-4 follow-ups (T8 A3, A4) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_enrich_kev.py::test_the_kev_version_is_distributed_under_the_isacs_name_not_the_machines
+
+diff --git a/packages/aivs-server/src/aivs_server/services/distribution.py b/packages/aivs-server/src/aivs_server/services/distribution.py
+--- a/packages/aivs-server/src/aivs_server/services/distribution.py
++++ b/packages/aivs-server/src/aivs_server/services/distribution.py
+@@ -142,7 +142,7 @@
+     submitter_type = await session.scalar(
+         select(Organization.org_type).where(Organization.id == submission.submitter_org_id)
+     )
+-    if not is_isac_owner(submitter_type):
++    if True:
+         return await _submitter_identity(session, submission)
+     identity = await _isac_identity(session)
+     if identity is None:

@@ -168,6 +168,21 @@
     <div class="empty">None.</div>
   {% endif %}
 
+  <h3>Connections with content waiting more than 3 days</h3>
+  <p class="muted">Content made visible to the member has not been collected from this collection since. A member that has nothing new to collect is not listed: silence is not a fault.</p>
+  {% if status.stale_connections %}
+    <ul>
+      {% for stale in status.stale_connections %}
+        <li data-stale="{{ stale.org }}"><span class="mono">{{ stale.org }}</span>
+            &mdash; {{ stale.collection }}: waiting since
+            <span class="mono">{{ stale.waiting_since }}</span>, last collected
+            <span class="mono">{{ stale.last_collected or "never" }}</span></li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <div class="empty">None.</div>
+  {% endif %}
+
   <h3>Failing webhook endpoints</h3>
   {% if status.failing_webhooks %}
     <ul>

@@ -308,6 +308,36 @@ class Settings(BaseSettings):
     #: whole point of pushing is that a member hears sooner than their next poll.
     webhook_dispatch_interval_seconds: int = Field(default=10, ge=1, le=600)
 
+    # -- Government recipients ---------------------------------------------
+    #: Set only once the membership agreement answers sharing-agreement §10 for
+    #: government recipients: a receipt proves an agency retrieved X at time T,
+    #: which is a discoverable record, and every member's counsel will ask about
+    #: it. Until then no ``government`` organisation can be enrolled.
+    government_receipts_policy_agreed: bool = False
+
+    # -- Digests (notify.digest) --------------------------------------------
+    #: How often held notices are checked for a digest that is due.
+    digest_interval_seconds: int = Field(default=60, ge=10, le=3600)
+    #: The hour, in UTC, at which a daily digest is sent.
+    digest_daily_hour_utc: int = Field(default=7, ge=0, le=23)
+
+    # -- Digest email (SMTP, a named subprocessor) ------------------------------
+    #: Unset, no email is sent: an organisation that names a digest mailbox gets
+    #: its digest by webhook only, and the status page says why. The relay is a
+    #: subprocessor the ISAC names to its members; it sees the contentless
+    #: digest and nothing else. STARTTLS is always required.
+    smtp_host: str | None = None
+    smtp_port: int = Field(default=587, ge=1, le=65535)
+    smtp_username: str | None = None
+    #: Outside dev, read from ``smtp_password_file``: a relay credential in the
+    #: environment is shown by ``docker inspect``, as the KEK would be.
+    smtp_password: SecretStr | None = None
+    smtp_password_file: Path | None = None
+    smtp_from: str | None = None
+    smtp_timeout_seconds: float = Field(default=10.0, gt=0, le=60)
+    email_dispatch_interval_seconds: int = Field(default=60, ge=10, le=3600)
+    email_max_attempts: int = Field(default=5, ge=1, le=20)
+
     # -- Embargo sweeper ----------------------------------------------------
     embargo_sweep_interval_seconds: int = Field(default=30, ge=5, le=3600)
     #: How often the platform's own detection rules run (services.detections).
@@ -495,7 +525,7 @@ class Settings(BaseSettings):
         if not isinstance(data, dict):
             return data
         resolved = dict(data)
-        for field in ("secret_encryption_key", "secret_encryption_key_previous"):
+        for field in ("secret_encryption_key", "secret_encryption_key_previous", "smtp_password"):
             path = resolved.get(f"{field}_file")
             if not path:
                 # An empty value is how compose and Kubernetes spell "unset".
@@ -509,6 +539,16 @@ class Settings(BaseSettings):
                 raise ValueError(msg)
             resolved[field] = read_secret_file(Path(path))
         return resolved
+
+    @field_validator("smtp_host", "smtp_username", "smtp_from", "smtp_password_file", mode="before")
+    @classmethod
+    def _unset_smtp_is_empty(cls, value: Any) -> Any:
+        """Compose spells an unset optional variable as an empty string.
+
+        These four are optional, so mapping empty to ``None`` widens nothing:
+        an empty ``smtp_host`` must read as "no relay", not as a relay named "".
+        """
+        return None if value == "" else value
 
     @field_validator("issuing_ca_certificate_file")
     @classmethod
@@ -541,6 +581,7 @@ class Settings(BaseSettings):
             *self._key_and_identity_violations(),
             *self._secret_reuse_violations(),
             *self._sso_violations(),
+            *self._smtp_violations(),
         ]
         if violations:
             msg = (
@@ -586,6 +627,21 @@ class Settings(BaseSettings):
             # strict=False means a typo'd prefix length such as "10.0.0.1/0"
             # normalises to exactly that rather than erroring.
             return [*violations, "trusted_proxy_cidrs (must not contain a /0 network)"]
+        return violations
+
+    def _smtp_violations(self) -> list[str]:
+        """A relay named without what it needs to send, or with its password in the environment."""
+        violations = []
+        if self.smtp_password is not None and self.smtp_password_file is None:
+            violations.append(
+                "smtp_password (read it from smtp_password_file, not the environment)"
+            )
+        if self.smtp_host is None:
+            return violations
+        if not self.smtp_from:
+            violations.append("smtp_from (required when smtp_host is set)")
+        if self.smtp_username and self.smtp_password is None:
+            violations.append("smtp_password (required when smtp_username is set)")
         return violations
 
     def _output_violations(self) -> list[str]:

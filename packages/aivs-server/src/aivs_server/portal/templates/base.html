@@ -27,6 +27,7 @@
         <a href="/portal/" {% if active == 'dashboard' %}aria-current="page"{% endif %}>Dashboard</a>
         <a href="/portal/submissions" {% if active == 'submissions' %}aria-current="page"{% endif %}>Submissions</a>
         <a href="/portal/submit" {% if active == 'submit' %}aria-current="page"{% endif %}>New finding</a>
+        <a href="/portal/connection" {% if active == 'connection' %}aria-current="page"{% endif %}>Connection</a>
         {% if is_admin %}
           <a href="/portal/review" {% if active == 'review' %}aria-current="page"{% endif %}>Review queue</a>
           <a href="/portal/admin/orgs" {% if active == 'admin-orgs' %}aria-current="page"{% endif %}>Organisations</a>

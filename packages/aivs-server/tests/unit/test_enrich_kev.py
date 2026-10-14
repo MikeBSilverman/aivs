@@ -207,6 +207,42 @@ async def test_the_version_the_script_builds_is_validated_by_an_editor(
     assert submission.source is SubmissionSource.SYSTEM, "so the AI gate applied"
 
 
+@pytest.mark.db
+@pytest.mark.requirement("SF-48")
+async def test_the_kev_version_is_distributed_under_the_isacs_name_not_the_machines(
+    client, session, script, isac, isac_org, make_org, make_cert, make_circle
+):
+    """The ISAC is one owner for versioning, so it is one name on the result: a
+    member's TIP must see the ISAC's record updated by the ISAC, not re-attributed
+    to a machine identity it has never heard of."""
+    circle = await make_circle("kev-name")
+    record = isac_record(isac_org.stix_identity_id)
+    await seed(session, isac_org, record, circle=circle)
+    automation = await make_org("isac-automation", org_type=OrgType.AUTOMATION)
+    pem, _ = await make_cert(automation)
+    _org, editor = isac
+    version = script.enriched_version(record, script.kev_by_cve(KEV_CATALOGUE), now=NOW)
+    filed = await file(
+        client,
+        pem,
+        [version],
+        scope=version["extensions"][AIVS_INTEL_EXTENSION_ID]["discovery_scope"],
+        tlp=script.tlp_of(record).value,
+    )
+    submission_id = filed.json()["id"]
+    assert (await submit_and_validate(client, pem, submission_id, editor)).status_code == 200
+
+    distributed = await distribute(client, submission_id, editor, circle)
+
+    assert distributed.status_code == 200, distributed.text
+    stored = await session.scalar(
+        select(StixObject).where(StixObject.submission_id == uuid.UUID(submission_id))
+    )
+    await session.refresh(stored)
+    assert stored.raw["created_by_ref"] == isac_org.stix_identity_id
+    assert stored.raw["created_by_ref"] != automation.stix_identity_id
+
+
 # ---------------------------------------------------------------------------
 # What the script reads: the ISAC's own records, chosen by owner
 # ---------------------------------------------------------------------------
@@ -514,3 +550,50 @@ async def test_run_files_a_kev_version_of_the_isacs_record_and_of_nothing_else(
     assert [obj.stix_id for obj in filed] == [ours["id"]]
     assert filed[0].raw["extensions"][AIVS_INTEL_EXTENSION_ID]["kev_listed"] is True
     assert theirs not in {obj.stix_id for obj in filed}
+
+
+# ---------------------------------------------------------------------------
+# What the run says it did
+# ---------------------------------------------------------------------------
+def test_the_summary_counts_each_outcome_and_says_why_records_were_skipped(script):
+    lines = script.summary({script.FILED: 2, script.SKIPPED_1_0: 3, script.REFUSED: 0})
+    assert lines[0] == "5 records read"
+    assert "  2 filed" in lines
+    assert any(line.startswith("  3 skipped: still on extension 1.0") for line in lines)
+    assert not any("refused" in line for line in lines), "an outcome nobody had is not listed"
+
+
+@pytest.mark.db
+async def test_run_reports_how_many_records_it_skipped_on_the_1_0_extension(
+    client, session, script, isac_org, make_circle, automation_pem, monkeypatch, tmp_path, capsys
+):
+    circle = await make_circle("kev-1-0")
+    old = validated(isac_record(isac_org.stix_identity_id))
+    old["extensions"] = {
+        AIVS_EXTENSION_ID: old["extensions"].pop(AIVS_INTEL_EXTENSION_ID),
+        **old["extensions"],
+    }
+    await seed(session, isac_org, old, circle=circle)
+    current = validated(isac_record(isac_org.stix_identity_id))
+    await seed(session, isac_org, current, circle=circle)
+    transport = _ToTheApp(client, asyncio.get_running_loop(), proxy_headers(automation_pem))
+
+    @contextlib.contextmanager
+    def _client(_config: object) -> Iterator[httpx.Client]:
+        with httpx.Client(transport=transport, base_url="https://aivs.test") as http:
+            yield http
+
+    monkeypatch.setattr(script, "load_config", lambda **_kwargs: None)
+    monkeypatch.setattr(script, "build_http_client", _client)
+    kev_file = tmp_path / "kev.json"
+    kev_file.write_text(json.dumps(KEV_CATALOGUE), encoding="utf-8")
+    args = argparse.Namespace(
+        kev_file=str(kev_file), dry_run=True, url=None, cert=None, key=None, ca=None
+    )
+
+    assert await asyncio.to_thread(script.run, args) == 0
+
+    out = capsys.readouterr().out
+    assert "2 records read" in out
+    assert f"  1 {script.SKIPPED_1_0}" in out
+    assert f"  1 {script.WOULD_FILE}" in out

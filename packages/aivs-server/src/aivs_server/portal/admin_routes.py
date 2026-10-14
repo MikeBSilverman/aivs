@@ -73,6 +73,7 @@ from aivs_server.services.circles import (
     remove_circle_member,
     resolve_organisations,
 )
+from aivs_server.services.enrolment import enrolment_problem
 from aivs_server.services.instance_status import gather_status
 from aivs_server.services.org_status import (
     OrgStatusError,
@@ -178,6 +179,13 @@ async def enrol_org(
         enrolment = OrganizationCreate(
             slug=slug, name=name, org_type=org_type, contact_email=contact_email.strip() or None
         )
+        problem = enrolment_problem(
+            enrolment.org_type,
+            government_receipts_policy_agreed=settings.government_receipts_policy_agreed,
+        )
+        if problem is not None:
+            set_notice(response, settings, "error", f"Could not enrol {slug}: {problem}")
+            return response
         organization = Organization(
             slug=enrolment.slug,
             name=enrolment.name,
@@ -327,6 +335,7 @@ async def circles_screen(request: Request, settings: SettingsDep, session: Sessi
                     "name": circle.name,
                     "minimum_tlp": circle.minimum_tlp.value,
                     "is_active": circle.is_active,
+                    "is_sandbox": circle.is_sandbox,
                     "members": counts.get(circle.id, 0),
                     "rule": ", ".join(circle.auto_member_org_types),
                 }
@@ -349,6 +358,7 @@ async def create_circle_screen(
     name: Annotated[str, Form()],
     minimum_tlp: Annotated[str, Form()] = "amber",
     auto_member_org_types: Annotated[list[str], Form()] = [],  # noqa: B006 - FastAPI form list
+    is_sandbox: Annotated[str, Form()] = "",
 ) -> Response:
     """Create a circle, its collection, and populate any rule immediately."""
     ctx, csrf_hash = await current_session(request, settings, session)
@@ -365,6 +375,7 @@ async def create_circle_screen(
                 "slug": slug.strip(),
                 "name": name.strip(),
                 "minimum_tlp": minimum_tlp,
+                "is_sandbox": is_sandbox == "on",
                 "auto_member_org_types": list(auto_member_org_types),
             }
         )
@@ -378,6 +389,7 @@ async def create_circle_screen(
             slug=payload.slug,
             name=payload.name,
             minimum_tlp=payload.minimum_tlp,
+            is_sandbox=payload.is_sandbox,
             auto_member_org_types=[org_type.value for org_type in payload.auto_member_org_types],
         )
         session.add(circle)
@@ -401,6 +413,7 @@ async def create_circle_screen(
             resource_id=slug,
             details={
                 "minimum_tlp": minimum_tlp,
+                "is_sandbox": payload.is_sandbox,
                 "auto_member_org_types": list(auto_member_org_types),
                 "via": "portal",
             },
@@ -497,7 +510,8 @@ async def add_members_screen(
     session: SessionDep,
     csrf_token: Annotated[str, Form()],
     roster: Annotated[str, Form()],
-    role: Annotated[str, Form()] = "member",
+    #: Empty gives each organisation its type's default (``default_circle_role``).
+    role: Annotated[str, Form()] = "",
     joined_at: Annotated[str, Form()] = "",
 ) -> Response:
     """Add a pasted roster of organisations to a circle.
@@ -529,7 +543,7 @@ async def add_members_screen(
             ctx,
             circle=circle,
             organisations=organisations,
-            role=CircleRole(role),
+            role=CircleRole(role) if role else None,
             joined_at=backdate,
             now=await database_now(session),
         )

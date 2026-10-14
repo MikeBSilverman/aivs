@@ -1,0 +1,16 @@
+Mutation M875: a record not yet distributed can be pinned, announcing it
+Re-applies: Phase H, T10c (sector events) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_sector_events.py::test_only_the_isacs_distributed_record_can_be_pinned[held_back]
+
+diff --git a/packages/aivs-server/src/aivs_server/services/sector_events.py b/packages/aivs-server/src/aivs_server/services/sector_events.py
+--- a/packages/aivs-server/src/aivs_server/services/sector_events.py
++++ b/packages/aivs-server/src/aivs_server/services/sector_events.py
+@@ -229,7 +229,6 @@
+                 StixObject.stix_id == stix_id,
+                 StixObject.type == "vulnerability",
+                 Submission.id == StixObject.submission_id,
+-                Submission.state.in_(tuple(VISIBLE_SUBMISSION_STATES)),
+                 Submission.submitter_org_id.in_(isac_orgs),
+             )
+         )

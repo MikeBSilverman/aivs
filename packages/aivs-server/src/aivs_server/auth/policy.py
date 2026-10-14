@@ -65,6 +65,7 @@ __all__ = [
     "can_quarantine_org",
     "can_read_circle",
     "can_read_isac_records",
+    "can_read_own_lead_time",
     "can_reconnect_org",
     "can_register_certificate",
     "can_resume_distribution",
@@ -260,6 +261,17 @@ def can_set_priority(ctx: AuthContext) -> bool:
 def can_validate_in_bulk(ctx: AuthContext) -> bool:
     """Validate a review group in one action: an editor, as for a single validate."""
     return is_isac_editor(ctx)
+
+
+def can_read_own_lead_time(ctx: AuthContext, org_id: uuid.UUID) -> bool:
+    """A lead-time statement: the organisation it describes, and nobody else.
+
+    Not the ISAC either. The statement carries what the firm actioned, from its
+    own postures (SF-70), and the ISAC holding every firm's statement is the
+    ranking of who acts slowly that no member agreed to. The ISAC has the
+    sector median, which no member's behaviour enters.
+    """
+    return is_active(ctx) and ctx.org_id == org_id
 
 
 def can_change_embargo(ctx: AuthContext) -> bool:

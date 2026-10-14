@@ -68,6 +68,7 @@ __all__ = [
     "contribution_problem",
     "create_submission",
     "foreign_identity_ids",
+    "index_columns",
     "record_transition",
     "replace_submission_objects",
     "self_identifying_problem",
@@ -521,6 +522,15 @@ async def replace_submission_objects(
 
     session.add_all(rows)
     return len(rows)
+
+
+def index_columns(obj: dict[str, Any]) -> dict[str, Any]:
+    """The indexed columns ingest writes for ``obj``, for a writer outside ingest.
+
+    A version the server writes itself (a revocation) must be findable exactly
+    as a filed one is, so it goes through the same extraction.
+    """
+    return _extract_indexed_fields(obj)
 
 
 def source_for(ctx: AuthContext) -> SubmissionSource:

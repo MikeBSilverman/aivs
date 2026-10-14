@@ -40,9 +40,11 @@ from aivs_server.auth.context import AuthContext
 from aivs_server.auth.policy import can_offboard_org, can_set_legal_hold, require
 from aivs_server.db.models import (
     CircleMembership,
+    EmailDelivery,
     Operator,
     Organization,
     OrgPosture,
+    PendingNotice,
     PortalSession,
     TaxiiStatus,
     Webhook,
@@ -113,7 +115,7 @@ async def _close_memberships(
 
 async def _delete_operational(session: AsyncSession, organisation: Organization) -> str:
     """Delete the member's own operational data. Returns what happened to its postures."""
-    for table in (Webhook, PortalSession, TaxiiStatus):
+    for table in (Webhook, PortalSession, TaxiiStatus, PendingNotice, EmailDelivery):
         await session.execute(delete(table).where(table.org_id == organisation.id))
     if organisation.legal_hold_since is not None:
         return "retained under legal hold"
@@ -137,6 +139,7 @@ async def offboard_org(
 
     organisation.status = OrgStatus.OFFBOARDED
     organisation.contact_email = None
+    organisation.digest_email = None
     await session.flush()
     certificates = await revoke_credentials(session, organisation, now, reason="offboarded")
     operators = await _pseudonymise_operators(session, organisation.id)

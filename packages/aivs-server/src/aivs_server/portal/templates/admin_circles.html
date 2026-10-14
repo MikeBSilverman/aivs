@@ -21,7 +21,7 @@
             <tr>
               <td class="mono"><a href="/portal/admin/circles/{{ circle.id }}">{{ circle.slug }}</a></td>
               <td>{{ circle.name }}</td>
-              <td><span class="badge tlp tlp-{{ circle.minimum_tlp }}">{{ circle.minimum_tlp }}</span></td>
+              <td><span class="badge tlp tlp-{{ circle.minimum_tlp }}">{{ circle.minimum_tlp }}</span>{% if circle.is_sandbox %} <span class="badge">sandbox</span>{% endif %}</td>
               <td class="muted">{{ circle.members }}</td>
               <td class="muted">{% if circle.rule %}{{ circle.rule }}{% else %}&mdash; manual{% endif %}</td>
             </tr>
@@ -56,6 +56,10 @@
           <option value="{{ value }}" {% if value == 'amber' %}selected{% endif %}>{{ value }}</option>
         {% endfor %}
       </select>
+    </label>
+    <label class="inline">
+      <input type="checkbox" name="is_sandbox"> A sandbox, for TIP verification and exercises
+      <span class="muted">(its content counts in no figure the ISAC reports; cannot be changed later)</span>
     </label>
     <fieldset>
       <legend>Automatic membership <span class="muted">(optional)</span></legend>

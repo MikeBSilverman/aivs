@@ -7,11 +7,11 @@ Expect red: packages/aivs-server/tests/unit/test_telemetry.py::test_a_count_coun
 diff --git a/packages/aivs-server/src/aivs_server/services/telemetry.py b/packages/aivs-server/src/aivs_server/services/telemetry.py
 --- a/packages/aivs-server/src/aivs_server/services/telemetry.py
 +++ b/packages/aivs-server/src/aivs_server/services/telemetry.py
-@@ -182,7 +182,6 @@ def _reachable(submission: Submission) -> Select[tuple[uuid.UUID]]:
+@@ -182,7 +182,6 @@
          .join(TaxiiCollection, readable)
          .where(
              Distribution.submission_id == submission.id,
 -            Circle.is_active.is_(True),
-             _is_counted(CircleMembership.org_id, submission.submitter_org_id),
-         )
-     )
+             # A sandbox is for testing a member's connection; what reaches it
+             # is no reach, and counting it would let an exercise read as
+             # engagement.

@@ -1,0 +1,17 @@
+Mutation M881: call notes are filed with no summary
+Re-applies: Phase H, T10c (sector events) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_sector_events.py::test_call_notes_need_a_summary_and_a_bounded_list[no-summary]
+
+diff --git a/packages/aivs-server/src/aivs_server/services/sector_events.py b/packages/aivs-server/src/aivs_server/services/sector_events.py
+--- a/packages/aivs-server/src/aivs_server/services/sector_events.py
++++ b/packages/aivs-server/src/aivs_server/services/sector_events.py
+@@ -188,7 +188,7 @@
+     track each item on its own. Pure: the caller files the bundle as a draft.
+     """
+     items = [item.strip() for item in action_items if item.strip()]
+-    if not summary.strip():
++    if False:
+         msg = "the call notes need a summary"
+         raise SectorEventError(msg)
+     if len(items) > MAX_ACTION_ITEMS:

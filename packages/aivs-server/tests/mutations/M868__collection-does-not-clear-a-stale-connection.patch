@@ -1,0 +1,16 @@
+Mutation M868: collecting content does not take a connection off the stale list
+Re-applies: Phase H, T10b (connection health, sandbox, enrolment) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_connection_health.py::test_content_waiting_days_is_listed_and_collecting_it_clears_it
+
+diff --git a/packages/aivs-server/src/aivs_server/services/connection_health.py b/packages/aivs-server/src/aivs_server/services/connection_health.py
+--- a/packages/aivs-server/src/aivs_server/services/connection_health.py
++++ b/packages/aivs-server/src/aivs_server/services/connection_health.py
+@@ -284,7 +284,6 @@
+             Distribution.date_added <= now,
+             Submission.state.in_(tuple(VISIBLE_SUBMISSION_STATES)),
+             Submission.submitter_org_id != CircleMembership.org_id,
+-            last.is_(None) | (Distribution.date_added > last),
+         )
+         .correlate(CircleMembership)
+         .scalar_subquery()

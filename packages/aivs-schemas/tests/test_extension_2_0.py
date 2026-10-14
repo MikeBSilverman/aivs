@@ -367,6 +367,48 @@ def test_every_server_written_field_is_one_the_schema_defines():
 
 
 # ---------------------------------------------------------------------------
+# The ISAC's assessment relative to the public record (Appendix D: ours)
+# ---------------------------------------------------------------------------
+DELTA = [
+    {
+        "property": "cvss_v3_vector",
+        "public_value": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N",
+        "isac_value": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:N",
+        "public_source": "nvd",
+    }
+]
+
+
+@pytest.mark.requirement("NFR-I2")
+@pytest.mark.parametrize("assessment", ["adds", "contradicts"])
+def test_an_assessment_that_differs_from_the_public_record_says_where(assessment):
+    validate_stix_object(vulnerability(isac_assessment=assessment, isac_assessment_delta=DELTA))
+    refused(vulnerability(isac_assessment=assessment))
+
+
+@pytest.mark.requirement("NFR-I2")
+@pytest.mark.parametrize("assessment", ["confirms", "no_position"])
+def test_an_assessment_that_agrees_or_abstains_lists_no_difference(assessment):
+    validate_stix_object(vulnerability(isac_assessment=assessment))
+    refused(vulnerability(isac_assessment=assessment, isac_assessment_delta=DELTA))
+
+
+def test_an_assessment_outside_the_four_positions_is_refused():
+    refused(vulnerability(isac_assessment="disputes"))
+
+
+def test_a_difference_names_the_property_and_the_isacs_value():
+    refused(
+        vulnerability(isac_assessment="adds", isac_assessment_delta=[{"property": "ssvc_decision"}])
+    )
+
+
+def test_a_course_of_action_review_date_is_a_date():
+    validate_stix_object(course_of_action(review_by="2027-01-31"))
+    refused(course_of_action(review_by="next quarter"))
+
+
+# ---------------------------------------------------------------------------
 # The two descriptions of each extension agree (NFR-M2)
 # ---------------------------------------------------------------------------
 def _type_definitions() -> list[dict[str, Any]]:

@@ -1,0 +1,18 @@
+Mutation M854: an hourly digest goes out as soon as there is a notice
+Re-applies: Phase H, T10a (cadence and digest) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_digest.py::test_a_digest_waits_for_its_window_then_says_what_became_visible
+Expect red: packages/aivs-server/tests/unit/test_digest.py::test_a_window_closes_on_the_clock_not_on_the_first_notice
+
+diff --git a/packages/aivs-server/src/aivs_server/notify/digest.py b/packages/aivs-server/src/aivs_server/notify/digest.py
+--- a/packages/aivs-server/src/aivs_server/notify/digest.py
++++ b/packages/aivs-server/src/aivs_server/notify/digest.py
+@@ -102,7 +102,7 @@
+     if cadence is NotificationCadence.IMMEDIATE:
+         return True
+     if cadence is NotificationCadence.HOURLY:
+-        return now >= oldest.replace(minute=0, second=0, microsecond=0) + _HOUR
++        return True
+     send_at = oldest.replace(hour=daily_hour, minute=0, second=0, microsecond=0)
+     if send_at <= oldest:
+         send_at += _DAY

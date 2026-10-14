@@ -1,0 +1,19 @@
+Mutation M821: with no role named, every organisation joins read-only
+Re-applies: Phase E slice-4 follow-ups (T8 A1, A2) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_circle_roles.py::test_sector_members_contribute_and_vendors_and_government_read
+Expect red: packages/aivs-server/tests/unit/test_circle_roles.py::test_a_roster_with_no_role_gives_each_organisation_its_types_default
+Expect red: packages/aivs-server/tests/unit/test_circle_roles.py::test_a_bank_added_with_no_role_named_takes_the_fast_lane
+
+diff --git a/packages/aivs-schemas/src/aivs_schemas/enums.py b/packages/aivs-schemas/src/aivs_schemas/enums.py
+--- a/packages/aivs-schemas/src/aivs_schemas/enums.py
++++ b/packages/aivs-schemas/src/aivs_schemas/enums.py
+@@ -423,8 +423,6 @@
+ 
+ def default_circle_role(org_type: OrgType) -> CircleRole:
+     """The role an organisation of ``org_type`` joins a circle with when none is named."""
+-    if org_type in CONTRIBUTING_BY_DEFAULT_ORG_TYPES:
+-        return CircleRole.CONTRIBUTOR
+     return CircleRole.MEMBER
+ 
+ 

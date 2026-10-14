@@ -1,0 +1,17 @@
+Mutation M865: a webhook is shown by its full URL
+Re-applies: Phase H, T10b (connection health, sandbox, enrolment) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_connection_health.py::test_a_webhook_is_shown_by_host_never_by_url
+
+diff --git a/packages/aivs-server/src/aivs_server/services/connection_health.py b/packages/aivs-server/src/aivs_server/services/connection_health.py
+--- a/packages/aivs-server/src/aivs_server/services/connection_health.py
++++ b/packages/aivs-server/src/aivs_server/services/connection_health.py
+@@ -223,7 +223,7 @@
+     ).all()
+     return tuple(
+         WebhookHealth(
+-            host=urlsplit(webhook.url).hostname or "",
++            host=webhook.url,
+             is_active=webhook.is_active,
+             consecutive_failures=webhook.consecutive_failures,
+             last_delivered_at=last,

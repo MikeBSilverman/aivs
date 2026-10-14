@@ -97,6 +97,10 @@ No ISAC role implies another.
 | `contributor` | Read, **and** contribute content into the circle. |
 | `circle_admin` | Historical. Confers exactly what `contributor` does. |
 
+With no role named, an organisation joins with its type's default
+(`default_circle_role`): sector members contribute, vendors, government bodies
+and the ISAC's own organisation read.
+
 `circle_admin` **no longer administers anything.** Admitting an organisation to a
 circle is the hosting ISAC's alone: the circle carries other members' embargoed
 intelligence, and membership is backed by an agreement the ISAC holds. A
@@ -411,7 +415,9 @@ For every other caller, by route class (✓ allowed). "member" filed the
 submissions the routes address and contributes to the circle; "peer" is another
 member of the same circle, which it only reads; ISAC staff are not members of
 that circle. A "content response" is a one-click or a posture on the circle's
-content; an "own record" is the member's posture or TAXII status. The
+content; an "own record" is the member's posture, TAXII status or lead-time
+statement; a "posture summary" is a sector figure withheld below k (posture
+counts, the lead-time median). The
 "automation cert" is the ISAC's one automation organisation, presenting its
 certificate; "isac records" is its read of the ISAC's own canonical records,
 which it versions (KEV status) and cannot reach through a circle.
@@ -423,6 +429,7 @@ which it versions (KEV status) and cannot reach through a circle.
 | own settings | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | health | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | circle content | ✓ | ✓ | ✓ | ✓ | 404 | 404 | 404 | 404 | 404 | 404 |
+| vulnerability export | ✓ | ✓ | ✓ | ✓ | 404 | 404 | ✓ | ✓ | 404 | 404 |
 | submission record | ✓ | ✓ | ✓ | 404 | 404 | 404 | ✓ | ✓ | 404 | 404 |
 | readiness | ✓ | ✓ | ✓ | ✓ | 404 | 404 | ✓ | ✓ | 404 | 404 |
 | vulnerability page | sign in | ✓ | ✓ | sign in | sign in | sign in | ✓ | ✓ | 404 | 404 |
@@ -441,6 +448,7 @@ which it versions (KEV status) and cannot reach through a circle.
 | reconnect | 403 | 403 | 403 | 403 | 403 | 403 | 403 | ✓ | ✓ | 403 |
 | certificate revoke | 404 | 404 | 404 | 404 | 404 | 404 | 404 | 404 | ✓ | 404 |
 | circle create | 403 | 403 | 403 | 403 | 403 | 403 | 403 | ✓ | 403 | 403 |
+| sector event | 403 | 403 | 403 | 403 | 403 | 403 | 403 | ✓ | 403 | 403 |
 | circle screens (portal) | sign in | 403 | 403 | sign in | sign in | sign in | 403 | ✓ | ✓ | 403 |
 | pause | 403 | 403 | 403 | 403 | 403 | 403 | 403 | ✓ | 403 | ✓ |
 | resume | 403 | 403 | 403 | 403 | 403 | 403 | 403 | ✓ | 403 | 403 |

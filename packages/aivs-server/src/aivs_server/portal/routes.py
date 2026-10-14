@@ -25,7 +25,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import ValidationError
 from sqlalchemy import func, select
 
-from aivs_schemas.enums import TLP, CertStatus, OrgStatus, SubmissionState
+from aivs_schemas.enums import TLP, CertStatus, OrgStatus, ReadingDepth, SubmissionState
 from aivs_schemas.models import SubmissionCreate
 from aivs_server.audit.log import AuditAction, account_reference, record_independently
 from aivs_server.auth.context import AuthContext
@@ -43,6 +43,7 @@ from aivs_server.auth.policy import (
     can_view_submission,
     can_view_submission_receipts,
     distribution_visibility_clause,
+    is_isac_editor,
     readable_circle_grants,
     require,
     tlp_ceiling,
@@ -62,6 +63,7 @@ from aivs_server.db.models import (
     Circle,
     ClientCertificate,
     Distribution,
+    Operator,
     Organization,
     StixObject,
     Submission,
@@ -90,6 +92,8 @@ from aivs_server.services.provenance import consequential_changes
 from aivs_server.services.proxy_filing import awaiting_confirmation, confirm_proxy_filing
 from aivs_server.services.publication import PublicationPausedError
 from aivs_server.services.review_queue import ReviewGroup, queued_for_review
+from aivs_server.services.revocation import revocable, revoke_contribution
+from aivs_server.services.sector_events import pinned_events
 from aivs_server.services.submissions import (
     STORAGE_ERRORS,
     SubmissionError,
@@ -384,11 +388,17 @@ async def dashboard(request: Request, settings: SettingsDep, session: SessionDep
         ) or 0
 
     organization = await session.get(Organization, ctx.org_id)
+    operator = await session.get(Operator, ctx.operator_id) if ctx.operator_id else None
     context = base_context(request, settings, ctx, await operator_name(session, ctx), "dashboard")
     context.update(
         {
             "to_confirm": await _filed_for_you(session, ctx, now),
             "org_name": organization.name if organization else ctx.org_slug,
+            "default_depth": operator.default_depth if operator else None,
+            # Through the visibility gatherer: an event on a record this
+            # firm cannot see is absent, not refused.
+            "pinned": await pinned_events(session, ctx, now=now),
+            "depths": list(ReadingDepth),
             "stats": {
                 "available": available,
                 "ours": ours,
@@ -678,7 +688,7 @@ async def _available_actions(
         (SubmissionState.WITHDRAWN, "withdraw", "Withdraw", False),
     ]
     actions = [
-        {"verb": verb, "label": label, "primary": primary, "acknowledge": []}
+        {"verb": verb, "label": label, "primary": primary, "acknowledge": [], "reason": False}
         for target, verb, label, primary in verbs
         if can_transition_submission(ctx, submission, target)
     ]
@@ -692,7 +702,18 @@ async def _available_actions(
                 "label": "Confirm we sent this",
                 "primary": True,
                 "acknowledge": [],
+                "reason": False,
             },
+        )
+    if is_isac_editor(ctx) and revocable(submission):
+        actions.append(
+            {
+                "verb": "revoke",
+                "label": "Revoke",
+                "primary": False,
+                "acknowledge": [],
+                "reason": True,
+            }
         )
     for action in actions:
         if action["verb"] == "validate":
@@ -799,7 +820,7 @@ async def perform_action(
         "validate": SubmissionState.VALIDATED,
         "withdraw": SubmissionState.WITHDRAWN,
     }
-    if verb not in {"distribute", "confirm", *targets}:
+    if verb not in {"distribute", "confirm", "revoke", *targets}:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Not found")
 
     if verb == "distribute":
@@ -822,47 +843,7 @@ async def perform_action(
         # circle", "the hold-until time could not be read") are ordinary operator
         # mistakes raised as SubmissionError, and outside the block they reached
         # the catch-all handler and became a 500.
-        if verb == "distribute":
-            circle_ids, release_at = _parse_distribute_form(await request.form())
-            result = await distribute_submission(
-                session, ctx, submission, circle_ids=circle_ids, release_at=release_at
-            )
-            await apply_transition(session, ctx, submission, SubmissionState.DISTRIBUTED)
-            # The same queue the API path writes, in the same transaction as the
-            # visibility rows. Omitted here originally, so a distribution made
-            # from this screen -- the one ISAC analysts actually work in --
-            # notified nobody, silently. The asymmetry was sharpest in the case
-            # that matters: an *embargoed* distribution was still announced,
-            # because the sweeper queues at release, so only immediate
-            # distributions went unannounced.
-            if not result.embargoed:
-                await queue_visibility_notifications(
-                    session,
-                    submission_id=submission.id,
-                    circle_ids=list(circle_ids),
-                    visible_at=result.date_added,
-                    now=result.date_added,
-                )
-        elif verb == "confirm":
-            await confirm_proxy_filing(session, ctx, submission, now=dt.datetime.now(dt.UTC))
-        elif verb == "submit":
-            await submit_submission(
-                session,
-                ctx,
-                submission,
-                reason=None,
-                hourly_limit=settings.contribution_hourly_limit,
-                now=await database_now(session),
-            )
-        elif verb == "validate":
-            acknowledged = frozenset(
-                str(value) for value in (await request.form()).getlist("acknowledge")
-            )
-            await apply_transition(
-                session, ctx, submission, targets[verb], acknowledged_changes=acknowledged
-            )
-        else:
-            await apply_transition(session, ctx, submission, targets[verb])
+        await _perform_verb(verb, targets, request, settings, session, ctx, submission)
         await session.commit()
     except (SubmissionError, DistributionError, PublicationPausedError, ValueError) as exc:
         await session.rollback()
@@ -877,6 +858,73 @@ async def perform_action(
         set_notice(response, settings, "error", str(exc))
 
     return response
+
+
+async def _perform_verb(
+    verb: str,
+    targets: dict[str, SubmissionState],
+    request: Request,
+    settings: Settings,
+    session: SessionDep,
+    ctx: AuthContext,
+    submission: Submission,
+) -> None:
+    """Run one workflow verb on a submission the caller holds under a row lock.
+
+    Raises the service's own error on refusal; the caller commits once, or
+    rolls back and tells the operator why.
+    """
+    now = await database_now(session)
+    if verb == "distribute":
+        await _distribute_from_portal(request, session, ctx, submission)
+    elif verb == "confirm":
+        await confirm_proxy_filing(session, ctx, submission, now=now)
+    elif verb == "revoke":
+        reason = str((await request.form()).get("reason", "")).strip()
+        await revoke_contribution(session, ctx, submission, reason=reason)
+    elif verb == "submit":
+        await submit_submission(
+            session,
+            ctx,
+            submission,
+            reason=None,
+            hourly_limit=settings.contribution_hourly_limit,
+            now=now,
+        )
+    elif verb == "validate":
+        acknowledged = frozenset(
+            str(value) for value in (await request.form()).getlist("acknowledge")
+        )
+        await apply_transition(
+            session, ctx, submission, targets[verb], acknowledged_changes=acknowledged
+        )
+    else:
+        await apply_transition(session, ctx, submission, targets[verb])
+
+
+async def _distribute_from_portal(
+    request: Request, session: SessionDep, ctx: AuthContext, submission: Submission
+) -> None:
+    circle_ids, release_at = _parse_distribute_form(await request.form())
+    result = await distribute_submission(
+        session, ctx, submission, circle_ids=circle_ids, release_at=release_at
+    )
+    await apply_transition(session, ctx, submission, SubmissionState.DISTRIBUTED)
+    # The same queue the API path writes, in the same transaction as the
+    # visibility rows. Omitted here originally, so a distribution made
+    # from this screen -- the one ISAC analysts actually work in --
+    # notified nobody, silently. The asymmetry was sharpest in the case
+    # that matters: an *embargoed* distribution was still announced,
+    # because the sweeper queues at release, so only immediate
+    # distributions went unannounced.
+    if not result.embargoed:
+        await queue_visibility_notifications(
+            session,
+            submission_id=submission.id,
+            circle_ids=list(circle_ids),
+            visible_at=result.date_added,
+            now=result.date_added,
+        )
 
 
 # ---------------------------------------------------------------------------

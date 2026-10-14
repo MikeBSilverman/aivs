@@ -1,0 +1,17 @@
+Mutation M805: a member's pack reads every circle's distributions, not its own
+Re-applies: Phase F (T8) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_vulnerability_exports.py::test_a_member_gets_the_current_indicators_it_can_see
+Expect red: packages/aivs-server/tests/unit/test_vulnerability_exports.py::test_an_invisible_vulnerability_a_missing_one_and_a_malformed_id_answer_alike
+
+diff --git a/packages/aivs-server/src/aivs_server/services/vulnerability_objects.py b/packages/aivs-server/src/aivs_server/services/vulnerability_objects.py
+--- a/packages/aivs-server/src/aivs_server/services/vulnerability_objects.py
++++ b/packages/aivs-server/src/aivs_server/services/vulnerability_objects.py
+@@ -165,7 +165,6 @@
+         select(StixObject, func.min(Distribution.date_added))
+         .join(Distribution, Distribution.stix_object_id == StixObject.id)
+         .join(Submission, Submission.id == Distribution.submission_id)
+-        .where(distribution_visibility_clause(ctx, now))
+         .group_by(StixObject.id)
+     )
+ 

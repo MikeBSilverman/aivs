@@ -1,0 +1,33 @@
+# =============================================================================
+# Digest email: add this file when the ISAC has named a mail relay to its
+# members (runbook section 9.5).
+#
+#   docker compose --env-file deploy/.env \
+#     -f docker-compose.yml -f docker-compose.digest-email.yml up -d
+#
+# Without it no email is sent: organisations that name a digest mailbox get
+# their digest by webhook only. The relay is a subprocessor and sees the
+# contentless digest and nothing else; the application always requires
+# STARTTLS with the relay's certificate verified.
+#
+#   AIVS_SMTP_HOST            the relay's hostname
+#   AIVS_SMTP_PORT            its submission port (587 unless told otherwise)
+#   AIVS_SMTP_FROM            the sender address digests come from
+#   AIVS_SMTP_USERNAME        the relay account
+#   AIVS_SMTP_PASSWORD_PATH   absolute path of a file holding its password
+#                             (mode 0600, owned by uid 10001)
+# =============================================================================
+
+services:
+  app:
+    environment:
+      AIVS_SMTP_HOST: ${AIVS_SMTP_HOST:?set AIVS_SMTP_HOST to the relay the ISAC named to its members}
+      AIVS_SMTP_PORT: ${AIVS_SMTP_PORT:-587}
+      AIVS_SMTP_FROM: ${AIVS_SMTP_FROM:?set AIVS_SMTP_FROM to the address digests are sent from}
+      AIVS_SMTP_USERNAME: ${AIVS_SMTP_USERNAME:?set AIVS_SMTP_USERNAME to the relay account}
+      AIVS_SMTP_PASSWORD_FILE: /run/aivs/smtp-password
+    volumes:
+      - type: bind
+        source: ${AIVS_SMTP_PASSWORD_PATH:?set AIVS_SMTP_PASSWORD_PATH to the ABSOLUTE path of the relay password file}
+        target: /run/aivs/smtp-password
+        read_only: true

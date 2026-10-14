@@ -1,0 +1,16 @@
+Mutation M856: digest email is sent without STARTTLS
+Re-applies: Phase H, T10a (cadence and digest) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_digest_email.py::test_a_digest_is_sent_only_after_verified_starttls
+
+diff --git a/packages/aivs-server/src/aivs_server/notify/email.py b/packages/aivs-server/src/aivs_server/notify/email.py
+--- a/packages/aivs-server/src/aivs_server/notify/email.py
++++ b/packages/aivs-server/src/aivs_server/notify/email.py
+@@ -58,7 +58,6 @@
+     with smtplib.SMTP(
+         settings.smtp_host, settings.smtp_port, timeout=settings.smtp_timeout_seconds
+     ) as relay:
+-        relay.starttls(context=context)
+         if settings.smtp_username and settings.smtp_password is not None:
+             relay.login(settings.smtp_username, settings.smtp_password.get_secret_value())
+         relay.send_message(message)

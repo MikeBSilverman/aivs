@@ -1,0 +1,17 @@
+Mutation M823: a role the operator names is replaced by the type's default
+Re-applies: Phase E slice-4 follow-ups (T8 A1, A2) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_circle_roles.py::test_a_role_the_operator_names_is_kept_whatever_the_type
+
+diff --git a/packages/aivs-server/src/aivs_server/services/circles.py b/packages/aivs-server/src/aivs_server/services/circles.py
+--- a/packages/aivs-server/src/aivs_server/services/circles.py
++++ b/packages/aivs-server/src/aivs_server/services/circles.py
+@@ -308,7 +308,7 @@
+     for org in organisations:
+         current = existing.get(org.id)
+         if current is None:
+-            joins_as = role if role is not None else default_circle_role(org.org_type)
++            joins_as = default_circle_role(org.org_type)
+             session.add(
+                 CircleMembership(
+                     circle_id=circle.id, org_id=org.id, role=joins_as, joined_at=joined_at or now

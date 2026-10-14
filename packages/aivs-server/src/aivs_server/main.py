@@ -33,10 +33,15 @@ from fastapi.staticfiles import StaticFiles
 from aivs_server.api import (
     acknowledgments,
     admin,
+    connection_health,
     contributions,
+    exports,
     isac_records,
+    lead_time,
     lint,
     meta,
+    notification_settings,
+    sector_events,
     submissions,
     telemetry,
     triage,
@@ -46,6 +51,7 @@ from aivs_server.audit.log import AuditAction, record_denial
 from aivs_server.auth.deps import request_source_ip
 from aivs_server.auth.policy import PolicyDeniedError
 from aivs_server.config import Settings, get_settings
+from aivs_server.db.clock import database_now
 from aivs_server.db.engine import dispose_engine, get_engine, session_scope
 from aivs_server.logging_config import configure_logging
 from aivs_server.middleware import (
@@ -54,9 +60,12 @@ from aivs_server.middleware import (
     SecurityHeadersMiddleware,
     security_headers_for,
 )
+from aivs_server.notify.digest import send_due_digests
 from aivs_server.notify.dispatcher import dispatch_pending
+from aivs_server.notify.email import dispatch_pending_email
 from aivs_server.observability import run_periodically
 from aivs_server.portal import admin_routes as portal_admin_routes
+from aivs_server.portal import reading_routes as portal_reading_routes
 from aivs_server.portal import routes as portal_routes
 from aivs_server.portal import sso_routes as portal_sso_routes
 from aivs_server.portal import vulnerability_routes as portal_vulnerability_routes
@@ -166,6 +175,16 @@ def background_components(settings: Settings) -> list[BackgroundComponent]:
             lambda: _dispatch_webhooks(settings),
         ),
         BackgroundComponent(
+            "notification_digest",
+            dt.timedelta(seconds=settings.digest_interval_seconds),
+            lambda: _send_digests(settings),
+        ),
+        BackgroundComponent(
+            "email_dispatcher",
+            dt.timedelta(seconds=settings.email_dispatch_interval_seconds),
+            lambda: _dispatch_email(settings),
+        ),
+        BackgroundComponent(
             "telemetry",
             dt.timedelta(seconds=settings.telemetry_interval_seconds),
             _queue_telemetry_milestones,
@@ -195,6 +214,24 @@ async def _sweep_embargoes() -> None:
 async def _dispatch_webhooks(settings: Settings) -> None:
     async with session_scope() as session:
         await dispatch_pending(session, settings)
+
+
+async def _send_digests(settings: Settings) -> None:
+    """Send each organisation's held notices once its digest window closes."""
+    async with session_scope() as session:
+        await send_due_digests(
+            session,
+            now=await database_now(session),
+            daily_hour=settings.digest_daily_hour_utc,
+            base_url=settings.public_base_url,
+            instance_name=settings.instance_name,
+            email_enabled=settings.smtp_host is not None,
+        )
+
+
+async def _dispatch_email(settings: Settings) -> None:
+    async with session_scope() as session:
+        await dispatch_pending_email(session, settings)
 
 
 async def _run_detections(settings: Settings) -> None:
@@ -256,10 +293,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(admin.router)
     app.include_router(contributions.router)
     app.include_router(isac_records.router)
+    app.include_router(exports.router)
+    app.include_router(connection_health.router)
+    app.include_router(notification_settings.router)
+    app.include_router(sector_events.router)
+    app.include_router(lead_time.router)
     app.include_router(portal_routes.router)
     app.include_router(portal_admin_routes.router)
     app.include_router(portal_sso_routes.router)
     app.include_router(portal_vulnerability_routes.router)
+    app.include_router(portal_reading_routes.router)
     app.include_router(taxii_router.router)
 
     # Served from the package so a deployment needs no separate asset step.

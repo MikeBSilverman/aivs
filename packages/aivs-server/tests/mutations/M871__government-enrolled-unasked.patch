@@ -1,0 +1,19 @@
+Mutation M871: a government body is enrolled without the receipts policy
+Re-applies: Phase H, T10b (connection health, sandbox, enrolment) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_sandbox_and_enrolment.py::test_the_api_refuses_a_government_body_until_the_policy_is_agreed
+Expect red: packages/aivs-server/tests/unit/test_sandbox_and_enrolment.py::test_the_portal_refuses_a_government_body_too
+Expect red: packages/aivs-server/tests/unit/test_sandbox_and_enrolment.py::test_a_government_body_waits_for_the_receipts_policy[government-False-True]
+
+diff --git a/packages/aivs-server/src/aivs_server/services/enrolment.py b/packages/aivs-server/src/aivs_server/services/enrolment.py
+--- a/packages/aivs-server/src/aivs_server/services/enrolment.py
++++ b/packages/aivs-server/src/aivs_server/services/enrolment.py
+@@ -22,7 +22,7 @@
+     (sharing-agreement-outline §10), and the ISAC records that it has by
+     setting ``government_receipts_policy_agreed``.
+     """
+-    if org_type is OrgType.GOVERNMENT and not government_receipts_policy_agreed:
++    if False:
+         return (
+             "a government organisation can be enrolled only once the membership "
+             "agreement answers how its retrieval receipts are treated "

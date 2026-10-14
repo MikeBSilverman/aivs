@@ -1,0 +1,16 @@
+Mutation M812: a collector's TAXII poll counts as the person having read the page
+Re-applies: Phase F (T8) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_reading.py::test_only_a_portal_read_counts_as_having_read_it
+
+diff --git a/packages/aivs-server/src/aivs_server/services/vulnerability_objects.py b/packages/aivs-server/src/aivs_server/services/vulnerability_objects.py
+--- a/packages/aivs-server/src/aivs_server/services/vulnerability_objects.py
++++ b/packages/aivs-server/src/aivs_server/services/vulnerability_objects.py
+@@ -130,7 +130,6 @@
+         select(func.max(Acknowledgment.created_at)).where(
+             Acknowledgment.org_id == org_id,
+             Acknowledgment.ack_type == AckType.RETRIEVED,
+-            Acknowledgment.via == AckVia.PORTAL,
+             Acknowledgment.submission_id.in_(sorted(set(submission_ids))),
+         )
+     )

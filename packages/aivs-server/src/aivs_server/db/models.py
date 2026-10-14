@@ -51,10 +51,12 @@ from aivs_schemas.enums import (
     DiscoveryScope,
     EmbargoPolicy,
     EmbargoStatus,
+    NotificationCadence,
     OperatorRole,
     OrgStatus,
     OrgType,
     PostureStatus,
+    ReadingDepth,
     SsvcPriority,
     SubmissionLane,
     SubmissionSource,
@@ -74,12 +76,15 @@ __all__ = [
     "ClientCertificate",
     "DetectionState",
     "Distribution",
+    "EmailDelivery",
     "Embargo",
     "InstanceControl",
     "Operator",
     "OrgPosture",
     "Organization",
+    "PendingNotice",
     "PortalSession",
+    "SectorEvent",
     "StixObject",
     "Submission",
     "SubmissionTransition",
@@ -126,6 +131,18 @@ class Organization(TimestampMixin, Base):
     #: staff; a sign-in naming a group that maps to no organisation grants nothing.
     directory_object_id: Mapped[str | None] = mapped_column(String(200), nullable=True, unique=True)
     contact_email: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    #: How often the organisation is told content became visible to it. The
+    #: default is today's behaviour: one notice per submission, at once.
+    notification_cadence: Mapped[NotificationCadence] = mapped_column(
+        pg_enum(NotificationCadence, "notification_cadence"),
+        nullable=False,
+        default=NotificationCadence.IMMEDIATE,
+        server_default=NotificationCadence.IMMEDIATE.value,
+    )
+    #: The mailbox the organisation's digest is emailed to, if it wants one.
+    #: A routing address the member chose (a SOC queue), not a person's, and
+    #: only ever sent the contentless digest (``notify.digest``).
+    digest_email: Mapped[str | None] = mapped_column(String(320), nullable=True)
 
     __table_args__ = (
         CheckConstraint(
@@ -216,6 +233,13 @@ class Operator(TimestampMixin, Base):
     #: (identity-federation.md §4). Both or neither.
     federated_issuer: Mapped[str | None] = mapped_column(String(500), nullable=True)
     federated_subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    #: The depth this person's vulnerability pages open at when the link names
+    #: none. The one stored reading preference: it picks a rendering of what
+    #: the operator may already see and confers nothing, which the
+    #: authorization matrix proves by running with it set.
+    default_depth: Mapped[ReadingDepth | None] = mapped_column(
+        pg_enum(ReadingDepth, "reading_depth"), nullable=True
+    )
 
     organization: Mapped[Organization] = relationship(back_populates="operators")
 
@@ -297,6 +321,14 @@ class Circle(TimestampMixin, Base):
     #: looser than its floor. Lets an operator declare "Section 9 content is
     #: AMBER+STRICT or tighter" once, structurally, instead of per submission.
     minimum_tlp: Mapped[TLP] = mapped_column(pg_enum(TLP, "tlp"), nullable=False, default=TLP.AMBER)
+    #: A sandbox: for a member's day-one TIP verification and later exercises.
+    #: Its content is real to the TAXII path -- that is what is being tested --
+    #: and left out of every figure the ISAC reports: telemetry's reach and
+    #: counts, and lead time. Set at creation, never changed after, so a
+    #: circle's figures do not change meaning halfway through its life.
+    is_sandbox: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
     #: Whether short contributions on public content in this circle publish on
     #: submit, for an editor to revoke afterwards. Off unless an editor turns
     #: it on (``services.contributions``).
@@ -902,6 +934,112 @@ class WebhookDelivery(Base):
         # The dispatcher's drain query: undelivered, due, oldest first.
         Index(
             "ix_webhook_deliveries_pending",
+            "next_attempt_at",
+            "id",
+            postgresql_where=text("delivered_at IS NULL"),
+        ),
+    )
+
+
+class SectorEvent(Base):
+    """A sector event: one of the ISAC's canonical vulnerabilities, pinned while it lasts.
+
+    Several a year, an advisory is revised all day while every member works the
+    same problem. Pinning it puts the one living advisory at the top of every
+    entitled member's dashboard, and marks every notice about it, so a member
+    reads the current version rather than hunting for it. An editor opens and
+    closes it; the vulnerability itself is versioned as usual.
+    """
+
+    __tablename__ = "sector_events"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        primary_key=True, server_default=func.gen_random_uuid(), default=uuid.uuid4
+    )
+    vulnerability_stix_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    opened_by_operator_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("operators.id", ondelete="SET NULL"), nullable=True
+    )
+    opened_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    closed_by_operator_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("operators.id", ondelete="SET NULL"), nullable=True
+    )
+    closed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        # One open event per vulnerability: two pins on one advisory is one
+        # event recorded twice, and closing one would leave the other.
+        Index(
+            "uq_sector_events_one_open",
+            "vulnerability_stix_id",
+            unique=True,
+            postgresql_where=text("closed_at IS NULL"),
+        ),
+    )
+
+
+class PendingNotice(Base):
+    """A visibility notice held for an organisation's next digest.
+
+    One row per organisation and *subject*: a vulnerability's STIX id when the
+    submission versions one, else the submission itself. Versions of one
+    advisory arriving inside a window update the row rather than adding one,
+    so a sector event revised all afternoon is one line in the digest. Deleted
+    when the digest is queued; never a record of what was read.
+    """
+
+    __tablename__ = "pending_notices"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    subject: Mapped[str] = mapped_column(String(120), nullable=False)
+    #: The latest submission that made the subject visible to the organisation.
+    submission_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("submissions.id", ondelete="CASCADE"), nullable=False
+    )
+    collection_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("taxii_collections.id", ondelete="CASCADE"), nullable=False
+    )
+    visible_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    #: How many submissions about the subject this window coalesced.
+    versions: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    __table_args__ = (UniqueConstraint("org_id", "subject", name="uq_pending_notices_org_subject"),)
+
+
+class EmailDelivery(Base):
+    """One digest email queued for one organisation's mailbox, and how it went.
+
+    Queued in the transaction that built the digest, drained by the email
+    dispatcher, retried with backoff like a webhook delivery. The body is the
+    contentless digest and nothing else.
+    """
+
+    __tablename__ = "email_deliveries"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    recipient: Mapped[str] = mapped_column(String(320), nullable=False)
+    subject: Mapped[str] = mapped_column(String(200), nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    next_attempt_at: Mapped[dt.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    delivered_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        Index(
+            "ix_email_deliveries_pending",
             "next_attempt_at",
             "id",
             postgresql_where=text("delivered_at IS NULL"),

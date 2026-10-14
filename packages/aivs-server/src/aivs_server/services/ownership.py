@@ -44,13 +44,33 @@ from sqlalchemy.sql.elements import ColumnElement
 from aivs_schemas.enums import OrgType
 from aivs_server.db.models import Distribution, Organization, StixObject, Submission
 
-__all__ = ["ISAC_OWNER", "ISAC_OWNER_TYPES", "foreign_owned_versions_problem", "owner_key"]
+__all__ = [
+    "ISAC_OWNER",
+    "ISAC_OWNER_TYPES",
+    "foreign_owned_versions_problem",
+    "is_isac_owner",
+    "owner_key",
+]
 
 #: The organisations that are the ISAC, for ownership: its own, and its machine.
 ISAC_OWNER_TYPES: Final[frozenset[OrgType]] = frozenset({OrgType.ADMIN, OrgType.AUTOMATION})
 
 #: ``owner_key``'s value for a version the ISAC or its automation filed.
 ISAC_OWNER: Final[str] = "isac"
+
+
+def is_isac_owner(org_type: OrgType | None) -> bool:
+    """Whether an organisation of ``org_type`` counts as the ISAC, for ownership and attribution.
+
+    The one Python statement of the equivalence. Ownership asks it to decide
+    whose versions an organisation may publish; distribution asks it to decide
+    whose name a version carries. Asked separately, the two drifted: the KEV
+    script versioned the ISAC's record as the ISAC, and distribution stamped
+    the version with the automation's own identity, so members saw the ISAC's
+    canonical record re-attributed to a machine. ``owner_key`` is the same
+    rule in SQL, over the same ``ISAC_OWNER_TYPES``.
+    """
+    return org_type in ISAC_OWNER_TYPES
 
 
 def owner_key(submitter_org_id: Any) -> ColumnElement[str]:
@@ -65,7 +85,7 @@ def owner_key(submitter_org_id: Any) -> ColumnElement[str]:
 async def _owners_like(session: AsyncSession, org_id: uuid.UUID) -> set[uuid.UUID]:
     """``org_id`` and every organisation whose versions count as its own."""
     org_type = await session.scalar(select(Organization.org_type).where(Organization.id == org_id))
-    if org_type not in ISAC_OWNER_TYPES:
+    if not is_isac_owner(org_type):
         return {org_id}
     isac = await session.execute(
         select(Organization.id).where(Organization.org_type.in_(tuple(ISAC_OWNER_TYPES)))

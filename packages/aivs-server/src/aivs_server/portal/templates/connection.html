@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{# Your organisation's connection: identifiers, times and counts only. #}
+{% block title %}Connection &middot; {{ instance_name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Your connection</h1>
+  <p>Whether your organisation's TAXII client is collecting what is shared with it.</p>
+</div>
+
+<div class="card">
+  <h2>Collections</h2>
+  {% if health.collections %}
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Collection</th><th>Last collected</th><th>Newest available</th><th>State</th></tr></thead>
+        <tbody>
+          {% for c in health.collections %}
+            <tr>
+              <td>{{ c.title }}{% if c.is_sandbox %} <span class="badge">sandbox</span>{% endif %}<br><span class="mono muted">{{ c.collection_id }}</span></td>
+              <td class="nowrap mono">{{ stamp(c.last_collected) or "never" }}</td>
+              <td class="nowrap mono">{{ stamp(c.newest_available) or "nothing yet" }}</td>
+              <td>{% if c.waiting %}<span class="badge state-degraded">content waiting</span>{% else %}<span class="badge state-ok">up to date</span>{% endif %}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p class="muted">Your organisation reads no collection yet. Ask the ISAC which circles it should join.</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Webhooks</h2>
+  {% if health.webhooks %}
+    <ul>
+      {% for w in health.webhooks %}
+        <li><span class="mono">{{ w.host }}</span>:
+          {% if not w.is_active %}inactive{% elif w.consecutive_failures %}{{ w.consecutive_failures }} failures in a row{% else %}working{% endif %},
+          last delivered {{ stamp(w.last_delivered_at) or "never" }}, {{ w.undelivered }} waiting.</li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="muted">No webhook registered. Your client finds new content only when it polls.</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Certificates</h2>
+  <ul>
+    {% for cert in health.certificates %}
+      <li>{{ cert.label or "certificate" }} <span class="mono muted">{{ cert.fingerprint_prefix }}…</span>
+        expires {{ stamp(cert.not_after) }}{% if cert.expires_soon %} <span class="badge state-degraded">renew soon</span>{% endif %}</li>
+    {% else %}
+      <li class="muted">No active certificate.</li>
+    {% endfor %}
+  </ul>
+</div>
+
+<div class="card">
+  <h2>Configure your TIP</h2>
+  <p class="muted">A starting point with this instance's addresses and your collections filled in. Check the option names against your connector's documentation, and replace the two certificate paths with your own.</p>
+  {% for tool, text in snippets %}
+    <h3>{{ tool }}</h3>
+    <pre class="mono">{{ text }}</pre>
+  {% endfor %}
+</div>
+{% endblock %}

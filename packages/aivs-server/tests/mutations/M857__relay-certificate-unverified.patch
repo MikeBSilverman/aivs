@@ -1,0 +1,17 @@
+Mutation M857: the relay's certificate is not verified
+Re-applies: Phase H, T10a (cadence and digest) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_digest_email.py::test_a_digest_is_sent_only_after_verified_starttls
+
+diff --git a/packages/aivs-server/src/aivs_server/notify/email.py b/packages/aivs-server/src/aivs_server/notify/email.py
+--- a/packages/aivs-server/src/aivs_server/notify/email.py
++++ b/packages/aivs-server/src/aivs_server/notify/email.py
+@@ -54,7 +54,7 @@
+     message["To"] = recipient
+     message["Subject"] = subject
+     message.set_content(body)
+-    context = ssl.create_default_context()
++    context = ssl._create_unverified_context()
+     with smtplib.SMTP(
+         settings.smtp_host, settings.smtp_port, timeout=settings.smtp_timeout_seconds
+     ) as relay:

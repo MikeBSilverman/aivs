@@ -1,0 +1,17 @@
+Mutation M815: the guided page labels a step with its STIX type
+Re-applies: Phase F (T8) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_guidance.py::test_the_guided_page_names_no_stix_type_and_no_stix_id
+
+diff --git a/packages/aivs-server/src/aivs_server/portal/templates/_guided.html b/packages/aivs-server/src/aivs_server/portal/templates/_guided.html
+--- a/packages/aivs-server/src/aivs_server/portal/templates/_guided.html
++++ b/packages/aivs-server/src/aivs_server/portal/templates/_guided.html
+@@ -38,7 +38,7 @@
+       <ol class="guided-steps">
+         {% for step in guidance.steps %}
+           <li>
+-            <span class="guided-kind">{{ step.kind }}</span>
++            <span class="guided-kind">{{ step.kind }} (course-of-action)</span>
+             {% if step.is_new %}<span class="badge guided-new">New since you last read</span>{% endif %}
+             <p><strong>{{ step.title }}</strong></p>
+             {% if step.detail %}<p>{{ step.detail }}</p>{% endif %}

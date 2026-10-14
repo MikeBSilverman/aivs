@@ -132,6 +132,9 @@ class AuditAction:
     CIRCLE_CREATED = "circle.created"
     CIRCLE_MEMBER_ADDED = "circle.member_added"
     CIRCLE_MEMBER_REMOVED = "circle.member_removed"
+    #: Written once, by migration ``3efc1e04d297``, for the memberships it moved
+    #: to the sector default; nothing in the application writes it.
+    CIRCLE_MEMBER_ROLES_DEFAULTED = "circle.member_roles_defaulted"
 
     # Submission workflow
     SUBMISSION_CREATED = "submission.created"
@@ -146,6 +149,7 @@ class AuditAction:
     CONTRIBUTION_PUBLISHED = "contribution.published"
     CONTRIBUTION_RATE_LIMITED = "contribution.rate_limited"
     CONTRIBUTION_SENT_TO_REVIEW = "contribution.sent_to_review"
+    CONTRIBUTION_REVOKED = "contribution.revoked"
     CIRCLE_POST_MODERATION_SET = "circle.post_moderation_set"
     POSTURE_RECORDED = "posture.recorded"
     #: That an organisation exported its postures; never what, or how many.
@@ -162,10 +166,14 @@ class AuditAction:
 
     # Content access
     OBJECTS_RETRIEVED = "taxii.objects_retrieved"
+    EXPORT_RETRIEVED = "export.retrieved"
     ACK_RECORDED = "ack.recorded"
 
     # Webhooks
     WEBHOOK_CREATED = "webhook.created"
+    NOTIFICATION_SETTINGS_SET = "notification.settings_set"
+    SECTOR_EVENT_OPENED = "sector_event.opened"
+    SECTOR_EVENT_CLOSED = "sector_event.closed"
     WEBHOOK_DELETED = "webhook.deleted"
     WEBHOOK_DELIVERY_FAILED = "webhook.delivery_failed"
 

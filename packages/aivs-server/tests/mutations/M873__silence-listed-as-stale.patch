@@ -1,0 +1,15 @@
+Mutation M873: a member with nothing new is listed as a stale connection
+Re-applies: Phase H, T10b (connection health, sandbox, enrolment) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_connection_health.py::test_a_member_with_nothing_new_is_not_listed
+
+diff --git a/packages/aivs-server/src/aivs_server/services/connection_health.py b/packages/aivs-server/src/aivs_server/services/connection_health.py
+--- a/packages/aivs-server/src/aivs_server/services/connection_health.py
++++ b/packages/aivs-server/src/aivs_server/services/connection_health.py
+@@ -309,5 +309,5 @@
+     return [
+         StaleConnection(org=slug, collection=title, last_collected=last_at, waiting_since=since)
+         for slug, title, last_at, since in rows
+-        if since is not None and since <= now - after
++        if since is None or since <= now - after
+     ]

@@ -27,11 +27,15 @@ anything else before any member receives it.
 
 A record still on the 1.0 extension is reported and skipped, since 2.0 needs
 fields only the ISAC's analyst can supply (affected products, discovery scope).
+The run ends with a count of every outcome, the skips with their reason, so a
+batch of skipped records cannot scroll past unnoticed: a silent skip reads as
+"nothing in KEV", which is the wrong conclusion for an analyst to draw.
 """
 
 from __future__ import annotations
 
 import argparse
+import collections
 import datetime as dt
 import json
 import sys
@@ -152,8 +156,54 @@ def _file(native: NativeClient, record: Mapping[str, Any], version: dict[str, An
     return str(created["id"])
 
 
-def _say(line: str, stream: TextIO = sys.stdout) -> None:
-    stream.write(line + "\n")
+def _say(line: str, stream: TextIO | None = None) -> None:
+    # Looked up at the call, not bound as a default: a default is evaluated once,
+    # at import, and output redirected after that went to the old stream.
+    (stream or sys.stdout).write(line + "\n")
+
+
+#: Each outcome a record can have, as the summary names it.
+FILED: Final[str] = "filed"
+WOULD_FILE: Final[str] = "would be filed (dry run)"
+UNCHANGED: Final[str] = "already current, or not listed by KEV"
+SKIPPED_1_0: Final[str] = (
+    "skipped: still on extension 1.0, which carries no KEV fields (an analyst moves them to 2.0)"
+)
+REFUSED: Final[str] = "refused by the server"
+_OUTCOMES: Final[tuple[str, ...]] = (FILED, WOULD_FILE, UNCHANGED, SKIPPED_1_0, REFUSED)
+
+
+def summary(counts: Mapping[str, int]) -> list[str]:
+    """The closing lines: how many records were read, and what became of each."""
+    lines = [f"{sum(counts.values())} records read"]
+    lines += [f"  {counts[outcome]} {outcome}" for outcome in _OUTCOMES if counts.get(outcome)]
+    return lines
+
+
+def _handle(
+    native: NativeClient,
+    record: Mapping[str, Any],
+    kev: Mapping[str, Mapping[str, str]],
+    *,
+    now: dt.datetime,
+    dry_run: bool,
+) -> str:
+    """Deal with one record and say which outcome it had."""
+    if _still_on_1_0(record):
+        _say(f"skipped {record['id']}: extension 1.0, which carries no KEV fields")
+        return SKIPPED_1_0
+    version = enriched_version(record, kev, now=now)
+    if version is None:
+        return UNCHANGED
+    if dry_run:
+        _say(f"would file {record['id']}")
+        return WOULD_FILE
+    try:
+        _say(f"filed {record['id']} as submission {_file(native, record, version)}")
+    except (AivsError, ValueError) as exc:
+        _say(f"refused {record['id']}: {exc}", sys.stderr)
+        return REFUSED
+    return FILED
 
 
 def run(args: argparse.Namespace) -> int:
@@ -161,23 +211,14 @@ def run(args: argparse.Namespace) -> int:
     config = load_config(
         base_url=args.url, certificate=args.cert, private_key=args.key, ca_bundle=args.ca
     )
+    counts: collections.Counter[str] = collections.Counter()
     with build_http_client(config) as http:
         native = NativeClient(http)
         now = dt.datetime.now(dt.UTC)
         for record in native.isac_vulnerabilities():
-            if _still_on_1_0(record):
-                _say(f"skipped {record['id']}: extension 1.0, which carries no KEV fields")
-                continue
-            version = enriched_version(record, kev, now=now)
-            if version is None:
-                continue
-            if args.dry_run:
-                _say(f"would file {record['id']}")
-                continue
-            try:
-                _say(f"filed {record['id']} as submission {_file(native, record, version)}")
-            except (AivsError, ValueError) as exc:
-                _say(f"refused {record['id']}: {exc}", sys.stderr)
+            counts[_handle(native, record, kev, now=now, dry_run=args.dry_run)] += 1
+    for line in summary(counts):
+        _say(line)
     return 0
 
 

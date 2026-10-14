@@ -16,7 +16,7 @@ import pyotp
 import pytest
 from sqlalchemy import select
 
-from aivs_schemas.enums import OperatorRole, OrgStatus, OrgType
+from aivs_schemas.enums import CircleRole, OperatorRole, OrgStatus, OrgType
 from aivs_server.auth.passwords import hash_password
 from aivs_server.auth.secretbox import SecretPurpose
 from aivs_server.db.models import Circle, CircleMembership, Operator, Organization
@@ -287,6 +287,42 @@ async def test_a_pasted_roster_adds_members(client, signed_in_admin, make_circle
         .all()
     )
     assert len(members) == 2
+
+
+async def test_a_roster_with_no_role_gives_each_organisation_its_types_default(
+    client, signed_in_admin, make_circle, session
+):
+    """A bank contributes where it reads; a vendor reads unless named a contributor."""
+    _org, pem = signed_in_admin
+    circle = await make_circle("coordination")
+    for slug, org_type in (("meridian-global", OrgType.GSIB), ("acme-software", OrgType.VENDOR)):
+        session.add(
+            Organization(
+                slug=slug,
+                name=slug.title(),
+                org_type=org_type,
+                status=OrgStatus.ACTIVE,
+                stix_identity_id=f"identity--{uuid.uuid4()}",
+            )
+        )
+    await session.commit()
+
+    added = await client.post(
+        f"{ADMIN}/circles/{circle.id}/members",
+        data={"csrf_token": csrf(client), "roster": "meridian-global\nacme-software", "role": ""},
+        headers=proxy_headers(pem),
+    )
+
+    assert added.status_code == 303, added.text
+    rows = await session.execute(
+        select(Organization.slug, CircleMembership.role)
+        .join(CircleMembership, CircleMembership.org_id == Organization.id)
+        .where(CircleMembership.circle_id == circle.id)
+    )
+    assert dict(rows.all()) == {
+        "meridian-global": CircleRole.CONTRIBUTOR,
+        "acme-software": CircleRole.MEMBER,
+    }
 
 
 async def test_an_unknown_slug_in_a_roster_adds_nobody(

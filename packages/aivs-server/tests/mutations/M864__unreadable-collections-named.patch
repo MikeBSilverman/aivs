@@ -1,0 +1,17 @@
+Mutation M864: a member's connection page and TIP snippet name collections it cannot read
+Re-applies: Phase H, T10b (connection health, sandbox, enrolment) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_connection_health.py::test_only_collections_the_member_reads_are_named
+Expect red: packages/aivs-server/tests/unit/test_connection_health.py::test_the_tip_snippet_names_the_instance_and_only_readable_collections
+
+diff --git a/packages/aivs-server/src/aivs_server/services/connection_health.py b/packages/aivs-server/src/aivs_server/services/connection_health.py
+--- a/packages/aivs-server/src/aivs_server/services/connection_health.py
++++ b/packages/aivs-server/src/aivs_server/services/connection_health.py
+@@ -156,7 +156,6 @@
+             )
+             .join(Circle, Circle.id == TaxiiCollection.circle_id)
+             .where(
+-                TaxiiCollection.circle_id.in_(circles),
+                 TaxiiCollection.is_active.is_(True),
+                 TaxiiCollection.can_read.is_(True),
+                 Circle.is_active.is_(True),

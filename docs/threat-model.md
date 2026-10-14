@@ -360,14 +360,92 @@ rule that refuses it (`tests/abuse/test_sharing_abuse.py` drives the sequences):
 | A stolen member certificate, or a session behind one, takes the firm's whole list of where it is affected in one request (`/api/v1/postures/openvex`). | The export is the member's own and cannot be refused to its own credential, so it is watched instead: each export is audited as an act, never its content or size, and `posture_export_burst` raises when one organisation exports 20 times in an hour. The alert names the firm, never a statement (SF-70). |
 
 **What this does not stop.** The prose of a post-moderated note reaches members
-before an editor reads it; the circle chose that. Retracting such a note
-(`revoke`, which projects a `revoked` version) is not built yet, so an editor's
-remedy is today's: quarantine the organisation, or a new version from the ISAC.
+before an editor reads it; the circle chose that. An editor revokes it
+afterwards (`services/revocation.py`): every object gets a newer version with
+`revoked: true`, distributed to every circle it reached, so a poller past the
+original still receives the retraction. Revoking is allowed while distribution
+is paused, so a note that prompted the pause is retracted before anything is
+shown again. What a member's TIP already copied elsewhere stays copied: a
+revocation is a statement, not a recall.
+
+## Cross-cutting: reading, exporting and lead time
+
+Phase F gives a member's people more ways to take content away: a guided
+page meant to be printed into a change ticket, an IoC pack meant for a block
+list, and a quarterly statement of how far ahead of NVD and KEV they were.
+None of them decides what a caller may see. Each is handed the objects the
+visibility gatherer (`services/vulnerability_objects.py`) returns for the
+caller, through the same policy clause as TAXII, and writes them out
+(`tests/abuse/test_reading_abuse.py` drives the sequences):
+
+| What they try | What stops it |
+| --- | --- |
+| A stolen certificate or session pulls the IoC pack for every vulnerability instead of paging TAXII. | An export is a retrieval: it writes the receipt a TAXII page writes (on its own channel) and an `export.retrieved` audit row, so `bulk_retrieval` counts it, names the organisation and proposes quarantine. The pack holds nothing the caller could not already read. |
+| Plant a spreadsheet formula, or markup, in an indicator or a course of action, to run on the member's analyst. | The pack writes any cell a spreadsheet would run as a formula as text; the guided page escapes every value; both say who stands behind each item (SF-29). |
+| Get a proposed rule, still in review, into a member's hands. | Packs and pages read distributed content only. The ISAC's reviewers see it in the review queue, not in a pack (SF-29). |
+| Keep blocking an address long after it changed hands. | An indicator past its `valid_until`, or with none, is left out of the pack and the guided page; TAXII still serves it with the date, for a consumer to decide (SF-46). |
+| A member, or the ISAC, reads another firm's lead-time statement, or walks organisation ids to find which are members. | A statement answers its own organisation only; everyone else, the ISAC included, gets the same 404 a made-up id gets (SF-70). |
+| The ISAC ranks firms by how fast they act. | What a firm actioned is in its own statement only. The ISAC's sector median is computed from distribution dates, which no member's behaviour enters, and is withheld below k items so a quiet quarter does not become one vulnerability's timing. |
+| Use the stored reading preference to see more. | It picks a rendering of what the caller may already read and nothing else; the authorization matrix runs every session principal with it set to the fullest depth. |
+
+**What this does not stop.** A pack or a printout, once taken, is beyond
+recall: an indicator revoked or expired after the download stays in the
+member's block list until someone there honours the `valid_until` column the
+pack carries (R17). Sigma rendering per SIEM dialect is not built: every
+pySigma release from 1.0 on depends on `diskcache`, which has an open
+advisory (pickle deserialisation, PYSEC-2026-2447) and no fixed version, and
+suppressing it is not an option this repository takes. Members receive Sigma
+rules as their pattern text, in the pack and over TAXII.
+
 
 A member can still tell that a click the lane rule should have published went to
 review, which says, as one bit, that the ISAC's view refused it. That is
 accepted (R14): the alternatives are publishing content the ISAC's rules refuse,
 or answering with the reason.
+
+## Cross-cutting: notification cadence and the contentless digest
+
+Phase H lets a member choose to hear hourly or daily instead of per
+submission, and to have the digest emailed. That puts a mail relay -- a
+subprocessor the ISAC names -- and a mailbox the member chose into the path.
+What crosses is still a pointer, with two additions argued here: the affected
+product names below RED, and the titles of CLEAR and GREEN items.
+
+**Is a title content?** Yes. It is the submitter's own statement of the
+finding in one line, and often the most valuable line: "Pre-auth RCE in Acme
+Gateway 4.2" tells a reader what to attack. CLEAR and GREEN may be shared
+across the community by their own definition, so their titles may cross the
+relay; AMBER and above may not, so their digest line reads "an AMBER item
+about Acme Gateway". Content email (SF-36) stays unbuilt, and so do the
+controls it would need. Product names are a controlled field, not prose, and
+are what a member's ticketing system routes on; RED never carries them,
+because RED's audience is named people and a webhook endpoint is not one.
+
+| What they try | What stops it |
+| --- | --- |
+| Read findings from a member's mail relay, its SOC queue, or a log that captures webhook bodies. | A digest carries markings, counts, links, products below RED, and only CLEAR and GREEN titles (SF-74). |
+| Read the relay's traffic in transit, or impersonate the relay. | STARTTLS is required with the certificate verified; there is no setting to send in the clear or skip verification (SF-74). |
+| Inject headers (a Bcc to an outsider) through a mailbox address or a subject. | The address is checked when set; `EmailMessage` refuses a header value with a line break, and the refusal is recorded, not sent (SF-74). |
+| Learn, as a former member, what was shared after it left, from a digest held before it left. | Entitlement is checked again when the digest is sent; the held notices are spent, not kept (SF-61). |
+| Keep announcements flowing during an incident. | Digests and digest email wait while distribution is paused, as notices do. |
+| Change where a member is notified. | Only the people who may register its webhooks may change its cadence or mailbox, and each change is audited. |
+
+**What this does not stop.** The relay sees that a member received N items of
+each marking at a time, and the products of those below RED: a member's
+interests, at the granularity it chose. That is the price of email, and why
+email is opt-in per member (R18).
+
+## Cross-cutting: connection health, sandboxes, and government recipients
+
+| What they try | What stops it |
+| --- | --- |
+| Learn from the connection page or a TIP snippet which collections exist, or another firm's state. | Both name only the caller's own organisation and the collections it reads; webhooks are shown by host, since a path can carry a routing token (SF-75). |
+| Plant a line in a TIP snippet through a collection title. | A title is folded into a comment on one line; it cannot start a new option (SF-75). |
+| Make an exercise read as engagement, or quietly re-label a real circle as a sandbox to change its figures. | Sandbox content is left out of telemetry reach and lead time, and the flag is set at creation and never changed after. |
+| Learn from the sector-event listing or the dashboard that the ISAC holds a record the member cannot see. | Events are listed through the visibility gatherer: an event on a record the caller cannot read is absent, not refused (SF-77). |
+| Pin a member's object, or a record not yet distributed, so that the pin announces it. | Only the ISAC's own record, distributed, can be pinned (SF-77). |
+| Use call notes to publish around review. | The template files the notes as an ordinary ISAC draft; they reach members only through validation and distribution (SF-77). |
+| Enrol a government body before members have agreed how its receipts are treated. | Both enrolment doors refuse a `government` organisation until the ISAC records that its agreement answers sharing-agreement §10 (SF-76). |
 
 ---
 
@@ -385,10 +463,12 @@ or answering with the reason.
 | R8 | Audit redaction is key-name based; a secret under an unlisted key is permanent. | Medium | Review of new audit detail keys |
 | R9 | IP-allowlist mode is materially weaker than WireGuard mode. | Medium | Prefer overlay; document if not |
 | R10 | Rate limiting exists at nginx, per certificate rather than per organization (per source address on the public member listener, B6); the application limits only contributions published without review and TAXII inbox posts (per organisation, SF-66). | Low | Keep the shipped nginx limits; revisit if the proxy is replaced |
-| R13 | A post-moderated note's prose reaches members before an editor reads it, and `revoke` is not built yet. | Low–Medium | Editors: post-moderation off by default, per circle |
+| R13 | A post-moderated note's prose reaches members before an editor reads it. Closed for retraction: an editor revokes it with a newer `revoked` version (SF-66); what a member's TIP copied onward is beyond recall. | Low | Editors: post-moderation off by default, per circle; revoke |
 | R14 | A contribution that goes to review although nothing the member can see requires it tells the member, as one bit, that the ISAC's view refused it. | Low | Accepted: the reason itself is shown to editors only |
 | R15 | A member person's browser taken over — both the SSO session and device cookies — reads that firm's AMBER+STRICT content until the session ages out (8 h by default) or the operator or organisation is deactivated. OIDC back-channel logout is not built, so disabling the person at the IdP does not end a live session. | Medium | ISAC membership team; member endpoint security |
 | R16 | The ISAC's member IdP tenant is in the trusted base for AMBER content: a compromised tenant, or a sign-on policy that the IdP misreports in `amr`, signs anyone in as a member person. | Medium | Hosting ISAC — tenant administration, phishing-resistant factors |
+| R17 | An export, once downloaded or printed, is beyond recall: an indicator revoked or expired afterwards stays in a member's block list until the member honours the pack's `valid_until` column. | Low | Member firms; packs carry `valid_until` on every row |
+| R18 | A member's digest relay learns how many items of each marking it received and when, and the affected products below RED. | Low | Member firms opt in per organisation; the ISAC names the relay as a subprocessor |
 | R11 | Webhook SSRF residual via DNS rebinding. | Low | Resolve-and-pin; egress policy |
 | R12 | A member firm can poison the corpus with plausible false findings. | Low–Medium | Reviewer judgement |
 

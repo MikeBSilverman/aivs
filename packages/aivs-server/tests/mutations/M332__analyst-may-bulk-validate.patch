@@ -6,7 +6,7 @@ Expect red: packages/aivs-server/tests/unit/test_bulk_validation.py::test_an_ana
 diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs-server/src/aivs_server/auth/policy.py
 --- a/packages/aivs-server/src/aivs_server/auth/policy.py
 +++ b/packages/aivs-server/src/aivs_server/auth/policy.py
-@@ -243,7 +243,7 @@
+@@ -260,7 +260,7 @@
  
  def can_validate_in_bulk(ctx: AuthContext) -> bool:
      """Validate a review group in one action: an editor, as for a single validate."""
@@ -14,4 +14,4 @@ diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs
 +    return can_review_submissions(ctx)
  
  
- def can_change_embargo(ctx: AuthContext) -> bool:
+ def can_read_own_lead_time(ctx: AuthContext, org_id: uuid.UUID) -> bool:

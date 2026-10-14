@@ -1,0 +1,17 @@
+Mutation M806: the gatherer keeps the oldest visible version of an object, not the latest
+Re-applies: Phase F (T8) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_reading.py::test_a_reader_gets_the_latest_version_it_can_see
+
+diff --git a/packages/aivs-server/src/aivs_server/services/vulnerability_objects.py b/packages/aivs-server/src/aivs_server/services/vulnerability_objects.py
+--- a/packages/aivs-server/src/aivs_server/services/vulnerability_objects.py
++++ b/packages/aivs-server/src/aivs_server/services/vulnerability_objects.py
+@@ -179,7 +179,7 @@
+     latest: dict[str, tuple[dt.datetime, VisibleObject]] = {}
+     for row, date_added in rows:
+         current = latest.get(row.stix_id)
+-        if current is None or row.modified > current[0]:
++        if current is None or row.modified < current[0]:
+             latest[row.stix_id] = (
+                 row.modified,
+                 VisibleObject(row.raw, row.submission_id, date_added),

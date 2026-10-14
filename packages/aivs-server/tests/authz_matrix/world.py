@@ -19,11 +19,11 @@ from cryptography.hazmat.primitives import hashes
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from aivs_schemas.enums import CircleRole, OperatorRole, OrgStatus, OrgType
+from aivs_schemas.enums import CircleRole, OperatorRole, OrgStatus, OrgType, ReadingDepth
 from aivs_server.auth.secretbox import SecretBox, SecretPurpose
 from aivs_server.auth.sessions import establish_session, establish_sso_session
 from aivs_server.config import Settings
-from aivs_server.db.models import Organization, Webhook
+from aivs_server.db.models import Organization, SectorEvent, Webhook
 from tests.authz_matrix.principals import (
     CERTIFICATE_ORGS,
     SESSION_ROLES,
@@ -53,6 +53,10 @@ class World:
     #: The ISAC's published record in the circle: what the TAXII inbox takes
     #: contributions on.
     public_stix_id: str = ""
+    #: A second ISAC record, for an editor to pin; and an event already open
+    #: on the first, for the routes that close it or file its call notes.
+    pinnable_stix_id: str = ""
+    sector_event_id: uuid.UUID | None = None
     posture_id: uuid.UUID | None = None
     taxii_status_id: uuid.UUID | None = None
 
@@ -110,6 +114,11 @@ async def _session_credentials(
     f: Factories, org: Organization, pem: str, roles: tuple[Any, ...]
 ) -> Credentials:
     operator, _seed = await f.make_operator(org, roles=roles)
+    # Every session principal carries the one stored reading preference, at the
+    # depth that shows the most, so the whole matrix is the proof that it
+    # confers nothing: a route that granted more to a reader with a preference
+    # would break that principal's row.
+    operator.default_depth = ReadingDepth.TECHNICAL
     certificate = x509.load_pem_x509_certificate(pem.encode("ascii"))
     established = await establish_session(
         f.session,
@@ -168,6 +177,36 @@ class _Seeder:
         self.member = proxy_headers(member_pem)
         self.editor = editor.api_headers
         self.circle_id = circle_id
+
+    async def post_moderated(self, person: dict[str, str], public_stix_id: str) -> uuid.UUID:
+        """A note published on submit in the circle, for an editor to revoke."""
+        enabled = await self.client.put(
+            f"/api/v1/circles/{self.circle_id}/post-moderation",
+            json={"enabled": True},
+            headers=self.editor,
+        )
+        assert enabled.status_code == 204, enabled.text
+        filed = await self.client.post(
+            API,
+            json={
+                "title": "Matrix revoke",
+                "discovery_scope": "own_estate",
+                "tlp": "amber",
+                "distribute_anonymously": True,
+                "bundle": {
+                    "type": "bundle",
+                    "id": f"bundle--{uuid.uuid4()}",
+                    "objects": [inbox_note(public_stix_id)],
+                },
+            },
+            headers=person,
+        )
+        assert filed.status_code == 201, filed.text
+        submitted = await self.client.post(
+            f"{API}/{filed.json()['id']}/submit", json={}, headers=person
+        )
+        assert submitted.json()["state"] == "distributed", submitted.text
+        return uuid.UUID(filed.json()["id"])
 
     async def create(self, name: str, *, anonymous: bool = False) -> tuple[uuid.UUID, str]:
         bundle, stix_id = _bundle(name)
@@ -304,7 +343,19 @@ async def build_world(f: Factories) -> tuple[World, dict[Principal, Credentials]
         vulnerability_raw(world.public_stix_id, cve_status="published"),
         circle=circle,
     )
+    world.pinnable_stix_id = f"vulnerability--{uuid.uuid4()}"
+    await seed_record(
+        f.session,
+        orgs["isac"],
+        vulnerability_raw(world.pinnable_stix_id, cve_status="published"),
+        circle=circle,
+    )
+    event = SectorEvent(
+        vulnerability_stix_id=world.public_stix_id, opened_at=dt.datetime.now(dt.UTC)
+    )
+    f.session.add(event)
     await f.session.commit()
+    world.sector_event_id = event.id
 
     webhook_id = uuid.uuid4()
     f.session.add(
@@ -324,6 +375,12 @@ async def build_world(f: Factories) -> tuple[World, dict[Principal, Credentials]
     setup_editor = await _session_credentials(f, orgs["isac"], world.pems["isac"], ISAC_STAFF_ROLES)
     seed = _Seeder(f, world.pems["member"], setup_editor, circle.id)
     await _seed_submissions(world, seed)
+    member_person = await _session_credentials(
+        f, orgs["member"], world.pems["member"], (OperatorRole.ANALYST,)
+    )
+    world.submissions["revoke"] = await seed.post_moderated(
+        member_person.api_headers, world.public_stix_id
+    )
 
     principals = await _credentials(f, world, orgs)
     return world, principals

@@ -1,0 +1,16 @@
+Mutation M808: an ISAC reviewer's export is recorded as the ISAC having received the content
+Re-applies: Phase F (T8) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_vulnerability_exports.py::test_an_isac_reviewers_export_writes_no_receipt
+
+diff --git a/packages/aivs-server/src/aivs_server/services/ioc_pack.py b/packages/aivs-server/src/aivs_server/services/ioc_pack.py
+--- a/packages/aivs-server/src/aivs_server/services/ioc_pack.py
++++ b/packages/aivs-server/src/aivs_server/services/ioc_pack.py
+@@ -124,7 +124,6 @@
+         submission_ids={
+             obj.submission_id
+             for obj in (objects.vulnerability, *pack.indicators)
+-            if obj.date_added is not None
+         },
+         via=via,
+         actor_ref=ctx.actor_id,

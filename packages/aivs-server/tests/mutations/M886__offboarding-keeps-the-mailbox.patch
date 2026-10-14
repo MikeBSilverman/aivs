@@ -1,0 +1,16 @@
+Mutation M886: offboarding leaves a departed member's digest mailbox
+Re-applies: T10 rebased onto c2b17ba (org_still_active, offboarding) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_digest.py::test_offboarding_deletes_held_notices_queued_email_and_the_mailbox
+
+diff --git a/packages/aivs-server/src/aivs_server/services/offboarding.py b/packages/aivs-server/src/aivs_server/services/offboarding.py
+--- a/packages/aivs-server/src/aivs_server/services/offboarding.py
++++ b/packages/aivs-server/src/aivs_server/services/offboarding.py
+@@ -139,7 +139,6 @@
+ 
+     organisation.status = OrgStatus.OFFBOARDED
+     organisation.contact_email = None
+-    organisation.digest_email = None
+     await session.flush()
+     certificates = await revoke_credentials(session, organisation, now, reason="offboarded")
+     operators = await _pseudonymise_operators(session, organisation.id)

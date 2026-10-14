@@ -1,0 +1,16 @@
+Mutation M804: a pack reads content that was never distributed
+Re-applies: Phase F (T8) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_vulnerability_exports.py::test_an_indicator_never_distributed_is_in_nobodys_pack
+
+diff --git a/packages/aivs-server/src/aivs_server/services/vulnerability_objects.py b/packages/aivs-server/src/aivs_server/services/vulnerability_objects.py
+--- a/packages/aivs-server/src/aivs_server/services/vulnerability_objects.py
++++ b/packages/aivs-server/src/aivs_server/services/vulnerability_objects.py
+@@ -159,7 +159,6 @@
+         return (
+             select(StixObject, cast(null(), DateTime(timezone=True)))
+             .join(Submission, Submission.id == StixObject.submission_id)
+-            .where(Submission.state.in_(tuple(VISIBLE_SUBMISSION_STATES)))
+         )
+     return (
+         select(StixObject, func.min(Distribution.date_added))

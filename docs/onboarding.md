@@ -427,7 +427,9 @@ Constraints and expectations:
 ## 10. Optional: submitting
 
 If your firm contributes, you need `contributor` in the target
-circle. Reading a circle does not imply writing to it.
+circle. A G-SIB, Section 9 or critical-infrastructure member has it by default
+in every circle it reads; a vendor or government body has it only where the
+ISAC names it.
 
 **What AIVS accepts:**
 

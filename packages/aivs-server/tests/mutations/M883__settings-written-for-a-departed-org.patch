@@ -1,0 +1,17 @@
+Mutation M883: notification settings are written for an organisation offboarded since the request authenticated
+Re-applies: T10 rebased onto c2b17ba (org_still_active, offboarding) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_member_settings.py::test_notification_settings_are_written_only_for_a_member[True]
+
+diff --git a/packages/aivs-server/src/aivs_server/services/member_settings.py b/packages/aivs-server/src/aivs_server/services/member_settings.py
+--- a/packages/aivs-server/src/aivs_server/services/member_settings.py
++++ b/packages/aivs-server/src/aivs_server/services/member_settings.py
+@@ -37,7 +37,7 @@
+     org = await session.scalar(
+         select(Organization).where(Organization.id == ctx.org_id).with_for_update()
+     )
+-    if org is None or org.status is not OrgStatus.ACTIVE:
++    if org is None:
+         return None
+     org.notification_cadence = cadence
+     org.digest_email = digest_email

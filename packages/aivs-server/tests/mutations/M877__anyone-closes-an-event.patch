@@ -1,0 +1,17 @@
+Mutation M877: anyone may close a sector event
+Re-applies: Phase H, T10c (sector events) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_sector_events.py::test_a_member_is_refused_before_any_lookup
+
+diff --git a/packages/aivs-server/src/aivs_server/services/sector_events.py b/packages/aivs-server/src/aivs_server/services/sector_events.py
+--- a/packages/aivs-server/src/aivs_server/services/sector_events.py
++++ b/packages/aivs-server/src/aivs_server/services/sector_events.py
+@@ -110,7 +110,7 @@
+     session: AsyncSession, ctx: AuthContext, event_id: uuid.UUID, *, now: dt.datetime
+ ) -> SectorEvent | None:
+     """Unpin an event. Editors only. ``None`` if there is no such event. Does not commit."""
+-    require(is_isac_editor(ctx), "sector_event_requires_isac_editor")
++    require(True, "sector_event_requires_isac_editor")
+     event = await session.scalar(
+         select(SectorEvent).where(SectorEvent.id == event_id).with_for_update()
+     )

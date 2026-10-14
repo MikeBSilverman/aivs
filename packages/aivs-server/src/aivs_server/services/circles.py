@@ -59,6 +59,8 @@ from aivs_schemas.enums import (
     RULE_ELIGIBLE_ORG_TYPES,
     CircleRole,
     OrgStatus,
+    OrgType,
+    default_circle_role,
 )
 from aivs_server.audit.log import AuditAction, record
 from aivs_server.auth.context import AuthContext
@@ -282,11 +284,15 @@ async def add_circle_members(
     *,
     circle: Circle,
     organisations: list[Organization],
-    role: CircleRole,
+    role: CircleRole | None,
     joined_at: dt.datetime | None,
     now: dt.datetime,
 ) -> list[uuid.UUID]:
     """Open a membership interval for each organisation not already in the circle.
+
+    ``role`` is the role every added organisation joins with; ``None`` gives
+    each its type's default (``default_circle_role``), so a pasted roster of
+    banks and one vendor contributes and reads as each should.
 
     Returns the identifiers actually added. Already-a-member is not an error:
     re-running a roster is a normal thing for an operator to do, and failing the
@@ -319,15 +325,18 @@ async def add_circle_members(
         await _refuse_starts_in_a_gap(session, circle.id, existing, organisations, joined_at, now)
 
     added: list[uuid.UUID] = []
+    roles: dict[str, str] = {}
     repaired: list[uuid.UUID] = []
     for org in organisations:
         current = existing.get(org.id)
         if current is None:
+            joins_as = role if role is not None else default_circle_role(org.org_type)
             session.add(
                 CircleMembership(
-                    circle_id=circle.id, org_id=org.id, role=role, joined_at=joined_at or now
+                    circle_id=circle.id, org_id=org.id, role=joins_as, joined_at=joined_at or now
                 )
             )
+            roles[str(org.id)] = joins_as.value
             added.append(org.id)
         elif joined_at is not None and current.joined_at != joined_at:
             current.joined_at = joined_at
@@ -343,7 +352,7 @@ async def add_circle_members(
             details={
                 "org_ids": [str(org_id) for org_id in added],
                 "joined_at_repaired": [str(org_id) for org_id in repaired],
-                "role": role.value,
+                "roles": roles,
                 "backdated_to": joined_at.isoformat() if joined_at else None,
             },
         )
@@ -436,6 +445,15 @@ async def _orgs_matching_rule(session: AsyncSession, circle: Circle) -> set[uuid
     )
 
 
+async def _org_types(session: AsyncSession, org_ids: list[uuid.UUID]) -> dict[uuid.UUID, OrgType]:
+    if not org_ids:
+        return {}
+    rows = await session.execute(
+        select(Organization.id, Organization.org_type).where(Organization.id.in_(org_ids))
+    )
+    return {org_id: OrgType(org_type) for org_id, org_type in rows.all()}
+
+
 async def _orgs_of_rule_type(session: AsyncSession, circle: Circle) -> set[uuid.UUID]:
     """Every organisation of the rule's types, whatever its status."""
     return set(
@@ -517,12 +535,13 @@ async def reconcile_circle(
     eligible = await _orgs_matching_rule(session, circle)
 
     added = sorted(eligible - set(open_rows) - excluded, key=str)
+    types = await _org_types(session, added)
     for org_id in added:
         session.add(
             CircleMembership(
                 circle_id=circle.id,
                 org_id=org_id,
-                role=CircleRole.MEMBER,
+                role=default_circle_role(types[org_id]),
                 managed_by_rule=True,
                 joined_at=now,
             )

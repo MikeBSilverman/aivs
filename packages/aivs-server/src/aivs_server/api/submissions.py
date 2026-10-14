@@ -28,6 +28,8 @@ from aivs_schemas.models import (
     EmbargoOut,
     RevealOut,
     RevealRequest,
+    RevokeOut,
+    RevokeRequest,
     SubmissionCreate,
     SubmissionDetail,
     SubmissionOut,
@@ -63,6 +65,7 @@ from aivs_server.notify.events import (
 from aivs_server.services.contributions import submit_submission
 from aivs_server.services.distribution import DistributionError, distribute_submission
 from aivs_server.services.embargo import EmbargoError, extend_embargo, release_embargo_now
+from aivs_server.services.revocation import revoke_contribution
 from aivs_server.services.submissions import (
     STORAGE_ERRORS,
     SubmissionError,
@@ -481,6 +484,32 @@ async def extend_embargo_endpoint(
 
     await session.refresh(submission)
     return _present(submission, ctx)
+
+
+@router.post("/{submission_id}/revoke", response_model=RevokeOut)
+async def revoke(
+    submission_id: uuid.UUID,
+    payload: RevokeRequest,
+    ctx: AuthenticatedContext,
+    session: SessionDep,
+) -> RevokeOut:
+    """Revoke content that was published without review. An ISAC editor only.
+
+    Members receive a newer, ``revoked`` version of each object
+    (``services.revocation``); nothing they already hold is edited in place.
+    """
+    submission = await _require_visible_submission(session, ctx, submission_id, for_update=True)
+    try:
+        result = await revoke_contribution(session, ctx, submission, reason=payload.reason)
+        await session.commit()
+    except SubmissionError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return RevokeOut(
+        submission_id=submission.id,
+        revoked_ids=result.revoked_ids,
+        circle_count=result.circle_count,
+        date_added=result.date_added,
+    )
 
 
 @router.post("/{submission_id}/reveal", response_model=RevealOut)

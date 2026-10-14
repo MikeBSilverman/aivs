@@ -41,6 +41,10 @@ class RouteClass(enum.StrEnum):
     LISTING = "listing"
     #: TAXII content in one collection: members of that circle; others 404.
     CIRCLE_CONTENT = "circle content"
+    #: An export of a vulnerability (the IoC pack): whoever can see the
+    #: vulnerability, which is its circle's members and the ISAC's reviewers;
+    #: others 404.
+    VULNERABILITY_EXPORT = "vulnerability export"
     #: One submission's record: its submitter and the ISAC's reviewers; others 404.
     SUBMISSION_RECORD = "submission record"
     #: What's available for a vulnerability: whoever can see the vulnerability,
@@ -71,7 +75,7 @@ class RouteClass(enum.StrEnum):
     WITHDRAW = "withdraw"
     #: Acknowledging receipt: organisations the submission was distributed to.
     RECEIPT = "receipt"
-    #: Validate, distribute, embargo, reveal: an ISAC editor.
+    #: Validate, distribute, embargo, reveal, revoke: an ISAC editor.
     EDITORIAL = "editorial verb"
     #: The review queue: the ISAC's analysts and editors.
     REVIEW_QUEUE = "review queue"
@@ -83,6 +87,9 @@ class RouteClass(enum.StrEnum):
     RECONNECT = "reconnect"
     #: Revoking a certificate, addressed by id: membership; others 404.
     CERTIFICATE_REVOKE = "certificate revoke"
+    #: Opening, closing and filing call notes on a sector event: an editor;
+    #: everyone else 403, before any lookup.
+    SECTOR_EVENT = "sector event"
     #: Creating a circle: an editor.
     CIRCLE_CREATE = "circle create"
     #: The circle administration screens: editors and membership staff.
@@ -95,8 +102,9 @@ class RouteClass(enum.StrEnum):
     STATUS_PAGE = "status page"
     #: The caller's own identity and notification endpoints.
     OWN_SETTINGS = "own settings"
-    #: Registering a webhook: a member's certificate or org admin; at the ISAC,
-    #: a system admin only (its webhooks carry the detection alerts).
+    #: Registering a webhook, or changing how often and where the organisation
+    #: is notified: a member's certificate or org admin; at the ISAC, a system
+    #: admin only (its webhooks carry the detection alerts).
     WEBHOOK_REGISTER = "webhook register"
     #: Deleting a webhook, addressed by id: whoever may register one, for their
     #: own organisation's; others 404, those who may not 403 (before any lookup).
@@ -105,10 +113,12 @@ class RouteClass(enum.StrEnum):
     #: read the object; others 404. The ISAC files through review instead
     #: (``services.contributions.filer_problem``).
     CONTENT_RESPONSE = "content response"
-    #: A record of one organisation's own (its posture, its TAXII status): that
-    #: organisation only; everyone else 404, the ISAC included.
+    #: A record of one organisation's own (its posture, its TAXII status, its
+    #: lead-time statement): that organisation only; everyone else 404, the
+    #: ISAC included.
     OWN_RECORD = "own record"
-    #: Posture counts, each withheld below k: the ISAC's reviewers; others 404.
+    #: Sector figures, each withheld below k (posture counts, the lead-time
+    #: median): the ISAC's reviewers; others 404.
     POSTURE_SUMMARY = "posture summary"
     #: The ISAC's own records, outside any circle: its automation's
     #: certificate alone; everyone else 404, ISAC staff included.
@@ -264,6 +274,34 @@ ROUTES: tuple[RouteCase, ...] = (
     RouteCase("GET", "/api/v1/submissions", RouteClass.LISTING, _fixed(f"{API}/submissions")),
     RouteCase(
         "GET", "/api/v1/submissions/{submission_id}", RouteClass.SUBMISSION_RECORD, _sub("read")
+    ),
+    RouteCase(
+        "GET",
+        "/api/v1/vulnerabilities/ioc-pack.csv",
+        RouteClass.VULNERABILITY_EXPORT,
+        lambda world: (f"{API}/vulnerabilities/ioc-pack.csv?id={world.object_stix_id}", None),
+    ),
+    RouteCase(
+        "GET",
+        "/portal/vulnerabilities/ioc-pack.csv",
+        RouteClass.VULNERABILITY_EXPORT,
+        lambda world: (f"/portal/vulnerabilities/ioc-pack.csv?id={world.object_stix_id}", None),
+        is_portal=True,
+    ),
+    RouteCase(
+        "GET",
+        "/api/v1/organizations/{org_id}/lead-time",
+        RouteClass.OWN_RECORD,
+        lambda world: (
+            f"{API}/organizations/{world.orgs['member']}/lead-time?quarter=2026Q4",
+            None,
+        ),
+    ),
+    RouteCase(
+        "GET",
+        "/api/v1/lead-time/sector",
+        RouteClass.POSTURE_SUMMARY,
+        _fixed(f"{API}/lead-time/sector?quarter=2026Q4"),
     ),
     RouteCase(
         "GET",
@@ -454,6 +492,12 @@ ROUTES: tuple[RouteCase, ...] = (
         "/api/v1/submissions/{submission_id}/reveal",
         RouteClass.EDITORIAL,
         _sub("reveal", "/reveal", {"reason": "matrix: legal process"}),
+    ),
+    RouteCase(
+        "POST",
+        "/api/v1/submissions/{submission_id}/revoke",
+        RouteClass.EDITORIAL,
+        _sub("revoke", "/revoke", {"reason": "matrix: revoked after post-moderation"}),
     ),
     RouteCase(
         "GET", "/portal/review", RouteClass.REVIEW_QUEUE, _fixed("/portal/review"), is_portal=True
@@ -732,6 +776,70 @@ ROUTES: tuple[RouteCase, ...] = (
     # ----- the caller's own settings --------------------------------------
     RouteCase("GET", "/api/v1/whoami", RouteClass.OWN_SETTINGS, _fixed(f"{API}/whoami")),
     RouteCase("GET", "/api/v1/webhooks", RouteClass.OWN_SETTINGS, _fixed(f"{API}/webhooks")),
+    RouteCase("GET", "/api/v1/sector-events", RouteClass.LISTING, _fixed(f"{API}/sector-events")),
+    RouteCase(
+        "POST",
+        "/api/v1/sector-events",
+        RouteClass.SECTOR_EVENT,
+        lambda world: (f"{API}/sector-events", {"vulnerability_stix_id": world.pinnable_stix_id}),
+    ),
+    RouteCase(
+        "POST",
+        "/api/v1/sector-events/{event_id}/call-notes",
+        RouteClass.SECTOR_EVENT,
+        lambda world: (
+            f"{API}/sector-events/{world.sector_event_id}/call-notes",
+            {
+                "summary": "matrix: call summary",
+                "action_items": ["patch the gateway"],
+                "discovery_scope": "own_estate",
+            },
+        ),
+    ),
+    RouteCase(
+        "POST",
+        "/api/v1/sector-events/{event_id}/close",
+        RouteClass.SECTOR_EVENT,
+        lambda world: (f"{API}/sector-events/{world.sector_event_id}/close", {}),
+    ),
+    RouteCase(
+        "GET",
+        "/api/v1/connection-health",
+        RouteClass.OWN_SETTINGS,
+        _fixed(f"{API}/connection-health"),
+    ),
+    RouteCase(
+        "GET",
+        "/api/v1/tip-config/{tool}",
+        RouteClass.OWN_SETTINGS,
+        _fixed(f"{API}/tip-config/opencti"),
+    ),
+    RouteCase(
+        "GET",
+        "/portal/connection",
+        RouteClass.OWN_SETTINGS,
+        _fixed("/portal/connection"),
+        is_portal=True,
+    ),
+    RouteCase(
+        "GET",
+        "/api/v1/notification-settings",
+        RouteClass.OWN_SETTINGS,
+        _fixed(f"{API}/notification-settings"),
+    ),
+    RouteCase(
+        "PUT",
+        "/api/v1/notification-settings",
+        RouteClass.WEBHOOK_REGISTER,
+        _fixed(f"{API}/notification-settings", {"cadence": "hourly"}),
+    ),
+    RouteCase(
+        "POST",
+        "/portal/preferences/depth",
+        RouteClass.OWN_SETTINGS,
+        _fixed("/portal/preferences/depth", {"depth": "guided"}),
+        is_portal=True,
+    ),
     RouteCase(
         "POST",
         "/api/v1/webhooks",

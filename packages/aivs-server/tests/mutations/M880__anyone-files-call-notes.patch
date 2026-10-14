@@ -1,0 +1,17 @@
+Mutation M880: anyone may file call notes on a sector event
+Re-applies: Phase H, T10c (sector events) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/authz_matrix/test_principal_matrix.py::test_each_principal_gets_exactly_its_row[member_machine]
+
+diff --git a/packages/aivs-server/src/aivs_server/api/sector_events.py b/packages/aivs-server/src/aivs_server/api/sector_events.py
+--- a/packages/aivs-server/src/aivs_server/api/sector_events.py
++++ b/packages/aivs-server/src/aivs_server/api/sector_events.py
+@@ -98,7 +98,7 @@
+     event_id: uuid.UUID, payload: CallNotes, ctx: AuthenticatedContext, session: SessionDep
+ ) -> dict[str, str]:
+     """File a call's notes on the pinned advisory as an ISAC draft, for review. An editor only."""
+-    require(is_isac_editor(ctx), "sector_event_requires_isac_editor")
++    require(True, "sector_event_requires_isac_editor")
+     event = await session.scalar(select(SectorEvent).where(SectorEvent.id == event_id))
+     if event is None or event.closed_at is not None:
+         raise _NOT_FOUND

@@ -1,0 +1,17 @@
+Mutation M803: the guided page renders a step's member-supplied title as markup
+Re-applies: Phase F (T8) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_guidance.py::test_member_text_is_escaped_on_the_guided_page
+
+diff --git a/packages/aivs-server/src/aivs_server/portal/templates/_guided.html b/packages/aivs-server/src/aivs_server/portal/templates/_guided.html
+--- a/packages/aivs-server/src/aivs_server/portal/templates/_guided.html
++++ b/packages/aivs-server/src/aivs_server/portal/templates/_guided.html
+@@ -40,7 +40,7 @@
+           <li>
+             <span class="guided-kind">{{ step.kind }}</span>
+             {% if step.is_new %}<span class="badge guided-new">New since you last read</span>{% endif %}
+-            <p><strong>{{ step.title }}</strong></p>
++            <p><strong>{{ step.title | safe }}</strong></p>
+             {% if step.detail %}<p>{{ step.detail }}</p>{% endif %}
+             {% if step.restart %}<p>{{ step.restart }}</p>{% endif %}
+             {% if step.review_overdue %}

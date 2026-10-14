@@ -1,0 +1,17 @@
+Mutation M818: anyone who can see a submission revokes it
+Re-applies: Phase E slice-4 follow-ups (T8 A1, A2) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_revocation.py::test_only_an_editor_revokes_the_submitter_is_refused_and_others_see_nothing
+
+diff --git a/packages/aivs-server/src/aivs_server/services/revocation.py b/packages/aivs-server/src/aivs_server/services/revocation.py
+--- a/packages/aivs-server/src/aivs_server/services/revocation.py
++++ b/packages/aivs-server/src/aivs_server/services/revocation.py
+@@ -130,7 +130,7 @@
+     replica's clock could land below a cursor a member already holds, and the
+     member would never receive it. ``now`` is injectable for tests only.
+     """
+-    require(is_isac_editor(ctx), "revoke_requires_isac_editor")
++    require(True, "revoke_requires_isac_editor")
+     if len(reason.strip()) < _MIN_REASON:
+         msg = (
+             f"say why, in at least {_MIN_REASON} characters: the reason is what the audit log keeps"

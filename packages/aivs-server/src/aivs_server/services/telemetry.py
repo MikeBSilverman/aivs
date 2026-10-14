@@ -183,6 +183,10 @@ def _reachable(submission: Submission) -> Select[tuple[uuid.UUID]]:
         .where(
             Distribution.submission_id == submission.id,
             Circle.is_active.is_(True),
+            # A sandbox is for testing a member's connection; what reaches it
+            # is no reach, and counting it would let an exercise read as
+            # engagement.
+            Circle.is_sandbox.is_(False),
             _is_counted(CircleMembership.org_id, submission.submitter_org_id),
         )
     )

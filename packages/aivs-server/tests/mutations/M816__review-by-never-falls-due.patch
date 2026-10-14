@@ -1,0 +1,18 @@
+Mutation M816: a course of action past its review_by is never flagged
+Re-applies: Phase F (T8) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_guidance.py::test_a_step_past_its_review_date_is_flagged_and_one_before_it_is_not
+Expect red: packages/aivs-server/tests/unit/test_guidance.py::test_a_course_of_action_falls_due_the_day_after_its_review_by
+
+diff --git a/packages/aivs-server/src/aivs_server/services/guidance.py b/packages/aivs-server/src/aivs_server/services/guidance.py
+--- a/packages/aivs-server/src/aivs_server/services/guidance.py
++++ b/packages/aivs-server/src/aivs_server/services/guidance.py
+@@ -253,7 +253,7 @@
+         last_day = dt.date.fromisoformat(review_by)
+     except ValueError:
+         return True
+-    return now.date() > last_day
++    return False
+ 
+ 
+ def _live(objects: Iterable[StixObject]) -> list[StixObject]:

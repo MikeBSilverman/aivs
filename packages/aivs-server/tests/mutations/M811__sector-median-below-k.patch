@@ -1,0 +1,17 @@
+Mutation M811: the sector median is shown however few items it is over
+Re-applies: Phase F (T8) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_lead_time.py::test_the_sector_median_is_withheld_below_k[4-False]
+
+diff --git a/packages/aivs-server/src/aivs_server/services/lead_time.py b/packages/aivs-server/src/aivs_server/services/lead_time.py
+--- a/packages/aivs-server/src/aivs_server/services/lead_time.py
++++ b/packages/aivs-server/src/aivs_server/services/lead_time.py
+@@ -191,7 +191,7 @@
+ 
+ 
+ def _withheld_median(values: Sequence[float]) -> float | None:
+-    return _median(values) if len(values) >= K_ANONYMITY else None
++    return _median(values) if values else None
+ 
+ 
+ # ---------------------------------------------------------------------------

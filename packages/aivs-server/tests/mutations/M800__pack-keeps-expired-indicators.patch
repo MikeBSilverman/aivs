@@ -1,0 +1,17 @@
+Mutation M800: the IoC pack carries indicators past their valid_until
+Re-applies: Phase F (T8) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_vulnerability_exports.py::test_an_expired_indicator_is_left_out_of_the_pack_and_still_served_by_taxii
+
+diff --git a/packages/aivs-server/src/aivs_server/services/ioc_pack.py b/packages/aivs-server/src/aivs_server/services/ioc_pack.py
+--- a/packages/aivs-server/src/aivs_server/services/ioc_pack.py
++++ b/packages/aivs-server/src/aivs_server/services/ioc_pack.py
+@@ -147,7 +147,7 @@
+ 
+ 
+ def _is_packable(indicator: Mapping[str, Any], now: dt.datetime) -> bool:
+-    return not indicator.get("revoked") and is_current_indicator(indicator, now)
++    return not indicator.get("revoked")
+ 
+ 
+ def _vulnerability_label(vulnerability: Mapping[str, Any]) -> str:

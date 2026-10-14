@@ -1,0 +1,17 @@
+Mutation M870: an exercise counts in the ISAC's lead time
+Re-applies: Phase H, T10b (connection health, sandbox, enrolment) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_sandbox_and_enrolment.py::test_an_exercise_is_no_part_of_the_isacs_lead_time[True-False]
+
+diff --git a/packages/aivs-server/src/aivs_server/services/lead_time.py b/packages/aivs-server/src/aivs_server/services/lead_time.py
+--- a/packages/aivs-server/src/aivs_server/services/lead_time.py
++++ b/packages/aivs-server/src/aivs_server/services/lead_time.py
+@@ -319,8 +319,6 @@
+         .where(
+             StixObject.type == "vulnerability",
+             Submission.state.in_(tuple(VISIBLE_SUBMISSION_STATES)),
+-            # A sandbox's content is an exercise, not the ISAC's timing.
+-            Circle.is_sandbox.is_(False),
+             Distribution.date_added <= now,
+         )
+     )

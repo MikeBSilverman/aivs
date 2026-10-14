@@ -198,6 +198,11 @@
           "description": "Whether CISA's Known Exploited Vulnerabilities catalogue lists this vulnerability.",
           "type": "boolean"
         },
+        "nvd_published": {
+          "description": "The date NVD published the CVE record, from NVD's published timestamp. With kev_date_added, what a member's lead time is measured against.",
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+        },
         "kev_date_added": {
           "description": "KEV dateAdded.",
           "type": "string",
@@ -219,6 +224,61 @@
         "novel_attack_vector": {
           "description": "Ours. Whether the ISAC judges this a new class of attack rather than a new instance of a known one.",
           "type": "boolean"
+        },
+        "isac_assessment": {
+          "description": "Ours. The ISAC's position relative to the public record (NVD, the vendor's advisory): it confirms it, adds to it, contradicts it, or takes no position. The public record keeps its own values beside ours; this says how they relate.",
+          "type": "string",
+          "enum": [
+            "confirms",
+            "adds",
+            "contradicts",
+            "no_position"
+          ]
+        },
+        "isac_assessment_delta": {
+          "description": "Ours. Where the ISAC's record differs from the public record, one entry per property: what the public record says (absent when it says nothing) and what the ISAC says.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 50,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "property",
+              "isac_value"
+            ],
+            "properties": {
+              "property": {
+                "description": "The property compared, by its name in this extension or in STIX.",
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "public_value": {
+                "description": "The public record's value, verbatim.",
+                "type": [
+                  "string",
+                  "number",
+                  "boolean"
+                ],
+                "maxLength": 500
+              },
+              "isac_value": {
+                "description": "The ISAC's value.",
+                "type": [
+                  "string",
+                  "number",
+                  "boolean"
+                ],
+                "maxLength": 500
+              },
+              "public_source": {
+                "description": "Where the public value comes from, as an external_references source_name (nvd, the vendor's name).",
+                "type": "string",
+                "maxLength": 100
+              }
+            }
+          }
         }
       },
       "allOf": [
@@ -352,6 +412,34 @@
               "epss_date"
             ]
           }
+        },
+        {
+          "$comment": "An assessment that adds to or contradicts the public record says where; one that confirms it, or takes no position, has nothing to list.",
+          "if": {
+            "properties": {
+              "isac_assessment": {
+                "enum": [
+                  "adds",
+                  "contradicts"
+                ]
+              }
+            },
+            "required": [
+              "isac_assessment"
+            ]
+          },
+          "then": {
+            "required": [
+              "isac_assessment_delta"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "isac_assessment_delta"
+              ]
+            }
+          }
         }
       ]
     },
@@ -441,6 +529,11 @@
               "maxLength": 2000
             }
           }
+        },
+        "review_by": {
+          "description": "Ours. The date after which this course of action must be re-checked before anyone relies on it: a workaround that was right in March may not be in June. Past it, readiness reports the action unavailable.",
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
         }
       }
     },

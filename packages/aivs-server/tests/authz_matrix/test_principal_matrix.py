@@ -95,6 +95,9 @@ EXPECTED: Mapping[RouteClass, Mapping[Principal, Outcome]] = {
     RouteClass.HEALTH: _row(A),
     RouteClass.CIRCLE_CONTENT: _allow(*_MEMBER, P.PEER_MACHINE, otherwise=N),
     RouteClass.SUBMISSION_RECORD: _allow(*_MEMBER, P.ISAC_ANALYST, P.ISAC_EDITOR, otherwise=N),
+    RouteClass.VULNERABILITY_EXPORT: _allow(
+        *_MEMBER, P.PEER_MACHINE, P.ISAC_ANALYST, P.ISAC_EDITOR, otherwise=N
+    ),
     RouteClass.TELEMETRY: _allow(*_MEMBER, otherwise=N),
     RouteClass.RECEIPT_RECORD: _allow(P.ISAC_ANALYST, P.ISAC_EDITOR, otherwise=N),
     RouteClass.PRIORITY: {
@@ -141,6 +144,7 @@ EXPECTED: Mapping[RouteClass, Mapping[Principal, Outcome]] = {
     RouteClass.RECONNECT: _allow(P.ISAC_MEMBERSHIP, P.ISAC_EDITOR, otherwise=F),
     RouteClass.CERTIFICATE_REVOKE: _allow(P.ISAC_MEMBERSHIP, otherwise=N),
     RouteClass.CIRCLE_CREATE: _allow(P.ISAC_EDITOR, otherwise=F),
+    RouteClass.SECTOR_EVENT: _allow(P.ISAC_EDITOR, otherwise=F),
     RouteClass.CIRCLE_SCREENS: {
         **_allow(P.ISAC_EDITOR, P.ISAC_MEMBERSHIP, otherwise=F),
         **dict.fromkeys(CERTIFICATE_ONLY, S),

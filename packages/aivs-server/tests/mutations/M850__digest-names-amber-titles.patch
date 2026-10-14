@@ -1,0 +1,17 @@
+Mutation M850: a digest carries the title of an AMBER item
+Re-applies: Phase H, T10a (cadence and digest) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_digest.py::test_a_digest_waits_for_its_window_then_says_what_became_visible
+
+diff --git a/packages/aivs-server/src/aivs_server/notify/digest.py b/packages/aivs-server/src/aivs_server/notify/digest.py
+--- a/packages/aivs-server/src/aivs_server/notify/digest.py
++++ b/packages/aivs-server/src/aivs_server/notify/digest.py
+@@ -69,7 +69,7 @@
+ EVENT_DIGEST: Final[str] = "submission.digest"
+ 
+ #: The markings whose titles a digest may carry. See the module docstring.
+-TITLED_MARKINGS: Final[frozenset[TLP]] = frozenset({TLP.CLEAR, TLP.GREEN})
++TITLED_MARKINGS: Final[frozenset[TLP]] = frozenset({TLP.CLEAR, TLP.GREEN, TLP.AMBER})
+ 
+ _HOUR: Final[dt.timedelta] = dt.timedelta(hours=1)
+ _DAY: Final[dt.timedelta] = dt.timedelta(days=1)

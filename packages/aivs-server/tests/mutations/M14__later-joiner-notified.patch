@@ -6,11 +6,11 @@ Expect red: packages/aivs-server/tests/unit/test_notifications.py::test_an_organ
 diff --git a/packages/aivs-server/src/aivs_server/notify/events.py b/packages/aivs-server/src/aivs_server/notify/events.py
 --- a/packages/aivs-server/src/aivs_server/notify/events.py
 +++ b/packages/aivs-server/src/aivs_server/notify/events.py
-@@ -146,7 +146,6 @@
+@@ -221,7 +221,6 @@
                  # shared after it went -- an embargo releasing after a firm left
                  # did exactly that.
                  CircleMembership.left_at.is_(None),
 -                CircleMembership.joined_at <= visible_at,
-                 Webhook.is_active.is_(True),
                  TaxiiCollection.is_active.is_(True),
                  TaxiiCollection.can_read.is_(True),
+             )

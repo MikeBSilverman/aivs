@@ -324,6 +324,9 @@ $$;
 _ALL_TABLES = (
     "audit_log",
     "webhook_deliveries",
+    "pending_notices",
+    "email_deliveries",
+    "sector_events",
     "webhooks",
     "portal_sessions",
     "acknowledgments",

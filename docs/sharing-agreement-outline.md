@@ -376,6 +376,30 @@ With FOIA and equivalent protections uncertain (§0):
   triggers a reporting obligation, how is that reconciled with the embargo? This
   is a genuine conflict and should not be discovered during an incident.
 
+### Receipts for government recipients: the technical fact
+
+AIVS keeps a retrieval receipt for every organisation that collects content
+(organisation, submission, channel, day), and an audit row for every page of
+content it collects. It keeps them for a government recipient exactly as for
+a member firm; the audit log is append-only and cannot be thinned for one
+organisation. So a government recipient's receipts prove that the agency
+retrieved a named warning at a known time. That is a discoverable record, and
+at a government-adjacent entity a records request may reach it.
+
+AIVS will not enrol a `government` organisation until the ISAC sets
+`AIVS_GOVERNMENT_RECEIPTS_POLICY_AGREED`, which it should do only once the
+agreement answers the questions below. The setting changes nothing about what
+is recorded; it is the ISAC saying the question has been answered.
+
+### What the agreement should address
+
+- Whether members consent to government recipients' receipts being kept, and
+  who may see them (today: the ISAC's reviewers; never another member).
+- How the ISAC responds to a records request that reaches a government
+  recipient's copy of a warning, or its receipt.
+- Whether a government recipient may acknowledge or action content, which
+  creates further records of the same kind.
+
 ---
 
 ## 11. Data protection and privacy

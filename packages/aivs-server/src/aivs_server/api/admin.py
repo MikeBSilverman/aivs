@@ -76,6 +76,7 @@ from aivs_server.services.circles import (
     remove_circle_member,
     resolve_organisations,
 )
+from aivs_server.services.enrolment import enrolment_problem
 from aivs_server.services.instance import pause_distribution, resume_distribution
 from aivs_server.services.offboarding import (
     OffboardingError,
@@ -129,7 +130,10 @@ class CertificateOut(BaseModel):
 # ---------------------------------------------------------------------------
 @router.post("/orgs", status_code=status.HTTP_201_CREATED, response_model=OrganizationOut)
 async def create_org(
-    payload: OrganizationCreate, ctx: AuthenticatedContext, session: SessionDep
+    payload: OrganizationCreate,
+    ctx: AuthenticatedContext,
+    session: SessionDep,
+    settings: SettingsDep,
 ) -> Organization:
     """Enrol a member organisation. Hosting ISAC only.
 
@@ -137,6 +141,12 @@ async def create_org(
     steps, so a half-finished onboarding cannot authenticate.
     """
     require(is_isac_membership(ctx), "org_create_requires_isac_membership")
+    problem = enrolment_problem(
+        payload.org_type,
+        government_receipts_policy_agreed=settings.government_receipts_policy_agreed,
+    )
+    if problem is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=problem)
 
     organization = Organization(
         slug=payload.slug,
@@ -340,6 +350,7 @@ async def create_circle(
         name=payload.name,
         description=payload.description,
         minimum_tlp=payload.minimum_tlp,
+        is_sandbox=payload.is_sandbox,
         auto_member_org_types=[org_type.value for org_type in payload.auto_member_org_types],
     )
     session.add(circle)
@@ -377,6 +388,7 @@ async def create_circle(
         resource_id=payload.slug,
         details={
             "minimum_tlp": payload.minimum_tlp.value,
+            "is_sandbox": payload.is_sandbox,
             "auto_member_org_types": circle.auto_member_org_types,
         },
     )

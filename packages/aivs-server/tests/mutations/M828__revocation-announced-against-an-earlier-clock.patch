@@ -1,0 +1,16 @@
+Mutation M828: a revocation's notifications are compared with the app replica's clock, not its stamp's
+Re-applies: T8's revocation as delivered (found in the T9 rebase)
+
+Expect red: packages/aivs-server/tests/unit/test_revocation.py::test_a_member_with_a_webhook_is_told_of_the_revocation_whatever_the_app_clock_says
+
+diff --git a/packages/aivs-server/src/aivs_server/services/revocation.py b/packages/aivs-server/src/aivs_server/services/revocation.py
+--- a/packages/aivs-server/src/aivs_server/services/revocation.py
++++ b/packages/aivs-server/src/aivs_server/services/revocation.py
+@@ -168,7 +168,6 @@
+         submission_id=submission.id,
+         circle_ids=sorted(circles, key=str),
+         visible_at=stamp,
+-        now=stamp,
+     )
+     revoked_ids = sorted(live)
+     await record(

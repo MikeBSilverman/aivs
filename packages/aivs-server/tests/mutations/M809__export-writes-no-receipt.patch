@@ -1,0 +1,22 @@
+Mutation M809: an export is not recorded as a retrieval
+Re-applies: Phase F (T8) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_vulnerability_exports.py::test_an_export_is_recorded_as_a_retrieval_on_its_channel
+Expect red: packages/aivs-server/tests/abuse/test_reading_abuse.py::test_an_export_scraper_is_noticed_then_cut_off
+
+diff --git a/packages/aivs-server/src/aivs_server/services/ioc_pack.py b/packages/aivs-server/src/aivs_server/services/ioc_pack.py
+--- a/packages/aivs-server/src/aivs_server/services/ioc_pack.py
++++ b/packages/aivs-server/src/aivs_server/services/ioc_pack.py
+@@ -121,11 +121,7 @@
+     await record_retrievals(
+         session,
+         org_id=ctx.org_id,
+-        submission_ids={
+-            obj.submission_id
+-            for obj in (objects.vulnerability, *pack.indicators)
+-            if obj.date_added is not None
+-        },
++        submission_ids=set(),
+         via=via,
+         actor_ref=ctx.actor_id,
+         now=now,

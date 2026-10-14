@@ -1,0 +1,17 @@
+Mutation M855: each version of one advisory is its own digest line
+Re-applies: Phase H, T10a (cadence and digest) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_digest.py::test_an_hourly_member_is_held_and_versions_of_one_advisory_coalesce
+
+diff --git a/packages/aivs-server/src/aivs_server/notify/events.py b/packages/aivs-server/src/aivs_server/notify/events.py
+--- a/packages/aivs-server/src/aivs_server/notify/events.py
++++ b/packages/aivs-server/src/aivs_server/notify/events.py
+@@ -189,7 +189,7 @@
+             .order_by(StixObject.stix_id)
+         )
+     ).all()
+-    subject = str(vulnerabilities[0]["id"]) if vulnerabilities else f"submission:{submission.id}"
++    subject = f"submission:{submission.id}"
+     products: list[str] = []
+     if submission.tlp is not TLP.RED:
+         for raw in vulnerabilities:

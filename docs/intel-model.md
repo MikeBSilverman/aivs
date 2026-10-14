@@ -239,18 +239,32 @@ it adds a principal to the authorization matrix.
 
 ### 3.3 Phase F: depth and exporters
 
-- **Depth is a link, not a profile.** `?depth=guided` renders the
-  vulnerability page from its objects alone, in plain language, with no STIX
-  type names; `technical` is the raw STIX. The one stored preference is a
-  per-operator `default_depth`, because it has a reader the day it lands.
+Built, except where a line says otherwise:
+
+- **Depth is a link, not a profile.** `?depth=guided` renders a
+  vulnerability from its objects alone, in plain language, with no STIX
+  type names (`services/guidance.py`, `templates/_guided.html`); `technical`
+  is the raw STIX. The one stored preference is a per-operator
+  `default_depth`, because it has a reader the day it lands. *Wiring the
+  depths into the vulnerability page waits for that page.*
 - **`isac_assessment`** (`confirms | adds | contradicts | no_position`)
   states the ISAC's position relative to the public record, with the delta.
-  Like readiness, it is relative to the caller.
-- **Exporters are serialisers over visible objects**: print stylesheet, CSV
-  IoC pack (unexpired indicators only), and pySigma rendering per member SIEM
-  dialect. Every export writes a receipt.
-- **Lead time** is a query, `first_visible_to_org − nvd_published` per item,
-  shown to each organisation about itself.
+  Like readiness, it is relative to the caller: the guided view reads it from
+  the latest version the caller can see.
+- **Exporters are serialisers over visible objects**: a print stylesheet and
+  a CSV IoC pack (current indicators only). Each export writes a receipt.
+  *pySigma rendering per member SIEM dialect is not built*: every pySigma
+  release from 1.0 depends on a package with an open advisory and no fix.
+- **Lead time** is a query, first visible to the organisation against
+  `nvd_published` and `kev_date_added` per item, shown to each organisation
+  about itself; the ISAC sees a sector median over distribution dates,
+  withheld below k.
+- **"New since you last read"** is computed from the organisation's portal
+  receipts, not stored.
+- **`review_by` on a course of action** is in the 2.0 extension, and the
+  guided view flags a step past it (`is_due_for_review`). *Readiness reporting
+  such an action unavailable waits for readiness, which calls the same
+  predicate.*
 
 ### 3.4 Phase H: posture and evidence
 

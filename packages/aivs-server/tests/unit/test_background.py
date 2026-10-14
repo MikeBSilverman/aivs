@@ -24,6 +24,8 @@ def test_the_process_runs_its_unattended_jobs_at_their_configured_intervals(sett
         "webhook_dispatcher": dt.timedelta(seconds=settings.webhook_dispatch_interval_seconds),
         "detections": dt.timedelta(seconds=settings.detection_interval_seconds),
         "telemetry": dt.timedelta(seconds=settings.telemetry_interval_seconds),
+        "notification_digest": dt.timedelta(seconds=settings.digest_interval_seconds),
+        "email_dispatcher": dt.timedelta(seconds=settings.email_dispatch_interval_seconds),
     }
 
 

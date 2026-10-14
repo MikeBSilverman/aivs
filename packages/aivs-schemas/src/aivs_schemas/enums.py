@@ -19,6 +19,7 @@ from typing import Final
 
 __all__ = [
     "ACCEPTED_DISCOVERY_SCOPES",
+    "CONTRIBUTING_BY_DEFAULT_ORG_TYPES",
     "SUBMISSION_TRANSITIONS",
     "TERMINAL_SUBMISSION_STATES",
     "THIRD_PARTY_DISCOVERY_SCOPES",
@@ -34,15 +35,18 @@ __all__ = [
     "DiscoveryScope",
     "EmbargoPolicy",
     "EmbargoStatus",
+    "NotificationCadence",
     "OperatorRole",
     "OrgStatus",
     "OrgType",
     "PostureStatus",
+    "ReadingDepth",
     "SsvcPriority",
     "SubmissionLane",
     "SubmissionSource",
     "SubmissionState",
     "VexJustification",
+    "default_circle_role",
     "is_transition_allowed",
     "tlp_at_least_as_restrictive",
 ]
@@ -131,6 +135,15 @@ CIRCLE_ELIGIBLE_ORG_TYPES: frozenset[OrgType] = RULE_ELIGIBLE_ORG_TYPES | frozen
     {OrgType.ADMIN, OrgType.VENDOR, OrgType.GOVERNMENT}
 )
 
+#: Organisation types that contribute to every circle they read unless an
+#: operator names another role: the sector members. A circle reader that could
+#: not contribute was the commonest reason nothing was shared, and the fast lane
+#: publishes only where the member contributes. A vendor or a government body
+#: reads unless named a contributor, because what it posts reaches the firms it
+#: supplies or supervises; the ISAC's own organisation contributes through
+#: review, never by circle role.
+CONTRIBUTING_BY_DEFAULT_ORG_TYPES: frozenset[OrgType] = RULE_ELIGIBLE_ORG_TYPES
+
 
 class OperatorRole(StrEnum):
     """A role a human operator holds. An operator may hold several.
@@ -171,7 +184,9 @@ class CertStatus(StrEnum):
 class CircleRole(StrEnum):
     """An organisation's role within one sharing circle.
 
-    ``MEMBER`` may read; ``CONTRIBUTOR`` may also submit.
+    ``MEMBER`` may read; ``CONTRIBUTOR`` may also submit. Which one an
+    organisation joins with, when nobody names a role, is
+    :func:`default_circle_role`.
 
     ``CIRCLE_ADMIN`` **no longer administers anything**, and the name is kept
     only because removing a value from a PostgreSQL enum is disruptive out of
@@ -334,6 +349,34 @@ class AckType(StrEnum):
     ACTIONED = "actioned"
 
 
+class NotificationCadence(StrEnum):
+    """How often an organisation is told that content became visible to it.
+
+    ``IMMEDIATE`` is one notice per submission, as soon as it is visible, to
+    each subscribed webhook. ``HOURLY`` and ``DAILY`` hold notices and send one
+    digest per window, so a sector event updated twenty times in an afternoon
+    is one message per window rather than twenty, and versions of one advisory
+    are one line in it.
+    """
+
+    IMMEDIATE = "immediate"
+    HOURLY = "hourly"
+    DAILY = "daily"
+
+
+class ReadingDepth(StrEnum):
+    """How much of a vulnerability page to show: a rendering, never a grant.
+
+    It selects how objects the reader may already see are presented, never
+    which objects; that is why it may be stored per operator when nothing else
+    about a reader is.
+    """
+
+    GUIDED = "guided"
+    STANDARD = "standard"
+    TECHNICAL = "technical"
+
+
 class AckVia(StrEnum):
     TAXII = "taxii"
     API = "api"
@@ -431,6 +474,13 @@ TLP_RESTRICTIVENESS: Final[Mapping[TLP, int]] = MappingProxyType(
         TLP.RED: 4,
     }
 )
+
+
+def default_circle_role(org_type: OrgType) -> CircleRole:
+    """The role an organisation of ``org_type`` joins a circle with when none is named."""
+    if org_type in CONTRIBUTING_BY_DEFAULT_ORG_TYPES:
+        return CircleRole.CONTRIBUTOR
+    return CircleRole.MEMBER
 
 
 def is_transition_allowed(current: SubmissionState, target: SubmissionState) -> bool:

@@ -1,0 +1,19 @@
+Mutation M876: an event on a record the caller cannot see is listed anyway
+Re-applies: Phase H, T10c (sector events) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_sector_events.py::test_a_member_sees_the_event_only_if_it_can_see_the_record
+Expect red: packages/aivs-server/tests/unit/test_sector_events.py::test_the_dashboard_pins_the_event_for_those_who_can_see_it[event-outsider-False]
+
+diff --git a/packages/aivs-server/src/aivs_server/services/sector_events.py b/packages/aivs-server/src/aivs_server/services/sector_events.py
+--- a/packages/aivs-server/src/aivs_server/services/sector_events.py
++++ b/packages/aivs-server/src/aivs_server/services/sector_events.py
+@@ -148,6 +148,9 @@
+         try:
+             objects = await gather_vulnerability(session, ctx, event.vulnerability_stix_id, now=now)
+         except VulnerabilityHiddenError:
++            pinned.append(
++                PinnedEvent(event.id, event.vulnerability_stix_id, event.vulnerability_stix_id, event.opened_at, "")
++            )
+             continue
+         raw = objects.vulnerability.raw
+         pinned.append(

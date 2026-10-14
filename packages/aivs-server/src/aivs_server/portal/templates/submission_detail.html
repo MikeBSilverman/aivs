@@ -47,6 +47,11 @@
     {% for action in actions %}
       <form method="post" action="/portal/submissions/{{ submission.id }}/{{ action.verb }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        {% if action.reason %}
+          <label>Why (recorded in the audit log)
+            <textarea name="reason" rows="2" minlength="10" maxlength="1000" required></textarea>
+          </label>
+        {% endif %}
         {% if action.acknowledge %}
           <fieldset>
             <legend>Changes made by a machine that need your acknowledgement</legend>

@@ -1,0 +1,16 @@
+Mutation M807: a relationship whose latest version no longer names the vulnerability still connects it
+Re-applies: Phase F (T8) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_reading.py::test_a_relationship_repointed_by_its_owner_no_longer_connects
+
+diff --git a/packages/aivs-server/src/aivs_server/services/vulnerability_objects.py b/packages/aivs-server/src/aivs_server/services/vulnerability_objects.py
+--- a/packages/aivs-server/src/aivs_server/services/vulnerability_objects.py
++++ b/packages/aivs-server/src/aivs_server/services/vulnerability_objects.py
+@@ -221,6 +221,4 @@
+     target = relationship.get("target_ref")
+     if source == stix_id and isinstance(target, str):
+         return target
+-    if target == stix_id and isinstance(source, str):
+-        return source
+-    return None
++    return str(source)

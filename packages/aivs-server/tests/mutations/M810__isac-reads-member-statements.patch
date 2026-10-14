@@ -1,0 +1,18 @@
+Mutation M810: the ISAC's reviewers read any member's lead-time statement
+Re-applies: Phase F (T8) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_lead_time.py::test_nobody_else_reads_a_members_statement_the_isac_included[isac]
+Expect red: packages/aivs-server/tests/abuse/test_reading_abuse.py::test_walking_organisation_ids_finds_no_other_firms_statement
+
+diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs-server/src/aivs_server/auth/policy.py
+--- a/packages/aivs-server/src/aivs_server/auth/policy.py
++++ b/packages/aivs-server/src/aivs_server/auth/policy.py
+@@ -231,7 +231,7 @@
+     ranking of who acts slowly that no member agreed to. The ISAC has the
+     sector median, which no member's behaviour enters.
+     """
+-    return is_active(ctx) and ctx.org_id == org_id
++    return is_active(ctx) and (ctx.org_id == org_id or can_review_submissions(ctx))
+ 
+ 
+ def can_change_embargo(ctx: AuthContext) -> bool:

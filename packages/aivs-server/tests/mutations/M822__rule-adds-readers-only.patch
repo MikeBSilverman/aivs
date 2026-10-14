@@ -1,0 +1,17 @@
+Mutation M822: a membership rule adds sector members read-only
+Re-applies: Phase E slice-4 follow-ups (T8 A1, A2) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_circle_roles.py::test_a_membership_rule_adds_sector_members_as_contributors
+
+diff --git a/packages/aivs-server/src/aivs_server/services/circles.py b/packages/aivs-server/src/aivs_server/services/circles.py
+--- a/packages/aivs-server/src/aivs_server/services/circles.py
++++ b/packages/aivs-server/src/aivs_server/services/circles.py
+@@ -508,7 +508,7 @@
+             CircleMembership(
+                 circle_id=circle.id,
+                 org_id=org_id,
+-                role=default_circle_role(types[org_id]),
++                role=CircleRole.MEMBER,
+                 managed_by_rule=True,
+                 joined_at=now,
+             )

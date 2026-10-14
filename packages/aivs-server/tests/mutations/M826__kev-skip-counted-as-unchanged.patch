@@ -1,0 +1,17 @@
+Mutation M826: the KEV run's summary counts a record skipped on extension 1.0 as one KEV did not list
+Re-applies: Phase E slice-4 follow-ups (T8 A3, A4) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_enrich_kev.py::test_run_reports_how_many_records_it_skipped_on_the_1_0_extension
+
+diff --git a/scripts/enrich-kev.py b/scripts/enrich-kev.py
+--- a/scripts/enrich-kev.py
++++ b/scripts/enrich-kev.py
+@@ -179,7 +179,7 @@
+     """Deal with one record and say which outcome it had."""
+     if _still_on_1_0(record):
+         _say(f"skipped {record['id']}: extension 1.0, which carries no KEV fields")
+-        return SKIPPED_1_0
++        return UNCHANGED
+     version = enriched_version(record, kev, now=now)
+     if version is None:
+         return UNCHANGED

@@ -1,0 +1,17 @@
+Mutation M885: offboarding leaves a departed member's held notices and queued digest email
+Re-applies: T10 rebased onto c2b17ba (org_still_active, offboarding) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_digest.py::test_offboarding_deletes_held_notices_queued_email_and_the_mailbox
+
+diff --git a/packages/aivs-server/src/aivs_server/services/offboarding.py b/packages/aivs-server/src/aivs_server/services/offboarding.py
+--- a/packages/aivs-server/src/aivs_server/services/offboarding.py
++++ b/packages/aivs-server/src/aivs_server/services/offboarding.py
+@@ -115,7 +115,7 @@
+ 
+ async def _delete_operational(session: AsyncSession, organisation: Organization) -> str:
+     """Delete the member's own operational data. Returns what happened to its postures."""
+-    for table in (Webhook, PortalSession, TaxiiStatus, PendingNotice, EmailDelivery):
++    for table in (Webhook, PortalSession, TaxiiStatus):
+         await session.execute(delete(table).where(table.org_id == organisation.id))
+     if organisation.legal_hold_since is not None:
+         return "retained under legal hold"

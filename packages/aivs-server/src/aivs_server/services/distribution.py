@@ -58,6 +58,7 @@ from aivs_server.db.models import (
 from aivs_server.services.content_rules import content_problem
 from aivs_server.services.embargo import record_embargo
 from aivs_server.services.markings import stamp_tlp_marking
+from aivs_server.services.ownership import is_isac_owner
 from aivs_server.services.proxy_filing import awaiting_confirmation_problem
 from aivs_server.services.publication import (
     earliest_publication_instant,
@@ -131,6 +132,29 @@ async def _submitter_identity(session: AsyncSession, submission: Submission) -> 
     return identity
 
 
+async def _attributed_identity(session: AsyncSession, submission: Submission) -> str:
+    """The identity a named (not anonymous) submission is attributed to: its owner's.
+
+    The submitter's own, except for the ISAC's automation, which files as the
+    ISAC (``is_isac_owner``, the definition ownership uses): its KEV version of
+    the ISAC's record is the ISAC's record, and carries the ISAC's name rather
+    than a machine's.
+    """
+    submitter_type = await session.scalar(
+        select(Organization.org_type).where(Organization.id == submission.submitter_org_id)
+    )
+    if not is_isac_owner(submitter_type):
+        return await _submitter_identity(session, submission)
+    identity = await _isac_identity(session)
+    if identity is None:
+        msg = (
+            "the ISAC's automation files as the ISAC, and no administrative "
+            "organisation is enrolled to attribute it to"
+        )
+        raise DistributionError(msg)
+    return identity
+
+
 async def _apply_attribution(
     session: AsyncSession, submission: Submission, objects: list[StixObject]
 ) -> None:
@@ -171,7 +195,7 @@ async def _apply_attribution(
             )
             raise DistributionError(msg)
     else:
-        identity = await _submitter_identity(session, submission)
+        identity = await _attributed_identity(session, submission)
 
     for stored in objects:
         if stored.raw.get("created_by_ref") != identity:

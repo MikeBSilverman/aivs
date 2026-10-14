@@ -1,0 +1,16 @@
+Mutation M813: a posture still under investigation counts as actioned
+Re-applies: Phase F (T8) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_lead_time.py::test_an_open_posture_is_not_counted_as_actioned
+
+diff --git a/packages/aivs-server/src/aivs_server/services/lead_time.py b/packages/aivs-server/src/aivs_server/services/lead_time.py
+--- a/packages/aivs-server/src/aivs_server/services/lead_time.py
++++ b/packages/aivs-server/src/aivs_server/services/lead_time.py
+@@ -262,7 +262,6 @@
+         .where(
+             OrgPosture.org_id == org_id,
+             OrgPosture.vulnerability_stix_id.in_(stix_ids),
+-            OrgPosture.status.in_(tuple(_ACTIONED)),
+         )
+     )
+     return int(count or 0)

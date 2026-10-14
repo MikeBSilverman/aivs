@@ -38,15 +38,18 @@ rather than deleting rows.
 | `acknowledgments` | evidence | Receipts: retrieved, acknowledged, actioned, per organisation. |
 | `audit_log` | evidence | Every security-relevant decision. Append-only. |
 | `circle_memberships` | evidence | Membership *intervals*, which decide what an organisation could ever have seen. |
-| `organizations` | evidence | The member record: name, type, status, STIX identity, the ISAC directory group its people sign in through, and any legal hold with its reason. Referenced by every receipt. Its contact email is cleared at offboarding; its name is kept, because evidence names who it is about. |
+| `organizations` | evidence | The member record: name, type, status, STIX identity, the ISAC directory group its people sign in through, and any legal hold with its reason. Referenced by every receipt. Its contact email is cleared at offboarding; its name is kept, because evidence names who it is about. It also holds the organisation's notification cadence and digest mailbox (a routing address the member chose); the mailbox is cleared at offboarding, like the contact email. |
 | `client_certificates` | evidence | Certificate fingerprint, the identity of record for every machine request; status and validity. No private key, ever. |
-| `operators` | pii | People: email, display name, roles, password hash (absent for a person who signs in only through the ISAC's IdP), sealed TOTP seed, lockout state, and the federated identity (IdP issuer and subject) they sign in as. |
+| `operators` | pii | People: email, display name, roles, password hash (absent for a person who signs in only through the ISAC's IdP), sealed TOTP seed, lockout state, and the federated identity (IdP issuer and subject) they sign in as, and the depth their vulnerability pages open at (a rendering preference, which grants nothing). |
 | `portal_sessions` | operational | Signed-in sessions: token hash, source IP, user agent, expiry, and either the bound certificate or, for an SSO session, the IdP issuer and subject, a device-cookie hash and the IdP's `amr` (how the person authenticated). |
-| `circles` | operational | Sharing-group definitions and their TLP floors and membership rules. |
+| `circles` | operational | Sharing-group definitions and their TLP floors and membership rules, and whether a circle is a sandbox (its content counts in no reported figure). |
 | `taxii_collections` | operational | The TAXII view onto each circle. |
 | `taxii_status` | operational | TAXII status resources for submissions over TAXII. |
 | `webhooks` | operational | A member's notification endpoints and sealed signing keys. |
-| `webhook_deliveries` | operational | The outbound notification queue. Contentless payloads. |
+| `webhook_deliveries` | operational | The outbound notification queue. Contentless payloads, plus affected product names below RED, and in a digest the titles of CLEAR and GREEN items. |
+| `sector_events` | operational | Which of the ISAC's canonical vulnerabilities is pinned as a sector event, by whom and when, and when it closed. |
+| `pending_notices` | operational | Visibility notices held for an organisation's next hourly or daily digest, one per subject. Deleted when the digest is queued. |
+| `email_deliveries` | operational | The digest email queue: the member's digest mailbox, and the contentless digest text. |
 | `instance_controls` | operational | The instance-wide pause switch and who pressed it. |
 | `submission_milestones` | operational | Which telemetry milestones a submitter has been told about, so each is announced once. |
 | `detection_state` | operational | When each detection finding was last raised, so it raises once per window. |

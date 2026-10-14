@@ -205,6 +205,12 @@ Do not create the organization before the membership agreement is executed. The
 agreement is what makes the TLP and embargo obligations enforceable, and the gap
 between "enrolled" and "contractually bound" is the gap where an incident lives.
 
+A `government` organisation is refused, at both the API and the portal, until
+`AIVS_GOVERNMENT_RECEIPTS_POLICY_AGREED=true`. Its retrieval receipts and audit
+rows are kept like any member's, and they prove that an agency collected a
+named warning at a known time: a discoverable record. Set it only once the
+membership agreement answers that (sharing agreement outline, §10).
+
 ### 2.2 Sign the CSR
 
 The member sends a CSR. Sign it against the AIVS issuing CA:
@@ -251,8 +257,15 @@ Choose the role deliberately:
 | `contributor` | Read and submit |
 | `circle_admin` | Historical — same as `contributor` |
 
-Default to `member`. Upgrade to `contributor` when the firm is ready to submit
-and understands the `discovery_scope` attestation.
+Leave the role unset unless you mean something else. Unset, each organisation
+gets its type's default: a G-SIB, Section 9 or critical-infrastructure member
+joins as `contributor`, because a firm that reads a circle but cannot post to
+it is the commonest reason nothing is shared. A vendor or government body joins
+as `member`, because what it posts reaches the firms it supplies or supervises;
+name `contributor` for one only when that is the point of the circle. Name
+`member` for a sector firm that should only read (one still onboarding, say).
+Memberships open before this default existed were moved to it once, by
+migration `3efc1e04d297`, which left an audit row per circle naming them.
 
 Do not reach for `circle_admin`: it grants nothing beyond `contributor`. Deciding
 who is in a circle is yours and cannot be delegated — a circle holds other
@@ -276,6 +289,7 @@ correct, spec-conformant response and usually means step 2.4 was missed.
 | Remove an organization | They stop being able to read. **They keep what they already pulled** — you cannot unring that bell, which is why removal is a contractual conversation, not just a config change. |
 | Deactivate a circle (`is_active = false`) | Prefer this to deleting. Deleting a circle cascades its memberships, and `distributions` has a `RESTRICT` foreign key to `circles`, so a circle with distributed content cannot be deleted at all. That restriction is deliberate. |
 | Change `minimum_tlp` | Affects future distributions only. It does not re-mark or withdraw content already distributed. |
+| Create a sandbox | Tick "sandbox" when you create it (or `"is_sandbox": true` over the API). Use one for a member's day-one TIP check and for exercises: its content travels the real TAXII path and counts in no figure the ISAC reports (telemetry reach, lead time). It cannot be changed afterwards, so no circle's figures change meaning halfway through. |
 
 ### On the ISAC reading a circle
 
@@ -929,6 +943,65 @@ The forwarder is non-blocking. A collector outage drops lines and never stops
 the platform, so alert on the collector's side when the stream goes quiet.
 
 ---
+
+### 9.3 Is each member still collecting?
+
+A member that has stopped collecting does not notice: nothing arrives, which
+looks like nothing being shared. The status page lists **connections with
+content waiting more than 3 days**: per member and collection, the oldest
+content visible to it that it has not collected since. A member with nothing
+new is not listed. Members see the same for themselves on their **Connection**
+page, with their webhooks' delivery state, their certificates' expiry, and a
+starting configuration for OpenCTI, MISP or Splunk with this instance's
+addresses and their collections filled in.
+
+### 9.4 Sector events
+
+When the whole sector is working one vulnerability, pin the ISAC's record for
+it: `POST /api/v1/sector-events` with its `vulnerability_stix_id`. Only the
+ISAC's own record, already distributed, can be pinned, one event per
+vulnerability. Every member that can see the record finds it at the top of
+its dashboard, and every notice and digest line about it is marked as part of
+the event; keep versioning the record as usual, and members' cadence coalesces
+the versions. After each sector call, file its notes with
+`POST /api/v1/sector-events/{id}/call-notes` (a summary and the action items):
+they become a draft of `note`s on the record for you to review and distribute
+like anything else. Close the event with `POST .../close` when it is over.
+
+### 9.5 Notification cadence and digest email
+
+A member chooses how often it is told content became visible:
+`immediate` (the default, one notice per submission), `hourly` or `daily`
+(one digest per window, sent at the top of the hour or at
+`AIVS_DIGEST_DAILY_HOUR_UTC`, 07:00 UTC unless set). It sets this, and an
+optional digest mailbox, with `PUT /api/v1/notification-settings`, using the
+certificate or org-admin session that registers its webhooks. A mailbox needs
+an hourly or daily cadence.
+
+A digest names how many items of each marking became visible, links each to
+its collection, names the affected products below RED, and gives titles only
+for CLEAR and GREEN items. Nothing more, and nothing while distribution is
+paused.
+
+Email is off until you name a relay. The relay is a subprocessor: tell your
+members which one, and that it sees the digest's counts, products and green
+titles. To turn it on:
+
+1. Put the relay password in a file only uid 10001 can read:
+   `umask 077; printf '%s' "$PASSWORD" > /srv/aivs/secrets/smtp-password;
+   chown 10001:10001 /srv/aivs/secrets/smtp-password`.
+2. Set `AIVS_SMTP_HOST`, `AIVS_SMTP_FROM`, `AIVS_SMTP_USERNAME` and
+   `AIVS_SMTP_PASSWORD_PATH` (that file's absolute path) in `deploy/.env`.
+3. Start with the override:
+
+```bash
+docker compose --env-file deploy/.env -f docker-compose.yml -f docker-compose.digest-email.yml up -d
+```
+
+STARTTLS with the relay's certificate verified is always required; there is
+no setting to relax it. A message the relay refuses is retried with backoff,
+up to `AIVS_EMAIL_MAX_ATTEMPTS`, and keeps its last error in
+`email_deliveries.error`; the status page does not show it yet.
 
 ## 10. Things that will bite you
 

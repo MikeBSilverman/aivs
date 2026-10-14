@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from aivs_server.audit.log import AuditAction, record
 from aivs_server.auth.context import AuthContext
 from aivs_server.db.models import InstanceControl
+from aivs_server.services.publication import hold_publication_lock
 
 __all__ = ["distribution_is_paused", "pause_distribution", "resume_distribution"]
 
@@ -43,7 +44,15 @@ async def distribution_is_paused(session: AsyncSession) -> bool:
 async def pause_distribution(
     session: AsyncSession, ctx: AuthContext, *, reason: str, now: dt.datetime
 ) -> None:
-    """Stop all publication and all serving. Does not commit."""
+    """Stop all publication and all serving. Does not commit.
+
+    Takes the publication lock first, so a distribution that has already
+    passed its own pause check finishes and commits *before* the pause does.
+    Without it the pause returned while that publication was still open, and
+    the audit trail recorded a distribution after the stop button. Same lock
+    order as every writer (advisory lock, then the controls row).
+    """
+    await hold_publication_lock(session, refuse_while_paused=False)
     row = await _controls(session)
     row.distribution_paused = True
     row.paused_at = now

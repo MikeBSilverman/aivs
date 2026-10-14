@@ -324,3 +324,25 @@ async def test_a_pause_still_allows_moving_an_embargo_later_and_nothing_sooner(
         await release_embargo_now(session, isac_ctx, submission_id=other, now=NOW)
 
     assert extended.status is EmbargoStatus.EXTENDED
+
+
+async def test_a_pause_waits_for_a_publication_already_under_way(open_session, isac_ctx):
+    """The stop button returns only once nothing is mid-publication, so no
+    distribution is recorded after it."""
+    from aivs_server.services.instance import pause_distribution  # noqa: PLC0415 - one test
+
+    holder, pauser, idle = open_session(), open_session(), open_session()
+
+    unhindered, _done = await is_blocked(
+        pause_distribution(idle, isac_ctx, reason="drill", now=NOW)
+    )
+    await idle.rollback()
+    await hold_publication_lock(holder, refuse_while_paused=True)
+    blocked, task = await is_blocked(
+        pause_distribution(pauser, isac_ctx, reason="incident", now=NOW)
+    )
+    await holder.rollback()
+    await asyncio.wait_for(task, timeout=5)
+
+    assert unhindered is False
+    assert blocked is True

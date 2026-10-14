@@ -23,6 +23,7 @@ from sqlalchemy import Select, func, literal, select, tuple_
 
 from aivs_server.auth.policy import Intervals, visible_content_clause
 from aivs_server.db.models import Distribution, StixObject, Submission
+from aivs_server.services.ownership import owner_key
 from aivs_server.taxii.filters import TaxiiFilters, VersionSelector
 from aivs_server.taxii.paging import Cursor
 
@@ -53,7 +54,7 @@ def _visible_rows(circle_id: uuid.UUID, intervals: Intervals, now: dt.datetime) 
             StixObject.spec_version.label("spec_version"),
             StixObject.raw.label("raw"),
             Distribution.submission_id.label("submission_id"),
-            Submission.submitter_org_id.label("owner"),
+            owner_key(Submission.submitter_org_id).label("owner"),
         )
         .select_from(Distribution)
         .join(StixObject, StixObject.id == Distribution.stix_object_id)

@@ -56,6 +56,7 @@ from aivs_server.db.models import (
     StixObject,
     Submission,
 )
+from aivs_server.services.ownership import ISAC_OWNER_TYPES
 from aivs_server.services.references import external_references_by_type
 
 __all__ = ["DisclosureScope", "cve_status", "disclosure_problem"]
@@ -123,7 +124,7 @@ async def _canonical_current(
         .join(Organization, Organization.id == Submission.submitter_org_id)
         .where(
             StixObject.stix_id == stix_id,
-            Organization.org_type == OrgType.ADMIN,
+            Organization.org_type.in_(tuple(ISAC_OWNER_TYPES)),
             Submission.state.in_(tuple(_CANONICAL_STATES)),
             Submission.id != scope.exclude_submission_id,
         )

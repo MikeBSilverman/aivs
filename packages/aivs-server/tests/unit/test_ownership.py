@@ -9,8 +9,10 @@ version, which supersedes the older in the default feed.
 from __future__ import annotations
 
 import uuid
+from typing import Any
 
 import pytest
+from sqlalchemy.exc import IntegrityError
 
 from aivs_schemas.enums import OrgType
 from tests.conftest import proxy_headers
@@ -203,3 +205,88 @@ async def test_the_isacs_automation_cannot_version_a_members_object(client, worl
 
     assert refused.status_code == 409
     assert shared in refused.json()["title"]
+
+
+@pytest.mark.requirement("SF-48")
+async def test_a_kev_version_supersedes_the_isacs_record_in_the_default_feed(
+    client, session, world, isac_org, automation
+):
+    """The automation's version and the ISAC's are one owner's, so `last` is one row.
+
+    Resolved per raw submitting organisation, the feed served both as "last",
+    and a TIP saw two current versions of the ISAC's canonical record.
+    """
+    record = f"vulnerability--{uuid.uuid4()}"
+    await seed(
+        session, isac_org, vulnerability_raw(record, cve_status="published"), circle=world["circle"]
+    )
+    _org, pem = automation
+    submission, validated = await filed_and_validated(
+        client, pem, world["editor"], [finding(record, modified=LATER, name="with KEV dates")]
+    )
+    assert validated.status_code == 200, validated.text
+    distributed = await distribute(client, submission, world["editor"], world["circle"])
+    assert distributed.status_code == 200, distributed.text
+
+    _reader, reader_pem = world["meridian-global"]
+    assert await feed_names(client, world, reader_pem) == ["with KEV dates"]
+    assert await feed_names(client, world, reader_pem, **{"match[version]": "all"}) == [
+        "The ISAC's record",
+        "with KEV dates",
+    ]
+
+
+def relationship(stix_id: str, *, modified: str, source: str, target: str, **extra: Any) -> dict:
+    return {
+        "type": "relationship",
+        "spec_version": "2.1",
+        "id": stix_id,
+        "created": STAMP,
+        "modified": modified,
+        "relationship_type": "related-to",
+        "source_ref": source,
+        "target_ref": target,
+        **extra,
+    }
+
+
+@pytest.mark.requirement("SF-48")
+async def test_a_relationship_is_owned_like_anything_else(client, world):
+    """Another firm's relationship id is not free to version; one's own is.
+
+    The exemption that let any organisation publish a newer version under
+    another's relationship id let a member revoke a peer's statement in every
+    TIP. Relating someone else's objects needs no exemption: it is a new id.
+    """
+    _owner, owner_pem = world["meridian-global"]
+    _other, other_pem = world["atlantic-clearing"]
+    a, b = (f"vulnerability--{uuid.uuid4()}" for _ in range(2))
+    rel_id = f"relationship--{uuid.uuid4()}"
+    objects = [
+        finding(a, modified=STAMP, name="a"),
+        finding(b, modified=STAMP, name="b"),
+        relationship(rel_id, modified=STAMP, source=a, target=b),
+    ]
+    first, validated = await filed_and_validated(client, owner_pem, world["editor"], objects)
+    assert validated.status_code == 200, validated.text
+    assert (await distribute(client, first, world["editor"], world["circle"])).status_code == 200
+
+    revoked = relationship(rel_id, modified=LATER, source=a, target=b, revoked=True)
+    _taken, refused = await filed_and_validated(client, other_pem, world["editor"], [revoked])
+    _own, accepted = await filed_and_validated(client, owner_pem, world["editor"], [revoked])
+
+    assert refused.status_code == 409
+    assert rel_id in refused.json()["title"]
+    assert accepted.status_code == 200, accepted.text
+
+
+@pytest.mark.requirement("SF-48")
+async def test_an_instance_has_one_automation_organisation(make_org, automation):
+    """Ownership counts the automation organisation as the ISAC by type, so there is one.
+
+    A second, enrolled from the portal like any organisation, would be a second
+    identity able to version the ISAC's canonical records. The pair is the
+    ``automation`` fixture itself, which enrolled the first.
+    """
+    with pytest.raises(IntegrityError, match="uq_organizations_one_automation"):
+        await make_org("second-robot", org_type=OrgType.AUTOMATION)

@@ -130,6 +130,16 @@ class Organization(TimestampMixin, Base):
             unique=True,
             postgresql_where=text("org_type = 'admin'"),
         ),
+        # One automation organisation, for the same reason: ownership counts
+        # its versions as the ISAC's by type (services/ownership.py), so a
+        # second one would be a second identity able to version the ISAC's
+        # canonical records.
+        Index(
+            "uq_organizations_one_automation",
+            "org_type",
+            unique=True,
+            postgresql_where=text("org_type = 'automation'"),
+        ),
     )
 
     certificates: Mapped[list[ClientCertificate]] = relationship(back_populates="organization")

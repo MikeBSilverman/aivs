@@ -26,7 +26,7 @@ import uuid
 from collections.abc import Iterable, Mapping
 from typing import Any, Final
 
-from sqlalchemy import select
+from sqlalchemy import literal, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aivs_schemas.enums import SubmissionSource
@@ -36,6 +36,7 @@ from aivs_schemas.extension.builders import (
     AIVS_PROVENANCE_EXTENSION_ID,
 )
 from aivs_server.db.models import Distribution, StixObject, Submission
+from aivs_server.services.ownership import owner_key
 from aivs_server.taxii.resources import to_taxii_timestamp
 
 __all__ = [
@@ -122,7 +123,13 @@ def _lowerings(raw: Mapping[str, Any], previous: Mapping[str, Any] | None) -> li
 async def _distributed_versions(
     session: AsyncSession, submission: Submission, stix_ids: set[str]
 ) -> dict[str, Mapping[str, Any]]:
-    """The latest distributed version of each id from this submitter, before this submission."""
+    """The latest distributed version of each id from this submission's owner, before it.
+
+    The owner as ownership defines it: an automation filing on the ISAC's record
+    is compared with the ISAC's version. Comparing within the filing
+    organisation found no previous version there, so a machine lowering the
+    ISAC's score needed no acknowledgement.
+    """
     rows = (
         await session.execute(
             select(StixObject.stix_id, StixObject.raw)
@@ -130,7 +137,8 @@ async def _distributed_versions(
             .join(Submission, Submission.id == StixObject.submission_id)
             .where(
                 StixObject.stix_id.in_(stix_ids),
-                Submission.submitter_org_id == submission.submitter_org_id,
+                owner_key(Submission.submitter_org_id)
+                == owner_key(literal(submission.submitter_org_id)),
                 Submission.id != submission.id,
             )
             .order_by(StixObject.stix_id, StixObject.modified.desc())

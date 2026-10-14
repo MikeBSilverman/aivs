@@ -16,7 +16,15 @@ from aivs_schemas.extension.builders import (
 from aivs_server.db.models import Operator, StixObject, Submission
 from aivs_server.services.provenance import reviewer_identity_id
 from tests.conftest import ISAC_STAFF_ROLES, proxy_headers
-from tests.unit.contribution_world import API, LATER, STAMP, distribute, file, submit_and_validate
+from tests.unit.contribution_world import (
+    API,
+    LATER,
+    STAMP,
+    distribute,
+    file,
+    seed,
+    submit_and_validate,
+)
 from tests.unit.test_portal import csrf_of, sign_in
 from tests.unit.test_portal import make_operator as portal_make_operator
 
@@ -187,6 +195,30 @@ async def test_a_machine_lowering_a_score_members_already_hold_needs_naming(clie
     )
     assert validated.status_code == 200, validated.text
     assert (await distribute(client, first, world["editor"], world["circle"])).status_code == 200
+
+    _second, refused = await validate_filing(
+        client, world, world["robot_pem"], [scored(shared, score=5.0, modified=LATER)]
+    )
+
+    assert refused.status_code == 409
+    assert f"{shared}:cvss_v4_base_score" in refused.json()["title"]
+
+
+@pytest.mark.requirement("SF-6", "SF-48")
+async def test_the_isacs_automation_lowering_the_isacs_score_needs_naming(client, session, world):
+    """The previous version is the owner's, and the ISAC and its automation are one owner.
+
+    Looked for within the automation organisation's own filings, the gate found
+    no previous version of the ISAC's record, so a machine lowering the ISAC's
+    score passed with nothing to acknowledge -- on exactly the path SF-48 opens.
+    """
+    shared = f"vulnerability--{uuid.uuid4()}"
+    await seed(
+        session,
+        world["isac_org"],
+        scored(shared, score=9.1, modified=STAMP),
+        circle=world["circle"],
+    )
 
     _second, refused = await validate_filing(
         client, world, world["robot_pem"], [scored(shared, score=5.0, modified=LATER)]

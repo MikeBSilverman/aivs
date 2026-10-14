@@ -169,6 +169,7 @@ def test_one_hosting_isac_and_rule_eligibility_exist_in_the_migrated_schema(migr
         "SELECT conname FROM pg_constraint WHERE conrelid = 'circles'::regclass AND contype = 'c'",
     )
     assert "uq_organizations_one_admin" in indexes
+    assert "uq_organizations_one_automation" in indexes
     assert any("rule_admits_eligible_types" in name for name in checks), checks
 
 

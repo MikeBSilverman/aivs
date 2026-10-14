@@ -12,14 +12,23 @@ The owner is the submitting organisation of a distributed row, which the ISAC
 always knows, including for anonymous submissions. Checked at validate and at
 distribution, where the actor is the ISAC and sees everything; never at ingest,
 where a refusal would tell a member that an id it cannot see is somebody's.
-``relationship`` objects are exempt: two parties relating the same pair is two
-statements, not one rewritten.
+A ``relationship`` is owned like anything else. It used to be exempt, on the
+reading that two parties relating the same pair make two statements -- but two
+statements have two ids. The exemption let any organisation publish a newer
+version under *another firm's* relationship id (``revoked: true`` on a member's
+``mitigates``), which a TIP then applied. Relating two objects someone else
+owns is referencing them, and needs no exemption.
 
 **The ISAC is one owner.** The automation organisation is by definition the
-ISAC's own machine identity, so its versions count as the ISAC's and the ISAC's
-as its: the KEV enrichment script versions the ISAC's canonical record. An
-editor still validates each such submission, and the AI gate applies because
-its source is ``system`` (SF-6). It versions nobody else's object.
+ISAC's own machine identity -- the database allows one, as it allows one admin
+organisation -- so its versions count as the ISAC's and the ISAC's as its: the
+KEV enrichment script versions the ISAC's canonical record. An editor still
+validates each such submission, and the AI gate compares it with the ISAC's
+previous version (SF-6). It versions nobody else's object.
+
+Everything that asks "whose version is this" -- this check, the feed's
+``match[version]``, the AI gate's previous version, the canonical record --
+asks it through ``owner_key``, so the equivalence has one definition.
 """
 
 from __future__ import annotations
@@ -28,28 +37,38 @@ import uuid
 from collections.abc import Iterable, Mapping
 from typing import Any, Final
 
-from sqlalchemy import select
+from sqlalchemy import String, case, cast, literal, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import ColumnElement
 
 from aivs_schemas.enums import OrgType
 from aivs_server.db.models import Distribution, Organization, StixObject, Submission
 
-__all__ = ["foreign_owned_versions_problem"]
-
-#: Object types anyone may file under an id another party already uses.
-_UNOWNED_TYPES: Final[frozenset[str]] = frozenset({"relationship"})
+__all__ = ["ISAC_OWNER", "ISAC_OWNER_TYPES", "foreign_owned_versions_problem", "owner_key"]
 
 #: The organisations that are the ISAC, for ownership: its own, and its machine.
-_ISAC_OWNER_TYPES: Final[frozenset[OrgType]] = frozenset({OrgType.ADMIN, OrgType.AUTOMATION})
+ISAC_OWNER_TYPES: Final[frozenset[OrgType]] = frozenset({OrgType.ADMIN, OrgType.AUTOMATION})
+
+#: ``owner_key``'s value for a version the ISAC or its automation filed.
+ISAC_OWNER: Final[str] = "isac"
+
+
+def owner_key(submitter_org_id: Any) -> ColumnElement[str]:
+    """The owner a version counts as, in SQL: ``ISAC_OWNER``, or the submitting org's id."""
+    isac_orgs = select(Organization.id).where(Organization.org_type.in_(tuple(ISAC_OWNER_TYPES)))
+    return case(
+        (submitter_org_id.in_(isac_orgs), literal(ISAC_OWNER)),
+        else_=cast(submitter_org_id, String),
+    )
 
 
 async def _owners_like(session: AsyncSession, org_id: uuid.UUID) -> set[uuid.UUID]:
     """``org_id`` and every organisation whose versions count as its own."""
     org_type = await session.scalar(select(Organization.org_type).where(Organization.id == org_id))
-    if org_type not in _ISAC_OWNER_TYPES:
+    if org_type not in ISAC_OWNER_TYPES:
         return {org_id}
     isac = await session.execute(
-        select(Organization.id).where(Organization.org_type.in_(tuple(_ISAC_OWNER_TYPES)))
+        select(Organization.id).where(Organization.org_type.in_(tuple(ISAC_OWNER_TYPES)))
     )
     return set(isac.scalars().all())
 
@@ -58,11 +77,7 @@ async def foreign_owned_versions_problem(
     session: AsyncSession, objects: Iterable[Mapping[str, Any]], *, owner_org_id: uuid.UUID
 ) -> str | None:
     """Why these objects may not be published by ``owner_org_id``, or ``None``."""
-    ids = {
-        obj["id"]
-        for obj in objects
-        if isinstance(obj.get("id"), str) and obj.get("type") not in _UNOWNED_TYPES
-    }
+    ids = {obj["id"] for obj in objects if isinstance(obj.get("id"), str)}
     if not ids:
         return None
     owners = await _owners_like(session, owner_org_id)

@@ -66,6 +66,7 @@ from aivs_server.db.models import (
 from aivs_server.notify.events import queue_visibility_notifications
 from aivs_server.services.disclosure import cve_status
 from aivs_server.services.distribution import DistributionError, distribute_submission
+from aivs_server.services.ownership import ISAC_OWNER, owner_key
 from aivs_server.services.publication import PublicationPausedError
 from aivs_server.services.references import referenced_ids
 from aivs_server.services.submissions import (
@@ -147,11 +148,21 @@ class Target:
     is_public: bool
 
 
-def _is_public(raw: Mapping[str, Any], scope: DiscoveryScope) -> bool:
-    """Public content: a published vulnerability, or a contribution filed on one."""
-    if raw.get("type") == "vulnerability":
-        return cve_status(raw) == "published"
-    return scope is DiscoveryScope.DISCLOSED_THIRD_PARTY
+def _is_public(rows: list[Any]) -> bool:
+    """Public content: the ISAC's published record of a vulnerability, or a contribution on one.
+
+    For a vulnerability, only the ISAC's own latest visible version counts --
+    the same owner the disclosure split reads. Reading whoever's version was
+    latest let a member's own vulnerability, distributed saying "published",
+    open the fast lane on itself.
+    """
+    latest = max(rows, key=lambda row: row.modified)
+    if latest.raw.get("type") != "vulnerability":
+        return DiscoveryScope(latest.discovery_scope) is DiscoveryScope.DISCLOSED_THIRD_PARTY
+    isac_rows = [row for row in rows if row.owner == ISAC_OWNER]
+    if not isac_rows:
+        return False
+    return cve_status(max(isac_rows, key=lambda row: row.modified).raw) == "published"
 
 
 async def resolve_target(
@@ -165,7 +176,9 @@ async def resolve_target(
     rows = (
         await session.execute(
             select(StixObject.raw, StixObject.modified, Submission.tlp, Submission.discovery_scope)
-            .add_columns(Distribution.circle_id)
+            .add_columns(
+                Distribution.circle_id, owner_key(Submission.submitter_org_id).label("owner")
+            )
             .join(Distribution, Distribution.stix_object_id == StixObject.id)
             .join(Submission, Submission.id == StixObject.submission_id)
             .where(StixObject.stix_id == stix_id, distribution_visibility_clause(ctx, now))
@@ -173,13 +186,12 @@ async def resolve_target(
     ).all()
     if not rows:
         return None
-    latest = max(rows, key=lambda row: row.modified)
     strictest = max((TLP(row.tlp) for row in rows), key=lambda tlp: TLP_RESTRICTIVENESS[tlp])
     return Target(
         stix_id=stix_id,
         tlp=strictest,
         circle_ids=frozenset(row.circle_id for row in rows),
-        is_public=_is_public(latest.raw, DiscoveryScope(latest.discovery_scope)),
+        is_public=_is_public(list(rows)),
     )
 
 

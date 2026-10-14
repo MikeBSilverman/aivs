@@ -146,7 +146,11 @@ async def create_org(
     except IntegrityError as exc:
         await session.rollback()
         raise HTTPException(
-            status.HTTP_409_CONFLICT, detail="An organisation with that slug already exists"
+            status.HTTP_409_CONFLICT,
+            detail=(
+                "An organisation with that slug already exists, or the instance already "
+                "has its one automation organisation"
+            ),
         ) from exc
 
     await session.refresh(organization)

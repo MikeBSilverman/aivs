@@ -244,3 +244,27 @@ async def test_a_stricter_version_the_member_cannot_see_sends_the_click_to_revie
     )
     assert reasons[-1] == NEEDS_AN_EDITOR
     assert not any("strict" in (reason or "") for reason in reasons)
+
+
+@pytest.mark.requirement("SF-66")
+async def test_a_members_own_record_saying_published_does_not_open_the_fast_lane(
+    client, session, world
+):
+    """Public means the ISAC's record says so, as the disclosure split reads it.
+
+    Read from whoever's version was latest, a member's own vulnerability,
+    distributed with ``cve_status: published``, opened the fast lane on itself.
+    The pair is the ISAC's published record, which does (first test above).
+    """
+    own = f"vulnerability--{uuid.uuid4()}"
+    await seed(
+        session,
+        world.member.org,
+        vulnerability_raw(own, cve_status="published"),
+        circle=world.circle,
+    )
+
+    submission = await _filed(session, await one_click(client, world.member.person, own))
+
+    assert submission.state is SubmissionState.SUBMITTED
+    assert submission.lane is SubmissionLane.REVIEW

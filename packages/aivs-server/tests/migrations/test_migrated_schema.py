@@ -146,6 +146,7 @@ _SEED_STATEMENTS = (
     "INSERT INTO submission_transitions (submission_id, to_state) VALUES (:submission, 'draft')",
     "INSERT INTO audit_log (actor_type, action, outcome, details) "
     "VALUES ('system', 'seed', 'success', '{}')",
+    "INSERT INTO audit_stream_modes (mode, reason) VALUES ('full', 'seed')",
 )
 
 
@@ -174,7 +175,7 @@ def seeded_url(migrated_url: str) -> str:
     return migrated_url
 
 
-@pytest.mark.parametrize("table", ["audit_log", "submission_transitions"])
+@pytest.mark.parametrize("table", ["audit_log", "submission_transitions", "audit_stream_modes"])
 @pytest.mark.parametrize(
     "statement",
     ["UPDATE {table} SET id = id", "DELETE FROM {table}", "TRUNCATE {table} CASCADE"],

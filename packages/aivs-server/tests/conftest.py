@@ -31,7 +31,7 @@ import tempfile
 import uuid
 from collections.abc import AsyncIterator, Awaitable
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 from urllib.parse import quote
 
 import httpx
@@ -282,7 +282,7 @@ async def _schema(engine: Any) -> AsyncIterator[None]:
         await connection.run_sync(Base.metadata.drop_all)
         await connection.run_sync(Base.metadata.create_all)
         await connection.execute(text(_DENY_MUTATION_FUNCTION))
-        for table in ("audit_log", "submission_transitions"):
+        for table in _APPEND_ONLY_TABLES:
             for operation in ("UPDATE", "DELETE", "TRUNCATE"):
                 await connection.execute(
                     text(
@@ -321,6 +321,14 @@ $$;
 """
 
 #: Every table, ordered so the truncate statement is deterministic.
+#: Tables carrying the ``aivs_deny_mutation`` triggers, as the migrations
+#: give them; cleanup lifts them for its TRUNCATE and restores them.
+_APPEND_ONLY_TABLES: Final[tuple[str, ...]] = (
+    "audit_log",
+    "submission_transitions",
+    "audit_stream_modes",
+)
+
 _ALL_TABLES = (
     "audit_log",
     "webhook_deliveries",
@@ -334,6 +342,7 @@ _ALL_TABLES = (
     "taxii_status",
     "stix_objects",
     "submission_transitions",
+    "audit_stream_modes",
     "embargoes",
     "org_postures",
     "submissions",
@@ -369,12 +378,12 @@ async def clean_database(engine: Any, _schema: None) -> AsyncIterator[None]:
         # Fail fast rather than queue behind another run's cleanup.
         await connection.execute(text("SET LOCAL lock_timeout = '15s'"))
         try:
-            for table in ("audit_log", "submission_transitions"):
+            for table in _APPEND_ONLY_TABLES:
                 await connection.execute(text(f"ALTER TABLE {table} DISABLE TRIGGER USER"))
             await connection.execute(
                 text(f"TRUNCATE {', '.join(_ALL_TABLES)} RESTART IDENTITY CASCADE")
             )
-            for table in ("audit_log", "submission_transitions"):
+            for table in _APPEND_ONLY_TABLES:
                 await connection.execute(text(f"ALTER TABLE {table} ENABLE TRIGGER USER"))
         except OperationalError as exc:  # pragma: no cover - diagnostic path
             message = (

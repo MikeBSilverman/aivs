@@ -168,6 +168,14 @@ class AuditAction:
     OBJECTS_RETRIEVED = "taxii.objects_retrieved"
     EXPORT_RETRIEVED = "export.retrieved"
     AUDIT_READ = "audit.read"
+    #: A page of the audit stream that served only reads, or nothing. Never
+    #: served itself, in either mode: that is what lets a poller drain the
+    #: stream (services.audit_stream). Counted like a read everywhere else.
+    AUDIT_READ_QUIET = "audit.read.quiet"
+    #: One principal's reads over a stretch of the trail, written by the
+    #: summary job (services.audit_read_summary). Served in both modes.
+    AUDIT_READ_SUMMARY = "audit.read.summary"
+    AUDIT_STREAM_MODE_CHANGED = "audit_stream.mode_changed"
     EVIDENCE_PACK_DRAWN = "evidence_pack.drawn"
     ACK_RECORDED = "ack.recorded"
 

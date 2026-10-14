@@ -1,0 +1,16 @@
+Mutation M368: the summary job ignores its watermark and summarises the same reads again
+Re-applies: T11 (audit stream modes)
+
+Expect red: packages/aivs-server/tests/unit/test_audit_stream_modes.py::test_each_reader_is_summarised_once_and_the_summary_is_served
+
+diff --git a/packages/aivs-server/src/aivs_server/services/audit_read_summary.py b/packages/aivs-server/src/aivs_server/services/audit_read_summary.py
+--- a/packages/aivs-server/src/aivs_server/services/audit_read_summary.py
++++ b/packages/aivs-server/src/aivs_server/services/audit_read_summary.py
+@@ -109,7 +109,6 @@
+         )
+         .where(
+             AuditLog.action.in_(_READS),
+-            AuditLog.xact_id >= since,
+             AuditLog.xact_id < until,
+         )
+         .group_by(AuditLog.actor_type, AuditLog.actor_id, AuditLog.org_id)

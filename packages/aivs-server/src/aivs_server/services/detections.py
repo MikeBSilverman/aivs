@@ -263,7 +263,10 @@ async def _auditor_bulk_read(
         await session.execute(
             select(AuditLog.actor_id, served)
             .where(
-                AuditLog.action == AuditAction.AUDIT_READ,
+                # Quiet pages too: in either audit-stream mode they are reads
+                # the stream does not serve, and a reader paging an empty or
+                # all-reads stream is still reading.
+                AuditLog.action.in_((AuditAction.AUDIT_READ, AuditAction.AUDIT_READ_QUIET)),
                 AuditLog.at >= now - window,
                 AuditLog.actor_id.is_not(None),
             )

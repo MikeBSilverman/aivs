@@ -1,0 +1,19 @@
+Mutation M363: condensed mode serves raw audit.read rows
+Re-applies: T11 (audit stream modes)
+
+Expect red: packages/aivs-server/tests/unit/test_audit_stream_modes.py::test_condensed_is_the_default_and_serves_no_reads
+
+diff --git a/packages/aivs-server/src/aivs_server/services/audit_stream.py b/packages/aivs-server/src/aivs_server/services/audit_stream.py
+--- a/packages/aivs-server/src/aivs_server/services/audit_stream.py
++++ b/packages/aivs-server/src/aivs_server/services/audit_stream.py
+@@ -205,7 +205,9 @@
+         AuditLog.action != AuditAction.AUDIT_READ_QUIET,
+         or_(
+             AuditLog.action != AuditAction.AUDIT_READ,
+-            mode_in_force_at(AuditLog.xact_id) == AuditStreamMode.FULL.value,
++            mode_in_force_at(AuditLog.xact_id).in_(
++                (AuditStreamMode.FULL.value, AuditStreamMode.CONDENSED.value)
++            ),
+         ),
+     )
+ 

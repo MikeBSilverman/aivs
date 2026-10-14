@@ -6,13 +6,13 @@ Expect red: packages/aivs-server/tests/unit/test_auditor.py::test_reading_the_tr
 diff --git a/packages/aivs-server/src/aivs_server/api/audit.py b/packages/aivs-server/src/aivs_server/api/audit.py
 --- a/packages/aivs-server/src/aivs_server/api/audit.py
 +++ b/packages/aivs-server/src/aivs_server/api/audit.py
-@@ -89,13 +89,5 @@
+@@ -103,14 +103,6 @@
  
  
  async def _served(session: AsyncSession, ctx: AuthContext, stream: str, page: Page) -> StreamPage:
 -    await record(
 -        session,
--        action=AuditAction.AUDIT_READ,
+-        action=AuditAction.AUDIT_READ_QUIET if _is_quiet(stream, page) else AuditAction.AUDIT_READ,
 -        ctx=ctx,
 -        resource_type="audit_stream",
 -        resource_id=stream,
@@ -20,3 +20,4 @@ diff --git a/packages/aivs-server/src/aivs_server/api/audit.py b/packages/aivs-s
 -    )
      await session.commit()
      return StreamPage(events=list(page.events), cursor=page.cursor.encode())
+ 

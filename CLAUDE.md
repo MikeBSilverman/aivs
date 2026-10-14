@@ -408,13 +408,19 @@ receipt streams page on `(xact_id, id)` and serve only below the snapshot's
 `xmin`: a late row is served late, never skipped. TAXII gets the same guarantee
 from the publication lock and `earliest_publication_instant`.
 
-**A log that records its own reading does not serve those records back.** Every
-page of `/api/v1/audit/events` wrote an `audit.read` row and the stream returned
-it, so a client draining to empty was handed its previous read on every poll and
-never finished; the suite spun for an hour at 4.7 GB. The stream leaves
-`audit.read` out for every reader (two pollers would otherwise feed each other),
-and the rows stay in the log for `auditor_bulk_read`. Excluding them is a stated
-limit of the stream, written in its API description, not a silent gap.
+**A log that records its own reading must not be fed by it.** Every page of
+`/api/v1/audit/events` wrote an `audit.read` row and the stream returned it, so
+a client draining to empty was handed its previous read on every poll and never
+finished; the suite spun for an hour at 4.7 GB. Now a page that served only
+reads, or nothing, is recorded as `audit.read.quiet`, which is never served. The
+instance's mode decides the rest: `condensed` (the default) serves an hourly
+`audit.read.summary` per reader instead of the reads, and `full` serves each
+`audit.read`. Either way the reads a poller can be served are finite, for one
+poller or two reading each other's. A read is judged by the mode in force at its
+own transaction, never the current one, so a change of mode re-sorts nothing
+already exported. Test it by comparing what each page contained with what the
+server recorded for it; waiting for 'an empty page' passes whenever the
+cluster's horizon lags.
 
 **Stamp the next millisecond, never the current one.** `added_after` is a
 strict comparison at TAXII's millisecond precision, and a reader in the current

@@ -8,10 +8,10 @@ chain that runs across pages (``services.audit_stream``).
 Refused, before anything about the request is examined, unless the caller is
 an auditor whose access has not ended (``policy.can_read_audit``); scoped by
 ``policy.audit_scope``. Every read is itself audited, with the stream and the
-number of events, so reading the trail leaves a trace in the log. The stream
-does not serve those ``audit.read`` rows back: a reader would otherwise be
-handed its own previous read on every poll and never drain the stream. Reads
-of the trail are watched by the ``auditor_bulk_read`` rule instead.
+number of events. What the stream serves of those records is the instance's
+audit-stream mode (``services.audit_stream_mode``), and in either mode a page
+that served only reads, or nothing, is recorded as ``audit.read.quiet`` and
+never served, so a poller always reaches an empty page.
 """
 
 from __future__ import annotations
@@ -59,9 +59,15 @@ async def events(
 ) -> StreamPage:
     """The audit trail, in commit order, within the caller's scope.
 
-    Complete except for ``audit.read``: reads of the trail are recorded in the
-    log and left out of this stream by design, so a poller reaches an empty
-    page. The ISAC's ``auditor_bulk_read`` rule reviews them.
+    Reads of the trail are served by the instance's audit-stream mode. In
+    ``condensed`` (the default) ``audit.read`` rows are left out and an hourly
+    ``audit.read.summary`` row per reader is served instead. In ``full`` they
+    are served as written. In both, a page that served only reads, or nothing,
+    is recorded as ``audit.read.quiet``, which is never served, so a poller
+    reaches an empty page; the summaries count those pages, and the ISAC's
+    ``auditor_bulk_read`` rule counts every kind. A change of mode is served as
+    ``audit_stream.mode_changed`` and applies to reads written after it, so
+    cursors and the hash chain are unaffected.
     """
     await _require_auditor(session, ctx)
     after = _parse(cursor, "audit")
@@ -99,7 +105,7 @@ def _parse(cursor: str | None, stream: str) -> Any:
 async def _served(session: AsyncSession, ctx: AuthContext, stream: str, page: Page) -> StreamPage:
     await record(
         session,
-        action=AuditAction.AUDIT_READ,
+        action=AuditAction.AUDIT_READ_QUIET if _is_quiet(stream, page) else AuditAction.AUDIT_READ,
         ctx=ctx,
         resource_type="audit_stream",
         resource_id=stream,
@@ -107,3 +113,15 @@ async def _served(session: AsyncSession, ctx: AuthContext, stream: str, page: Pa
     )
     await session.commit()
     return StreamPage(events=list(page.events), cursor=page.cursor.encode())
+
+
+def _is_quiet(stream: str, page: Page) -> bool:
+    """A page that served nothing, or on the audit stream only reads.
+
+    Its record is never served, in either mode. Recorded as a read, it would be
+    the next page's content in ``full`` mode, and two pollers reading each
+    other's reads would never reach an empty page.
+    """
+    if stream != "audit":
+        return not page.events
+    return all(event["action"] == AuditAction.AUDIT_READ for event in page.events)

@@ -295,8 +295,10 @@ Built, except where a line says otherwise:
   date; reads the audit trail and receipts, the instance's at the ISAC and its
   own organisation's at a member, as a cursor stream a SIEM can poll, in
   commit order and hash-chained across pages; refused at the door everywhere
-  else, so never content. Its own reads are logged (`audit.read`) and left out
-  of the stream, which a poller could otherwise never drain.
+  else, so never content. What the stream serves of its own reading is the
+  instance's mode (`condensed` by default, or `full`), with a summary per
+  reader in both; a page of nothing but reads is never served, so a poller
+  always drains it.
 - **Offboarding** (built, SF-72) deletes every operational row the data
   inventory gives the organisation (postures, webhooks, portal sessions, TAXII
   inbox statuses), keeps evidence and content, ends its credentials, closes

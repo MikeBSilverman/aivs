@@ -342,6 +342,9 @@ class Settings(BaseSettings):
     embargo_sweep_interval_seconds: int = Field(default=30, ge=5, le=3600)
     #: How often the platform's own detection rules run (services.detections).
     detection_interval_seconds: int = Field(default=60, ge=10, le=3600)
+    #: How often reads of the audit trail are summarised into the stream
+    #: (services.audit_read_summary): about one summary per reader per run.
+    audit_read_summary_interval_seconds: int = Field(default=3600, ge=60, le=86400)
     telemetry_interval_seconds: int = Field(default=300, ge=30, le=3600)
     #: What a detection that recommends quarantine does: ``propose`` shows it on
     #: the status page for a human to confirm; ``enforce`` applies it at once.

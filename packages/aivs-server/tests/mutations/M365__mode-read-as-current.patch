@@ -1,0 +1,16 @@
+Mutation M365: each read is judged by the mode in force now, not when it was written, so a change re-sorts history and breaks the chain
+Re-applies: T11 (audit stream modes)
+
+Expect red: packages/aivs-server/tests/unit/test_audit_stream_modes.py::test_a_change_of_mode_keeps_every_cursor_and_every_hash
+
+diff --git a/packages/aivs-server/src/aivs_server/services/audit_stream_mode.py b/packages/aivs-server/src/aivs_server/services/audit_stream_mode.py
+--- a/packages/aivs-server/src/aivs_server/services/audit_stream_mode.py
++++ b/packages/aivs-server/src/aivs_server/services/audit_stream_mode.py
+@@ -55,7 +55,6 @@
+     """The mode in force when the transaction ``xact_id`` wrote, as SQL."""
+     latest = (
+         select(AuditStreamModeChange.mode)
+-        .where(AuditStreamModeChange.xact_id <= xact_id)
+         .order_by(AuditStreamModeChange.xact_id.desc(), AuditStreamModeChange.id.desc())
+         .limit(1)
+         .scalar_subquery()

@@ -1,0 +1,15 @@
+Mutation M362: full mode records a page of nothing but reads as a served read, so pollers feed each other and the drain never ends
+Re-applies: T11 (audit stream modes)
+
+Expect red: packages/aivs-server/tests/unit/test_audit_stream_modes.py::test_full_serves_reads_and_records_an_all_reads_page_as_quiet
+Expect red: packages/aivs-server/tests/unit/test_audit_stream_modes.py::test_two_pollers_reading_each_others_reads_both_run_out
+
+diff --git a/packages/aivs-server/src/aivs_server/api/audit.py b/packages/aivs-server/src/aivs_server/api/audit.py
+--- a/packages/aivs-server/src/aivs_server/api/audit.py
++++ b/packages/aivs-server/src/aivs_server/api/audit.py
+@@ -124,4 +124,4 @@
+     """
+     if stream != "audit":
+         return not page.events
+-    return all(event["action"] == AuditAction.AUDIT_READ for event in page.events)
++    return not page.events

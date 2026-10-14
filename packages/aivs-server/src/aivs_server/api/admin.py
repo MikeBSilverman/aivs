@@ -15,6 +15,7 @@ from __future__ import annotations
 import datetime as dt
 import secrets
 import uuid
+from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
@@ -48,6 +49,7 @@ from aivs_server.auth.policy import (
     can_quarantine_org,
     can_reconnect_org,
     can_resume_distribution,
+    can_set_audit_stream_mode,
     can_set_legal_hold,
     is_isac_editor,
     is_isac_membership,
@@ -66,6 +68,7 @@ from aivs_server.db.models import (
 )
 from aivs_server.db.org_lock import org_still_active
 from aivs_server.notify.webhooks import WebhookRejectedError, resolve_delivery_target
+from aivs_server.services.audit_stream_mode import AuditStreamMode, change_audit_stream_mode
 from aivs_server.services.certificates import CertificateRegistrationError
 from aivs_server.services.certificates import register_certificate as register_certificate_for
 from aivs_server.services.circles import (
@@ -644,6 +647,37 @@ async def resume(
     await resume_distribution(session, ctx, reason=payload.reason)
     await session.commit()
     return InstanceControlOut(distribution_paused=False)
+
+
+class AuditStreamModeChangeIn(BaseModel):
+    """Which audit-stream mode to put in force, and why. Recorded in the stream."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    mode: AuditStreamMode
+    reason: Annotated[str, Field(min_length=10, max_length=1000)]
+
+
+class AuditStreamModeOut(BaseModel):
+    mode: AuditStreamMode
+    #: False when the mode was already in force and nothing was written.
+    changed: bool
+
+
+@router.put("/instance/audit-stream", response_model=AuditStreamModeOut)
+async def set_audit_stream_mode(
+    payload: AuditStreamModeChangeIn, ctx: AuthenticatedContext, session: SessionDep
+) -> AuditStreamModeOut:
+    """Choose what the audit stream serves of its own reading: ``full`` or ``condensed``.
+
+    Applies to reads written after the change; what was served before it is
+    served the same way to anyone who reads it again, so cursors and the hash
+    chain carry on (``services.audit_stream_mode``). The system administrator's.
+    """
+    require(can_set_audit_stream_mode(ctx), "audit_stream_mode_requires_system_admin")
+    changed = await change_audit_stream_mode(session, ctx, payload.mode, reason=payload.reason)
+    await session.commit()
+    return AuditStreamModeOut(mode=payload.mode, changed=changed)
 
 
 @router.post("/orgs/{org_id}/quarantine", response_model=OrganizationOut)

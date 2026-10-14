@@ -17,7 +17,7 @@ What the application adds is named per class.
 | --- | --- | --- | --- |
 | `content` | Intelligence: what was shared, and the free text around it. | Volume and backup encryption only. The application reads it, because analytics depend on that (BYOK is an option, deferred; `encryption-design.md`). | **Kept.** Other members received it, and the record of what was shared is the evidence. |
 | `pii` | Identifies a person. | Volume and backup encryption. Credentials within it are hashed (passwords, Argon2id) or sealed (TOTP seeds, `auth/secretbox.py`). | **Pseudonymised**: identifying fields scrubbed, the row id kept so the audit trail still resolves. *Planned in phase H; today an operator can only be deactivated.* |
-| `evidence` | The record of who could see what, when, and what they did. | Volume and backup encryption. `audit_log` and `submission_transitions` are append-only, enforced by trigger. | **Kept.** Deleting it would destroy the "we warned member X" proof (runbook §8). |
+| `evidence` | The record of who could see what, when, and what they did. | Volume and backup encryption. `audit_log`, `submission_transitions` and `audit_stream_modes` are append-only, enforced by trigger. | **Kept.** Deleting it would destroy the "we warned member X" proof (runbook §8). |
 | `operational` | Needed to run the service, and worth nothing once the relationship ends. | Volume and backup encryption. Webhook signing keys are sealed. | **Deleted.** *Planned in phase H.* |
 
 Some evidence rows hold personal data incidentally. `audit_log` records the
@@ -37,6 +37,7 @@ rather than deleting rows.
 | `submission_transitions` | evidence | Every workflow state change, by whom and when. Append-only. |
 | `acknowledgments` | evidence | Receipts: retrieved, acknowledged, actioned, per organisation. |
 | `audit_log` | evidence | Every security-relevant decision. Append-only. |
+| `audit_stream_modes` | evidence | Each choice of what the audit stream serves of its own reading, and who made it. Append-only: the stream judges each read by the mode in force when it was written. |
 | `circle_memberships` | evidence | Membership *intervals*, which decide what an organisation could ever have seen. |
 | `organizations` | evidence | The member record: name, type, status, STIX identity, the ISAC directory group its people sign in through, and any legal hold with its reason. Referenced by every receipt. Its contact email is cleared at offboarding; its name is kept, because evidence names who it is about. It also holds the organisation's notification cadence and digest mailbox (a routing address the member chose); the mailbox is cleared at offboarding, like the contact email. |
 | `client_certificates` | evidence | Certificate fingerprint, the identity of record for every machine request; status and validity. No private key, ever. |

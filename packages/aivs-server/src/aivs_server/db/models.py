@@ -1237,6 +1237,38 @@ class AuditLog(Base):
     )
 
 
+class AuditStreamModeChange(Base):
+    """Each choice of what the audit stream serves of its own reading. Append-only.
+
+    A history, not a flag: an ``audit.read`` row is served when the mode in
+    force at *its* ``xact_id`` was ``full`` (``services.audit_stream``).
+    Everything the stream serves lies below the horizon, so the served
+    sequence is a function of immutable rows. A cursor issued before a change
+    continues, and an export from genesis after it reproduces every hash
+    exported before it. A flag read at serve time would re-sort history, and
+    the chain an auditor kept would no longer match. No row means
+    ``condensed``.
+    """
+
+    __tablename__ = "audit_stream_modes"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    mode: Mapped[str] = mapped_column(String(20), nullable=False)
+    xact_id: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, server_default=text(_CURRENT_XACT_ID)
+    )
+    changed_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    changed_by_operator_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+
+    __table_args__ = (
+        CheckConstraint("mode IN ('full', 'condensed')", name="mode_known"),
+        Index("ix_audit_stream_modes_xact", "xact_id", "id"),
+    )
+
+
 class OrgPosture(Base):
     """One organisation's VEX status for one vulnerability (SF-70).
 

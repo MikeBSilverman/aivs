@@ -1,0 +1,17 @@
+Mutation M364: the summary job writes while distribution is paused
+Re-applies: T11 (audit stream modes)
+
+Expect red: packages/aivs-server/tests/unit/test_audit_stream_modes.py::test_the_summary_job_writes_nothing_while_distribution_is_paused
+
+diff --git a/packages/aivs-server/src/aivs_server/services/audit_read_summary.py b/packages/aivs-server/src/aivs_server/services/audit_read_summary.py
+--- a/packages/aivs-server/src/aivs_server/services/audit_read_summary.py
++++ b/packages/aivs-server/src/aivs_server/services/audit_read_summary.py
+@@ -55,7 +55,7 @@
+     acts unattended (CLAUDE.md section 5), and the next run after resuming
+     covers the paused stretch, since its range starts at the last watermark.
+     """
+-    if not await _holds_summary_lock(session) or await distribution_is_paused(session):
++    if not await _holds_summary_lock(session):
+         return 0
+     since = await _watermark(session)
+     until = int(await session.scalar(select(_HORIZON)) or 0)

@@ -252,6 +252,7 @@ caller's org belongs to, at the role shown.
 | Record `acknowledged` / `actioned` [^ack] | N | own org | own org | own org | N | N |
 | **Audit log** |
 | Read the audit log and receipts | N | N | N | N | `auditor` only³ | N |
+| Choose what the audit stream serves of its own reading (`full` / `condensed`) | N | N | N | N | `system_admin` | N |
 | Modify the audit log | N | N | N | N | **N — database-enforced** | **N — database-enforced** |
 
 ¹ `can_transition_submission` grants `submitted` to `is_submitter` only. A system
@@ -458,6 +459,7 @@ which it versions (KEV status) and cannot reach through a circle.
 | circle screens (portal) | sign in | 403 | 403 | sign in | sign in | sign in | 403 | ✓ | ✓ | 403 |
 | pause | 403 | 403 | 403 | 403 | 403 | 403 | 403 | ✓ | 403 | ✓ |
 | resume | 403 | 403 | 403 | 403 | 403 | 403 | 403 | ✓ | 403 | 403 |
+| audit stream mode | 403 | 403 | 403 | 403 | 403 | 403 | 403 | 403 | 403 | ✓ |
 | status page (portal) | sign in | 403 | 403 | sign in | sign in | sign in | 403 | 403 | ✓ | ✓ |
 | content response | ✓ | ✓ | ✓ | ✓ | 404 | 404 | 404 | 404 | 404 | 404 |
 | own record | ✓ | ✓ | ✓ | 404 | 404 | 404 | 404 | 404 | 404 | 404 |

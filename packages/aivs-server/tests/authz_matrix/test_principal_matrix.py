@@ -153,6 +153,7 @@ EXPECTED: Mapping[RouteClass, Mapping[Principal, Outcome]] = {
     },
     RouteClass.PAUSE: _allow(P.ISAC_EDITOR, P.SYSTEM_ADMIN, otherwise=F),
     RouteClass.RESUME: _allow(P.ISAC_EDITOR, otherwise=F),
+    RouteClass.AUDIT_STREAM_MODE: _allow(P.SYSTEM_ADMIN, otherwise=F),
     RouteClass.STATUS_PAGE: {
         **_allow(P.SYSTEM_ADMIN, P.ISAC_MEMBERSHIP, otherwise=F),
         **dict.fromkeys(CERTIFICATE_ONLY, S),

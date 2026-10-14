@@ -22,7 +22,7 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 
-APPEND_ONLY_TABLES = ("audit_log", "submission_transitions")
+APPEND_ONLY_TABLES = ("audit_log", "submission_transitions", "audit_stream_modes")
 
 #: A column that genuinely exists on each protected table.
 #:
@@ -33,7 +33,11 @@ APPEND_ONLY_TABLES = ("audit_log", "submission_transitions")
 #: passed for that table with the trigger dropped. Both the real column and the
 #: ``match=`` below are needed: either alone leaves the test satisfied by the
 #: wrong error.
-MUTABLE_COLUMN = {"audit_log": "action", "submission_transitions": "to_state"}
+MUTABLE_COLUMN = {
+    "audit_log": "action",
+    "submission_transitions": "to_state",
+    "audit_stream_modes": "mode",
+}
 
 #: Text the trigger raises. Asserted so that only the append-only refusal
 #: passes, rather than any error the statement happens to provoke.

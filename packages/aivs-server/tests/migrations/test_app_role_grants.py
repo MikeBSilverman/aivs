@@ -131,7 +131,7 @@ def test_the_app_role_may_append_to_the_audit_log(scratch: Scratch):
     )
 
 
-@pytest.mark.parametrize("table", ["audit_log", "submission_transitions"])
+@pytest.mark.parametrize("table", ["audit_log", "submission_transitions", "audit_stream_modes"])
 @pytest.mark.parametrize(
     "statement",
     ["UPDATE {table} SET id = id", "DELETE FROM {table}", "TRUNCATE {table}"],

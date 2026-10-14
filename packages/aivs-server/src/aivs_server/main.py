@@ -71,6 +71,7 @@ from aivs_server.portal import reading_routes as portal_reading_routes
 from aivs_server.portal import routes as portal_routes
 from aivs_server.portal import sso_routes as portal_sso_routes
 from aivs_server.portal import vulnerability_routes as portal_vulnerability_routes
+from aivs_server.services.audit_read_summary import summarise_audit_reads
 from aivs_server.services.detections import run_detections
 from aivs_server.services.embargo import sweep_due_embargoes
 from aivs_server.services.publication import PublicationPausedError
@@ -196,6 +197,11 @@ def background_components(settings: Settings) -> list[BackgroundComponent]:
             dt.timedelta(seconds=settings.detection_interval_seconds),
             lambda: _run_detections(settings),
         ),
+        BackgroundComponent(
+            "audit_read_summary",
+            dt.timedelta(seconds=settings.audit_read_summary_interval_seconds),
+            _summarise_audit_reads,
+        ),
     ]
 
 
@@ -203,6 +209,12 @@ async def _queue_telemetry_milestones() -> None:
     """Tell submitters, contentlessly, when what they shared crossed a milestone."""
     async with session_scope() as session:
         await queue_milestones(session, now=dt.datetime.now(dt.UTC), lookback=dt.timedelta(days=1))
+
+
+async def _summarise_audit_reads() -> None:
+    """Serve who read the audit trail, in both audit-stream modes."""
+    async with session_scope() as session:
+        await summarise_audit_reads(session)
 
 
 async def _sweep_embargoes() -> None:

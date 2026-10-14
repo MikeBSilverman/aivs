@@ -75,6 +75,7 @@ __all__ = [
     "can_resume_distribution",
     "can_reveal_submitter",
     "can_review_submissions",
+    "can_set_audit_stream_mode",
     "can_set_legal_hold",
     "can_set_priority",
     "can_submit_to_circle",
@@ -214,6 +215,13 @@ def _isac_human(ctx: AuthContext, role: OperatorRole) -> bool:
         and ctx.auth_method is AuthMethod.PORTAL_SESSION
         and role in ctx.operator_roles
     )
+
+
+def can_set_audit_stream_mode(ctx: AuthContext) -> bool:
+    """Choose what the audit stream serves of its own reading. Runs the
+    instance, so the system administrator's; an auditor reads the choice and
+    cannot make it."""
+    return is_system_admin(ctx)
 
 
 def is_system_admin(ctx: AuthContext) -> bool:

@@ -509,6 +509,7 @@ def test_require_passes_when_allowed():
         "can_reveal_submitter",
         "can_pause_distribution",
         "can_resume_distribution",
+        "can_set_audit_stream_mode",
         "can_reconnect_org",
         "can_view_instance_status",
     ],

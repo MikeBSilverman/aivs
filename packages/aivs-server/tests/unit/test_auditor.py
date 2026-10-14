@@ -357,8 +357,14 @@ def _link(previous: str, event: dict) -> str:
 @pytest.mark.requirement("SF-78")
 async def test_reading_the_trail_leaves_a_trace_in_it(client, session, world):
     await client.get(EVENTS, headers=world["isac_auditor"])
+    # A read, or a quiet one when the page held only reads or nothing
+    # (services.audit_stream_mode): either way, a trace.
     reads = (
-        await session.scalars(select(AuditLog).where(AuditLog.action == AuditAction.AUDIT_READ))
+        await session.scalars(
+            select(AuditLog).where(
+                AuditLog.action.in_((AuditAction.AUDIT_READ, AuditAction.AUDIT_READ_QUIET))
+            )
+        )
     ).all()
     assert [row.details["stream"] for row in reads] == ["audit"]
 
@@ -373,10 +379,15 @@ async def test_a_reader_is_not_served_the_trace_of_its_own_reading(client, sessi
     else held the horizon back. The trace stays in the log for the ISAC's own
     review and the ``auditor_bulk_read`` rule; the stream leaves it out.
     """
-    await client.get(EVENTS, headers=world["isac_auditor"])
-    # Committed after that read, so serving it means the read is below the horizon.
+    # Reading a page that holds a row: recorded as `audit.read`, the kind a
+    # stream could serve. (A read of an empty page is quiet, and never served
+    # in any mode, so it cannot show the defect; this test once passed under
+    # it whenever the horizon lagged and the first page came back empty.)
     await _audit(session, world["member"].id, AuditAction.ACK_RECORDED, ack_type="actioned")
-    events = await _settled(client, EVENTS, world["isac_auditor"], wanted=1)
+    await _settled(client, EVENTS, world["isac_auditor"], wanted=1)
+    # Committed after those reads, so serving it means they are below the horizon.
+    await _audit(session, world["member"].id, AuditAction.ACK_RECORDED, ack_type="retrieved")
+    events = await _settled(client, EVENTS, world["isac_auditor"], wanted=2)
     assert AuditAction.AUDIT_READ not in {e["action"] for e in events}
 
 

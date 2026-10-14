@@ -105,6 +105,9 @@ class RouteClass(enum.StrEnum):
     PAUSE = "pause"
     #: Releasing it: an editor.
     RESUME = "resume"
+    #: Choosing what the audit stream serves of its own reading: the system
+    #: admin, who runs the instance; nobody else, auditors included.
+    AUDIT_STREAM_MODE = "audit stream mode"
     #: The instance status page: system admins and membership staff.
     STATUS_PAGE = "status page"
     #: The caller's own identity and notification endpoints.
@@ -772,6 +775,15 @@ ROUTES: tuple[RouteCase, ...] = (
         "/api/v1/instance/distribution/resume",
         RouteClass.RESUME,
         _fixed(f"{API}/instance/distribution/resume", {"reason": "matrix: incident drill"}),
+    ),
+    RouteCase(
+        "PUT",
+        "/api/v1/instance/audit-stream",
+        RouteClass.AUDIT_STREAM_MODE,
+        _fixed(
+            f"{API}/instance/audit-stream",
+            {"mode": "full", "reason": "matrix: choosing the stream"},
+        ),
     ),
     RouteCase(
         "GET",

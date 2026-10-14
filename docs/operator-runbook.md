@@ -881,7 +881,7 @@ Each finding is raised **once per rule window** and goes three ways:
 | `contribution_flood` | One organisation goes past its hourly allowance for contributions published without review (TAXII inbox posts included) | A script or a stolen certificate behind a session. Check what it filed in the review queue, then treat as §7.3 if the member didn't do it. |
 | `posture_export_burst` | One organisation exports its postures 20 times in 1 h | The export is the firm's whole list of where it is affected. Ask the member whether a collector explains it. If not, treat it as §7.3: the alert names the firm, never a statement. |
 | `evidence_pack_burst` | One organisation draws 20 evidence packs in 1 h | Each pack is the firm's record of what reached it and what it did; many together are its response history. Ask the member whether an audit explains it. If not, treat it as §7.3. The alert names the firm, never a vulnerability. |
-| `auditor_bulk_read` | One auditor is served 20,000 audit or receipt events in 1 h | A SIEM catching up after an outage does this once. Otherwise someone is reading which firms attend to which threats: confirm with the auditor's engagement contact, and if nobody explains it, revoke the auditor's sessions and end its access. |
+| `auditor_bulk_read` | One auditor is served 20,000 audit or receipt events in 1 h, counting pages the stream records as quiet | A SIEM catching up after an outage does this once. Otherwise someone is reading which firms attend to which threats: confirm with the auditor's engagement contact, and if nobody explains it, revoke the auditor's sessions and end its access. |
 | `auditor_outside_audit` | An auditor's session is refused 5 times in 30 min outside the audit read | An auditor's tooling reads two endpoints. A session trying content routes is someone exploring with an auditor's credential: revoke its sessions and ask the auditor's firm. |
 | `first_distribution_to_circle` | An operator distributes to a circle they have never distributed to before | The checker's look: confirm the circle was the intended audience. |
 | `anonymity_reveal` | Any reveal of an anonymous submitter | Confirm the reveal was expected and that its recorded reason holds up. |
@@ -1033,10 +1033,36 @@ database cluster. A cursor that stops moving while the trail is being written
 means a connection is sitting in an open transaction; find it in
 `pg_stat_activity` (`state = 'idle in transaction'`).
 
-Each page served is recorded as `audit.read`, and those rows are left out of
-the stream, so a poller that reads until a page comes back empty gets there.
-They stay in the log: the `auditor_bulk_read` rule counts them, and an export
-of `audit_log` taken from the database shows them.
+**What the stream serves of its own reading** is a choice the system
+administrator makes for the instance, `condensed` (the default) or `full`:
+
+| Mode | `audit.read` (a page that served other events) | `audit.read.quiet` (a page that served only reads, or nothing) | `audit.read.summary` |
+| --- | --- | --- | --- |
+| `condensed` | not served | not served | served |
+| `full` | served | not served | served |
+
+The summary job writes one `audit.read.summary` per reader each run (hourly by
+default, `AIVS_AUDIT_READ_SUMMARY_INTERVAL_SECONDS`): pages, quiet pages,
+events served, first and last read, streams. It is the only place a SIEM sees
+quiet pages, in either mode, and it skips its run while distribution is paused
+(the next run covers the gap). Quiet reads are never served so that a poller
+reading until a page comes back empty gets there, even with two pollers
+reading each other's reads. Every kind stays in the log: `auditor_bulk_read`
+counts all of them, and an export of `audit_log` from the database shows them.
+
+To change the mode, as a system administrator:
+
+```bash
+curl --cert ... --key ... -H "Authorization: Bearer $SESSION" \
+     -H 'Content-Type: application/json' \
+     -X PUT https://<instance>/api/v1/instance/audit-stream \
+     -d '{"mode": "full", "reason": "the SIEM team wants every read, CHG-<n>"}'
+```
+
+The change is served in the stream as `audit_stream.mode_changed`, and applies
+to reads written after it. What was served before it is served the same way to
+anyone who reads it again, so a SIEM's cursor and the hash chain it keeps carry
+on unchanged. Changing to the mode already in force writes nothing.
 
 ## 10. Things that will bite you
 

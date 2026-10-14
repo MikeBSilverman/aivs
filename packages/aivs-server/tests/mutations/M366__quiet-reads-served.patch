@@ -1,0 +1,16 @@
+Mutation M366: audit.read.quiet rows are served
+Re-applies: T11 (audit stream modes)
+
+Expect red: packages/aivs-server/tests/unit/test_audit_stream_modes.py::test_full_serves_reads_and_records_an_all_reads_page_as_quiet
+
+diff --git a/packages/aivs-server/src/aivs_server/services/audit_stream.py b/packages/aivs-server/src/aivs_server/services/audit_stream.py
+--- a/packages/aivs-server/src/aivs_server/services/audit_stream.py
++++ b/packages/aivs-server/src/aivs_server/services/audit_stream.py
+@@ -202,7 +202,6 @@
+     change of mode re-sorts nothing already exported.
+     """
+     return and_(
+-        AuditLog.action != AuditAction.AUDIT_READ_QUIET,
+         or_(
+             AuditLog.action != AuditAction.AUDIT_READ,
+             mode_in_force_at(AuditLog.xact_id) == AuditStreamMode.FULL.value,

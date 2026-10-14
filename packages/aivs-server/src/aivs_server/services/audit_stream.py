@@ -26,11 +26,15 @@ it, and a row edited, dropped or reordered between two exports breaks it. The
 chain is over events as served -- redacted -- so a member's auditor can verify
 exactly what it was given.
 
-**Not its own reading.** Each page served is recorded (``audit.read``), and
-the stream leaves those rows out. Served, they would hand every reader its
-previous read on the next poll, so a SIEM draining the stream to empty would
-never get there; the suite spun on exactly that. The rows stay in the log, for
-the ISAC's review and the ``auditor_bulk_read`` rule.
+**Its own reading, by mode.** Each page served is recorded. Served
+unconditionally, those rows would hand every reader its previous read on the
+next poll, and a SIEM draining the stream to empty would never get there; the
+suite spun on exactly that. So a page that served only reads, or nothing, is
+recorded as ``audit.read.quiet`` and never served; any other page is
+``audit.read``, served when the mode in force at its transaction is ``full``
+and summarised instead when it is ``condensed``
+(``services.audit_stream_mode``, ``services.audit_read_summary``). Every kind
+stays in the log for the ``auditor_bulk_read`` rule.
 
 Never content: neither table holds any, and a receipt's free-text ``note`` is
 left out.
@@ -57,6 +61,7 @@ from sqlalchemy import (
     cast,
     func,
     literal,
+    or_,
     select,
     tuple_,
 )
@@ -64,6 +69,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from aivs_server.audit.log import AuditAction
 from aivs_server.db.models import Acknowledgment, AuditLog
+from aivs_server.services.audit_stream_mode import AuditStreamMode, mode_in_force_at
 
 __all__ = [
     "MAX_PAGE",
@@ -86,12 +92,18 @@ _OWN_SCOPE_DETAIL_KEYS: Final[frozenset[str]] = frozenset(
         "count",
         "kind",
         "lane",
+        "events",
+        "first_at",
+        "last_at",
         "outcome",
+        "pages",
+        "quiet_pages",
         "reason",
         "roles",
         "sha256",
         "status",
         "stream",
+        "streams",
         "verb",
     }
 )
@@ -164,8 +176,8 @@ async def audit_events(
     session: AsyncSession, *, scope: uuid.UUID | None, after: Cursor | None, limit: int
 ) -> Page:
     """Audit rows in commit order, scoped and redacted."""
-    not_a_read = AuditLog.action != AuditAction.AUDIT_READ
-    in_scope = not_a_read if scope is None else and_(not_a_read, AuditLog.org_id == scope)
+    served = _served_rows()
+    in_scope = served if scope is None else and_(served, AuditLog.org_id == scope)
     start = after or genesis("audit", scope)
     rows = await _rows(session, AuditLog, in_scope, start, int(start.row_key), limit)
     return _chained(rows, start, _audit_event(scope))
@@ -179,6 +191,23 @@ async def receipt_events(
     start = after or genesis("receipts", scope)
     rows = await _rows(session, Acknowledgment, in_scope, start, uuid.UUID(start.row_key), limit)
     return _chained(rows, start, _receipt_event)
+
+
+def _served_rows() -> ColumnElement[bool]:
+    """What the audit stream serves of its own reading.
+
+    A quiet read -- a page that served only reads, or nothing -- never: that
+    is what lets a poller reach an empty page in either mode. A read, when the
+    mode in force at its own transaction was ``full``; judged per row, so a
+    change of mode re-sorts nothing already exported.
+    """
+    return and_(
+        AuditLog.action != AuditAction.AUDIT_READ_QUIET,
+        or_(
+            AuditLog.action != AuditAction.AUDIT_READ,
+            mode_in_force_at(AuditLog.xact_id) == AuditStreamMode.FULL.value,
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------

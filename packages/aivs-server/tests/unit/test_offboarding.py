@@ -9,20 +9,25 @@ legal hold keeps the postures until it is lifted.
 
 from __future__ import annotations
 
+import datetime as dt
+import json
 import re
 import uuid
 from pathlib import Path
 
 import pytest
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 
 from aivs_schemas.enums import CertStatus, OperatorRole, OrgStatus
 from aivs_server.audit.log import AuditAction
 from aivs_server.auth.secretbox import SecretPurpose
 from aivs_server.db import models
 from aivs_server.db.base import Base
+from aivs_server.services.detections import RULES, run_detections
+from tests.authz_matrix.world import inbox_note
 from tests.conftest import proxy_headers
 from tests.unit.sharing_world import API, SharingWorld, build_sharing_world, one_click
+from tests.unit.test_taxii_inbox import TAXII_TYPE
 
 pytestmark = pytest.mark.db
 
@@ -59,7 +64,8 @@ async def world(
 
 @pytest.fixture
 async def holdings(client, session, secret_box, world) -> SharingWorld:
-    """The member, holding one of everything: a posture, a webhook, a contribution."""
+    """The member, holding one of everything: a posture, a webhook with a queued
+    delivery, an inbox status, a contribution."""
     member = world.member
     assert (
         await client.put(
@@ -80,10 +86,17 @@ async def holdings(client, session, secret_box, world) -> SharingWorld:
             events=[],
         )
     )
+    session.add(models.WebhookDelivery(webhook_id=hook_id, event="test", payload={}))
     org = await session.get(models.Organization, member.org.id)
     org.contact_email = "security@meridian.example"
     await session.commit()
     assert (await one_click(client, member.person, world.published)).status_code == 201
+    posted = await client.post(
+        f"/taxii2/aivs/collections/{world.collection.id}/objects/",
+        content=json.dumps({"objects": [inbox_note(world.published)]}),
+        headers={**member.machine, "content-type": TAXII_TYPE},
+    )
+    assert posted.status_code == 202, posted.text
     return world
 
 
@@ -126,7 +139,10 @@ def _org_scoped(data_class: str) -> list[tuple[str, str]]:
 # ---------------------------------------------------------------------------
 @pytest.mark.requirement("SF-72")
 async def test_every_operational_row_of_the_member_is_deleted(client, session, holdings):
-    """Read from the data inventory: a new operational table this misses fails here."""
+    """Read from the data inventory: a new operational table with an ``org_id`` that
+    this misses fails here. Webhook deliveries are keyed by their webhook and are
+    asserted by name; ``detection_state`` is the detector's own dedupe memory,
+    keyed by subject, and is deliberately kept so an alert does not re-fire."""
     org_id = holdings.member.org.id
     before = {
         name: await _count(session, name, col, org_id) for name, col in _org_scoped("operational")
@@ -139,6 +155,9 @@ async def test_every_operational_row_of_the_member_is_deleted(client, session, h
     assert before["org_postures"] > 0
     assert before["webhooks"] > 0
     assert before["portal_sessions"] > 0
+    assert before["taxii_status"] > 0
+    deliveries = await session.scalar(select(func.count()).select_from(models.WebhookDelivery))
+    assert deliveries == 0, "a webhook's queued deliveries go with it"
     after = {
         name: await _count(session, name, col, org_id) for name, col in _org_scoped("operational")
     }
@@ -157,6 +176,8 @@ async def test_its_people_are_pseudonymised_and_their_ids_kept(client, session, 
     assert operator.email == f"offboarded-{operator_id}@offboarded.invalid"
     assert operator.display_name == "Offboarded operator"
     assert operator.totp_secret_encrypted is None
+    assert operator.password_hash == "!offboarded", "no Argon2 hash parses as this"
+    assert operator.totp_enrolled_at is None
     assert operator.is_active is False
     assert org.contact_email is None
     assert org.name == holdings.member.org.name, "evidence names who it is about"
@@ -246,7 +267,8 @@ async def test_nothing_writes_another_status_over_offboarded(client, session, ho
     )
 
     assert activate.status_code == quarantine.status_code == again.status_code == 409
-    assert re_add.status_code in (404, 409)
+    assert re_add.status_code == 404
+    assert "offboarded organisations cannot be members" in re_add.text
     assert register.status_code == 403
     org = await session.get(models.Organization, org_id, populate_existing=True)
     assert org.status is OrgStatus.OFFBOARDED
@@ -314,6 +336,25 @@ async def test_lifting_a_hold_on_a_member_still_in_the_isac_deletes_nothing(
     assert await _count(session, "org_postures", "org_id", org_id) == 1
 
 
+@pytest.mark.requirement("SF-72")
+async def test_a_members_own_admin_cannot_offboard_its_own_firm(
+    client, session, world, make_operator, human_headers
+):
+    """Ending one's own membership is the ISAC's act; "we are compromised" is quarantine."""
+    admin, _seed = await make_operator(world.member.org, roles=(OperatorRole.ORG_ADMIN,))
+    headers = await human_headers(admin, world.member.pem)
+
+    response = await client.post(
+        f"{API}/orgs/{world.member.org.id}/offboard",
+        json={"reason": REASON, "confirm_slug": world.member.org.slug},
+        headers=headers,
+    )
+
+    assert response.status_code == 403
+    org = await session.get(models.Organization, world.member.org.id, populate_existing=True)
+    assert org.status is OrgStatus.ACTIVE
+
+
 @pytest.mark.parametrize("route", ["offboard", "legal-hold", "legal-hold/lift"])
 async def test_a_members_own_admin_cannot_offboard_or_hold(
     client, world, route, make_operator, human_headers
@@ -332,3 +373,24 @@ async def test_a_members_own_admin_cannot_offboard_or_hold(
     assert (
         await client.get(f"{API}/whoami", headers=proxy_headers(world.reader.pem))
     ).status_code == 200
+
+
+@pytest.mark.requirement("SF-72")
+async def test_every_offboarding_raises_its_own_alert(client, session, world):
+    """Two in one hour are two alerts, each naming its organisation."""
+    for party in (world.member, world.reader):
+        response = await client.post(
+            f"{API}/orgs/{party.org.id}/offboard",
+            json={"reason": REASON, "confirm_slug": party.org.slug},
+            headers=world.editor,
+        )
+        assert response.status_code == 200, response.text
+    rule = next(rule for rule in RULES if rule.name == "org_offboarded")
+
+    raised = await run_detections(
+        session, quarantine_policy="propose", now=dt.datetime.now(dt.UTC), rules=[rule]
+    )
+
+    assert sorted(finding.details["resource"] for finding in raised) == sorted(
+        [str(world.member.org.id), str(world.reader.org.id)]
+    )

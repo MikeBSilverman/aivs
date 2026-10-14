@@ -11,6 +11,7 @@ it, and leaves out what VEX has no field for.
 
 from __future__ import annotations
 
+import datetime as dt
 import uuid
 from typing import Any
 
@@ -19,9 +20,12 @@ from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 
 from aivs_schemas.enums import PostureStatus, VexJustification
-from aivs_server.db.models import OrgPosture, StixObject
+from aivs_server.audit.log import AuditAction
+from aivs_server.db.models import AuditLog, OrgPosture, StixObject
+from aivs_server.services.detections import RULES
 from aivs_server.services.posture import VexStatement, vex_problem
 from aivs_server.services.submissions import _extract_indexed_fields
+from aivs_server.services.telemetry import counted_organisations
 from aivs_server.services.vex_export import OPENVEX_CONTEXT
 from tests.unit.contribution_world import seed, vulnerability_raw
 from tests.unit.sharing_world import API, SharingWorld, build_sharing_world
@@ -368,3 +372,41 @@ async def test_a_vulnerability_the_member_can_no_longer_see_is_named_by_its_id_o
     [statement] = (await export(client, world.member.machine))["statements"]
 
     assert statement["vulnerability"] == {"@id": vulnerability, "name": vulnerability}
+
+
+@pytest.mark.requirement("SF-70")
+async def test_an_export_is_audited_as_an_act_never_its_content_or_size(client, session, world):
+    await put(
+        client,
+        world.member.person,
+        world.published,
+        status="affected",
+        action_statement="Isolating the gateways.",
+    )
+
+    await export(client, world.member.machine)
+
+    row = await session.scalar(
+        select(AuditLog).where(AuditLog.action == AuditAction.POSTURE_EXPORTED)
+    )
+    assert row is not None
+    assert row.org_id == world.member.org.id
+    assert row.details == {}
+
+
+@pytest.mark.requirement("SF-70")
+def test_the_export_burst_rule_is_the_documented_twenty_an_hour():
+    """SF-70 and the runbook say 20 an hour; the rule is the third description."""
+    rule = next(rule for rule in RULES if rule.name == "posture_export_burst")
+
+    assert (rule.threshold, rule.window) == (20, dt.timedelta(hours=1))
+
+
+@pytest.mark.requirement("SF-70")
+async def test_the_isacs_automation_is_never_a_counted_organisation(session, world, make_org):
+    """No path lets the automation hold a posture today; the count still never takes one."""
+    counted = set((await session.execute(counted_organisations())).scalars())
+
+    assert world.automation.org.id not in counted
+    assert world.isac_org.id not in counted
+    assert world.member.org.id in counted

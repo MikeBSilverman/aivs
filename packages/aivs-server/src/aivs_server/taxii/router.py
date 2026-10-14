@@ -332,10 +332,11 @@ async def list_objects(
     filters = _parse_request_filters(request, settings)
     cursor = _resolve_cursor(settings, filters.next_cursor, collection_id)
     limit = filters.limit or settings.taxii_default_page_size
-    # Before the clock is read: no paging cursor may be computed while a
-    # publication is in flight. See services.publication.
-    await wait_for_publications(session)
-    now = dt.datetime.now(dt.UTC)
+    # No paging cursor may be computed while a publication is in flight, and
+    # "now" is the database's clock, read under the lock: a replica's own
+    # clock running fast showed embargoes early and issued cursors above rows
+    # still to be stamped. See services.publication.
+    now = await wait_for_publications(session)
 
     rows = list(
         (
@@ -418,10 +419,11 @@ async def get_object(
     # all three.
     cursor = _resolve_cursor(settings, filters.next_cursor, collection_id)
     limit = filters.limit or settings.taxii_default_page_size
-    # Before the clock is read: no paging cursor may be computed while a
-    # publication is in flight. See services.publication.
-    await wait_for_publications(session)
-    now = dt.datetime.now(dt.UTC)
+    # No paging cursor may be computed while a publication is in flight, and
+    # "now" is the database's clock, read under the lock: a replica's own
+    # clock running fast showed embargoes early and issued cursors above rows
+    # still to be stamped. See services.publication.
+    now = await wait_for_publications(session)
 
     rows = list(
         (
@@ -497,10 +499,11 @@ async def get_object_versions(
     filters = _parse_request_filters(request, settings)
     cursor = _resolve_cursor(settings, filters.next_cursor, collection_id)
     limit = filters.limit or settings.taxii_default_page_size
-    # Before the clock is read: no paging cursor may be computed while a
-    # publication is in flight. See services.publication.
-    await wait_for_publications(session)
-    now = dt.datetime.now(dt.UTC)
+    # No paging cursor may be computed while a publication is in flight, and
+    # "now" is the database's clock, read under the lock: a replica's own
+    # clock running fast showed embargoes early and issued cursors above rows
+    # still to be stamped. See services.publication.
+    now = await wait_for_publications(session)
 
     rows = list(
         (
@@ -561,10 +564,11 @@ async def get_manifest(
     filters = _parse_request_filters(request, settings)
     cursor = _resolve_cursor(settings, filters.next_cursor, collection_id)
     limit = filters.limit or settings.taxii_default_page_size
-    # Before the clock is read: no paging cursor may be computed while a
-    # publication is in flight. See services.publication.
-    await wait_for_publications(session)
-    now = dt.datetime.now(dt.UTC)
+    # No paging cursor may be computed while a publication is in flight, and
+    # "now" is the database's clock, read under the lock: a replica's own
+    # clock running fast showed embargoes early and issued cursors above rows
+    # still to be stamped. See services.publication.
+    now = await wait_for_publications(session)
 
     rows = list(
         (

@@ -495,7 +495,7 @@ in every authorization predicate.
 | Storage encryption | **Volume or disk encryption is required.** `stix_objects.raw` holds embargoed content in plaintext at the application layer. |
 | Backup target | Off-host, encrypted, with tested restores. |
 | Outbound HTTPS | For webhook delivery to member endpoints. |
-| Time sync | NTP. Embargo timing and certificate validity both depend on it; the mTLS validity re-check tolerates ±5 minutes of skew and nothing more. |
+| Time sync | NTP. Embargo timing and certificate validity both depend on it; the mTLS validity re-check tolerates ±5 minutes of skew and nothing more. Publication stamps and membership edges come from the database host's clock, which must slew, never step backwards. |
 
 ### PKI and secrets
 

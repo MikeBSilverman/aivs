@@ -48,6 +48,7 @@ from aivs_server.auth.policy import (
     is_isac_editor,
     require,
 )
+from aivs_server.db.clock import database_now
 from aivs_server.db.models import (
     Distribution,
     Embargo,
@@ -376,7 +377,7 @@ async def distribute(
     require(is_isac_editor(ctx), "distribute_requires_isac_editor")
 
     try:
-        await distribute_submission(
+        result = await distribute_submission(
             session,
             ctx,
             submission,
@@ -388,13 +389,17 @@ async def distribute(
         )
         # Queued in the same transaction as the visibility rows. Nothing is
         # queued for an embargoed distribution: the content is not readable yet,
-        # so the notification goes out when the embargo releases instead.
-        await queue_visibility_notifications(
-            session,
-            submission_id=submission.id,
-            circle_ids=list(payload.circle_ids),
-            visible_at=payload.release_at or dt.datetime.now(dt.UTC),
-        )
+        # so the notification goes out when the embargo releases instead. The
+        # instant is the distribution's stamp, on the database's clock, which
+        # memberships are bounded by (see db.clock).
+        if not result.embargoed:
+            await queue_visibility_notifications(
+                session,
+                submission_id=submission.id,
+                circle_ids=list(payload.circle_ids),
+                visible_at=result.date_added,
+                now=result.date_added,
+            )
         # One commit for the visibility rows, the state change, the notifications,
         # and the audit trail.
         await session.commit()
@@ -423,12 +428,15 @@ async def release_embargo(
         await release_embargo_now(session, ctx, submission_id=submission.id, reason=payload.reason)
         # Early release is the second moment content becomes visible, and the
         # one where telling members promptly matters most: the reason to release
-        # early is that something is being exploited now.
+        # early is that something is being exploited now. On the database's
+        # clock, because memberships are bounded by it (see db.clock).
+        released_at = await database_now(session)
         await queue_visibility_notifications(
             session,
             submission_id=submission.id,
             circle_ids=await circle_ids_for_submission(session, submission.id),
-            visible_at=dt.datetime.now(dt.UTC),
+            visible_at=released_at,
+            now=released_at,
         )
         await session.commit()
     except _CLIENT_ERRORS as exc:

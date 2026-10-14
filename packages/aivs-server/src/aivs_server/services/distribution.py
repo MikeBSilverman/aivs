@@ -296,9 +296,10 @@ async def distribute_submission(
     committing exactly once afterwards; this function deliberately does not
     commit, so that the whole batch lands atomically. See the module docstring.
     """
-    # Before the clock is read: see services.publication.
-    await hold_publication_lock(session, refuse_while_paused=True)
-    now = now or dt.datetime.now(dt.UTC)
+    # The lock first, and the clock is the database's, read under it: see
+    # services.publication. ``now`` is injectable for tests only.
+    locked_at = await hold_publication_lock(session, refuse_while_paused=True)
+    now = now or locked_at
 
     if submission.state is not SubmissionState.VALIDATED:
         msg = (

@@ -125,9 +125,10 @@ async def release_embargo_now(
 
     Safe in the direction it moves. See the module docstring.
     """
-    # Before the clock is read: see services.publication.
-    await hold_publication_lock(session, refuse_while_paused=True)
-    now = now or dt.datetime.now(dt.UTC)
+    # The lock first, and the clock is the database's, read under it: see
+    # services.publication. ``now`` is injectable for tests only.
+    locked_at = await hold_publication_lock(session, refuse_while_paused=True)
+    now = now or locked_at
     # The next millisecond, not this one. A released row keeps the `seq` it was
     # given when it was *distributed*, which is necessarily lower than that of
     # anything distributed since -- so the monotonic tiebreaker does not help
@@ -229,10 +230,12 @@ async def extend_embargo(
     members poll forwards only, so a retraction is not something the system can
     honestly offer.
     """
-    # Before the clock is read: the "already visible" test below compares
-    # against it. See services.publication.
-    await hold_publication_lock(session, refuse_while_paused=False)
-    now = now or dt.datetime.now(dt.UTC)
+    # The lock first, and the clock is the database's, read under it: the
+    # "already visible" tests below compare against it, and a replica whose
+    # own clock lagged would find content members already hold still in the
+    # future, and move it back there. See services.publication.
+    locked_at = await hold_publication_lock(session, refuse_while_paused=False)
+    now = now or locked_at
     if release_at.tzinfo is None:
         msg = "release_at must be timezone-aware"
         raise EmbargoError(msg)
@@ -319,11 +322,11 @@ async def sweep_due_embargoes(session: AsyncSession, *, now: dt.datetime | None 
     no member is told that anything exists; it catches up on resume.
     """
     try:
-        await hold_publication_lock(session, refuse_while_paused=True)
+        locked_at = await hold_publication_lock(session, refuse_while_paused=True)
     except PublicationPausedError:
         await session.rollback()
         return 0
-    now = now or dt.datetime.now(dt.UTC)
+    now = now or locked_at
 
     due = (
         (

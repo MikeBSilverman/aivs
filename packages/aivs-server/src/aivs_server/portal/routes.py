@@ -48,6 +48,7 @@ from aivs_server.auth.sessions import (
     revoke_session,
 )
 from aivs_server.config import Settings
+from aivs_server.db.clock import database_now
 from aivs_server.db.models import (
     Acknowledgment,
     Circle,
@@ -304,7 +305,9 @@ async def logout(
 async def dashboard(request: Request, settings: SettingsDep, session: SessionDep) -> Response:
     """What this analyst's firm can see, and what it has filed."""
     ctx, _csrf_hash = await current_session(request, settings, session)
-    now = dt.datetime.now(dt.UTC)
+    # The database's clock, which date_added is stamped on: a replica running
+    # fast would list embargoed content early (see db.clock).
+    now = await database_now(session)
     circle_grants = readable_circle_grants(ctx)
 
     available = 0
@@ -740,7 +743,7 @@ async def perform_action(
         # the catch-all handler and became a 500.
         if verb == "distribute":
             circle_ids, release_at = _parse_distribute_form(await request.form())
-            await distribute_submission(
+            result = await distribute_submission(
                 session, ctx, submission, circle_ids=circle_ids, release_at=release_at
             )
             await apply_transition(session, ctx, submission, SubmissionState.DISTRIBUTED)
@@ -751,12 +754,14 @@ async def perform_action(
             # that matters: an *embargoed* distribution was still announced,
             # because the sweeper queues at release, so only immediate
             # distributions went unannounced.
-            await queue_visibility_notifications(
-                session,
-                submission_id=submission.id,
-                circle_ids=list(circle_ids),
-                visible_at=release_at or dt.datetime.now(dt.UTC),
-            )
+            if not result.embargoed:
+                await queue_visibility_notifications(
+                    session,
+                    submission_id=submission.id,
+                    circle_ids=list(circle_ids),
+                    visible_at=result.date_added,
+                    now=result.date_added,
+                )
         elif verb == "confirm":
             await confirm_proxy_filing(session, ctx, submission, now=dt.datetime.now(dt.UTC))
         elif verb == "submit":

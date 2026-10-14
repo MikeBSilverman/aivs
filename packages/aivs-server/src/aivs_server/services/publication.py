@@ -26,6 +26,15 @@ commits below that cursor. So readers that issue cursors take the same lock
 *shared*: no cursor is computed while any publication is in flight, and any
 publication that starts waits for the reading transaction to finish.
 
+**One clock for all of it.** The lock orders transactions, not clocks. If
+each process read its own clock, a replica running behind would stamp below a
+cursor a replica running ahead had already issued, and the lock would have
+ordered the two perfectly to no effect. So the clock is the database's, read
+*after* the lock is taken, and both helpers return it: a writer stamps with the
+instant ``hold_publication_lock`` returns, and a reader computes visibility and
+cursors with the one ``wait_for_publications`` returns. See ``db.clock`` for
+the one case this does not cover.
+
 The cost is that a TAXII read and a distribution never overlap. Distributions
 run hundreds of times a year and complete in milliseconds; a read waits at most
 the length of one. The wait is bounded by the engine's ``lock_timeout``, so a
@@ -44,6 +53,7 @@ from typing import Final
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from aivs_server.db.clock import database_now
 from aivs_server.db.models import InstanceControl
 from aivs_server.taxii.resources import truncate_to_taxii_precision
 
@@ -51,6 +61,7 @@ __all__ = [
     "PublicationPausedError",
     "earliest_publication_instant",
     "hold_publication_lock",
+    "publication_paused",
     "wait_for_publications",
 ]
 
@@ -69,11 +80,13 @@ class PublicationPausedError(RuntimeError):
 _PUBLICATION_LOCK_KEY: Final[int] = 0x41495653_00000001  # "AIVS", lock 1
 
 
-async def hold_publication_lock(session: AsyncSession, *, refuse_while_paused: bool) -> None:
-    """Take the publication lock exclusively until this transaction ends.
+async def hold_publication_lock(session: AsyncSession, *, refuse_while_paused: bool) -> dt.datetime:
+    """Take the publication lock exclusively until this transaction ends; return the time.
 
-    Call before reading the clock to stamp ``date_added``. A ``now`` read
-    before the lock is acquired reopens the race this lock exists to close.
+    The returned instant is the database's clock, read under the lock: the
+    "now" to stamp ``date_added`` from. A ``now`` read before the lock is
+    acquired, or from the process's own clock, reopens the race this lock
+    exists to close.
 
     ``refuse_while_paused`` is the caller's to state. Everything that makes
     content visible sooner refuses during a pause. Extending an embargo moves
@@ -85,28 +98,34 @@ async def hold_publication_lock(session: AsyncSession, *, refuse_while_paused: b
     await session.execute(
         text("SELECT pg_advisory_xact_lock(:key)"), {"key": _PUBLICATION_LOCK_KEY}
     )
-    if not refuse_while_paused:
-        return
     # Checked under the lock, so a pause that commits while a writer waits is
     # seen by that writer rather than raced past.
+    if refuse_while_paused and await publication_paused(session):
+        msg = "distribution is paused instance-wide"
+        raise PublicationPausedError(msg)
+    return await database_now(session)
+
+
+async def publication_paused(session: AsyncSession) -> bool:
+    """Whether the instance's stop button is pressed."""
     paused = await session.scalar(
         select(InstanceControl.distribution_paused).where(InstanceControl.id == 1)
     )
-    if paused:
-        msg = "distribution is paused instance-wide"
-        raise PublicationPausedError(msg)
+    return bool(paused)
 
 
-async def wait_for_publications(session: AsyncSession) -> None:
-    """Take the publication lock shared until this transaction ends.
+async def wait_for_publications(session: AsyncSession) -> dt.datetime:
+    """Take the publication lock shared until this transaction ends; return the time.
 
-    Call before reading the clock in any read that issues a paging cursor.
-    Returns once no publication is in flight, and holds off new ones until the
-    read's transaction ends.
+    Call in any read that issues a paging cursor, and use the instant it
+    returns -- the database's clock, read under the lock -- as the read's
+    "now". Returns once no publication is in flight, and holds off new ones
+    until the read's transaction ends.
     """
     await session.execute(
         text("SELECT pg_advisory_xact_lock_shared(:key)"), {"key": _PUBLICATION_LOCK_KEY}
     )
+    return await database_now(session)
 
 
 def earliest_publication_instant(now: dt.datetime) -> dt.datetime:

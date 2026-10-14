@@ -904,7 +904,12 @@ the platform, so alert on the collector's side when the stream goes quiet.
   response and a panicked one when the sweeper stops.
 - **Clock skew.** The mTLS validity re-check tolerates ±5 minutes. Beyond that,
   valid certificates start failing and the error the member sees says nothing
-  useful. Run NTP.
+  useful. Run NTP. Publication and membership times are read from the
+  *database host's* clock, so app replicas that disagree cannot reorder them;
+  but a step backwards on the database host itself can stamp new content below
+  a cursor a member already holds, and that content is never delivered. Run the
+  database host's NTP so that it slews rather than steps (`chronyd` without
+  `makestep` after boot).
 - **Forgetting that superseded content stays readable.** Superseding does not
   retract; it adds. If content must not be readable, it should never have been
   distributed.

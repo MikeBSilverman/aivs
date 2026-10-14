@@ -3,7 +3,9 @@
 Pairs: below k everything is withheld, at k the numbers appear; one to k-1
 reads "fewer than k"; the ISAC and the submitter never count as reach; a member
 that joined after the content was released does not either; only the submitter
-can read it; a milestone is announced once, and never below k.
+can read it; a milestone is announced once, and only for a count shown
+exactly; reach is only organisations that could read it, and a count only
+organisations in reach.
 """
 
 from __future__ import annotations
@@ -27,13 +29,19 @@ from tests.conftest import proxy_headers
 
 pytestmark = pytest.mark.db
 
+#: The milestone a submitter is told of once K organisations retrieved it.
+RETRIEVED_K = f"retrieved_{K_ANONYMITY}"
+
 
 @pytest.fixture
-async def shared(session, make_org, make_cert, make_circle, join_circle, publish, isac_org):
+async def shared(
+    session, make_org, make_cert, make_circle, make_collection, join_circle, publish, isac_org
+):
     """A submission distributed into a circle of ``readers`` other members."""
 
     async def _build(readers: int):
         circle = await make_circle("section9")
+        await make_collection(circle)
         submitter = await make_org("submitter", org_type=OrgType.GSIB)
         pem, _ = await make_cert(submitter)
         await join_circle(submitter, circle)
@@ -125,6 +133,71 @@ async def test_an_organisation_that_cannot_read_is_not_reach(session, shared):
     assert telemetry.reach.value is None
 
 
+async def _unreadable(session, circle, collection, how: str) -> None:
+    if how == "circle deactivated":
+        circle.is_active = False
+    else:
+        collection.can_read = False
+    await session.commit()
+
+
+@pytest.mark.parametrize("how", ["circle deactivated", "collection unreadable"])
+@pytest.mark.requirement("SF-15")
+async def test_reach_counts_only_organisations_that_could_read_it(
+    session, shared, make_org, make_circle, make_collection, join_circle, publish, how
+):
+    """A firm in a circle nobody can read from must not make up the K.
+
+    Five readers and five firms whose circle cannot be read: counted as reach
+    10, the five readers all retrieving was shown as an exact 5 -- every real
+    reader named. The pair: the second circle readable, the same 5 is exact.
+    """
+    submission, submitter, _pem, readers, _c = await shared(K_ANONYMITY)
+    dark = await make_circle("dark-pool")
+    dark_feed = await make_collection(dark)
+    for index in range(K_ANONYMITY):
+        await join_circle(await make_org(f"dark-{index}", org_type=OrgType.GSIB), dark)
+    await publish(submitter, dark, submission=submission)
+    for reader in readers:
+        await _receipt(session, reader, submission)
+    assert (await submission_telemetry(session, submission)).retrieved.value == K_ANONYMITY
+
+    await _unreadable(session, dark, dark_feed, how)
+
+    telemetry = await submission_telemetry(session, submission)
+    assert telemetry.reach.value == K_ANONYMITY
+    assert telemetry.retrieved.value is None
+
+
+@pytest.mark.requirement("SF-15")
+async def test_a_count_counts_only_organisations_in_reach(
+    session, shared, make_org, make_circle, make_collection, join_circle, publish
+):
+    """A count is of the firms reach describes, or "all but" means nothing.
+
+    Five firms retrieved through a circle that was then deactivated: they are
+    no longer reach, so their receipts are not "5 of the 10 who could". The
+    pair: with the circle active, they are 5 of 15.
+    """
+    submission, submitter, _pem, _readers, _c = await shared(2 * K_ANONYMITY)
+    closed = await make_circle("closed-pool")
+    await make_collection(closed)
+    for index in range(K_ANONYMITY):
+        org = await make_org(f"closed-{index}", org_type=OrgType.GSIB)
+        await join_circle(org, closed)
+        await _receipt(session, org, submission)
+    await publish(submitter, closed, submission=submission)
+    before = await submission_telemetry(session, submission)
+    assert (before.reach.value, before.retrieved.value) == (3 * K_ANONYMITY, K_ANONYMITY)
+
+    closed.is_active = False
+    await session.commit()
+
+    telemetry = await submission_telemetry(session, submission)
+    assert telemetry.reach.value == 2 * K_ANONYMITY
+    assert (telemetry.retrieved.value, telemetry.retrieved.withheld) == (None, "fewer than 5")
+
+
 async def test_a_member_that_joined_after_release_is_not_reach(
     session, shared, make_org, join_circle
 ):
@@ -178,17 +251,69 @@ async def _telemetry_events(session) -> list[str]:
     return [payload["milestone"] for payload in rows.scalars()]
 
 
-@pytest.mark.parametrize(("readers", "announced"), [(K_ANONYMITY, ["first_retrieval"]), (2, [])])
+async def _sweep(session) -> list[str]:
+    now = dt.datetime.now(dt.UTC)
+    await queue_milestones(session, now=now, lookback=dt.timedelta(days=1))
+    return await _telemetry_events(session)
+
+
+@pytest.mark.parametrize(("readers", "announced"), [(2 * K_ANONYMITY, [RETRIEVED_K]), (2, [])])
 @pytest.mark.requirement("SF-15")
 async def test_a_milestone_is_announced_once_and_never_below_k(
     session, shared, secret_box, readers, announced
 ):
     submission, submitter, _pem, others, _c = await shared(readers)
     await _hook(session, secret_box, submitter)
-    await _receipt(session, others[0], submission)
-    now = dt.datetime.now(dt.UTC)
+    for reader in others[:K_ANONYMITY]:
+        await _receipt(session, reader, submission)
 
-    await queue_milestones(session, now=now, lookback=dt.timedelta(days=1))
-    await queue_milestones(session, now=now, lookback=dt.timedelta(days=1))
+    await _sweep(session)
 
-    assert await _telemetry_events(session) == announced
+    assert await _sweep(session) == announced
+
+
+@pytest.mark.parametrize(("retrievers", "announced"), [(1, []), (K_ANONYMITY, [RETRIEVED_K])])
+@pytest.mark.requirement("SF-15")
+async def test_a_milestone_is_silent_until_its_count_is_shown(
+    session, shared, secret_box, retrievers, announced
+):
+    """Silence must not say what the count withholds.
+
+    A "first retrieval" milestone at reach 10 that never fired told the
+    submitter the count was exactly zero, which the count itself shows only as
+    "fewer than 5". So no milestone is about fewer than K. The pair: five of
+    ten, a count shown exactly, is announced.
+    """
+    submission, submitter, _pem, others, _c = await shared(2 * K_ANONYMITY)
+    await _hook(session, secret_box, submitter)
+    for reader in others[:retrievers]:
+        await _receipt(session, reader, submission)
+
+    assert await _sweep(session) == announced
+
+
+@pytest.mark.parametrize(
+    ("readers", "retrievers", "announced"),
+    [
+        (K_ANONYMITY + 1, K_ANONYMITY, []),
+        (2 * K_ANONYMITY, 2 * K_ANONYMITY, []),
+        (3 * K_ANONYMITY, 2 * K_ANONYMITY, [RETRIEVED_K, "retrieved_10"]),
+    ],
+)
+@pytest.mark.requirement("SF-15")
+async def test_a_milestone_never_fires_for_a_count_shown_as_all_but_a_few(
+    session, shared, secret_box, readers, retrievers, announced
+):
+    """Ten of ten retrieving is shown as "all but fewer than 5", not 10.
+
+    "retrieved_10" firing at reach 10 said every firm had, and "retrieved_5"
+    at reach 6 said all but at most one had; neither count is shown exactly,
+    so neither fires. The pair: ten of fifteen is a
+    count shown exactly, and both fire.
+    """
+    submission, submitter, _pem, others, _c = await shared(readers)
+    await _hook(session, secret_box, submitter)
+    for reader in others[:retrievers]:
+        await _receipt(session, reader, submission)
+
+    assert sorted(await _sweep(session)) == sorted(announced)

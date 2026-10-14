@@ -3,7 +3,8 @@
 Whether a firm is ``affected`` is the fact its counsel will not let the ISAC
 hold per firm. A posture row is therefore read and written by its own
 organisation alone -- anyone else, the ISAC included, gets the 404 an absent
-row gets -- and the ISAC sees counts, each withheld below k.
+row gets -- and the ISAC sees counts, each exact only when at least k have
+that status and at least k do not.
 """
 
 from __future__ import annotations
@@ -246,12 +247,15 @@ async def test_the_audit_row_says_a_posture_was_set_never_which(client, session,
 # The ISAC's counts
 # ---------------------------------------------------------------------------
 async def _members_with_posture(world, client, make_org, make_cert, join_circle, statuses):
+    orgs = []
     for index, status in enumerate(statuses):
         org = await make_org(f"posture-bank-{index}")
         pem, _ = await make_cert(org)
         await join_circle(org, world.circle)
         response = await set_posture(client, proxy_headers(pem), world.published, status=status)
         assert response.status_code == 200, response.text
+        orgs.append(org)
+    return orgs
 
 
 async def _summary(client, headers, vulnerability):
@@ -260,18 +264,57 @@ async def _summary(client, headers, vulnerability):
     )
 
 
+SPLIT = ["affected"] * K_ANONYMITY + ["not_affected"] * K_ANONYMITY
+
+
 @pytest.mark.requirement("SF-70")
-async def test_the_isac_sees_counts_at_or_above_k(client, world, make_org, make_cert, join_circle):
-    await _members_with_posture(
-        world, client, make_org, make_cert, join_circle, ["affected"] * K_ANONYMITY
-    )
+async def test_the_isac_sees_a_count_that_k_have_and_k_do_not(
+    client, world, make_org, make_cert, join_circle
+):
+    await _members_with_posture(world, client, make_org, make_cert, join_circle, SPLIT)
 
     summary = await _summary(client, world.editor, world.published)
 
     assert summary.status_code == 200, summary.text
-    assert summary.json()["total"]["value"] == K_ANONYMITY
-    assert summary.json()["by_status"]["affected"]["value"] == K_ANONYMITY
-    assert summary.json()["by_status"]["fixed"]["value"] == 0
+    by_status = summary.json()["by_status"]
+    assert by_status["affected"]["value"] == by_status["not_affected"]["value"] == K_ANONYMITY
+    assert by_status["fixed"] == {"value": None, "withheld": "fewer than 5"}
+    assert summary.json()["total"]["value"] is None
+
+
+@pytest.mark.requirement("SF-70")
+async def test_a_unanimous_status_is_withheld(client, world, make_org, make_cert, join_circle):
+    """Six of six affected, beside its audit rows, names six affected firms.
+
+    The ISAC's audit log says which organisations recorded *a* posture; a
+    count equal to the total, or an exact zero beside it, then states each
+    one's status. The pair is the split above, where both counts are exact.
+    """
+    await _members_with_posture(
+        world, client, make_org, make_cert, join_circle, ["affected"] * (K_ANONYMITY + 1)
+    )
+
+    summary = (await _summary(client, world.editor, world.published)).json()
+
+    assert summary["by_status"]["affected"] == {"value": None, "withheld": "all but fewer than 5"}
+    assert summary["by_status"]["not_affected"] == {"value": None, "withheld": "fewer than 5"}
+    assert summary["total"]["value"] is None
+
+
+@pytest.mark.requirement("SF-70")
+async def test_only_active_members_are_counted(
+    client, session, world, make_org, make_cert, join_circle
+):
+    """A suspended firm's posture leaves the count; the pair is before it was suspended."""
+    orgs = await _members_with_posture(world, client, make_org, make_cert, join_circle, SPLIT)
+    before = (await _summary(client, world.editor, world.published)).json()
+    assert before["by_status"]["affected"]["value"] == K_ANONYMITY
+
+    orgs[0].status = OrgStatus.SUSPENDED
+    await session.commit()
+
+    after = (await _summary(client, world.editor, world.published)).json()
+    assert after["by_status"]["affected"] == {"value": None, "withheld": "fewer than 5"}
 
 
 @pytest.mark.requirement("SF-70")
@@ -319,15 +362,22 @@ async def test_counts_are_only_for_a_distributed_vulnerability(client, session, 
 
 
 def test_a_small_count_is_withheld_and_so_is_the_total_that_would_reveal_it():
-    summary = _suppress({PostureStatus.AFFECTED: K_ANONYMITY + 2, PostureStatus.FIXED: 1})
+    summary = _suppress(
+        {
+            PostureStatus.AFFECTED: K_ANONYMITY,
+            PostureStatus.NOT_AFFECTED: K_ANONYMITY,
+            PostureStatus.FIXED: 1,
+        }
+    )
 
     assert summary.by_status[PostureStatus.FIXED].value is None
-    assert summary.by_status[PostureStatus.AFFECTED].value == K_ANONYMITY + 2
+    assert summary.by_status[PostureStatus.AFFECTED].value == K_ANONYMITY
     assert summary.total.value is None, "total minus the shown count is the withheld one"
 
 
-def test_a_zero_is_shown_and_does_not_withhold_the_total():
-    summary = _suppress({PostureStatus.AFFECTED: K_ANONYMITY})
+def test_the_total_is_shown_only_when_every_count_is():
+    """Every status between K and total-K: the total is their sum, and derives nothing."""
+    summary = _suppress(dict.fromkeys(PostureStatus, K_ANONYMITY))
 
-    assert summary.by_status[PostureStatus.FIXED].value == 0
-    assert summary.total.value == K_ANONYMITY
+    assert {count.value for count in summary.by_status.values()} == {K_ANONYMITY}
+    assert summary.total.value == K_ANONYMITY * len(PostureStatus)

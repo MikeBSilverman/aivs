@@ -4,8 +4,12 @@ Whether a member is ``affected`` is the most sensitive fact it can hold about a
 vulnerability, and an ISAC that could read it per member holds a list member
 counsel will not allow to exist. So a posture row is the member's alone: only
 its own organisation reads or writes it, and a request for anyone else's
-answers 404 like an absent row. The ISAC sees counts, each withheld below k,
-and the total withheld whenever a withheld count could be worked out from it.
+answers 404 like an absent row. The ISAC sees counts by telemetry's rule: a
+count is exact only when at least k members have that status *and* at least k
+of those with a posture do not. The audit log tells the ISAC which members
+recorded a posture, so "6 of 6 affected", or an exact zero beside a total,
+states each named firm's status. The total is withheld whenever a withheld
+count could be worked out from it.
 
 The one-click records ``under_investigation``; nothing defaults a member to
 ``affected``. ``actioned`` -- "we did something about it" -- stays a receipt,
@@ -40,7 +44,12 @@ from aivs_server.audit.log import AuditAction, record
 from aivs_server.auth.context import AuthContext
 from aivs_server.db.models import Distribution, OrgPosture, StixObject
 from aivs_server.services.contributions import TargetNotFoundError, resolve_target
-from aivs_server.services.telemetry import K_ANONYMITY, Count, counted_organisations
+from aivs_server.services.telemetry import (
+    K_ANONYMITY,
+    Count,
+    counted_organisations,
+    k_anonymous,
+)
 
 __all__ = [
     "PostureSummary",
@@ -143,17 +152,17 @@ class PostureSummary:
         self.by_status = dict(by_status)
 
 
+_TOO_FEW_POSTURES: Final[str] = f"shown once at least {K_ANONYMITY} organisations have one"
+
+
 def _suppress(counts: Mapping[PostureStatus, int]) -> PostureSummary:
     total = sum(counts.values())
-    if total < K_ANONYMITY:
-        withheld = Count(None, f"shown once at least {K_ANONYMITY} organisations have one")
-        return PostureSummary(withheld, dict.fromkeys(PostureStatus, withheld))
     by_status = {
-        status: Count(None, f"fewer than {K_ANONYMITY}")
-        if 0 < counts.get(status, 0) < K_ANONYMITY
-        else Count(counts.get(status, 0))
+        status: k_anonymous(counts.get(status, 0), population=total, too_few=_TOO_FEW_POSTURES)
         for status in PostureStatus
     }
+    if total < K_ANONYMITY:
+        return PostureSummary(Count(None, _TOO_FEW_POSTURES), by_status)
     # A total beside one withheld count gives the withheld one away by subtraction.
     any_withheld = any(count.value is None for count in by_status.values())
     shown_total = (

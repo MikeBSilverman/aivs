@@ -14,8 +14,16 @@ by subtraction:
   and members can know a circle's roster, so an exact zero, or a count equal
   to reach, states every firm's action. Such counts read "fewer than K" or
   "all but fewer than K".
-Reach counts active organisations only: a suspended or quarantined one cannot
-read, and counting it would let K describe fewer than K possible readers.
+Reach counts only organisations that could retrieve it: active, a member when
+it was released, in a circle that is active and whose collection is readable.
+Anyone else would let K describe fewer than K possible readers, and an exact
+count could then name every real one. The counts are of those same
+organisations, so "all but fewer than K" is measured against the K it claims.
+
+A milestone announces a count the submitter could have read, never more: it
+fires only once its count is shown exactly. A milestone that stays silent says
+only that the count is not yet shown at that threshold, which the count says
+too. (A "first retrieval" that never fired said the count was exactly zero.)
 
 What this does not stop: reading the same count twice and seeing it move tells
 the submitter that *some* firm acted in between. Which one is not shown, and a
@@ -39,11 +47,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from aivs_schemas.enums import AckType, OrgStatus
 from aivs_server.db.models import (
     Acknowledgment,
+    Circle,
     CircleMembership,
     Distribution,
     Organization,
     Submission,
     SubmissionMilestone,
+    TaxiiCollection,
     Webhook,
     WebhookDelivery,
 )
@@ -55,6 +65,7 @@ __all__ = [
     "Count",
     "Telemetry",
     "counted_organisations",
+    "k_anonymous",
     "queue_milestones",
     "submission_telemetry",
 ]
@@ -93,20 +104,34 @@ class Telemetry:
     later: tuple[str, ...] = LATER
 
 
-def _suppressed(value: int, *, reach: int) -> Count:
-    if reach < K_ANONYMITY:
-        return Count(None, f"shown once at least {K_ANONYMITY} organisations could see it")
+_TOO_FEW_READERS: Final[str] = f"shown once at least {K_ANONYMITY} organisations could see it"
+
+
+def k_anonymous(value: int, *, population: int, too_few: str) -> Count:
+    """``value`` organisations of ``population``, exact only if it points at nobody.
+
+    At least K must be counted and at least K not: a reader who knows who the
+    population is learns each firm's answer from an exact zero or an exact
+    "all of them" as surely as from a one. Below K in all, ``too_few`` says why.
+    Telemetry and posture both count through here, so the rule has one text.
+    """
+    if population < K_ANONYMITY:
+        return Count(None, too_few)
     if value < K_ANONYMITY:
         return Count(None, f"fewer than {K_ANONYMITY}")
-    if reach - value < K_ANONYMITY:
+    if population - value < K_ANONYMITY:
         return Count(None, f"all but fewer than {K_ANONYMITY}")
     return Count(value)
+
+
+def _suppressed(value: int, *, reach: int) -> Count:
+    return k_anonymous(value, population=reach, too_few=_TOO_FEW_READERS)
 
 
 def _reach_count(reach: int) -> Count:
     """Reach is exact from K: it says how many could see, not what any one did."""
     if reach < K_ANONYMITY:
-        return Count(None, f"shown once at least {K_ANONYMITY} organisations could see it")
+        return Count(None, _TOO_FEW_READERS)
     return Count(reach)
 
 
@@ -128,8 +153,14 @@ def _is_counted(org_id: Any, submitter_org_id: uuid.UUID) -> Any:
     return and_(org_id != submitter_org_id, org_id.in_(counted_organisations()))
 
 
-async def _reach(session: AsyncSession, submission: Submission) -> int:
-    """Organisations whose membership covered the moment the content became visible."""
+def _reachable(submission: Submission) -> Select[tuple[uuid.UUID]]:
+    """Organisations that could retrieve it, as the TAXII read path decides.
+
+    A member when it became visible, in a circle that is active, with an
+    active collection that may be read: the same terms ``load_circle_grants``
+    and the collection lookup hold a reader to. Retrieval, and so every
+    acknowledgment, happens only there.
+    """
     covered = and_(
         CircleMembership.circle_id == Distribution.circle_id,
         CircleMembership.joined_at <= Distribution.date_added,
@@ -138,27 +169,38 @@ async def _reach(session: AsyncSession, submission: Submission) -> int:
             CircleMembership.left_at > Distribution.date_added,
         ),
     )
-    return int(
-        await session.scalar(
-            select(func.count(distinct(CircleMembership.org_id)))
-            .select_from(Distribution)
-            .join(CircleMembership, covered)
-            .where(
-                Distribution.submission_id == submission.id,
-                _is_counted(CircleMembership.org_id, submission.submitter_org_id),
-            )
+    readable = and_(
+        TaxiiCollection.circle_id == Distribution.circle_id,
+        TaxiiCollection.is_active.is_(True),
+        TaxiiCollection.can_read.is_(True),
+    )
+    return (
+        select(CircleMembership.org_id)
+        .select_from(Distribution)
+        .join(CircleMembership, covered)
+        .join(Circle, Circle.id == Distribution.circle_id)
+        .join(TaxiiCollection, readable)
+        .where(
+            Distribution.submission_id == submission.id,
+            Circle.is_active.is_(True),
+            _is_counted(CircleMembership.org_id, submission.submitter_org_id),
         )
-        or 0
     )
 
 
+async def _reach(session: AsyncSession, submission: Submission) -> int:
+    reachable = _reachable(submission).subquery()
+    return int(await session.scalar(select(func.count(distinct(reachable.c.org_id)))) or 0)
+
+
 async def _engaged(session: AsyncSession, submission: Submission, ack_type: AckType) -> int:
+    """Organisations in reach that did this: a count is a part of reach, or reach minus it lies."""
     return int(
         await session.scalar(
             select(func.count(distinct(Acknowledgment.org_id))).where(
                 Acknowledgment.submission_id == submission.id,
                 Acknowledgment.ack_type == ack_type,
-                _is_counted(Acknowledgment.org_id, submission.submitter_org_id),
+                Acknowledgment.org_id.in_(_reachable(submission)),
             )
         )
         or 0
@@ -185,13 +227,15 @@ async def submission_telemetry(session: AsyncSession, submission: Submission) ->
 # ---------------------------------------------------------------------------
 # Milestones: the submitter learns the same day that it mattered
 # ---------------------------------------------------------------------------
-#: (milestone, ack type, threshold). "first" milestones fire only once reach is
-#: at least K, so the event itself never singles anyone out.
+#: (milestone, ack type, threshold). A milestone fires only when its count is
+#: shown exactly, and an exact count is at least K, so nothing below K is a
+#: milestone: "first_retrieval" and "first_actioned" were, and their silence
+#: read as an exact zero.
 _MILESTONES: Final[tuple[tuple[str, AckType, int], ...]] = (
-    ("first_retrieval", AckType.RETRIEVED, 1),
+    (f"retrieved_{K_ANONYMITY}", AckType.RETRIEVED, K_ANONYMITY),
     ("retrieved_10", AckType.RETRIEVED, 10),
     ("retrieved_50", AckType.RETRIEVED, 50),
-    ("first_actioned", AckType.ACTIONED, 1),
+    (f"actioned_{K_ANONYMITY}", AckType.ACTIONED, K_ANONYMITY),
 )
 
 
@@ -252,15 +296,22 @@ async def queue_milestones(
     """
     announced = 0
     for submission in await _recently_engaged(session, now - lookback):
-        reach = await _reach(session, submission)
-        if reach < K_ANONYMITY:
-            continue
-        sent = await _already_sent(session, submission.id)
-        for milestone, ack_type, threshold in _MILESTONES:
-            if milestone in sent:
-                continue
-            if await _engaged(session, submission, ack_type) >= threshold:
-                await _announce(session, submission, milestone, now)
-                announced += 1
+        for milestone in await _milestones_reached(session, submission):
+            await _announce(session, submission, milestone, now)
+            announced += 1
     await session.commit()
     return announced
+
+
+async def _milestones_reached(session: AsyncSession, submission: Submission) -> list[str]:
+    """Milestones not yet announced whose count the submitter can now read as at least theirs."""
+    reach = await _reach(session, submission)
+    sent = await _already_sent(session, submission.id)
+    reached = []
+    for milestone, ack_type, threshold in _MILESTONES:
+        if milestone in sent:
+            continue
+        shown = _suppressed(await _engaged(session, submission, ack_type), reach=reach)
+        if shown.value is not None and shown.value >= threshold:
+            reached.append(milestone)
+    return reached

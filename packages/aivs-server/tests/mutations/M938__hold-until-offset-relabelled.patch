@@ -1,0 +1,26 @@
+Mutation M938: the portal relabels an offset hold-until time as UTC
+Re-applies: _parse_distribute_form before 022600c
+
+Expect red: packages/aivs-server/tests/unit/test_portal.py::test_the_hold_until_time_is_read_as_utc_and_an_offset_is_converted
+
+diff --git a/packages/aivs-server/src/aivs_server/portal/routes.py b/packages/aivs-server/src/aivs_server/portal/routes.py
+--- a/packages/aivs-server/src/aivs_server/portal/routes.py
++++ b/packages/aivs-server/src/aivs_server/portal/routes.py
+@@ -694,16 +694,7 @@ def _parse_distribute_form(form: Any) -> tuple[list[uuid.UUID], dt.datetime | No
+         message = "the hold-until time could not be read"
+         raise SubmissionError(message) from exc
+ 
+-    if release_at.tzinfo is None:
+-        return circle_ids, release_at.replace(tzinfo=dt.UTC)
+-    # A value carrying an offset (a hand-built form, or a client that sends
+-    # one) is converted, not relabelled: replacing the zone moved the embargo
+-    # by the offset, silently.
+-    try:
+-        return circle_ids, release_at.astimezone(dt.UTC)
+-    except OverflowError as exc:
+-        message = "the hold-until time is past the latest an embargo can hold"
+-        raise SubmissionError(message) from exc
++    return circle_ids, release_at.replace(tzinfo=dt.UTC)
+ 
+ 
+ @router.post("/submissions/{submission_id}/{verb}")

@@ -1,0 +1,18 @@
+Mutation M935: distribution stores a release time past what an embargo can hold
+Re-applies: _validate_release_time before 5f0a977
+
+Expect red: packages/aivs-server/tests/unit/test_submission_workflow.py::test_a_release_time_past_the_latest_release_is_refused_at_distribution
+
+diff --git a/packages/aivs-server/src/aivs_server/services/distribution.py b/packages/aivs-server/src/aivs_server/services/distribution.py
+--- a/packages/aivs-server/src/aivs_server/services/distribution.py
++++ b/packages/aivs-server/src/aivs_server/services/distribution.py
+@@ -218,9 +218,6 @@ def _validate_release_time(release_at: dt.datetime | None, now: dt.datetime) ->
+     if release_at.tzinfo is None:
+         msg = "release_at must be timezone-aware"
+         raise DistributionError(msg)
+-    too_late = release_out_of_range(release_at)
+-    if too_late is not None:
+-        raise DistributionError(too_late)
+     if release_at < now:
+         msg = (
+             f"release_at is in the past ({release_at.isoformat()}); an embargo cannot "

@@ -1,0 +1,18 @@
+Mutation M936: an extension stores a release time past what an embargo can hold
+Re-applies: extend_embargo before 5f0a977
+
+Expect red: packages/aivs-server/tests/unit/test_embargo.py::test_an_extension_past_the_latest_release_is_refused_and_the_sweeper_still_runs
+
+diff --git a/packages/aivs-server/src/aivs_server/services/embargo.py b/packages/aivs-server/src/aivs_server/services/embargo.py
+--- a/packages/aivs-server/src/aivs_server/services/embargo.py
++++ b/packages/aivs-server/src/aivs_server/services/embargo.py
+@@ -278,9 +278,6 @@ async def extend_embargo(
+     if release_at.tzinfo is None:
+         msg = "release_at must be timezone-aware"
+         raise EmbargoError(msg)
+-    too_late = release_out_of_range(release_at)
+-    if too_late is not None:
+-        raise EmbargoError(too_late)
+ 
+     target = truncate_to_taxii_precision(release_at)
+     if target <= now:

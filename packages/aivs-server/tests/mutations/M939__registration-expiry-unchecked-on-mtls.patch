@@ -1,0 +1,17 @@
+Mutation M939: the machine path trusts the certificate's window, not the registration's
+Re-applies: get_auth_context without the recorded-expiry check
+
+Expect red: packages/aivs-server/tests/unit/test_auth_mtls.py::test_a_certificate_whose_registration_has_lapsed_is_refused_by_that_check
+
+diff --git a/packages/aivs-server/src/aivs_server/auth/deps.py b/packages/aivs-server/src/aivs_server/auth/deps.py
+--- a/packages/aivs-server/src/aivs_server/auth/deps.py
++++ b/packages/aivs-server/src/aivs_server/auth/deps.py
+@@ -262,7 +262,7 @@ async def _resolve_auth_context(
+         raise await _reject("certificate_revoked", request, source_ip)
+ 
+     now = dt.datetime.now(dt.UTC)
+-    if registration.not_after <= now:
++    if False:
+         # The registration's own recorded expiry, distinct from the validity
+         # window already checked on the presented certificate. They should
+         # agree; if they do not, the database is the authority.

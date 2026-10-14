@@ -1,0 +1,16 @@
+Mutation M937: a sign-out audit row carries no actor
+Re-applies: logout before 075aefb
+
+Expect red: packages/aivs-server/tests/unit/test_portal.py::test_signing_out_names_who_signed_out
+
+diff --git a/packages/aivs-server/src/aivs_server/portal/routes.py b/packages/aivs-server/src/aivs_server/portal/routes.py
+--- a/packages/aivs-server/src/aivs_server/portal/routes.py
++++ b/packages/aivs-server/src/aivs_server/portal/routes.py
+@@ -293,7 +293,6 @@ async def logout(
+         # and a sign-out could not be tied to the operator or the firm.
+         await record_independently(
+             action=AuditAction.LOGOUT,
+-            ctx=ctx,
+             outcome="success",
+             request_id=request.scope.get("aivs_request_id"),
+             source_ip=request_source_ip(request, settings),

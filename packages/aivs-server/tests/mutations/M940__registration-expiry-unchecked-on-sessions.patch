@@ -1,0 +1,17 @@
+Mutation M940: a portal session outlives its certificate's registration
+Re-applies: the session check before a1236f8, which had no recorded-expiry test
+
+Expect red: packages/aivs-server/tests/unit/test_sessions.py::test_a_session_on_an_expired_registration_is_refused
+
+diff --git a/packages/aivs-server/src/aivs_server/auth/sessions.py b/packages/aivs-server/src/aivs_server/auth/sessions.py
+--- a/packages/aivs-server/src/aivs_server/auth/sessions.py
++++ b/packages/aivs-server/src/aivs_server/auth/sessions.py
+@@ -374,7 +374,7 @@ async def _check_bound_certificate(
+         # Revoking a certificate locks out the humans using it, not only the
+         # machines, and takes effect on the next request.
+         raise SessionRejectedError("session_certificate_revoked")
+-    if certificate.not_after <= now:
++    if False:
+         # The same check get_auth_context makes on the machine path: where the
+         # recorded registration and the certificate itself disagree, the database
+         # is the authority. Without it a registration whose expiry was shortened

@@ -1,0 +1,16 @@
+Mutation M934: an empty _FILE setting stays in the data as Path('.')
+Re-applies: _read_key_files before 954070c
+
+Expect red: packages/aivs-server/tests/unit/test_key_file.py::test_an_empty_file_setting_is_unset_not_a_file
+
+diff --git a/packages/aivs-server/src/aivs_server/config.py b/packages/aivs-server/src/aivs_server/config.py
+--- a/packages/aivs-server/src/aivs_server/config.py
++++ b/packages/aivs-server/src/aivs_server/config.py
+@@ -463,7 +463,6 @@ class Settings(BaseSettings):
+                 # Left in place it became Path("."), which is not None, so the
+                 # production check that the key comes from a file passed with
+                 # the key in the environment beside it.
+-                resolved.pop(f"{field}_file", None)
+                 continue
+             if resolved.get(field):
+                 msg = f"set {field} or {field}_file, not both"

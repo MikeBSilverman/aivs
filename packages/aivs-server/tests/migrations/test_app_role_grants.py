@@ -15,6 +15,7 @@ which derives from the test database URL: two concurrent runs never share one.
 from __future__ import annotations
 
 import os
+import secrets
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -64,9 +65,9 @@ def _migrate(owner_url: str, app_role: str) -> None:
 
 
 class Scratch:
-    def __init__(self, owner_url: URL, app_role: str) -> None:
+    def __init__(self, owner_url: URL, app_role: str, app_password: str) -> None:
         self.owner_url = owner_url.render_as_string(hide_password=False)
-        self.app_url = owner_url.set(username=app_role, password=None)
+        self.app_url = owner_url.set(username=app_role, password=app_password)
         self.app_role = app_role
 
 
@@ -75,13 +76,19 @@ def scratch() -> Iterator[Scratch]:
     test_url = make_url(TEST_DATABASE_URL)
     database = f"{test_url.database}_approle"
     app_role = f"{database}_app"
+    app_password = secrets.token_hex(16)
     admin = _admin(test_url)
     with admin.connect() as connection:
         connection.execute(text(f'DROP DATABASE IF EXISTS "{database}" WITH (FORCE)'))
         connection.execute(text(f'DROP ROLE IF EXISTS "{app_role}"'))
         connection.execute(text(f'CREATE DATABASE "{database}"'))
-        connection.execute(text(f'CREATE ROLE "{app_role}" LOGIN NOSUPERUSER'))
-    made = Scratch(test_url.set(database=database), app_role)
+        # A password, because CI's Postgres checks one: the embedded server
+        # here trusts every local login, so a role without one passed locally
+        # and failed every connection in CI. Hex only, so the literal is safe.
+        connection.execute(
+            text(f"CREATE ROLE \"{app_role}\" LOGIN NOSUPERUSER PASSWORD '{app_password}'")
+        )
+    made = Scratch(test_url.set(database=database), app_role, app_password)
     try:
         _migrate(made.owner_url, app_role)
         yield made

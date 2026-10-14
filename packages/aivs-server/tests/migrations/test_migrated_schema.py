@@ -198,6 +198,50 @@ def test_append_only_tables_refuse_to_change_and_still_accept_inserts(
     assert count >= 1
 
 
+_OFFBOARDED_ORG = "00000000-0000-4000-8000-000000000301"
+
+
+def _update_offboarded(url: str, change: str) -> str | None:
+    """Apply ``change`` to an offboarded organisation; the refusal's text, or ``None``."""
+    insert = text(
+        "INSERT INTO organizations (id, name, slug, org_type, status, stix_identity_id) "
+        "VALUES (:id, 'Gone', 'gone-bank', 'gsib', 'offboarded', :identity) "
+        "ON CONFLICT (id) DO NOTHING"
+    )
+    update = text(f"UPDATE organizations SET {change} WHERE id = :id")  # noqa: S608 - change from the parametrize list
+    engine = create_engine(url)
+    try:
+        with engine.connect() as connection:
+            connection.execute(
+                insert, {"id": _OFFBOARDED_ORG, "identity": f"identity--{_OFFBOARDED_ORG}"}
+            )
+            try:
+                connection.execute(update, {"id": _OFFBOARDED_ORG})
+            except DBAPIError as refusal:
+                return str(refusal)
+            finally:
+                connection.rollback()
+    finally:
+        engine.dispose()
+    return None
+
+
+@pytest.mark.parametrize(
+    ("change", "refused"),
+    [
+        ("status = 'active'", True),
+        ("status = 'suspended'", True),
+        ("legal_hold_since = NULL, legal_hold_reason = NULL", False),
+    ],
+)
+def test_an_offboarded_organisation_stays_offboarded(migrated_url: str, change: str, refused: bool):
+    """Attempted, not looked up by name. The pair is a column other than status,
+    which lifting a legal hold on an offboarded organisation has to write."""
+    refusal = _update_offboarded(migrated_url, change)
+
+    assert (refusal is not None and "is offboarded" in refusal) is refused, refusal
+
+
 def test_one_hosting_isac_and_rule_eligibility_exist_in_the_migrated_schema(migrated_url: str):
     """Neither is compared by alembic check, so a migration that lost one would
     pass every other gate."""

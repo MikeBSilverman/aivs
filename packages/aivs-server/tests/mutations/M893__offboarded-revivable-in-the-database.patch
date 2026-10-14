@@ -1,0 +1,19 @@
+Mutation M893: the migrated schema lets an offboarded organisation's status change
+Re-applies: before 65468f627fd5, when only the code held offboarded terminal (review L2-P6)
+
+Expect red: packages/aivs-server/tests/migrations/test_migrated_schema.py::test_an_offboarded_organisation_stays_offboarded[status = 'active'-True]
+Expect red: packages/aivs-server/tests/migrations/test_migrated_schema.py::test_an_offboarded_organisation_stays_offboarded[status = 'suspended'-True]
+
+diff --git a/packages/aivs-server/alembic/versions/20261014_2230_65468f627fd5_offboarded_is_terminal.py b/packages/aivs-server/alembic/versions/20261014_2230_65468f627fd5_offboarded_is_terminal.py
+index 6194606..5cb3606 100644
+--- a/packages/aivs-server/alembic/versions/20261014_2230_65468f627fd5_offboarded_is_terminal.py
++++ b/packages/aivs-server/alembic/versions/20261014_2230_65468f627fd5_offboarded_is_terminal.py
+@@ -33,7 +33,7 @@ _FUNCTION = """
+ CREATE OR REPLACE FUNCTION aivs_offboarded_is_terminal()
+ RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog AS $$
+ BEGIN
+-    IF OLD.status = 'offboarded' AND NEW.status IS DISTINCT FROM OLD.status THEN
++    IF false THEN
+         RAISE EXCEPTION 'organisation % is offboarded; its status cannot change', OLD.id
+             USING ERRCODE = 'check_violation';
+     END IF;

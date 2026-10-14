@@ -291,6 +291,15 @@ async def _schema(engine: Any) -> AsyncIterator[None]:
                         "FOR EACH STATEMENT EXECUTE FUNCTION aivs_deny_mutation();"
                     )
                 )
+        # Migration 65468f627fd5, as written there: offboarded is terminal.
+        await connection.execute(text(_OFFBOARDED_IS_TERMINAL_FUNCTION))
+        await connection.execute(
+            text(
+                "CREATE TRIGGER organizations_offboarded_is_terminal "
+                "BEFORE UPDATE OF status ON organizations "
+                "FOR EACH ROW EXECUTE FUNCTION aivs_offboarded_is_terminal();"
+            )
+        )
     yield
     async with engine.begin() as connection:
         await _refuse_to_wait_on_another_run(connection)
@@ -316,6 +325,19 @@ RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog AS $$
 BEGIN
     RAISE EXCEPTION 'table % is append-only; % is not permitted', TG_TABLE_NAME, TG_OP
         USING ERRCODE = 'insufficient_privilege';
+END;
+$$;
+"""
+
+_OFFBOARDED_IS_TERMINAL_FUNCTION = """
+CREATE OR REPLACE FUNCTION aivs_offboarded_is_terminal()
+RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog AS $$
+BEGIN
+    IF OLD.status = 'offboarded' AND NEW.status IS DISTINCT FROM OLD.status THEN
+        RAISE EXCEPTION 'organisation % is offboarded; its status cannot change', OLD.id
+            USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NEW;
 END;
 $$;
 """

@@ -16,8 +16,11 @@ import datetime as dt
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
 
 from aivs_schemas.enums import CertStatus, OrgStatus, OrgType
+from aivs_server.audit.log import AuditAction
+from aivs_server.db.models import AuditLog
 from tests.conftest import TEST_PROXY_SECRET, proxy_headers
 
 pytestmark = pytest.mark.db
@@ -257,3 +260,32 @@ async def test_inactive_circle_grants_nothing(
 
     assert response.status_code == 200
     assert response.json()["circles"] == []
+
+
+async def test_a_certificate_whose_registration_has_lapsed_is_refused_by_that_check(
+    client, session, make_org, make_cert
+):
+    """The certificate is still valid; only the registration's recorded expiry
+    has passed. The audit row names the check that refused, so another refusal
+    cannot stand in for this one (CLAUDE.md section 2)."""
+    org = await make_org("meridian-global")
+    pem, row = await make_cert(org)
+    assert (await client.get("/api/v1/whoami", headers=proxy_headers(pem))).status_code == 200
+
+    row.not_after = dt.datetime.now(dt.UTC) - dt.timedelta(minutes=1)
+    await session.commit()
+    response = await client.get("/api/v1/whoami", headers=proxy_headers(pem))
+
+    assert response.status_code == 401
+    reasons = (
+        (
+            await session.execute(
+                select(AuditLog.details["reason"].astext).where(
+                    AuditLog.action == AuditAction.AUTH_FAILURE
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert reasons == ["certificate_registration_expired"]

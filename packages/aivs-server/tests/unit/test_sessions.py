@@ -702,3 +702,31 @@ async def test_a_wrong_password_still_counts_when_the_seed_cannot_be_opened(
     assert caught.value.reason == "bad_credentials"
     await session.refresh(operator)
     assert operator.failed_login_count == 1
+
+
+@pytest.mark.requirement("NFR-S2")
+async def test_a_session_on_an_expired_registration_is_refused(session, settings, operator_setup):
+    """The registration's recorded expiry is the authority, on the session path too.
+
+    The certificate itself is still within its validity window; only the
+    registration has lapsed. The pair is the session resolving before it does.
+    """
+    _org, operator, _secret, certificate, _pem = operator_setup
+    established = await establish_session(
+        session, settings, operator=operator, cert_fingerprint=certificate.fingerprint_sha256
+    )
+    assert await resolve_session(
+        session, settings, token=established.token, cert_fingerprint=certificate.fingerprint_sha256
+    )
+
+    certificate.not_after = dt.datetime.now(dt.UTC) - dt.timedelta(minutes=1)
+    await session.commit()
+
+    with pytest.raises(SessionRejectedError) as caught:
+        await resolve_session(
+            session,
+            settings,
+            token=established.token,
+            cert_fingerprint=certificate.fingerprint_sha256,
+        )
+    assert caught.value.reason == "session_certificate_expired"

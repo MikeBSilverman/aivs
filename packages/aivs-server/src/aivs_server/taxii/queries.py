@@ -53,6 +53,7 @@ def _visible_rows(circle_id: uuid.UUID, intervals: Intervals, now: dt.datetime) 
             StixObject.spec_version.label("spec_version"),
             StixObject.raw.label("raw"),
             Distribution.submission_id.label("submission_id"),
+            Submission.submitter_org_id.label("owner"),
         )
         .select_from(Distribution)
         .join(StixObject, StixObject.id == Distribution.stix_object_id)
@@ -93,21 +94,22 @@ def _apply_version_filter(
 
     conditions = []
 
-    # Both correlations are scoped to the same submission as well as the same
-    # stix_id. Uniqueness of stix_objects is deliberately per submission -- two
-    # organisations may legitimately hold the same stix_id, which is why the
-    # write path keys its dedupe on the concrete object id rather than on
-    # (circle, stix_id, modified). Resolving max(modified) across every
-    # submission in the circle undoes that on the read side: since `last` is the
-    # default when match[version] is absent, a member who re-submitted a peer's
-    # stix_id with a later modified timestamp would take over the default feed
-    # and the peer's warning would stop being delivered.
+    # Both correlations are scoped to the same *owner* as well as the same
+    # stix_id. A version is superseded only by a later version from the
+    # organisation that owns it (SF-48): the owner's newer version in a later
+    # submission replaces its older one in the default feed, which is what
+    # supersession means. Resolving across every owner would let one firm's
+    # later `modified` take another's id over -- `last` is the default when
+    # match[version] is absent -- and the write path refuses that at validate
+    # and distribution; this keeps the read side from honouring it if a row
+    # ever got through. Scoping to the submission, as before, served every
+    # superseded version of the owner's object as "last".
     if VersionSelector.LAST in filters.version_selectors:
         latest = (
             select(func.max(peers.c.modified))
             .where(
                 peers.c.stix_id == visible.c.stix_id,
-                peers.c.submission_id == visible.c.submission_id,
+                peers.c.owner == visible.c.owner,
             )
             .scalar_subquery()
         )
@@ -118,7 +120,7 @@ def _apply_version_filter(
             select(func.min(peers.c.modified))
             .where(
                 peers.c.stix_id == visible.c.stix_id,
-                peers.c.submission_id == visible.c.submission_id,
+                peers.c.owner == visible.c.owner,
             )
             .scalar_subquery()
         )

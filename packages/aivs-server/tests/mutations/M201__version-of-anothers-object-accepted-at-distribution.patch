@@ -1,0 +1,19 @@
+Mutation M201: ownership is not re-checked at distribution
+Re-applies: Phase E slice 2 (T6) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_ownership.py::test_a_takeover_validated_before_the_owner_distributed_is_refused_at_distribution
+
+diff --git a/packages/aivs-server/src/aivs_server/services/distribution.py b/packages/aivs-server/src/aivs_server/services/distribution.py
+--- a/packages/aivs-server/src/aivs_server/services/distribution.py
++++ b/packages/aivs-server/src/aivs_server/services/distribution.py
+@@ -196,9 +196,7 @@
+     """Owner-only versioning, the disclosure split and TLP inheritance, as they stand now."""
+     raws = [stored.raw for stored in objects]
+     for problem in (
+-        await foreign_owned_versions_problem(
+-            session, raws, owner_org_id=submission.submitter_org_id
+-        ),
++        None,
+         await contribution_problem(session, submission, raws, visible_to=None, now=now),
+     ):
+         if problem is not None:

@@ -1,0 +1,17 @@
+Mutation M217: an attributed sighting may say it was seen at another organisation
+Re-applies: Phase E slice 2 (T6) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_structural_anonymity.py::test_an_attributed_sighting_may_not_say_it_was_seen_at_another_firm
+
+diff --git a/packages/aivs-server/src/aivs_server/services/submissions.py b/packages/aivs-server/src/aivs_server/services/submissions.py
+--- a/packages/aivs-server/src/aivs_server/services/submissions.py
++++ b/packages/aivs-server/src/aivs_server/services/submissions.py
+@@ -450,7 +450,7 @@
+     if submission.distribute_anonymously:
+         reject_self_identifying_content(objects, own_identity_id=own_identity_id)
+     else:
+-        located_elsewhere = sightings_elsewhere_problem(objects, own_identity_id=own_identity_id)
++        located_elsewhere = None
+         if located_elsewhere is not None:
+             raise SubmissionError(located_elsewhere)
+ 

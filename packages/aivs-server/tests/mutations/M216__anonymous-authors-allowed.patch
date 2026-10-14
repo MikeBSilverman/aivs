@@ -1,0 +1,17 @@
+Mutation M216: an anonymous note or opinion may list its authors
+Re-applies: Phase E slice 2 (T6) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_structural_anonymity.py::test_an_anonymous_note_or_opinion_naming_authors_is_refused
+
+diff --git a/packages/aivs-server/src/aivs_server/services/submissions.py b/packages/aivs-server/src/aivs_server/services/submissions.py
+--- a/packages/aivs-server/src/aivs_server/services/submissions.py
++++ b/packages/aivs-server/src/aivs_server/services/submissions.py
+@@ -275,7 +275,7 @@
+     return [
+         obj.get("id", "<no id>")
+         for obj in objects
+-        if isinstance(obj, dict) and obj.get("type") in {"note", "opinion"} and obj.get("authors")
++        if isinstance(obj, dict) and obj.get("type") in {"note", "opinion"} and False
+     ]
+ 
+ 

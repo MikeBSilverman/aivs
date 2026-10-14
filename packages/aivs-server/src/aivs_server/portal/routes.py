@@ -73,6 +73,7 @@ from aivs_server.portal.shared import (
     tlp_label,
 )
 from aivs_server.services.distribution import DistributionError, distribute_submission
+from aivs_server.services.provenance import consequential_changes
 from aivs_server.services.publication import PublicationPausedError
 from aivs_server.services.submissions import (
     STORAGE_ERRORS,
@@ -558,10 +559,24 @@ async def _available_actions(
         (SubmissionState.WITHDRAWN, "withdraw", "Withdraw", False),
     ]
     actions = [
-        {"verb": verb, "label": label, "primary": primary}
+        {"verb": verb, "label": label, "primary": primary, "acknowledge": []}
         for target, verb, label, primary in verbs
         if can_transition_submission(ctx, submission, target)
     ]
+    for action in actions:
+        if action["verb"] == "validate":
+            # The AI gate's changes, each a checkbox the editor ticks by name:
+            # a routine click must not carry a consequential machine change.
+            raws = (
+                (
+                    await session.execute(
+                        select(StixObject.raw).where(StixObject.submission_id == submission.id)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            action["acknowledge"] = await consequential_changes(session, submission, list(raws))
 
     circles: list[dict[str, Any]] = []
     if can_transition_submission(ctx, submission, SubmissionState.DISTRIBUTED):
@@ -685,6 +700,13 @@ async def perform_action(
                 submission_id=submission.id,
                 circle_ids=list(circle_ids),
                 visible_at=release_at or dt.datetime.now(dt.UTC),
+            )
+        elif verb == "validate":
+            acknowledged = frozenset(
+                str(value) for value in (await request.form()).getlist("acknowledge")
+            )
+            await apply_transition(
+                session, ctx, submission, targets[verb], acknowledged_changes=acknowledged
             )
         else:
             await apply_transition(session, ctx, submission, targets[verb])

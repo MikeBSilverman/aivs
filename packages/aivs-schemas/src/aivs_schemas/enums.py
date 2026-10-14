@@ -21,6 +21,7 @@ __all__ = [
     "ACCEPTED_DISCOVERY_SCOPES",
     "SUBMISSION_TRANSITIONS",
     "TERMINAL_SUBMISSION_STATES",
+    "THIRD_PARTY_DISCOVERY_SCOPES",
     "TLP",
     "TLP_RESTRICTIVENESS",
     "VISIBLE_SUBMISSION_STATES",
@@ -36,6 +37,7 @@ __all__ = [
     "OperatorRole",
     "OrgStatus",
     "OrgType",
+    "SubmissionSource",
     "SubmissionState",
     "is_transition_allowed",
     "tlp_at_least_as_restrictive",
@@ -198,20 +200,19 @@ class DiscoveryScope(StrEnum):
     """What the submitter's relationship to the affected system is.
 
     This is the control that keeps AIVS clear of the coordinated-disclosure
-    consent problem. Only :data:`ACCEPTED_DISCOVERY_SCOPES` may be filed today:
-    findings in the submitter's own products and estate, and findings about AI
-    systems generally -- not undisclosed vulnerabilities in uninvolved third
-    parties' software.
+    consent problem. Three scopes describe a finder's own finding: in its own
+    products, its own estate, or an AI system generally. The other two are
+    contributions about a vulnerability somebody else owns, and are legal only
+    by the *target's* current state, checked against the ISAC's canonical
+    vulnerability (``services.disclosure``):
 
-    ``DISCLOSED_THIRD_PARTY`` (defence intelligence on a vulnerability that is
-    already public) and ``COORDINATED_DISCLOSURE`` (a pre-disclosure finding
-    whose vendor is a party to the case) are reserved. Whether either is legal
-    depends on the *target* vulnerability's current state -- is it public, has
-    the vendor acknowledged it -- and until the canonical vulnerability exists
-    (Phase E) the only evidence available is the submitter's own bundle, which
-    is checking the property against the request that asserts it. They are
-    storage values now so the Postgres type does not have to change in the
-    same release as the rule that admits them.
+    - ``DISCLOSED_THIRD_PARTY``: defence intelligence on a vulnerability that is
+      already public.
+    - ``COORDINATED_DISCLOSURE``: a pre-disclosure finding whose vendor is a
+      party to the case, or that a CERT coordination case covers.
+
+    Neither may be decided from the submitter's own bundle; that would be
+    checking the property against the request that asserts it.
     """
 
     OWN_PRODUCT = "own_product"
@@ -221,14 +222,33 @@ class DiscoveryScope(StrEnum):
     COORDINATED_DISCLOSURE = "coordinated_disclosure"
 
 
-#: The scopes a submission may be filed under. Every ingest surface -- API,
-#: portal, bundle validation, the submission service -- admits these and
-#: nothing else, and refuses a reserved scope exactly as it refuses a value it
-#: has never heard of: a distinct refusal would advertise a capability that
-#: does not exist yet.
+#: The scopes that describe a finder's own finding: the only ones a
+#: vulnerability's own extension body may declare, and the ones that need no
+#: target. A third-party contribution carries no vulnerability of its own; it
+#: references the ISAC's canonical one.
 ACCEPTED_DISCOVERY_SCOPES: Final[frozenset[DiscoveryScope]] = frozenset(
     {DiscoveryScope.OWN_PRODUCT, DiscoveryScope.OWN_ESTATE, DiscoveryScope.AI_SYSTEM}
 )
+
+#: Contributions about another party's vulnerability, legal only by the
+#: canonical target's current state (``services.disclosure``).
+THIRD_PARTY_DISCOVERY_SCOPES: Final[frozenset[DiscoveryScope]] = frozenset(
+    {DiscoveryScope.DISCLOSED_THIRD_PARTY, DiscoveryScope.COORDINATED_DISCLOSURE}
+)
+
+
+class SubmissionSource(StrEnum):
+    """Who filed a submission, derived from the principal, never declared.
+
+    ``SYSTEM`` is an automation organisation's filing, such as the KEV
+    enrichment script. A consequential change it carries needs an editor's
+    explicit acknowledgement at validate (SF-6). Anything the submission says
+    about its own origin -- a provenance claim, an identity's class -- is the
+    submitter's statement and decides nothing.
+    """
+
+    MEMBER = "member"
+    SYSTEM = "system"
 
 
 class EmbargoPolicy(StrEnum):

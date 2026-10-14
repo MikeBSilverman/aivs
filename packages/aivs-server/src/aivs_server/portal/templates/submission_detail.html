@@ -36,6 +36,14 @@
     {% for action in actions %}
       <form method="post" action="/portal/submissions/{{ submission.id }}/{{ action.verb }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        {% if action.acknowledge %}
+          <fieldset>
+            <legend>Changes made by a machine that need your acknowledgement</legend>
+            {% for change in action.acknowledge %}
+              <label><input type="checkbox" name="acknowledge" value="{{ change }}"> {{ change }}</label>
+            {% endfor %}
+          </fieldset>
+        {% endif %}
         <button type="submit" {% if not action.primary %}class="button-secondary"{% endif %}>
           {{ action.label }}
         </button>

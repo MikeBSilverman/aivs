@@ -1,0 +1,16 @@
+Mutation M203: objects are distributed without the submission's TLP marking
+Re-applies: Phase E slice 2 (T6) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_markings.py::test_every_distributed_object_carries_its_submissions_tlp_marking
+
+diff --git a/packages/aivs-server/src/aivs_server/services/distribution.py b/packages/aivs-server/src/aivs_server/services/distribution.py
+--- a/packages/aivs-server/src/aivs_server/services/distribution.py
++++ b/packages/aivs-server/src/aivs_server/services/distribution.py
+@@ -332,7 +332,6 @@
+ 
+     await _refuse_content_problems(session, submission, objects, now=now)
+     await _apply_attribution(session, submission, objects)
+-    _stamp_markings(submission, objects)
+ 
+     # Rows for *these* objects that are already live in a target circle, so a
+     # re-distribution of the same submission does not deliver it twice.

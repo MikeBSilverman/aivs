@@ -1,0 +1,18 @@
+Mutation M214: validate does not write the reviewer
+Re-applies: Phase E slice 2 (T6) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_provenance_gate.py::test_validate_writes_the_reviewer_from_the_signed_in_editor
+
+diff --git a/packages/aivs-server/src/aivs_server/services/submissions.py b/packages/aivs-server/src/aivs_server/services/submissions.py
+--- a/packages/aivs-server/src/aivs_server/services/submissions.py
++++ b/packages/aivs-server/src/aivs_server/services/submissions.py
+@@ -740,8 +740,7 @@
+         msg = "validation needs a signed-in editor to name as the reviewer"
+         raise SubmissionError(msg)
+     reviewer = reviewer_identity_id(ctx.operator_id)
+-    for row in rows:
+-        row.raw = stamp_review(row.raw, reviewer=reviewer, now=now)
++    del rows, reviewer
+ 
+ 
+ async def apply_transition(

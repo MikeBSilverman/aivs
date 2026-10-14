@@ -1,0 +1,17 @@
+Mutation M202: match[version]=last resolves per submission, not per owner
+Re-applies: Phase E slice 2 (T6) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_ownership.py::test_the_owners_own_newer_version_supersedes_the_older_in_the_default_feed
+
+diff --git a/packages/aivs-server/src/aivs_server/taxii/queries.py b/packages/aivs-server/src/aivs_server/taxii/queries.py
+--- a/packages/aivs-server/src/aivs_server/taxii/queries.py
++++ b/packages/aivs-server/src/aivs_server/taxii/queries.py
+@@ -109,7 +109,7 @@
+             select(func.max(peers.c.modified))
+             .where(
+                 peers.c.stix_id == visible.c.stix_id,
+-                peers.c.owner == visible.c.owner,
++                peers.c.submission_id == visible.c.submission_id,
+             )
+             .scalar_subquery()
+         )

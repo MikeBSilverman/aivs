@@ -1,0 +1,18 @@
+Mutation M212: validate ignores unacknowledged consequential changes
+Re-applies: Phase E slice 2 (T6) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_provenance_gate.py::test_a_machine_filed_disruptive_restart_needs_an_editor_to_name_it
+Expect red: packages/aivs-server/tests/unit/test_provenance_gate.py::test_a_machine_lowering_a_score_members_already_hold_needs_naming
+
+diff --git a/packages/aivs-server/src/aivs_server/services/provenance.py b/packages/aivs-server/src/aivs_server/services/provenance.py
+--- a/packages/aivs-server/src/aivs_server/services/provenance.py
++++ b/packages/aivs-server/src/aivs_server/services/provenance.py
+@@ -162,7 +162,7 @@
+     changes: Iterable[str], acknowledged: Iterable[str]
+ ) -> str | None:
+     """Why validate is refused, or ``None`` when every change is acknowledged."""
+-    missing = sorted(set(changes) - set(acknowledged))
++    missing: list[str] = []
+     if not missing:
+         return None
+     return (

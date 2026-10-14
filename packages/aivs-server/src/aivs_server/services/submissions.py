@@ -28,24 +28,40 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from aivs_schemas.enums import ACCEPTED_DISCOVERY_SCOPES, SubmissionState, is_transition_allowed
+from aivs_schemas.enums import (
+    TLP,
+    OrgType,
+    SubmissionSource,
+    SubmissionState,
+    is_transition_allowed,
+)
 from aivs_schemas.extension.builders import (
     AIVS_EXTENSION_ID,
     AIVS_INTEL_EXTENSION_ID,
     validate_bundle,
 )
-from aivs_schemas.models import DISCOVERY_SCOPE_REFUSAL
 from aivs_server.audit.log import AuditAction, record
 from aivs_server.auth.context import AuthContext
 from aivs_server.auth.policy import PolicyDeniedError, can_transition_submission, require
 from aivs_server.db.models import Organization, StixObject, Submission, SubmissionTransition
+from aivs_server.services.disclosure import DisclosureScope, disclosure_problem
 from aivs_server.services.indexing import intel_index_fields
+from aivs_server.services.markings import looser_than_referents_problem
+from aivs_server.services.ownership import foreign_owned_versions_problem
+from aivs_server.services.provenance import (
+    consequential_changes,
+    reviewer_identity_id,
+    stamp_review,
+    unacknowledged_changes_problem,
+)
+from aivs_server.services.references import referenced_ids
 from aivs_server.taxii.resources import truncate_to_taxii_precision
 
 __all__ = [
     "STORAGE_ERRORS",
     "SubmissionError",
     "apply_transition",
+    "contribution_problem",
     "create_submission",
     "foreign_identity_ids",
     "replace_submission_objects",
@@ -230,7 +246,61 @@ def self_identifying_problem(objects: Iterable[Any], *, own_identity_id: str) ->
             "an anonymous submission must not reference the submitter's own identity, "
             f"which is redistributed verbatim and names it: {', '.join(naming)}"
         )
+    located = _sightings_saying_where(listed)
+    if located:
+        return (
+            "an anonymous sighting must not say where it was seen; where_sighted_refs names "
+            f"the organisation that saw it: {', '.join(located)}"
+        )
+    authored = _objects_with_authors(listed)
+    if authored:
+        return (
+            "an anonymous submission must not name authors, which are redistributed "
+            f"verbatim: {', '.join(authored)}"
+        )
     return None
+
+
+def _sightings_saying_where(objects: Iterable[Any]) -> list[str]:
+    """Sightings that name where they were seen (SF-50)."""
+    return [
+        obj.get("id", "<no id>")
+        for obj in objects
+        if isinstance(obj, dict) and obj.get("type") == "sighting" and obj.get("where_sighted_refs")
+    ]
+
+
+def _objects_with_authors(objects: Iterable[Any]) -> list[str]:
+    """Notes and opinions that carry author names, free text naming people (SF-50)."""
+    return [
+        obj.get("id", "<no id>")
+        for obj in objects
+        if isinstance(obj, dict) and obj.get("type") in {"note", "opinion"} and obj.get("authors")
+    ]
+
+
+def sightings_elsewhere_problem(objects: Iterable[Any], *, own_identity_id: str) -> str | None:
+    """Why an attributed submission's sightings may not be filed, or ``None`` (SF-50).
+
+    A sighting says "this was seen at that identity". Filed by one member about
+    another, it tells every circle member the other firm saw it -- a fact the
+    other firm never shared and cannot contest. So a submitter may report only
+    its own sightings.
+    """
+    own = own_identity_id.lower()
+    elsewhere = [
+        obj.get("id", "<no id>")
+        for obj in objects
+        if isinstance(obj, dict)
+        and obj.get("type") == "sighting"
+        and any(str(ref).lower() != own for ref in obj.get("where_sighted_refs") or [])
+    ]
+    if not elsewhere:
+        return None
+    return (
+        "a sighting may name only the organisation filing it in where_sighted_refs: "
+        f"{', '.join(elsewhere)}"
+    )
 
 
 def reject_self_identifying_content(objects: Iterable[Any], *, own_identity_id: str) -> None:
@@ -376,11 +446,13 @@ async def _reject_identity_problems(
     session: AsyncSession, submission: Submission, objects: list[Any]
 ) -> None:
     """Refuse a bundle that names its anonymous submitter, or impersonates a peer."""
+    own_identity_id = await submitter_identity_id(session, submission.submitter_org_id)
     if submission.distribute_anonymously:
-        reject_self_identifying_content(
-            objects,
-            own_identity_id=await submitter_identity_id(session, submission.submitter_org_id),
-        )
+        reject_self_identifying_content(objects, own_identity_id=own_identity_id)
+    else:
+        located_elsewhere = sightings_elsewhere_problem(objects, own_identity_id=own_identity_id)
+        if located_elsewhere is not None:
+            raise SubmissionError(located_elsewhere)
 
     impersonated = await foreign_identity_ids(
         session, objects, submitter_org_id=submission.submitter_org_id
@@ -446,16 +518,64 @@ async def replace_submission_objects(
     return len(rows)
 
 
-def _require_accepted_scope(discovery_scope: Any) -> None:
-    """Refuse a scope that may not be filed, in the request models' own words.
+def source_for(ctx: AuthContext) -> SubmissionSource:
+    """Who is filing, from the principal: an automation organisation is ``system``."""
+    if ctx.org_type is OrgType.AUTOMATION:
+        return SubmissionSource.SYSTEM
+    return SubmissionSource.MEMBER
 
-    The request models refuse first on every surface that has one; this is the
-    check every writer passes through, so a caller that skips the models -- a
-    script, a future inbox -- cannot store a reserved scope either.
+
+async def contribution_problem(
+    session: AsyncSession,
+    submission: Submission,
+    objects: list[Any],
+    *,
+    visible_to: AuthContext | None,
+    now: dt.datetime,
+) -> str | None:
+    """Why this content may not be filed under this submission's scope and TLP, or ``None``.
+
+    The disclosure split and the TLP inheritance rule together, from one view:
+    the submitter's at ingest (``visible_to`` its context), the ISAC's at
+    validate and distribution (``visible_to=None``).
     """
-    if discovery_scope not in ACCEPTED_DISCOVERY_SCOPES:
-        msg = f"discovery_scope: {DISCOVERY_SCOPE_REFUSAL}"
-        raise SubmissionError(msg)
+    disclosure = await disclosure_problem(
+        session,
+        discovery_scope=submission.discovery_scope,
+        objects=objects,
+        scope=DisclosureScope(visible_to=visible_to, exclude_submission_id=submission.id, now=now),
+    )
+    if disclosure is not None:
+        return disclosure
+    return await looser_than_referents_problem(
+        session,
+        tlp=TLP(submission.tlp),
+        referenced=referenced_ids(objects),
+        visible_to=visible_to,
+        now=now,
+    )
+
+
+async def _stored_raws(session: AsyncSession, submission: Submission) -> list[Any]:
+    return list(
+        (
+            await session.execute(
+                select(StixObject.raw).where(StixObject.submission_id == submission.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+
+async def _refuse_contribution_problem(
+    session: AsyncSession, ctx: AuthContext, submission: Submission, objects: list[Any]
+) -> None:
+    problem = await contribution_problem(
+        session, submission, objects, visible_to=ctx, now=dt.datetime.now(dt.UTC)
+    )
+    if problem is not None:
+        raise SubmissionError(problem)
 
 
 async def create_submission(
@@ -480,11 +600,11 @@ async def create_submission(
     request body: a member must not be able to file content in another firm's
     name.
     """
-    _require_accepted_scope(discovery_scope)
     submission = Submission(
         submitter_org_id=ctx.org_id,
         created_by_operator_id=ctx.operator_id,
         state=SubmissionState.DRAFT,
+        source=source_for(ctx),
         tlp=tlp,
         discovery_scope=discovery_scope,
         distribute_anonymously=distribute_anonymously,
@@ -495,6 +615,7 @@ async def create_submission(
     await session.flush()
 
     object_count = await replace_submission_objects(session, submission, bundle)
+    await _refuse_contribution_problem(session, ctx, submission, bundle.get("objects") or [])
 
     session.add(
         SubmissionTransition(
@@ -543,8 +664,6 @@ async def update_submission(
     if submission.submitter_org_id != ctx.org_id:
         denial = "submission_not_owned"
         raise PolicyDeniedError(denial)
-    if "discovery_scope" in changes:
-        _require_accepted_scope(changes["discovery_scope"])
 
     bundle = changes.pop("bundle", None)
     for field, value in changes.items():
@@ -562,6 +681,16 @@ async def update_submission(
         # alongside a finding the submitter was told was anonymous.
         await _reject_stored_self_identifying_content(session, submission)
 
+    # Checked against the submission as it now stands, whatever the change was:
+    # a PATCH of the scope or the TLP alone changes what the stored objects may
+    # lawfully be, as much as a new bundle does.
+    objects = (
+        (bundle.get("objects") or [])
+        if bundle is not None
+        else await _stored_raws(session, submission)
+    )
+    await _refuse_contribution_problem(session, ctx, submission, objects)
+
     await record(
         session,
         action=AuditAction.SUBMISSION_UPDATED,
@@ -573,6 +702,48 @@ async def update_submission(
     return submission
 
 
+async def _prepare_validation(
+    session: AsyncSession,
+    ctx: AuthContext,
+    submission: Submission,
+    acknowledged_changes: frozenset[str],
+) -> None:
+    """Refuse content the ISAC may not accept, then record who reviewed it.
+
+    In order: owner-only versioning (SF-48), the disclosure split and TLP
+    inheritance from the ISAC's view of everything (SF-7, SF-49), the AI gate
+    (SF-6). Only then is the reviewer stamped, so a refused validation writes
+    nothing.
+    """
+    rows = list(
+        (await session.execute(select(StixObject).where(StixObject.submission_id == submission.id)))
+        .scalars()
+        .all()
+    )
+    raws = [row.raw for row in rows]
+    now = dt.datetime.now(dt.UTC)
+    for problem in (
+        await foreign_owned_versions_problem(
+            session, raws, owner_org_id=submission.submitter_org_id
+        ),
+        await contribution_problem(session, submission, raws, visible_to=None, now=now),
+        unacknowledged_changes_problem(
+            await consequential_changes(session, submission, raws), acknowledged_changes
+        ),
+    ):
+        if problem is not None:
+            raise SubmissionError(problem)
+
+    if ctx.operator_id is None:
+        # Validation is human-only (auth.policy); a review with no person
+        # behind it has nobody to name.
+        msg = "validation needs a signed-in editor to name as the reviewer"
+        raise SubmissionError(msg)
+    reviewer = reviewer_identity_id(ctx.operator_id)
+    for row in rows:
+        row.raw = stamp_review(row.raw, reviewer=reviewer, now=now)
+
+
 async def apply_transition(
     session: AsyncSession,
     ctx: AuthContext,
@@ -580,6 +751,7 @@ async def apply_transition(
     target: SubmissionState,
     *,
     reason: str | None = None,
+    acknowledged_changes: frozenset[str] = frozenset(),
 ) -> Submission:
     """Move a submission to ``target``, recording the move.
 
@@ -587,6 +759,12 @@ async def apply_transition(
     machine, and the caller must hold the right to perform that particular move.
     Checking legality first means an authorized caller attempting an impossible
     move gets a comprehensible error rather than a denial.
+
+    Validation is where the ISAC accepts content, so the content rules are
+    checked here too (:func:`_prepare_validation`), on every path that
+    validates: the API and the portal both come through this function.
+    ``acknowledged_changes`` are the consequential machine changes the editor
+    has named; an empty set is the safe default, refusing any that exist.
     """
     if not is_transition_allowed(submission.state, target):
         msg = f"cannot move a submission from '{submission.state.value}' to '{target.value}'"
@@ -596,6 +774,9 @@ async def apply_transition(
         can_transition_submission(ctx, submission, target),
         f"transition_{submission.state.value}_to_{target.value}",
     )
+
+    if target is SubmissionState.VALIDATED:
+        await _prepare_validation(session, ctx, submission, acknowledged_changes)
 
     previous = submission.state
     submission.state = target

@@ -77,12 +77,14 @@ async def test_an_anonymous_filing_may_not_reference_its_own_identity(client, su
 
 
 async def test_a_timestamp_with_no_utc_form_is_the_members_error(client, submitter):
-    _org, pem = submitter
+    org, pem = submitter
+    # Sighted at the submitter itself: an attributed sighting may name only its
+    # filer (SF-50), and this test is about the timestamp.
     beyond = {
-        **_sighting("identity--" + str(uuid.uuid4())),
+        **_sighting(org.stix_identity_id),
         "modified": "9999-12-31T23:30:00-01:00",
     }
-    ordinary = _sighting("identity--" + str(uuid.uuid4()))
+    ordinary = _sighting(org.stix_identity_id)
 
     refused = await client.post(
         API, json=_filing([beyond], anonymous=False), headers=proxy_headers(pem)

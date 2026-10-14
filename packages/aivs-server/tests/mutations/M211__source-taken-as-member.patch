@@ -1,0 +1,18 @@
+Mutation M211: every submission is recorded as a member's, so the AI gate never applies
+Re-applies: Phase E slice 2 (T6) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_provenance_gate.py::test_the_source_is_derived_from_the_filing_organisation
+Expect red: packages/aivs-server/tests/unit/test_provenance_gate.py::test_a_machine_filed_disruptive_restart_needs_an_editor_to_name_it
+
+diff --git a/packages/aivs-server/src/aivs_server/services/submissions.py b/packages/aivs-server/src/aivs_server/services/submissions.py
+--- a/packages/aivs-server/src/aivs_server/services/submissions.py
++++ b/packages/aivs-server/src/aivs_server/services/submissions.py
+@@ -520,8 +520,6 @@
+ 
+ def source_for(ctx: AuthContext) -> SubmissionSource:
+     """Who is filing, from the principal: an automation organisation is ``system``."""
+-    if ctx.org_type is OrgType.AUTOMATION:
+-        return SubmissionSource.SYSTEM
+     return SubmissionSource.MEMBER
+ 
+ 

@@ -42,6 +42,8 @@ that concludes everything is fine is not a threat model.
 | **Compromised member certificate** | Valid credential, attacker-controlled. Indistinguishable from the member until noticed. | Everything the member could do, silently. |
 | **Insider at the hosting ISAC** | Portal access, possibly database access, possibly host access. | Read everything, alter or suppress records, distribute prematurely. **The highest-capability actor in the model.** |
 | **Curious member operator** | Legitimate analyst credentials. | Privilege drift — seeing more than their role intends. |
+| **Vendor organisation** | A member-like organisation that contributes about its own products, and may be a party to a coordination case. | Delay a disclosure; make a workaround for its product stop circulating; learn the reporter or which members are affected. |
+| **Contributor of record** | Any organisation that files: member, vendor, researcher, or an automation key. | Make its content stand where another firm's does; repeat stricter content at a looser TLP; file about a vulnerability it may not yet discuss. |
 
 ---
 
@@ -193,10 +195,11 @@ party's web server.
 
 The structural controls around it are:
 
-1. No accepted scope describes third-party software, so a submitter must
-   affirmatively mis-state their relationship rather than merely omit it. (Two
-   values are reserved in the storage type for the planned split by disclosure;
-   every ingest surface refuses them exactly as it refuses an unknown value.)
+1. The three scopes a submitter may claim for its *own* finding describe no
+   third party, so a submitter must affirmatively mis-state its relationship
+   rather than merely omit it. The two third-party scopes are not claims at
+   all: they are admitted only by the state of the ISAC's own record of the
+   target (next section).
 2. The ISAC reviews before distributing (`submitted` → `validated` →
    `distributed`).
 3. The membership agreement makes the attestation contractual, so a false claim
@@ -274,6 +277,34 @@ Concretely, the failure modes that will actually occur are:
 None of these are code defects, and none are fixed by code. They are the content
 of [`operator-runbook.md`](operator-runbook.md), and they should be audited
 against, not assumed.
+
+---
+
+## Cross-cutting: contributions about another party's object
+
+Phase E lets anyone file about a vulnerability somebody else owns: a workaround,
+a detection, an opinion, a sighting. Every one is an ordinary submission, so
+attribution, anonymity, review, TLP floors and receipts apply unchanged; these
+are the attempts that are new, with the rule that refuses each and the test
+that drives it (`tests/abuse/test_contribution_abuse.py` for the two sequences).
+
+| What they try | What stops it |
+| --- | --- |
+| A vendor publishes a newer version of a member's workaround saying it is not needed, so every TIP replaces the workaround. | Only the organisation that first distributed an id may publish a newer version of it (`services.ownership`, SF-48), checked at validate and again at distribution. The vendor's disagreement is an `opinion`, which sits beside the workaround and replaces nothing. |
+| A contributor re-files another firm's finding id with a later `modified`, or races it ahead of the owner's distribution. | The same rule, at both points: a submission validated before the owner distributed is refused at distribution. `match[version]=last` resolves per owner, so the read side does not honour a takeover either. |
+| A member refers to an id it cannot see, to learn from the refusal whether a pre-CVE finding exists. | Ingest checks only targets the caller can see, and an invisible target gets the refusal an absent one does, byte for byte (`services.disclosure`, SF-47). The global checks run at validate, where the actor is the ISAC. Ownership is never checked at ingest for the same reason. |
+| File defence content on a vulnerability that is not public yet, as `disclosed_third_party`. | Legal only once the ISAC's canonical record of the target says `published`, at its *current* version: a disclosure withdrawn between validation and distribution stops the distribution (SF-7). |
+| Claim a coordinated case by writing the vendor's agreement into one's own bundle. | `coordinated_disclosure` counts only a vendor an editor placed in a circle the target reached, agreeing in an `opinion` the ISAC validated and distributed, or a VINCE / GOLD EAGLE reference on the ISAC's own record. Nothing in the submitter's bundle counts. |
+| Repeat AMBER+STRICT content at CLEAR, as an `opinion` on it. | A contribution's TLP must be at least as restrictive as every object it references: against what the submitter can see at ingest, against everything at validate and distribution (SF-49). The submission's TLP is stamped into every object's `object_marking_refs`, and an object marked otherwise is refused. |
+| An automation key quietly lowers a CVSS score, or asserts a system restart, inside a routine validation. | The submission's source is derived from the filing organisation (`system` for automation, whatever the content says), and a consequential change it makes must be named by the validating editor (SF-6). The reviewer is written by validate from the editor's session; a submitter cannot claim one. |
+| An anonymous submitter is named by a sighting's location or an opinion's authors. | Refused on anonymous submissions, at ingest, on a change of the anonymity flag, and at distribution; an attributed sighting may name only its filer (SF-50). |
+
+**What this does not stop.** A vendor that is a legitimate party to a case can
+still delay by not acknowledging; that is the coordination process, and the
+ISAC's lever is the embargo policy, not this code. And a coordinated reporter
+cannot file against a target it cannot see: the canonical record of a
+pre-disclosure case is distributed to its coordination circle, so a reporter
+outside it gets the uniform refusal and files through the ISAC.
 
 ---
 

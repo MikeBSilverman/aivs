@@ -1,0 +1,17 @@
+Mutation M206: a contribution looser than its referents is accepted
+Re-applies: Phase E slice 2 (T6) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_markings.py::test_a_looser_opinion_on_a_visible_stricter_object_is_refused_at_ingest
+
+diff --git a/packages/aivs-server/src/aivs_server/services/markings.py b/packages/aivs-server/src/aivs_server/services/markings.py
+--- a/packages/aivs-server/src/aivs_server/services/markings.py
++++ b/packages/aivs-server/src/aivs_server/services/markings.py
+@@ -121,7 +121,7 @@
+         for stix_id, referent in tlps.items()
+         if not tlp_at_least_as_restrictive(tlp, referent)
+     )
+-    if not stricter:
++    if stricter or not stricter:
+         return None
+     return (
+         f"this submission is {tlp.value}, looser than objects it references: "

@@ -25,10 +25,17 @@ pytestmark = pytest.mark.db
 API = "/api/v1/submissions"
 
 
-def bundle(*, stix_id: str | None = None, name: str = "Prompt injection in agent runtime") -> dict:
+STAMP = "2026-08-01T00:00:00.000Z"
+
+
+def bundle(
+    *,
+    stix_id: str | None = None,
+    name: str = "Prompt injection in agent runtime",
+    modified: str = STAMP,
+) -> dict:
     """A minimal, valid STIX bundle carrying one vulnerability."""
     stix_id = stix_id or f"vulnerability--{uuid.uuid4()}"
-    stamp = "2026-08-01T00:00:00.000Z"
     return {
         "type": "bundle",
         "id": f"bundle--{uuid.uuid4()}",
@@ -37,8 +44,8 @@ def bundle(*, stix_id: str | None = None, name: str = "Prompt injection in agent
                 "type": "vulnerability",
                 "spec_version": "2.1",
                 "id": stix_id,
-                "created": stamp,
-                "modified": stamp,
+                "created": STAMP,
+                "modified": modified,
                 "name": name,
             }
         ],
@@ -451,12 +458,14 @@ async def test_distribution_is_recorded_in_the_audit_trail(client, member, isac,
 async def test_one_members_object_cannot_suppress_anothers(
     client, member, isac, circle, join_circle, session
 ):
-    """Two organisations may carry the same STIX id; neither may silence the other.
+    """A second organisation cannot take over, or silence, the first one's object.
 
     Duplicate suppression was once keyed on (circle, stix_id, modified) across
-    every submission, which conflicted with the per-submission uniqueness of
-    stix_objects: the second organisation's object was skipped as "already
-    delivered" and members received the first one's content under that id.
+    every submission: the second organisation's object was skipped as "already
+    delivered". Then both were delivered under one id, which let the later
+    ``modified`` win in every consumer's TIP. Now only the owner versions an id
+    (SF-48): the second firm's validation is refused, and the first firm's
+    object is delivered untouched.
     """
     shared_id = "vulnerability--aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa"
     target, collection = await circle()
@@ -468,30 +477,40 @@ async def test_one_members_object_cannot_suppress_anothers(
     second_org, second_pem = await member("atlantic-clearing")
     await join_circle(second_org, target)
 
-    async def file_and_distribute(pem, name):
+    async def file_and_validate(pem, name, modified):
         created = await create_draft(
-            client, pem, title=name, bundle=bundle(stix_id=shared_id, name=name)
+            client,
+            pem,
+            title=name,
+            bundle=bundle(stix_id=shared_id, name=name, modified=modified),
         )
         await client.post(f"{API}/{created['id']}/submit", json={}, headers=proxy_headers(pem))
-        await client.post(f"{API}/{created['id']}/validate", json={}, headers=isac_headers)
-        return await client.post(
-            f"{API}/{created['id']}/distribute",
-            json={"circle_ids": [str(target.id)]},
-            headers=isac_headers,
+        validated = await client.post(
+            f"{API}/{created['id']}/validate", json={}, headers=isac_headers
         )
+        return created["id"], validated
 
-    assert (await file_and_distribute(first_pem, "first-firms-finding")).status_code == 200
-    second = await file_and_distribute(second_pem, "second-firms-finding")
-    assert second.status_code == 200, second.text
+    first_id, first = await file_and_validate(first_pem, "first-firms-finding", STAMP)
+    assert first.status_code == 200, first.text
+    distributed = await client.post(
+        f"{API}/{first_id}/distribute",
+        json={"circle_ids": [str(target.id)]},
+        headers=isac_headers,
+    )
+    assert distributed.status_code == 200, distributed.text
 
-    # Both are delivered; the second was not silently swallowed.
+    _second_id, second = await file_and_validate(
+        second_pem, "second-firms-finding", "2026-09-01T00:00:00.000Z"
+    )
+    assert second.status_code == 409
+    assert shared_id in second.json()["title"]
+
     feed = await client.get(
         f"/taxii2/aivs/collections/{collection.id}/objects/",
         params={"match[version]": "all"},
         headers=proxy_headers(first_pem),
     )
-    names = {obj["name"] for obj in feed.json()["objects"]}
-    assert names == {"first-firms-finding", "second-firms-finding"}
+    assert {obj["name"] for obj in feed.json()["objects"]} == {"first-firms-finding"}
 
 
 async def test_a_backdated_release_time_is_refused(client, member, isac, circle):

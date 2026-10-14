@@ -19,21 +19,17 @@ from __future__ import annotations
 
 import datetime as dt
 import uuid
-from typing import Annotated, Any, Final, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import (
     BaseModel,
-    BeforeValidator,
     ConfigDict,
     Field,
-    WithJsonSchema,
     field_validator,
     model_validator,
 )
-from pydantic_core import PydanticCustomError
 
 from aivs_schemas.enums import (
-    ACCEPTED_DISCOVERY_SCOPES,
     RULE_ELIGIBLE_ORG_TYPES,
     TLP,
     AckType,
@@ -50,8 +46,6 @@ from aivs_schemas.enums import (
 )
 
 __all__ = [
-    "DISCOVERY_SCOPE_REFUSAL",
-    "AcceptedDiscoveryScope",
     "AcknowledgmentCreate",
     "AcknowledgmentOut",
     "CircleCreate",
@@ -68,6 +62,7 @@ __all__ = [
     "SubmissionOut",
     "SubmissionUpdate",
     "TransitionRequest",
+    "ValidateRequest",
     "WhoAmI",
 ]
 
@@ -110,41 +105,6 @@ _EMAIL_SHAPE = r"^[^\s@\x00-\x1f\x7f]+@[^\s@\x00-\x1f\x7f]+\.[^\s@\x00-\x1f\x7f]
 # ---------------------------------------------------------------------------
 # Submissions
 # ---------------------------------------------------------------------------
-_ACCEPTED_SCOPE_VALUES: Final[list[str]] = [
-    scope.value for scope in DiscoveryScope if scope in ACCEPTED_DISCOVERY_SCOPES
-]
-
-#: The refusal for any scope outside ``ACCEPTED_DISCOVERY_SCOPES``, worded as
-#: pydantic words an enum mismatch. One string for a reserved value and for a
-#: value nobody has heard of, on every surface, so the refusal cannot be used to
-#: learn which values the server already knows.
-DISCOVERY_SCOPE_REFUSAL: Final[str] = (
-    "Input should be "
-    + ", ".join(f"'{value}'" for value in _ACCEPTED_SCOPE_VALUES[:-1])
-    + f" or '{_ACCEPTED_SCOPE_VALUES[-1]}'"
-)
-
-
-def _refuse_unaccepted_scope(value: object) -> object:
-    """Admit only an accepted scope, before enum parsing can admit a reserved one."""
-    if isinstance(value, str) and value in ACCEPTED_DISCOVERY_SCOPES:
-        return value
-    # pydantic's own error type for an enum mismatch, so the refusal is
-    # indistinguishable from the one an unknown value would get.
-    error_type = "enum"
-    raise PydanticCustomError(error_type, DISCOVERY_SCOPE_REFUSAL)
-
-
-#: A discovery scope a request may set. The published schema lists only the
-#: accepted values: advertising the reserved ones would describe a capability
-#: the server refuses.
-AcceptedDiscoveryScope = Annotated[
-    DiscoveryScope,
-    BeforeValidator(_refuse_unaccepted_scope),
-    WithJsonSchema({"type": "string", "enum": _ACCEPTED_SCOPE_VALUES}),
-]
-
-
 class SubmissionCreate(_In):
     """Create a draft submission.
 
@@ -156,7 +116,7 @@ class SubmissionCreate(_In):
     title: Title
     summary: Summary | None = None
     tlp: TLP = TLP.AMBER
-    discovery_scope: AcceptedDiscoveryScope
+    discovery_scope: DiscoveryScope
     #: When true the distribution pipeline attributes outbound objects to the
     #: hosting ISAC rather than the submitter. The ISAC still knows; consumers
     #: do not.
@@ -186,7 +146,7 @@ class SubmissionUpdate(_In):
     title: Title | None = None
     summary: Summary | None = None
     tlp: TLP | None = None
-    discovery_scope: AcceptedDiscoveryScope | None = None
+    discovery_scope: DiscoveryScope | None = None
     distribute_anonymously: bool | None = None
     bundle: dict[str, Any] | None = None
 
@@ -202,6 +162,17 @@ class TransitionRequest(_In):
     """Body for the workflow verbs. A reason is recorded in the audit trail."""
 
     reason: Reason | None = None
+
+
+class ValidateRequest(TransitionRequest):
+    """Accept a submission, naming any consequential machine changes the editor accepts.
+
+    ``acknowledge`` lists ``<stix id>:<property>`` labels, exactly as a refused
+    validation reports them. Only an automation organisation's submissions can
+    need one (SF-6); for anything else the list is ignored.
+    """
+
+    acknowledge: Annotated[list[Annotated[str, Field(max_length=200)]], Field(max_length=500)] = []
 
 
 class DistributeRequest(_In):

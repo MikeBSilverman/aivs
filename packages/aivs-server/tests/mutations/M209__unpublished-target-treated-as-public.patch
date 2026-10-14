@@ -1,0 +1,17 @@
+Mutation M209: disclosed_third_party is accepted whatever the target's cve_status
+Re-applies: Phase E slice 2 (T6) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_disclosure_split.py::test_a_contribution_on_a_vulnerability_not_yet_public_is_refused
+
+diff --git a/packages/aivs-server/src/aivs_server/services/disclosure.py b/packages/aivs-server/src/aivs_server/services/disclosure.py
+--- a/packages/aivs-server/src/aivs_server/services/disclosure.py
++++ b/packages/aivs-server/src/aivs_server/services/disclosure.py
+@@ -175,7 +175,7 @@
+     if current is None:
+         return UNKNOWN_TARGET
+     if scope_value is DiscoveryScope.DISCLOSED_THIRD_PARTY:
+-        if _cve_status(current) == "published":
++        if True:
+             return None
+         return (
+             f"{stix_id} is not public yet; a contribution before disclosure is "

@@ -1,0 +1,17 @@
+Mutation M204: an object marked with another TLP keeps it beside the stamped one
+Re-applies: Phase E slice 2 (T6) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_markings.py::test_an_object_marked_with_a_different_tlp_is_refused_at_distribution
+
+diff --git a/packages/aivs-server/src/aivs_server/services/markings.py b/packages/aivs-server/src/aivs_server/services/markings.py
+--- a/packages/aivs-server/src/aivs_server/services/markings.py
++++ b/packages/aivs-server/src/aivs_server/services/markings.py
+@@ -62,7 +62,7 @@
+     stamped = marking_id_for(tlp)
+     existing = [ref for ref in raw.get("object_marking_refs") or [] if isinstance(ref, str)]
+     conflicting = sorted({ref for ref in existing if _is_tlp_marking(ref) and ref != stamped})
+-    if conflicting:
++    if False:
+         msg = (
+             f"object {raw.get('id', '<no id>')} is marked {', '.join(conflicting)} but the "
+             f"submission is {tlp.value}; remove the marking or change the submission's TLP"

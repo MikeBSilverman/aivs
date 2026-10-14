@@ -54,6 +54,7 @@ from aivs_schemas.enums import (
     OperatorRole,
     OrgStatus,
     OrgType,
+    SubmissionSource,
     SubmissionState,
 )
 from aivs_server.db.base import Base, TimestampMixin, pg_enum
@@ -427,6 +428,16 @@ class Submission(TimestampMixin, Base):
     tlp: Mapped[TLP] = mapped_column(pg_enum(TLP, "tlp"), nullable=False, default=TLP.AMBER)
     discovery_scope: Mapped[DiscoveryScope] = mapped_column(
         pg_enum(DiscoveryScope, "discovery_scope"), nullable=False
+    )
+    #: Derived from the filing principal when the submission is created, never
+    #: from anything the submission says: an automation organisation's filing
+    #: is ``system`` however it describes itself. Read by the AI gate at
+    #: validate (``services.provenance``).
+    source: Mapped[SubmissionSource] = mapped_column(
+        pg_enum(SubmissionSource, "submission_source"),
+        nullable=False,
+        default=SubmissionSource.MEMBER,
+        server_default=SubmissionSource.MEMBER.value,
     )
     #: When true the distribution pipeline rewrites ``created_by_ref`` on
     #: outbound objects to the hosting ISAC's identity and withholds the

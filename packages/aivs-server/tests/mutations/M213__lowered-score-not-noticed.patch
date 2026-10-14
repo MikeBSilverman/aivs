@@ -1,0 +1,17 @@
+Mutation M213: a machine lowering a score against the version members hold passes
+Re-applies: Phase E slice 2 (T6) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_provenance_gate.py::test_a_machine_lowering_a_score_members_already_hold_needs_naming
+
+diff --git a/packages/aivs-server/src/aivs_server/services/provenance.py b/packages/aivs-server/src/aivs_server/services/provenance.py
+--- a/packages/aivs-server/src/aivs_server/services/provenance.py
++++ b/packages/aivs-server/src/aivs_server/services/provenance.py
+@@ -112,7 +112,7 @@
+ 
+ def _lowerings(raw: Mapping[str, Any], previous: Mapping[str, Any] | None) -> list[str]:
+     """Scores and SSVC values this version lowers against the one members hold."""
+-    if previous is None:
++    if previous is None or True:
+         return []
+     before, after = _body(previous), _body(raw)
+     names = ("cvss_v4_base_score", *_SSVC_ORDER)

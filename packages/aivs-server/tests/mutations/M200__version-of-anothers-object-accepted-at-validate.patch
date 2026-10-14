@@ -1,0 +1,19 @@
+Mutation M200: another organisation's version of a distributed object passes validate
+Re-applies: Phase E slice 2 (T6) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_ownership.py::test_a_newer_version_of_another_firms_object_is_refused_at_validate
+
+diff --git a/packages/aivs-server/src/aivs_server/services/submissions.py b/packages/aivs-server/src/aivs_server/services/submissions.py
+--- a/packages/aivs-server/src/aivs_server/services/submissions.py
++++ b/packages/aivs-server/src/aivs_server/services/submissions.py
+@@ -723,9 +723,7 @@
+     raws = [row.raw for row in rows]
+     now = dt.datetime.now(dt.UTC)
+     for problem in (
+-        await foreign_owned_versions_problem(
+-            session, raws, owner_org_id=submission.submitter_org_id
+-        ),
++        None,
+         await contribution_problem(session, submission, raws, visible_to=None, now=now),
+         unacknowledged_changes_problem(
+             await consequential_changes(session, submission, raws), acknowledged_changes

@@ -20,6 +20,13 @@ scheduler that is down delays notification but cannot leak content early.
 restrictiveness; content looser than that is refused rather than quietly
 downgraded.
 
+**The content rules hold at the moment of release.** Owner-only versioning,
+the disclosure split and TLP inheritance were checked at validate; they are
+checked again here, because the target's state can change in between -- a
+disclosure withdrawn, a newer version distributed by its owner -- and this is
+the last point at which the content can still be refused. The submission's TLP
+marking is then stamped onto every object, as attribution is.
+
 **Anonymity is applied to the stored object.** When a submitter asks to be
 withheld, ``created_by_ref`` is rewritten to the hosting ISAC's identity at
 distribution time, so the attribution consumers see is the one they should. The
@@ -47,8 +54,14 @@ from aivs_server.db.models import (
     Submission,
 )
 from aivs_server.services.embargo import record_embargo
+from aivs_server.services.markings import stamp_tlp_marking
+from aivs_server.services.ownership import foreign_owned_versions_problem
 from aivs_server.services.publication import earliest_publication_instant, hold_publication_lock
-from aivs_server.services.submissions import foreign_identity_ids, self_identifying_problem
+from aivs_server.services.submissions import (
+    contribution_problem,
+    foreign_identity_ids,
+    self_identifying_problem,
+)
 from aivs_server.taxii.resources import truncate_to_taxii_precision
 
 __all__ = ["DistributionError", "DistributionResult", "distribute_submission"]
@@ -177,6 +190,32 @@ async def _apply_attribution(
             stored.raw = {**stored.raw, "created_by_ref": identity}
 
 
+async def _refuse_content_problems(
+    session: AsyncSession, submission: Submission, objects: list[StixObject], *, now: dt.datetime
+) -> None:
+    """Owner-only versioning, the disclosure split and TLP inheritance, as they stand now."""
+    raws = [stored.raw for stored in objects]
+    for problem in (
+        await foreign_owned_versions_problem(
+            session, raws, owner_org_id=submission.submitter_org_id
+        ),
+        await contribution_problem(session, submission, raws, visible_to=None, now=now),
+    ):
+        if problem is not None:
+            raise DistributionError(problem)
+
+
+def _stamp_markings(submission: Submission, objects: list[StixObject]) -> None:
+    """Set every object's TLP marking from the submission, refusing a conflicting one (SF-49)."""
+    for stored in objects:
+        try:
+            stamped = stamp_tlp_marking(stored.raw, TLP(submission.tlp))
+        except ValueError as exc:
+            raise DistributionError(str(exc)) from exc
+        if stamped != stored.raw:
+            stored.raw = stamped
+
+
 def _validate_release_time(release_at: dt.datetime | None, now: dt.datetime) -> None:
     """Refuse a release time that cannot mean what it says.
 
@@ -291,7 +330,9 @@ async def distribute_submission(
         msg = "submission carries no STIX objects to distribute"
         raise DistributionError(msg)
 
+    await _refuse_content_problems(session, submission, objects, now=now)
     await _apply_attribution(session, submission, objects)
+    _stamp_markings(submission, objects)
 
     # Rows for *these* objects that are already live in a target circle, so a
     # re-distribution of the same submission does not deliver it twice.

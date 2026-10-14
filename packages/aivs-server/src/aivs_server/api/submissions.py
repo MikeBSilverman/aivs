@@ -35,6 +35,7 @@ from aivs_schemas.models import (
     SubmissionUpdate,
     TransitionOut,
     TransitionRequest,
+    ValidateRequest,
 )
 from aivs_server.audit.log import AuditAction, record
 from aivs_server.auth.context import AuthContext
@@ -288,7 +289,7 @@ async def submit(
 @router.post("/{submission_id}/validate", response_model=SubmissionOut)
 async def validate(
     submission_id: uuid.UUID,
-    payload: TransitionRequest,
+    payload: ValidateRequest,
     ctx: AuthenticatedContext,
     session: SessionDep,
 ) -> SubmissionOut:
@@ -296,12 +297,25 @@ async def validate(
 
     This is the human checkpoint that keeps AIVS clear of the
     coordinated-disclosure consent problem: content reaches members because the
-    ISAC decided it should, never merely because a member uploaded it.
+    ISAC decided it should, never merely because a member uploaded it. The
+    content rules (owner-only versioning, the disclosure split, TLP inheritance,
+    the AI gate) are checked here and answer 409 with the reason.
     """
-    return _present(
-        await _transition(session, ctx, submission_id, SubmissionState.VALIDATED, payload.reason),
-        ctx,
-    )
+    submission = await _require_visible_submission(session, ctx, submission_id, for_update=True)
+    try:
+        await apply_transition(
+            session,
+            ctx,
+            submission,
+            SubmissionState.VALIDATED,
+            reason=payload.reason,
+            acknowledged_changes=frozenset(payload.acknowledge),
+        )
+    except _CLIENT_ERRORS as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    await session.commit()
+    await session.refresh(submission)
+    return _present(submission, ctx)
 
 
 @router.post("/{submission_id}/withdraw", response_model=SubmissionOut)

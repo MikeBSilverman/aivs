@@ -1,0 +1,17 @@
+Mutation M207: a target the caller cannot see is refused with a message an absent one does not get
+Re-applies: Phase E slice 2 (T6) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_disclosure_split.py::test_an_invisible_target_and_an_absent_one_are_refused_identically
+
+diff --git a/packages/aivs-server/src/aivs_server/services/disclosure.py b/packages/aivs-server/src/aivs_server/services/disclosure.py
+--- a/packages/aivs-server/src/aivs_server/services/disclosure.py
++++ b/packages/aivs-server/src/aivs_server/services/disclosure.py
+@@ -172,6 +172,8 @@
+     session: AsyncSession, scope_value: DiscoveryScope, stix_id: str, scope: DisclosureScope
+ ) -> str | None:
+     current = await _canonical_current(session, stix_id, scope)
++    if current is None and await _canonical_current(session, stix_id, DisclosureScope(None, scope.exclude_submission_id, scope.now)) is not None:
++        return UNKNOWN_TARGET + " (it exists)"
+     if current is None:
+         return UNKNOWN_TARGET
+     if scope_value is DiscoveryScope.DISCLOSED_THIRD_PARTY:

@@ -1,0 +1,17 @@
+Mutation M919: the posture route decides visibility on the app process's clock
+Re-applies: api/contributions.py before the database clock reached the non-TAXII readers
+
+Expect red: packages/aivs-server/tests/unit/test_posture.py::test_a_fast_app_clock_does_not_show_a_member_an_embargo_early
+
+diff --git a/packages/aivs-server/src/aivs_server/api/contributions.py b/packages/aivs-server/src/aivs_server/api/contributions.py
+--- a/packages/aivs-server/src/aivs_server/api/contributions.py
++++ b/packages/aivs-server/src/aivs_server/api/contributions.py
+@@ -226,7 +226,7 @@ async def set_posture(payload: PostureIn, ctx: AuthenticatedContext, session: Se
+             ctx,
+             vulnerability_id=payload.vulnerability,
+             statement=payload.statement(),
+-            now=await database_now(session),
++            now=dt.datetime.now(dt.UTC),
+         )
+         await session.commit()
+     except TargetNotFoundError:

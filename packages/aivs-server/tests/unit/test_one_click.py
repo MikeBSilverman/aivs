@@ -401,19 +401,15 @@ async def test_a_stricter_version_the_member_cannot_see_sends_the_click_to_revie
     assert submission.state is SubmissionState.SUBMITTED
     assert submission.lane is SubmissionLane.REVIEW
     assert "strict" not in response.text.lower()
-    reasons = (
-        (
-            await session.execute(
-                select(SubmissionTransition.reason).where(
-                    SubmissionTransition.submission_id == submission.id
-                )
-            )
-        )
-        .scalars()
-        .all()
+    history = await session.execute(
+        select(SubmissionTransition.to_state, SubmissionTransition.reason)
+        .where(SubmissionTransition.submission_id == submission.id)
+        .order_by(SubmissionTransition.id)
     )
-    assert reasons[-1] == NEEDS_AN_EDITOR
-    assert not any("strict" in (reason or "") for reason in reasons)
+    assert [(row.to_state, row.reason) for row in history] == [
+        (SubmissionState.DRAFT, "created"),
+        (SubmissionState.SUBMITTED, NEEDS_AN_EDITOR),
+    ]
 
 
 @pytest.mark.requirement("SF-66")

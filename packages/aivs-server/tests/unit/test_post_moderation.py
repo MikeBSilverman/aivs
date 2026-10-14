@@ -21,6 +21,7 @@ from aivs_server.audit.log import AuditAction
 from aivs_server.db.models import AuditLog, Circle, Submission, SubmissionTransition
 from aivs_server.services.contributions import within_hourly_allowance
 from tests.unit.contribution_world import (
+    LATER,
     STAMP,
     bundle_of,
     course_of_action_about,
@@ -385,6 +386,24 @@ async def test_a_red_note_waits_for_review_though_its_target_is_not_red(client, 
     assert submission.lane is SubmissionLane.REVIEW
 
 
+async def _another_firms_note_elsewhere(session, world, make_org, make_circle) -> dict:
+    """A note by another firm, distributed to a circle the member is not in."""
+    elsewhere = await make_circle("elsewhere")
+    other_firm = await make_org("harbour-trust", org_type=OrgType.GSIB)
+    theirs = note_about(world.published)
+    await seed(session, other_firm, theirs, circle=elsewhere)
+    return theirs
+
+
+async def _history(session, submission: Submission) -> list[tuple[SubmissionState, str | None]]:
+    rows = await session.execute(
+        select(SubmissionTransition.to_state, SubmissionTransition.reason)
+        .where(SubmissionTransition.submission_id == submission.id)
+        .order_by(SubmissionTransition.id)
+    )
+    return [(row.to_state, row.reason) for row in rows]
+
+
 @pytest.mark.requirement("SF-48", "SF-66")
 async def test_a_note_reusing_another_firms_id_waits_without_being_told_whose(
     client, session, world, make_org, make_circle
@@ -392,14 +411,25 @@ async def test_a_note_reusing_another_firms_id_waits_without_being_told_whose(
     """The ownership check runs from the ISAC's view; its reason never reaches the member.
 
     Another firm's note, in a circle the member is not in, has the id the
-    member's note reuses. The member learns only that an editor will look.
+    member's note reuses. The submission's history is exactly what any
+    submission waiting for review shows: the member's own submit, with no
+    reason the refused publication wrote. (The one-click twin asserts
+    ``NEEDS_AN_EDITOR``; here the draft is already submitted when the lane is
+    tried, so nothing transitions on refusal.) The pair below files the
+    same note under its own id beside the same seeded note, and is published,
+    so the reused id is what refused.
+
+    Ownership is checked twice on this path, by ``check_content_rules`` before
+    the fast lane records its transitions and by distribution inside the same
+    savepoint, with the same function from the same view. Either refusal
+    rolls the savepoint back to the same review outcome, so no behaviour can
+    tell the first from the second; this test pins the pair (M750 removes
+    both), and distribution's check alone is pinned on the validate path
+    (M201).
     """
     await post_moderation(client, world, enabled=True)
-    elsewhere = await make_circle("elsewhere")
-    other_firm = await make_org("harbour-trust", org_type=OrgType.GSIB)
-    theirs = note_about(world.published)
-    await seed(session, other_firm, theirs, circle=elsewhere)
-    ours = {**note_about(world.published), "id": theirs["id"]}
+    theirs = await _another_firms_note_elsewhere(session, world, make_org, make_circle)
+    ours = {**note_about(world.published), "id": theirs["id"], "modified": LATER}
 
     filed = await draft(client, world.member.person, [ours])
     response = await client.post(
@@ -412,11 +442,22 @@ async def test_a_note_reusing_another_firms_id_waits_without_being_told_whose(
     await session.refresh(submission)
     assert submission.state is SubmissionState.SUBMITTED
     assert submission.lane is SubmissionLane.REVIEW
-    reasons = (
-        await session.execute(
-            select(SubmissionTransition.reason).where(
-                SubmissionTransition.submission_id == submission.id
-            )
-        )
-    ).scalars()
-    assert "only the organisation" not in " ".join(reason or "" for reason in reasons)
+    assert await _history(session, submission) == [
+        (SubmissionState.DRAFT, "created"),
+        (SubmissionState.SUBMITTED, None),
+    ], "the member's own submit, and nothing the refused publication wrote"
+
+
+@pytest.mark.requirement("SF-66")
+async def test_a_note_of_its_own_beside_another_firms_note_is_published(
+    client, session, world, make_org, make_circle
+):
+    await post_moderation(client, world, enabled=True)
+    await _another_firms_note_elsewhere(session, world, make_org, make_circle)
+
+    submission = await file_and_submit(
+        client, session, world.member.person, [note_about(world.published)]
+    )
+
+    assert submission.state is SubmissionState.DISTRIBUTED
+    assert submission.lane is SubmissionLane.POST_MODERATED

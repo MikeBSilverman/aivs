@@ -1,0 +1,21 @@
+Mutation M892: change_org_status writes any status it is given
+Re-applies: change_org_status before the allow-list (review L2-P6)
+
+Expect red: packages/aivs-server/tests/unit/test_quarantine.py::test_activate_and_suspend_write_no_other_status[quarantined]
+Expect red: packages/aivs-server/tests/unit/test_quarantine.py::test_activate_and_suspend_write_no_other_status[offboarded]
+Expect red: packages/aivs-server/tests/unit/test_quarantine.py::test_activate_and_suspend_write_no_other_status[pending]
+
+diff --git a/packages/aivs-server/src/aivs_server/services/org_status.py b/packages/aivs-server/src/aivs_server/services/org_status.py
+index 71ff0b9..171ba6c 100644
+--- a/packages/aivs-server/src/aivs_server/services/org_status.py
++++ b/packages/aivs-server/src/aivs_server/services/org_status.py
+@@ -82,9 +82,6 @@ async def change_org_status(
+ 
+     The caller loaded it with ``load_org_for_update`` and commits once.
+     """
+-    if target not in _TARGETS:
+-        msg = f"{target.value} is not set here; it has its own procedure"
+-        raise OrgStatusError(msg)
+     refusal = _refusal(organisation)
+     if refusal is not None:
+         raise OrgStatusError(refusal)

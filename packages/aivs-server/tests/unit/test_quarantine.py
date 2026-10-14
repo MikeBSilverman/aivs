@@ -24,7 +24,7 @@ from aivs_server.auth.context import AuthContext, AuthMethod
 from aivs_server.auth.policy import PolicyDeniedError, can_reconnect_org
 from aivs_server.db.models import CircleMembership, ClientCertificate, Organization
 from aivs_server.services.certificates import register_certificate
-from aivs_server.services.org_status import load_org_for_update
+from aivs_server.services.org_status import OrgStatusError, change_org_status, load_org_for_update
 from aivs_server.services.quarantine import quarantine_org, reconnect_org
 from tests.conftest import is_blocked, proxy_headers
 
@@ -429,3 +429,18 @@ async def test_a_repair_cannot_hand_over_the_gap_a_new_interval_reconnection_wit
         f"/taxii2/aivs/collections/{collection.id}/objects/", headers=proxy_headers(new_pem)
     )
     assert {item["name"] for item in feed.json().get("objects", [])} == {"before"}
+
+
+@pytest.mark.parametrize("target", [OrgStatus.QUARANTINED, OrgStatus.OFFBOARDED, OrgStatus.PENDING])
+async def test_activate_and_suspend_write_no_other_status(session, isac_ctx, make_org, target):
+    """Quarantine and offboarding owe revoked credentials and deleted data; a status
+    written here would skip both. The pair is suspension, which the API tests drive."""
+    org_id = (await make_org("allow-listed")).id
+    locked = await load_org_for_update(session, org_id)
+    before = locked.status
+
+    with pytest.raises(OrgStatusError, match="has its own procedure"):
+        await change_org_status(session, isac_ctx, organisation=locked, target=target, via="api")
+    await session.rollback()
+
+    assert (await load_org_for_update(session, org_id)).status is before

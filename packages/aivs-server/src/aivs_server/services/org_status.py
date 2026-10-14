@@ -9,6 +9,7 @@ record, which is everything ``reconnect_org`` exists to require.
 from __future__ import annotations
 
 import uuid
+from typing import Final
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,6 +24,14 @@ __all__ = ["OrgStatusError", "change_org_status", "load_org_for_update"]
 
 class OrgStatusError(ValueError):
     """The status change is refused; the message says why and what to do instead."""
+
+
+#: The statuses this function writes. Quarantine, reconnection and offboarding
+#: each have their own function, because each owes more than a status: revoked
+#: credentials, a backlog decision, deleted data. A target outside this set is
+#: refused rather than written, so a caller cannot reach one of those states
+#: without what it requires.
+_TARGETS: Final[frozenset[OrgStatus]] = frozenset({OrgStatus.ACTIVE, OrgStatus.SUSPENDED})
 
 
 async def load_org_for_update(session: AsyncSession, org_id: uuid.UUID) -> Organization | None:
@@ -73,6 +82,9 @@ async def change_org_status(
 
     The caller loaded it with ``load_org_for_update`` and commits once.
     """
+    if target not in _TARGETS:
+        msg = f"{target.value} is not set here; it has its own procedure"
+        raise OrgStatusError(msg)
     refusal = _refusal(organisation)
     if refusal is not None:
         raise OrgStatusError(refusal)

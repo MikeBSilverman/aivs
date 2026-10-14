@@ -355,6 +355,7 @@ _ALL_TABLES = (
     "instance_controls",
     "detection_state",
     "submission_milestones",
+    "count_snapshots",
 )
 
 

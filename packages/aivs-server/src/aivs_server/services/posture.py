@@ -11,6 +11,13 @@ recorded a posture, so "6 of 6 affected", or an exact zero beside a total,
 states each named firm's status. The total is withheld whenever a withheld
 count could be worked out from it.
 
+Those counts are read from a published snapshot (``services.count_snapshots``),
+never live. Read live, the summary before and after one firm's audited posture
+write, or around an editor suspending one firm, moved by exactly that firm
+(review R-C3, R2-C1). A snapshot is replaced only once at least K members'
+statuses differ from it, so what moves between two published summaries is
+always the sum of at least K firms.
+
 A posture is a VEX statement (OpenVEX / CSAF VEX): the status, and the
 statements VEX requires with it -- why a product is ``not_affected``, what is
 being done where it is ``affected`` -- plus the products it covers. The
@@ -26,8 +33,8 @@ read by ISAC auditors, and the status there would undo the privacy here. For
 the same reason no request names the vulnerability in its URI: a member's
 posture is written with the id in the body, because request lines are logged
 by nginx and the app beside the client's identity, and those logs leave for the
-ISAC's collector. "Firm X wrote a posture on V at t", read beside the summary
-before and after, is the status.
+ISAC's collector. "Firm X wrote a posture on V at t" is half of what a reader
+needs to recover the status; the published snapshot denies it the other half.
 
 This protects a member against the ISAC *through the application*. Whoever
 operates the database reads ``org_postures`` in plaintext; that is the host's
@@ -42,7 +49,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Final
 
-from sqlalchemy import exists, func, select
+from sqlalchemy import exists, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -50,9 +57,16 @@ from aivs_schemas.enums import PostureStatus, VexJustification
 from aivs_server.audit.log import AuditAction, record
 from aivs_server.auth.context import AuthContext
 from aivs_server.auth.policy import PolicyDeniedError
-from aivs_server.db.models import Distribution, OrgPosture, StixObject
+from aivs_server.db.models import (
+    CountSnapshot,
+    CountSubject,
+    Distribution,
+    OrgPosture,
+    StixObject,
+)
 from aivs_server.db.org_lock import org_still_active
 from aivs_server.services.contributions import TargetNotFoundError, resolve_target
+from aivs_server.services.count_snapshots import publish_if_changed, published
 from aivs_server.services.telemetry import (
     K_ANONYMITY,
     Count,
@@ -67,7 +81,9 @@ __all__ = [
     "is_distributed_vulnerability",
     "own_posture",
     "own_postures",
+    "posture_basis",
     "posture_summary",
+    "publish_postures",
     "record_posture",
     "vex_problem",
 ]
@@ -245,32 +261,38 @@ async def own_posture(
 
 
 class PostureSummary:
-    """Counts per status for one vulnerability, each a :class:`Count`."""
+    """Counts per status for one vulnerability, each a :class:`Count`, as published at ``as_of``."""
 
-    __slots__ = ("by_status", "total")
+    __slots__ = ("as_of", "by_status", "total")
 
-    def __init__(self, total: Count, by_status: Mapping[PostureStatus, Count]) -> None:
+    def __init__(
+        self,
+        total: Count,
+        by_status: Mapping[PostureStatus, Count],
+        as_of: dt.datetime | None,
+    ) -> None:
         self.total = total
         self.by_status = dict(by_status)
+        self.as_of = as_of
 
 
 _TOO_FEW_POSTURES: Final[str] = f"shown once at least {K_ANONYMITY} organisations have one"
 
 
-def _suppress(counts: Mapping[PostureStatus, int]) -> PostureSummary:
+def _suppress(counts: Mapping[PostureStatus, int], as_of: dt.datetime | None) -> PostureSummary:
     total = sum(counts.values())
     by_status = {
         status: k_anonymous(counts.get(status, 0), population=total, too_few=_TOO_FEW_POSTURES)
         for status in PostureStatus
     }
     if total < K_ANONYMITY:
-        return PostureSummary(Count(None, _TOO_FEW_POSTURES), by_status)
+        return PostureSummary(Count(None, _TOO_FEW_POSTURES), by_status, as_of)
     # A total beside one withheld count gives the withheld one away by subtraction.
     any_withheld = any(count.value is None for count in by_status.values())
     shown_total = (
         Count(None, "withheld so a small count cannot be derived") if any_withheld else Count(total)
     )
-    return PostureSummary(shown_total, by_status)
+    return PostureSummary(shown_total, by_status, as_of)
 
 
 async def is_distributed_vulnerability(session: AsyncSession, vulnerability_id: str) -> bool:
@@ -285,22 +307,52 @@ async def is_distributed_vulnerability(session: AsyncSession, vulnerability_id: 
     return bool(await session.scalar(select(exists(distributed))))
 
 
-async def posture_summary(session: AsyncSession, vulnerability_id: str) -> PostureSummary | None:
-    """Counts per status from members, or ``None`` for anything not a distributed vulnerability.
+async def posture_basis(session: AsyncSession, vulnerability_id: str) -> dict[str, str]:
+    """Each counted member with a posture on this vulnerability, mapped to its status.
 
     Only members are counted (``counted_organisations``): the ISAC's own
     posture counted toward k would let five rows describe four firms.
     """
+    rows = await session.execute(
+        select(OrgPosture.org_id, OrgPosture.status).where(
+            OrgPosture.vulnerability_stix_id == vulnerability_id,
+            OrgPosture.org_id.in_(counted_organisations()),
+        )
+    )
+    return {str(org_id): PostureStatus(status).value for org_id, status in rows}
+
+
+async def posture_summary(session: AsyncSession, vulnerability_id: str) -> PostureSummary | None:
+    """Published counts per status, or ``None`` for anything not a distributed vulnerability."""
     if not await is_distributed_vulnerability(session, vulnerability_id):
         return None
-    rows = (
-        await session.execute(
-            select(OrgPosture.status, func.count())
-            .where(
-                OrgPosture.vulnerability_stix_id == vulnerability_id,
-                OrgPosture.org_id.in_(counted_organisations()),
-            )
-            .group_by(OrgPosture.status)
-        )
-    ).all()
-    return _suppress({PostureStatus(status): int(count) for status, count in rows})
+    snapshot = await published(session, CountSubject.POSTURE, vulnerability_id)
+    if snapshot is None:
+        return _suppress({}, None)
+    counts: dict[PostureStatus, int] = {}
+    for status in snapshot.basis.values():
+        counts[PostureStatus(status)] = counts.get(PostureStatus(status), 0) + 1
+    return _suppress(counts, snapshot.taken_at)
+
+
+async def publish_postures(session: AsyncSession, *, now: dt.datetime) -> int:
+    """Republish each vulnerability's summary that K members' changes have moved. Commits.
+
+    Examines every vulnerability that has a posture or a published summary: a
+    summary whose last postures were deleted still has to be compared, or it
+    would go on showing them.
+    """
+    with_postures = select(OrgPosture.vulnerability_stix_id)
+    with_snapshot = select(CountSnapshot.subject_id).where(
+        CountSnapshot.subject_kind == CountSubject.POSTURE.value
+    )
+    subjects = (await session.execute(with_postures.union(with_snapshot))).scalars().all()
+    republished = 0
+    for vulnerability_id in subjects:
+        basis = await posture_basis(session, vulnerability_id)
+        if await publish_if_changed(
+            session, CountSubject.POSTURE, vulnerability_id, basis, now=now
+        ):
+            republished += 1
+    await session.commit()
+    return republished

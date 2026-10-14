@@ -7,6 +7,7 @@ is a disclosure of who engaged with whom.
 
 from __future__ import annotations
 
+import datetime as dt
 import uuid
 
 from fastapi import APIRouter, HTTPException, status
@@ -33,6 +34,9 @@ class TelemetryOut(BaseModel):
     retrieved: CountOut
     acknowledged: CountOut
     actioned: CountOut
+    #: When these counts were published; null before the first snapshot. Counts
+    #: are replaced only once K organisations' receipts or reach have changed.
+    as_of: dt.datetime | None
     later: list[str]
 
 
@@ -56,5 +60,6 @@ async def get_telemetry(
         retrieved=_out(telemetry.retrieved),
         acknowledged=_out(telemetry.acknowledged),
         actioned=_out(telemetry.actioned),
+        as_of=telemetry.as_of,
         later=list(telemetry.later),
     )

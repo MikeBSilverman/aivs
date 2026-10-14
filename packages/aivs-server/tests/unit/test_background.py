@@ -23,7 +23,7 @@ def test_the_process_runs_its_unattended_jobs_at_their_configured_intervals(sett
         "embargo_sweeper": dt.timedelta(seconds=settings.embargo_sweep_interval_seconds),
         "webhook_dispatcher": dt.timedelta(seconds=settings.webhook_dispatch_interval_seconds),
         "detections": dt.timedelta(seconds=settings.detection_interval_seconds),
-        "telemetry": dt.timedelta(seconds=settings.telemetry_interval_seconds),
+        "published_counts": dt.timedelta(seconds=settings.count_publish_interval_seconds),
         "notification_digest": dt.timedelta(seconds=settings.digest_interval_seconds),
         "email_dispatcher": dt.timedelta(seconds=settings.email_dispatch_interval_seconds),
         "audit_read_summary": dt.timedelta(seconds=settings.audit_read_summary_interval_seconds),

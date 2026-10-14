@@ -144,6 +144,9 @@
   <p class="muted">
     Counts of organisations, never which ones. A small number is shown as
     "fewer than" rather than exactly, so no one reader can be picked out.
+    The counts move in steps, once several organisations have done something
+    new, so a change cannot be traced to one of them.
+    {% if telemetry.as_of %}Last updated {{ telemetry.as_of }}.{% else %}Not counted yet.{% endif %}
   </p>
   <table>
     <tbody>

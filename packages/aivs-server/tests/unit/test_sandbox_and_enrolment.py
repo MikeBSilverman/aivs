@@ -17,7 +17,7 @@ from aivs_server.db.models import Organization, Submission
 from aivs_server.main import create_app
 from aivs_server.services.enrolment import enrolment_problem
 from aivs_server.services.lead_time import Quarter, sector_median
-from aivs_server.services.telemetry import K_ANONYMITY, submission_telemetry
+from aivs_server.services.telemetry import K_ANONYMITY, publish_telemetry, submission_telemetry
 from tests.unit.sharing import vulnerability_intel
 from tests.unit.test_portal_admin import ADMIN, csrf, signed_in_admin  # noqa: F401 - fixture
 
@@ -40,6 +40,7 @@ async def test_what_reaches_a_sandbox_is_no_reach(
         await join_circle(await make_org(f"reader-{number}", org_type=OrgType.GSIB), circle)
     submission, _obj, _row = await publish(submitter, circle, name="Exercise")
 
+    await publish_telemetry(session, now=dt.datetime.now(dt.UTC))
     telemetry = await submission_telemetry(session, await session.get(Submission, submission.id))
     assert telemetry.reach.value == reach
 

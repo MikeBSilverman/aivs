@@ -74,8 +74,9 @@ from aivs_server.portal import vulnerability_routes as portal_vulnerability_rout
 from aivs_server.services.audit_read_summary import summarise_audit_reads
 from aivs_server.services.detections import run_detections
 from aivs_server.services.embargo import sweep_due_embargoes
+from aivs_server.services.posture import publish_postures
 from aivs_server.services.publication import PublicationPausedError
-from aivs_server.services.telemetry import queue_milestones
+from aivs_server.services.telemetry import publish_telemetry
 from aivs_server.taxii import router as taxii_router
 
 __all__ = ["create_app"]
@@ -188,9 +189,9 @@ def background_components(settings: Settings) -> list[BackgroundComponent]:
             lambda: _dispatch_email(settings),
         ),
         BackgroundComponent(
-            "telemetry",
-            dt.timedelta(seconds=settings.telemetry_interval_seconds),
-            _queue_telemetry_milestones,
+            "published_counts",
+            dt.timedelta(seconds=settings.count_publish_interval_seconds),
+            _publish_counts,
         ),
         BackgroundComponent(
             "detections",
@@ -205,10 +206,16 @@ def background_components(settings: Settings) -> list[BackgroundComponent]:
     ]
 
 
-async def _queue_telemetry_milestones() -> None:
-    """Tell submitters, contentlessly, when what they shared crossed a milestone."""
+async def _publish_counts() -> None:
+    """Republish the k-anonymous counts that enough organisations' changes have moved.
+
+    Telemetry milestones are announced here too, from the counts just
+    published, so an announcement never carries a live count's timing.
+    """
     async with session_scope() as session:
-        await queue_milestones(session, now=dt.datetime.now(dt.UTC), lookback=dt.timedelta(days=1))
+        now = await database_now(session)
+        await publish_telemetry(session, now=now)
+        await publish_postures(session, now=now)
 
 
 async def _summarise_audit_reads() -> None:

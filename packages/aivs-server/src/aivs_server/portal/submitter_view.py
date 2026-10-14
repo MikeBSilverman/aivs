@@ -56,6 +56,9 @@ async def telemetry_rows(
     return {
         "rows": [{"label": label, **_shown(getattr(telemetry, name))} for name, label in _LABELS],
         "later": list(telemetry.later),
+        "as_of": None
+        if telemetry.as_of is None
+        else telemetry.as_of.strftime("%Y-%m-%d %H:%M UTC"),
     }
 
 

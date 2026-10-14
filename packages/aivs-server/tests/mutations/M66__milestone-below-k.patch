@@ -1,12 +1,14 @@
 Mutation M66: a milestone is announced below k, telling the submitter that one of a handful engaged
 Re-applies: telemetry before k-suppression (cf59b02)
 
-Expect red: packages/aivs-server/tests/unit/test_telemetry.py::test_a_milestone_is_announced_once_and_never_below_k[2-announced1]
+(Reach 2 is now held back first by the snapshot, which needs K firms; a reach of 10 with one retrieval is where the threshold alone decides.)
+Expect red: packages/aivs-server/tests/unit/test_telemetry.py::test_a_milestone_is_silent_until_its_count_is_shown[1-announced0]
 
 diff --git a/packages/aivs-server/src/aivs_server/services/telemetry.py b/packages/aivs-server/src/aivs_server/services/telemetry.py
+index 7320b19..f2be37b 100644
 --- a/packages/aivs-server/src/aivs_server/services/telemetry.py
 +++ b/packages/aivs-server/src/aivs_server/services/telemetry.py
-@@ -232,7 +232,7 @@ async def submission_telemetry(session: AsyncSession, submission: Submission) ->
+@@ -256,7 +256,7 @@ async def submission_telemetry(session: AsyncSession, submission: Submission) ->
  #: milestone: "first_retrieval" and "first_actioned" were, and their silence
  #: read as an exact zero.
  _MILESTONES: Final[tuple[tuple[str, AckType, int], ...]] = (
@@ -15,13 +17,13 @@ diff --git a/packages/aivs-server/src/aivs_server/services/telemetry.py b/packag
      ("retrieved_10", AckType.RETRIEVED, 10),
      ("retrieved_50", AckType.RETRIEVED, 50),
      (f"actioned_{K_ANONYMITY}", AckType.ACTIONED, K_ANONYMITY),
-@@ -311,7 +311,7 @@ async def _milestones_reached(session: AsyncSession, submission: Submission) ->
+@@ -335,7 +335,7 @@ def _milestones_shown(basis: Mapping[str, str], sent: set[str]) -> list[str]:
      for milestone, ack_type, threshold in _MILESTONES:
          if milestone in sent:
              continue
--        shown = _suppressed(await _engaged(session, submission, ack_type), reach=reach)
+-        shown = _suppressed(_holding(basis, ack_type), reach=reach)
 -        if shown.value is not None and shown.value >= threshold:
-+        engaged = await _engaged(session, submission, ack_type)
++        engaged = _holding(basis, ack_type)
 +        if engaged >= threshold:
              reached.append(milestone)
      return reached

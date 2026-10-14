@@ -1,0 +1,21 @@
+Mutation M887: a published count is replaced on any change, so one firm's change moves it
+Re-applies: live counts (review R-C3, R2-C1): the effect of reading the live state
+
+Expect red: packages/aivs-server/tests/unit/test_count_snapshots.py::test_a_snapshot_is_replaced_only_once_k_firms_differ[K-1 firms changed]
+Expect red: packages/aivs-server/tests/unit/test_count_snapshots.py::test_a_snapshot_is_replaced_only_once_k_firms_differ[one firm left (suspended, offboarded)]
+Expect red: packages/aivs-server/tests/unit/test_posture.py::test_one_firms_posture_write_moves_no_published_count
+Expect red: packages/aivs-server/tests/unit/test_telemetry.py::test_suspending_one_firm_moves_no_published_count
+
+diff --git a/packages/aivs-server/src/aivs_server/services/count_snapshots.py b/packages/aivs-server/src/aivs_server/services/count_snapshots.py
+index 0f407f5..746f72b 100644
+--- a/packages/aivs-server/src/aivs_server/services/count_snapshots.py
++++ b/packages/aivs-server/src/aivs_server/services/count_snapshots.py
+@@ -73,7 +73,7 @@ def should_publish(old: Mapping[str, str] | None, new: Mapping[str, str]) -> boo
+     waits for K contributions like every later one. Until then every count
+     about it would be withheld below K anyway.
+     """
+-    return changed_organisations(old or {}, new) >= K_ANONYMITY
++    return changed_organisations(old or {}, new) >= 1
+ 
+ 
+ async def published(session: AsyncSession, kind: CountSubject, subject_id: str) -> Published | None:

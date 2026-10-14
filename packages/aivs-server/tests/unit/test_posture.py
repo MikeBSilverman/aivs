@@ -22,7 +22,7 @@ from aivs_server.api import contributions as contributions_api
 from aivs_server.audit.log import AuditAction
 from aivs_server.auth.context import AuthContext, AuthMethod, CircleGrant, MembershipInterval
 from aivs_server.db.models import AuditLog, Distribution, OrgPosture, StixObject
-from aivs_server.services.posture import VexStatement, _suppress, record_posture
+from aivs_server.services.posture import VexStatement, _suppress, publish_postures, record_posture
 from aivs_server.services.telemetry import K_ANONYMITY
 from tests.authz_matrix.test_authz_matrix import walk_routes
 from tests.conftest import proxy_headers
@@ -279,10 +279,17 @@ async def _members_with_posture(world, client, make_org, make_cert, join_circle,
     return orgs
 
 
-async def _summary(client, headers, vulnerability):
-    return await client.get(
-        f"{API}/vulnerabilities/{vulnerability}/posture-summary", headers=headers
-    )
+@pytest.fixture
+def summary(client, session):
+    """The posture summary as a reviewer reads it once the publishing job has run."""
+
+    async def _read(headers, vulnerability):
+        await publish_postures(session, now=dt.datetime.now(dt.UTC))
+        return await client.get(
+            f"{API}/vulnerabilities/{vulnerability}/posture-summary", headers=headers
+        )
+
+    return _read
 
 
 SPLIT = ["affected"] * K_ANONYMITY + ["not_affected"] * K_ANONYMITY
@@ -290,11 +297,11 @@ SPLIT = ["affected"] * K_ANONYMITY + ["not_affected"] * K_ANONYMITY
 
 @pytest.mark.requirement("SF-70")
 async def test_the_isac_sees_a_count_that_k_have_and_k_do_not(
-    client, world, make_org, make_cert, join_circle
+    summary, client, world, make_org, make_cert, join_circle
 ):
     await _members_with_posture(world, client, make_org, make_cert, join_circle, SPLIT)
 
-    summary = await _summary(client, world.editor, world.published)
+    summary = await summary(world.editor, world.published)
 
     assert summary.status_code == 200, summary.text
     by_status = summary.json()["by_status"]
@@ -304,7 +311,9 @@ async def test_the_isac_sees_a_count_that_k_have_and_k_do_not(
 
 
 @pytest.mark.requirement("SF-70")
-async def test_a_unanimous_status_is_withheld(client, world, make_org, make_cert, join_circle):
+async def test_a_unanimous_status_is_withheld(
+    summary, client, world, make_org, make_cert, join_circle
+):
     """Six of six affected, beside its audit rows, names six affected firms.
 
     The ISAC's audit log says which organisations recorded *a* posture; a
@@ -315,50 +324,56 @@ async def test_a_unanimous_status_is_withheld(client, world, make_org, make_cert
         world, client, make_org, make_cert, join_circle, ["affected"] * (K_ANONYMITY + 1)
     )
 
-    summary = (await _summary(client, world.editor, world.published)).json()
+    summary = (await summary(world.editor, world.published)).json()
 
     assert summary["by_status"]["affected"] == {"value": None, "withheld": "all but fewer than 5"}
     assert summary["by_status"]["not_affected"] == {"value": None, "withheld": "fewer than 5"}
     assert summary["total"]["value"] is None
 
 
+@pytest.mark.parametrize(("suspended", "affected"), [(True, None), (False, K_ANONYMITY)])
 @pytest.mark.requirement("SF-70")
 async def test_only_active_members_are_counted(
-    client, session, world, make_org, make_cert, join_circle
+    summary, client, session, world, make_org, make_cert, join_circle, suspended, affected
 ):
-    """A suspended firm's posture leaves the count; the pair is before it was suspended."""
+    """A suspended firm's posture is not counted; the pair is the same firm active.
+
+    Suspended before the count is first published: a suspension *after* it
+    must move nothing, which the snapshot tests below pin.
+    """
     orgs = await _members_with_posture(world, client, make_org, make_cert, join_circle, SPLIT)
-    before = (await _summary(client, world.editor, world.published)).json()
-    assert before["by_status"]["affected"]["value"] == K_ANONYMITY
+    if suspended:
+        orgs[0].status = OrgStatus.SUSPENDED
+        await session.commit()
 
-    orgs[0].status = OrgStatus.SUSPENDED
-    await session.commit()
+    counted = (await summary(world.editor, world.published)).json()
 
-    after = (await _summary(client, world.editor, world.published)).json()
-    assert after["by_status"]["affected"] == {"value": None, "withheld": "fewer than 5"}
+    assert counted["by_status"]["affected"]["value"] == affected
 
 
 @pytest.mark.requirement("SF-70")
-async def test_below_k_the_isac_sees_nothing(client, world, make_org, make_cert, join_circle):
+async def test_below_k_the_isac_sees_nothing(
+    summary, client, world, make_org, make_cert, join_circle
+):
     await _members_with_posture(
         world, client, make_org, make_cert, join_circle, ["affected"] * (K_ANONYMITY - 1)
     )
 
-    summary = (await _summary(client, world.editor, world.published)).json()
+    summary = (await summary(world.editor, world.published)).json()
 
     too_few = {"value": None, "withheld": "shown once at least 5 organisations have one"}
     assert summary["total"] == too_few
     assert all(count == too_few for count in summary["by_status"].values())
 
 
-async def test_the_counts_are_for_the_isacs_reviewers_only(client, world):
+async def test_the_counts_are_for_the_isacs_reviewers_only(summary, client, world):
     for headers in (world.member.person, world.reader.person):
-        assert (await _summary(client, headers, world.published)).status_code == 404
+        assert (await summary(headers, world.published)).status_code == 404
 
 
 @pytest.mark.requirement("SF-70")
 async def test_the_isacs_own_posture_does_not_count_toward_k(
-    client, world, make_org, make_cert, join_circle, isac
+    summary, client, world, make_org, make_cert, join_circle, isac
 ):
     """k-1 members and the ISAC are k rows and k-1 firms: still withheld.
 
@@ -378,19 +393,19 @@ async def test_the_isacs_own_posture_does_not_count_toward_k(
         ["affected"] * K_ANONYMITY + ["not_affected"] * (K_ANONYMITY - 1) + ["fixed"],
     )
 
-    summary = (await _summary(client, world.editor, world.published)).json()
+    summary = (await summary(world.editor, world.published)).json()
 
     assert summary["by_status"]["affected"]["value"] == K_ANONYMITY
     assert summary["by_status"]["not_affected"] == {"value": None, "withheld": "fewer than 5"}
 
 
 @pytest.mark.requirement("SF-70")
-async def test_counts_are_only_for_a_distributed_vulnerability(client, session, world):
+async def test_counts_are_only_for_a_distributed_vulnerability(summary, client, session, world):
     """The pair is ``world.published``, which answers 200 above."""
     indicator = await seed_visible_indicator(session, world)
 
     for stix_id in (f"vulnerability--{uuid.uuid4()}", indicator):
-        assert (await _summary(client, world.editor, stix_id)).status_code == 404
+        assert (await summary(world.editor, stix_id)).status_code == 404
 
 
 def test_a_small_count_is_withheld_and_so_is_the_total_that_would_reveal_it():
@@ -399,7 +414,8 @@ def test_a_small_count_is_withheld_and_so_is_the_total_that_would_reveal_it():
             PostureStatus.AFFECTED: K_ANONYMITY,
             PostureStatus.NOT_AFFECTED: K_ANONYMITY,
             PostureStatus.FIXED: 1,
-        }
+        },
+        None,
     )
 
     assert summary.by_status[PostureStatus.FIXED].value is None
@@ -409,7 +425,7 @@ def test_a_small_count_is_withheld_and_so_is_the_total_that_would_reveal_it():
 
 def test_the_total_is_shown_only_when_every_count_is():
     """Every status between K and total-K: the total is their sum, and derives nothing."""
-    summary = _suppress(dict.fromkeys(PostureStatus, K_ANONYMITY))
+    summary = _suppress(dict.fromkeys(PostureStatus, K_ANONYMITY), None)
 
     assert {count.value for count in summary.by_status.values()} == {K_ANONYMITY}
     assert summary.total.value == K_ANONYMITY * len(PostureStatus)
@@ -451,3 +467,48 @@ async def test_a_fast_app_clock_does_not_show_a_member_an_embargo_early(
 
     assert response.status_code == 404
     assert await session.scalar(select(StixObject.id).where(StixObject.stix_id == embargoed))
+
+
+# ---------------------------------------------------------------------------
+# Published, not live: one firm's change moves nothing (R-C3, R2-C1)
+# ---------------------------------------------------------------------------
+@pytest.mark.requirement("SF-80")
+async def test_one_firms_posture_write_moves_no_published_count(
+    summary, client, session, world, make_org, make_cert, join_circle
+):
+    """The audit log names the firm that wrote; the summary must not then say what.
+
+    Read live, the summary before and after one firm moved from affected to
+    fixed went from 5 affected to "fewer than 5": that firm was fixed. So
+    was suspending one firm, which an editor can do at will.
+    """
+    orgs = await _members_with_posture(world, client, make_org, make_cert, join_circle, SPLIT)
+    before = (await summary(world.editor, world.published)).json()
+    pem, _ = await make_cert(orgs[0])
+    await set_posture(client, proxy_headers(pem), world.published, status="fixed")
+    orgs[1].status = OrgStatus.SUSPENDED
+    await session.commit()
+
+    after = (await summary(world.editor, world.published)).json()
+
+    assert after == before
+    assert after["as_of"] is not None
+
+
+@pytest.mark.requirement("SF-80")
+async def test_k_firms_changing_republishes_the_summary(
+    summary, client, world, make_org, make_cert, join_circle
+):
+    """The pair: once K firms have changed, the counts move, all together."""
+    orgs = await _members_with_posture(world, client, make_org, make_cert, join_circle, SPLIT)
+    before = (await summary(world.editor, world.published)).json()
+    for org in orgs[:K_ANONYMITY]:
+        pem, _ = await make_cert(org)
+        await set_posture(client, proxy_headers(pem), world.published, status="fixed")
+
+    after = (await summary(world.editor, world.published)).json()
+
+    assert before["by_status"]["fixed"]["value"] is None
+    assert after["by_status"]["fixed"]["value"] == K_ANONYMITY
+    assert after["by_status"]["affected"] == {"value": None, "withheld": "fewer than 5"}
+    assert after["as_of"] > before["as_of"]

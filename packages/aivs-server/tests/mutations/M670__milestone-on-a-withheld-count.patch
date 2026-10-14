@@ -5,15 +5,16 @@ Expect red: packages/aivs-server/tests/unit/test_telemetry.py::test_a_milestone_
 Expect red: packages/aivs-server/tests/unit/test_telemetry.py::test_a_milestone_never_fires_for_a_count_shown_as_all_but_a_few[10-10-announced1]
 
 diff --git a/packages/aivs-server/src/aivs_server/services/telemetry.py b/packages/aivs-server/src/aivs_server/services/telemetry.py
+index 7320b19..4297903 100644
 --- a/packages/aivs-server/src/aivs_server/services/telemetry.py
 +++ b/packages/aivs-server/src/aivs_server/services/telemetry.py
-@@ -311,7 +311,7 @@ async def _milestones_reached(session: AsyncSession, submission: Submission) ->
+@@ -335,7 +335,7 @@ def _milestones_shown(basis: Mapping[str, str], sent: set[str]) -> list[str]:
      for milestone, ack_type, threshold in _MILESTONES:
          if milestone in sent:
              continue
--        shown = _suppressed(await _engaged(session, submission, ack_type), reach=reach)
+-        shown = _suppressed(_holding(basis, ack_type), reach=reach)
 -        if shown.value is not None and shown.value >= threshold:
-+        engaged = await _engaged(session, submission, ack_type)
++        engaged = _holding(basis, ack_type)
 +        if reach >= K_ANONYMITY and engaged >= threshold:
              reached.append(milestone)
      return reached

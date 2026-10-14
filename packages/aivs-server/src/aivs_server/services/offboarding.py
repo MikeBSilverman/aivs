@@ -50,6 +50,7 @@ from aivs_server.db.models import (
     Webhook,
 )
 from aivs_server.services.circles import remove_circle_member
+from aivs_server.services.count_snapshots import forget_organisation
 from aivs_server.services.quarantine import revoke_credentials
 
 __all__ = ["OffboardingError", "lift_legal_hold", "offboard_org", "set_legal_hold"]
@@ -119,8 +120,14 @@ async def _delete_operational(session: AsyncSession, organisation: Organization)
         await session.execute(delete(table).where(table.org_id == organisation.id))
     if organisation.legal_hold_since is not None:
         return "retained under legal hold"
-    await session.execute(delete(OrgPosture).where(OrgPosture.org_id == organisation.id))
+    await _delete_postures(session, organisation)
     return "deleted"
+
+
+async def _delete_postures(session: AsyncSession, organisation: Organization) -> None:
+    """Its postures, and its place in every published count, which holds the same facts."""
+    await session.execute(delete(OrgPosture).where(OrgPosture.org_id == organisation.id))
+    await forget_organisation(session, str(organisation.id))
 
 
 async def offboard_org(
@@ -204,7 +211,7 @@ async def lift_legal_hold(
     organisation.legal_hold_reason = None
     postures = "kept: the organisation is still a member"
     if organisation.status is OrgStatus.OFFBOARDED:
-        await session.execute(delete(OrgPosture).where(OrgPosture.org_id == organisation.id))
+        await _delete_postures(session, organisation)
         postures = "deleted"
     await record(
         session,

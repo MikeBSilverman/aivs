@@ -1,0 +1,17 @@
+Mutation M891: offboarding deletes the postures and leaves the member's status in every published count
+Re-applies: offboarding before snapshots existed: nothing else held the status
+
+Expect red: packages/aivs-server/tests/unit/test_offboarding.py::test_an_offboarded_member_leaves_every_published_count
+
+diff --git a/packages/aivs-server/src/aivs_server/services/offboarding.py b/packages/aivs-server/src/aivs_server/services/offboarding.py
+index afb9aab..0b5a9ae 100644
+--- a/packages/aivs-server/src/aivs_server/services/offboarding.py
++++ b/packages/aivs-server/src/aivs_server/services/offboarding.py
+@@ -127,7 +127,6 @@ async def _delete_operational(session: AsyncSession, organisation: Organization)
+ async def _delete_postures(session: AsyncSession, organisation: Organization) -> None:
+     """Its postures, and its place in every published count, which holds the same facts."""
+     await session.execute(delete(OrgPosture).where(OrgPosture.org_id == organisation.id))
+-    await forget_organisation(session, str(organisation.id))
+ 
+ 
+ async def offboard_org(

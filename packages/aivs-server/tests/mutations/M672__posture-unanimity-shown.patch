@@ -5,10 +5,11 @@ Expect red: packages/aivs-server/tests/unit/test_posture.py::test_a_unanimous_st
 Expect red: packages/aivs-server/tests/unit/test_posture.py::test_the_isac_sees_a_count_that_k_have_and_k_do_not
 
 diff --git a/packages/aivs-server/src/aivs_server/services/posture.py b/packages/aivs-server/src/aivs_server/services/posture.py
+index 28e5490..fb8b73e 100644
 --- a/packages/aivs-server/src/aivs_server/services/posture.py
 +++ b/packages/aivs-server/src/aivs_server/services/posture.py
-@@ -158,7 +158,9 @@ _TOO_FEW_POSTURES: Final[str] = f"shown once at least {K_ANONYMITY} organisation
- def _suppress(counts: Mapping[PostureStatus, int]) -> PostureSummary:
+@@ -282,7 +282,9 @@ _TOO_FEW_POSTURES: Final[str] = f"shown once at least {K_ANONYMITY} organisation
+ def _suppress(counts: Mapping[PostureStatus, int], as_of: dt.datetime | None) -> PostureSummary:
      total = sum(counts.values())
      by_status = {
 -        status: k_anonymous(counts.get(status, 0), population=total, too_few=_TOO_FEW_POSTURES)

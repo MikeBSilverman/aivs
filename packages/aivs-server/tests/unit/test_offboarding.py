@@ -317,6 +317,30 @@ async def test_a_legal_hold_keeps_the_postures_until_it_is_lifted(client, sessio
     assert await _count(session, "org_postures", "org_id", org_id) == 0
 
 
+@pytest.mark.requirement("SF-80")
+async def test_an_offboarded_member_leaves_every_published_count(client, session, holdings):
+    """A published count holds the member's status as surely as its posture row did."""
+    member = str(holdings.member.org.id)
+    others = {f"other-{index}": "fixed" for index in range(5)}
+    session.add(
+        models.CountSnapshot(
+            subject_kind=models.CountSubject.POSTURE.value,
+            subject_id=holdings.published,
+            taken_at=dt.datetime.now(dt.UTC),
+            basis={member: "fixed", **others},
+        )
+    )
+    await session.commit()
+
+    assert (await offboard(client, holdings)).status_code == 200
+
+    snapshot = await session.get(
+        models.CountSnapshot, (models.CountSubject.POSTURE.value, holdings.published)
+    )
+    await session.refresh(snapshot)
+    assert snapshot.basis == others
+
+
 async def test_lifting_a_hold_on_a_member_still_in_the_isac_deletes_nothing(
     client, session, holdings
 ):

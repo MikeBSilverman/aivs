@@ -53,5 +53,6 @@ rather than deleting rows.
 | `email_deliveries` | operational | The digest email queue: the member's digest mailbox, and the contentless digest text. |
 | `instance_controls` | operational | The instance-wide pause switch and who pressed it. |
 | `submission_milestones` | operational | Which telemetry milestones a submitter has been told about, so each is announced once. |
+| `count_snapshots` | operational | The k-anonymous counts last published per vulnerability (members' posture statuses) and per distributed submission (who could retrieve it, and the receipt types each holds), kept as each counted organisation's contribution so the next publication can be compared firm by firm. Never served as such; readers get only suppressed counts. An offboarded organisation is removed from every one. |
 | `detection_state` | operational | When each detection finding was last raised, so it raises once per window. |
 | `org_postures` | operational | A member's own VEX statement per vulnerability: status, justification, impact and action statements, products, detection deployed, when it was validated, and its own evidence note. The statements are the member's prose about its estate. Read and written by that member alone; the ISAC sees counts suppressed below k (SF-70). *Deletion at offboarding is phase H.* |

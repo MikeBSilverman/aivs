@@ -25,9 +25,12 @@ fires only once its count is shown exactly. A milestone that stays silent says
 only that the count is not yet shown at that threshold, which the count says
 too. (A "first retrieval" that never fired said the count was exactly zero.)
 
-What this does not stop: reading the same count twice and seeing it move tells
-the submitter that *some* firm acted in between. Which one is not shown, and a
-live counter cannot avoid that much.
+Counts are read from a published snapshot (``services.count_snapshots``),
+never live: a live count read twice says that *some* firm acted in between,
+and with a known firm suspended in between it says which (review R2-C1). The
+snapshot is republished once at least K organisations' contributions to it
+differ, at most once per run of the telemetry job, and milestones are judged
+on the snapshot alone, or the announcement would carry the live count's timing.
 
 Counters that depend on later phases (opinions on its content, posture
 outcomes, citations by an ISAC advisory) are named as not yet available rather
@@ -38,10 +41,11 @@ from __future__ import annotations
 
 import datetime as dt
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Final
 
-from sqlalchemy import Select, and_, distinct, func, or_, select
+from sqlalchemy import Select, and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aivs_schemas.enums import AckType, OrgStatus
@@ -49,6 +53,7 @@ from aivs_server.db.models import (
     Acknowledgment,
     Circle,
     CircleMembership,
+    CountSubject,
     Distribution,
     Organization,
     Submission,
@@ -57,6 +62,7 @@ from aivs_server.db.models import (
     Webhook,
     WebhookDelivery,
 )
+from aivs_server.services.count_snapshots import K_ANONYMITY, publish_if_changed, published
 from aivs_server.services.ownership import ISAC_OWNER_TYPES
 
 __all__ = [
@@ -66,12 +72,10 @@ __all__ = [
     "Telemetry",
     "counted_organisations",
     "k_anonymous",
-    "queue_milestones",
+    "publish_telemetry",
     "submission_telemetry",
+    "telemetry_basis",
 ]
-
-#: The smallest group a count may describe, everywhere (plan, Appendix F rule 11).
-K_ANONYMITY: Final[int] = 5
 
 EVENT_SUBMISSION_TELEMETRY: Final[str] = "submission.telemetry"
 
@@ -101,6 +105,8 @@ class Telemetry:
     retrieved: Count
     acknowledged: Count
     actioned: Count
+    #: When the counts were published; ``None`` before the first snapshot.
+    as_of: dt.datetime | None
     later: tuple[str, ...] = LATER
 
 
@@ -192,30 +198,35 @@ def _reachable(submission: Submission) -> Select[tuple[uuid.UUID]]:
     )
 
 
-async def _reach(session: AsyncSession, submission: Submission) -> int:
-    reachable = _reachable(submission).subquery()
-    return int(await session.scalar(select(func.count(distinct(reachable.c.org_id)))) or 0)
+async def telemetry_basis(session: AsyncSession, submission: Submission) -> dict[str, str]:
+    """Each organisation in reach, mapped to the receipt types it holds (sorted, comma-joined).
 
-
-async def _engaged(session: AsyncSession, submission: Submission, ack_type: AckType) -> int:
-    """Organisations in reach that did this: a count is a part of reach, or reach minus it lies."""
-    return int(
-        await session.scalar(
-            select(func.count(distinct(Acknowledgment.org_id))).where(
-                Acknowledgment.submission_id == submission.id,
-                Acknowledgment.ack_type == ack_type,
-                Acknowledgment.org_id.in_(_reachable(submission)),
-            )
-        )
-        or 0
+    The live state a snapshot is taken from. Receipts from outside reach are
+    not counted: a count is a part of reach, or reach minus it lies.
+    """
+    reachable = _reachable(submission)
+    in_reach = (await session.execute(reachable.distinct())).scalars().all()
+    receipts = await session.execute(
+        select(Acknowledgment.org_id, Acknowledgment.ack_type)
+        .where(Acknowledgment.submission_id == submission.id, Acknowledgment.org_id.in_(reachable))
+        .distinct()
     )
+    held: dict[str, set[str]] = {str(org_id): set() for org_id in in_reach}
+    for org_id, ack_type in receipts:
+        held[str(org_id)].add(AckType(ack_type).value)
+    return {org_id: ",".join(sorted(types)) for org_id, types in held.items()}
 
 
-async def submission_telemetry(session: AsyncSession, submission: Submission) -> Telemetry:
-    """What the submitter may see about its own submission. Reads only."""
-    reach = await _reach(session, submission)
+def _holding(basis: Mapping[str, str], ack_type: AckType) -> int:
+    return sum(1 for types in basis.values() if ack_type.value in types.split(","))
+
+
+def _telemetry_from(
+    submission: Submission, basis: Mapping[str, str], as_of: dt.datetime | None
+) -> Telemetry:
+    reach = len(basis)
     counts = {
-        ack_type: _suppressed(await _engaged(session, submission, ack_type), reach=reach)
+        ack_type: _suppressed(_holding(basis, ack_type), reach=reach)
         for ack_type in (AckType.RETRIEVED, AckType.ACKNOWLEDGED, AckType.ACTIONED)
     }
     return Telemetry(
@@ -225,7 +236,16 @@ async def submission_telemetry(session: AsyncSession, submission: Submission) ->
         retrieved=counts[AckType.RETRIEVED],
         acknowledged=counts[AckType.ACKNOWLEDGED],
         actioned=counts[AckType.ACTIONED],
+        as_of=as_of,
     )
+
+
+async def submission_telemetry(session: AsyncSession, submission: Submission) -> Telemetry:
+    """What the submitter may see about its own submission, as last published. Reads only."""
+    snapshot = await published(session, CountSubject.TELEMETRY, str(submission.id))
+    if snapshot is None:
+        return _telemetry_from(submission, {}, None)
+    return _telemetry_from(submission, snapshot.basis, snapshot.taken_at)
 
 
 # ---------------------------------------------------------------------------
@@ -241,13 +261,6 @@ _MILESTONES: Final[tuple[tuple[str, AckType, int], ...]] = (
     ("retrieved_50", AckType.RETRIEVED, 50),
     (f"actioned_{K_ANONYMITY}", AckType.ACTIONED, K_ANONYMITY),
 )
-
-
-async def _recently_engaged(session: AsyncSession, since: dt.datetime) -> list[Submission]:
-    ids = select(Acknowledgment.submission_id).where(Acknowledgment.created_at >= since)
-    return list(
-        (await session.execute(select(Submission).where(Submission.id.in_(ids)))).scalars().all()
-    )
 
 
 async def _already_sent(session: AsyncSession, submission_id: uuid.UUID) -> set[str]:
@@ -290,32 +303,39 @@ async def _announce(
         )
 
 
-async def queue_milestones(
-    session: AsyncSession, *, now: dt.datetime, lookback: dt.timedelta
-) -> int:
-    """Announce each milestone crossed since ``lookback``, once. Commits.
+async def publish_telemetry(session: AsyncSession, *, now: dt.datetime) -> int:
+    """Republish each distributed submission's counts that changed enough; announce milestones.
 
-    Only submissions with a receipt inside the lookback are examined, so the
-    cost follows activity, not the archive.
+    Returns the number of milestones announced. Commits. Every distributed
+    submission is examined, because a change in reach (a firm joining a
+    circle, or a circle closing) moves its counts without any receipt.
     """
     announced = 0
-    for submission in await _recently_engaged(session, now - lookback):
-        for milestone in await _milestones_reached(session, submission):
+    distributed = await session.execute(
+        select(Submission).where(Submission.distributed_at.is_not(None))
+    )
+    for submission in distributed.scalars().all():
+        basis = await telemetry_basis(session, submission)
+        if not await publish_if_changed(
+            session, CountSubject.TELEMETRY, str(submission.id), basis, now=now
+        ):
+            continue
+        sent = await _already_sent(session, submission.id)
+        for milestone in _milestones_shown(basis, sent):
             await _announce(session, submission, milestone, now)
             announced += 1
     await session.commit()
     return announced
 
 
-async def _milestones_reached(session: AsyncSession, submission: Submission) -> list[str]:
-    """Milestones not yet announced whose count the submitter can now read as at least theirs."""
-    reach = await _reach(session, submission)
-    sent = await _already_sent(session, submission.id)
+def _milestones_shown(basis: Mapping[str, str], sent: set[str]) -> list[str]:
+    """Milestones not yet announced whose published count the submitter can read as theirs."""
+    reach = len(basis)
     reached = []
     for milestone, ack_type, threshold in _MILESTONES:
         if milestone in sent:
             continue
-        shown = _suppressed(await _engaged(session, submission, ack_type), reach=reach)
+        shown = _suppressed(_holding(basis, ack_type), reach=reach)
         if shown.value is not None and shown.value >= threshold:
             reached.append(milestone)
     return reached

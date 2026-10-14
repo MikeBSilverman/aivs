@@ -4,14 +4,15 @@ Re-applies: Phase E slice 4 (T7) -- the guard's absence
 Expect red: packages/aivs-server/tests/unit/test_posture.py::test_below_k_the_isac_sees_nothing
 
 diff --git a/packages/aivs-server/src/aivs_server/services/posture.py b/packages/aivs-server/src/aivs_server/services/posture.py
+index 28e5490..9f04e90 100644
 --- a/packages/aivs-server/src/aivs_server/services/posture.py
 +++ b/packages/aivs-server/src/aivs_server/services/posture.py
-@@ -161,7 +161,7 @@ def _suppress(counts: Mapping[PostureStatus, int]) -> PostureSummary:
+@@ -285,7 +285,7 @@ def _suppress(counts: Mapping[PostureStatus, int], as_of: dt.datetime | None) ->
          status: k_anonymous(counts.get(status, 0), population=total, too_few=_TOO_FEW_POSTURES)
          for status in PostureStatus
      }
 -    if total < K_ANONYMITY:
 +    if False:
-         return PostureSummary(Count(None, _TOO_FEW_POSTURES), by_status)
+         return PostureSummary(Count(None, _TOO_FEW_POSTURES), by_status, as_of)
      # A total beside one withheld count gives the withheld one away by subtraction.
      any_withheld = any(count.value is None for count in by_status.values())

@@ -889,7 +889,7 @@ Each finding is raised **once per rule window** and goes three ways:
 | `operator_bootstrapped` | The bootstrap command created an operator | Confirm who ran it on the host and why. An unexplained one is a host compromise (§7.5). |
 | `org_offboarded` | Any offboarding | Irreversible: confirm it was the agreed end of membership, not a mistyped quarantine. A stolen membership session offboarding a member is §7.5. |
 | `org_quarantined` | Any quarantine, including self-quarantine | Confirm the member knows, and start reconnection planning. |
-| `component_degraded` | A background job (embargo sweeper, webhook dispatcher, detections) has not succeeded for two of its intervals | Read the app log for that component's exception; `/readyz` names it and the error type. |
+| `component_degraded` | A background job (embargo sweeper, webhook dispatcher, detections, published counts) has not succeeded for two of its intervals | Read the app log for that component's exception; `/readyz` names it and the error type. |
 
 **Who acts on a proposed quarantine** is the ISAC's choice, set once in
 `AIVS_DETECTION_QUARANTINE_POLICY`:

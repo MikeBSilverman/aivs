@@ -1,17 +1,28 @@
 Mutation M675: a count includes organisations outside reach, so all-but-fewer-than-k is measured against the wrong population
 Re-applies: _engaged counting every member that may be counted, not those in reach (review R-P2)
 
+(In the snapshot basis the count and reach share one set of keys, so a receipt from outside reach now also inflates reach: the same population error, shown in both.)
 Expect red: packages/aivs-server/tests/unit/test_telemetry.py::test_a_count_counts_only_organisations_in_reach
 
 diff --git a/packages/aivs-server/src/aivs_server/services/telemetry.py b/packages/aivs-server/src/aivs_server/services/telemetry.py
+index 7320b19..74b3e90 100644
 --- a/packages/aivs-server/src/aivs_server/services/telemetry.py
 +++ b/packages/aivs-server/src/aivs_server/services/telemetry.py
-@@ -200,7 +200,7 @@ async def _engaged(session: AsyncSession, submission: Submission, ack_type: AckT
-             select(func.count(distinct(Acknowledgment.org_id))).where(
-                 Acknowledgment.submission_id == submission.id,
-                 Acknowledgment.ack_type == ack_type,
--                Acknowledgment.org_id.in_(_reachable(submission)),
-+                _is_counted(Acknowledgment.org_id, submission.submitter_org_id),
-             )
-         )
-         or 0
+@@ -208,12 +208,15 @@ async def telemetry_basis(session: AsyncSession, submission: Submission) -> dict
+     in_reach = (await session.execute(reachable.distinct())).scalars().all()
+     receipts = await session.execute(
+         select(Acknowledgment.org_id, Acknowledgment.ack_type)
+-        .where(Acknowledgment.submission_id == submission.id, Acknowledgment.org_id.in_(reachable))
++        .where(
++            Acknowledgment.submission_id == submission.id,
++            _is_counted(Acknowledgment.org_id, submission.submitter_org_id),
++        )
+         .distinct()
+     )
+     held: dict[str, set[str]] = {str(org_id): set() for org_id in in_reach}
+     for org_id, ack_type in receipts:
+-        held[str(org_id)].add(AckType(ack_type).value)
++        held.setdefault(str(org_id), set()).add(AckType(ack_type).value)
+     return {org_id: ",".join(sorted(types)) for org_id, types in held.items()}
+ 
+ 

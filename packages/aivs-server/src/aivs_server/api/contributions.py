@@ -159,6 +159,9 @@ class PostureSummaryOut(BaseModel):
     vulnerability: str
     total: CountOut
     by_status: dict[PostureStatus, CountOut]
+    #: When these counts were published; null before the first snapshot. Counts
+    #: are replaced only once K members' statuses have changed, never live.
+    as_of: dt.datetime | None
 
 
 class PostModerationIn(_In):
@@ -302,6 +305,7 @@ async def get_posture_summary(
             status_: CountOut(value=count.value, withheld=count.withheld)
             for status_, count in summary.by_status.items()
         },
+        as_of=summary.as_of,
     )
 
 

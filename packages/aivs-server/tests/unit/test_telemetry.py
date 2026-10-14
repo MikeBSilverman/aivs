@@ -5,7 +5,13 @@ reads "fewer than k"; the ISAC and the submitter never count as reach; a member
 that joined after the content was released does not either; only the submitter
 can read it; a milestone is announced once, and only for a count shown
 exactly; reach is only organisations that could read it, and a count only
-organisations in reach.
+organisations in reach; and what the submitter reads is the last published
+count, which one firm's change cannot move.
+
+Every read goes through ``_published``: publish, then read, as the portal and
+API see it after the job runs. A rule about who counts is therefore tested on
+a state set up *before* the first publication; a change made afterwards has to
+be one of K before it shows, which is the property the last tests pin.
 """
 
 from __future__ import annotations
@@ -22,7 +28,7 @@ from aivs_server.db.models import Acknowledgment, Webhook, WebhookDelivery
 from aivs_server.services.telemetry import (
     EVENT_SUBMISSION_TELEMETRY,
     K_ANONYMITY,
-    queue_milestones,
+    publish_telemetry,
     submission_telemetry,
 )
 from tests.conftest import proxy_headers
@@ -57,6 +63,12 @@ async def shared(
     return _build
 
 
+async def _published(session, submission):
+    """The submitter's telemetry once the publishing job has run."""
+    await publish_telemetry(session, now=dt.datetime.now(dt.UTC))
+    return await submission_telemetry(session, submission)
+
+
 async def _receipt(session, org, submission, ack_type=AckType.RETRIEVED):
     session.add(
         Acknowledgment(
@@ -71,7 +83,7 @@ async def test_below_k_every_number_is_withheld(session, shared):
     submission, _s, _pem, readers, _c = await shared(K_ANONYMITY - 1)
     await _receipt(session, readers[0], submission)
 
-    telemetry = await submission_telemetry(session, submission)
+    telemetry = await _published(session, submission)
 
     assert telemetry.reach.value is None
     assert telemetry.retrieved.value is None
@@ -94,7 +106,7 @@ async def test_a_count_is_exact_only_when_k_did_and_k_did_not(session, shared):
     # The submitter's own action is not engagement with what it shared.
     await _receipt(session, submitter, submission, AckType.ACTIONED)
 
-    telemetry = await submission_telemetry(session, submission)
+    telemetry = await _published(session, submission)
 
     assert telemetry.reach.value == 2 * K_ANONYMITY, "the ISAC and the submitter are not reach"
     assert telemetry.acknowledged.value == K_ANONYMITY
@@ -110,27 +122,28 @@ async def test_reach_minus_a_count_is_never_below_k(session, shared):
     for reader in readers[:K_ANONYMITY]:
         await _receipt(session, reader, submission, AckType.ACKNOWLEDGED)
 
-    telemetry = await submission_telemetry(session, submission)
+    telemetry = await _published(session, submission)
 
     assert telemetry.reach.value == K_ANONYMITY + 1
     assert telemetry.acknowledged.value is None
     assert telemetry.acknowledged.withheld == "all but fewer than 5"
 
 
+@pytest.mark.parametrize(("suspended", "reach"), [(True, None), (False, K_ANONYMITY)])
 @pytest.mark.requirement("SF-15")
-async def test_an_organisation_that_cannot_read_is_not_reach(session, shared):
+async def test_an_organisation_that_cannot_read_is_not_reach(session, shared, suspended, reach):
     """A suspended firm could not see it, so it must not make up the K.
 
     The pair: the same circle with every reader active reaches K.
     """
     submission, _s, _pem, readers, _c = await shared(K_ANONYMITY)
-    assert (await submission_telemetry(session, submission)).reach.value == K_ANONYMITY
+    if suspended:
+        readers[0].status = OrgStatus.SUSPENDED
+        await session.commit()
 
-    readers[0].status = OrgStatus.SUSPENDED
-    await session.commit()
+    telemetry = await _published(session, submission)
 
-    telemetry = await submission_telemetry(session, submission)
-    assert telemetry.reach.value is None
+    assert telemetry.reach.value == reach
 
 
 async def _unreadable(session, circle, collection, how: str) -> None:
@@ -160,11 +173,11 @@ async def test_reach_counts_only_organisations_that_could_read_it(
     await publish(submitter, dark, submission=submission)
     for reader in readers:
         await _receipt(session, reader, submission)
-    assert (await submission_telemetry(session, submission)).retrieved.value == K_ANONYMITY
+    assert (await _published(session, submission)).retrieved.value == K_ANONYMITY
 
     await _unreadable(session, dark, dark_feed, how)
 
-    telemetry = await submission_telemetry(session, submission)
+    telemetry = await _published(session, submission)
     assert telemetry.reach.value == K_ANONYMITY
     assert telemetry.retrieved.value is None
 
@@ -187,13 +200,13 @@ async def test_a_count_counts_only_organisations_in_reach(
         await join_circle(org, closed)
         await _receipt(session, org, submission)
     await publish(submitter, closed, submission=submission)
-    before = await submission_telemetry(session, submission)
+    before = await _published(session, submission)
     assert (before.reach.value, before.retrieved.value) == (3 * K_ANONYMITY, K_ANONYMITY)
 
     closed.is_active = False
     await session.commit()
 
-    telemetry = await submission_telemetry(session, submission)
+    telemetry = await _published(session, submission)
     assert telemetry.reach.value == 2 * K_ANONYMITY
     assert (telemetry.retrieved.value, telemetry.retrieved.withheld) == (None, "fewer than 5")
 
@@ -206,14 +219,15 @@ async def test_a_member_that_joined_after_release_is_not_reach(
     # Explicitly now: the fixture's default backdates every membership.
     await join_circle(latecomer, circle, joined_at=dt.datetime.now(dt.UTC))
 
-    telemetry = await submission_telemetry(session, submission)
+    telemetry = await _published(session, submission)
 
     assert telemetry.reach.value == K_ANONYMITY
 
 
 @pytest.mark.requirement("SF-15")
-async def test_only_the_submitter_may_read_it(client, shared, isac, make_cert):
+async def test_only_the_submitter_may_read_it(client, session, shared, isac, make_cert):
     submission, _s, pem, readers, _c = await shared(K_ANONYMITY)
+    await publish_telemetry(session, now=dt.datetime.now(dt.UTC))
     peer_pem, _ = await make_cert(readers[0])
     _isac_org, isac_headers = isac
     path = f"/api/v1/submissions/{submission.id}/telemetry"
@@ -252,8 +266,7 @@ async def _telemetry_events(session) -> list[str]:
 
 
 async def _sweep(session) -> list[str]:
-    now = dt.datetime.now(dt.UTC)
-    await queue_milestones(session, now=now, lookback=dt.timedelta(days=1))
+    await publish_telemetry(session, now=dt.datetime.now(dt.UTC))
     return await _telemetry_events(session)
 
 
@@ -317,3 +330,55 @@ async def test_a_milestone_never_fires_for_a_count_shown_as_all_but_a_few(
         await _receipt(session, reader, submission)
 
     assert sorted(await _sweep(session)) == sorted(announced)
+
+
+# ---------------------------------------------------------------------------
+# Published, not live: one firm's change moves nothing (R2-C1)
+# ---------------------------------------------------------------------------
+@pytest.mark.requirement("SF-80")
+async def test_suspending_one_firm_moves_no_published_count(session, shared):
+    """An editor who suspends a firm must not learn from the counts what it did.
+
+    Ten readers, five retrieved, so 5 is shown exactly. Read live, suspending
+    one of the five showed "fewer than 5" and named a retriever. The published
+    count stays at 5 until K firms differ from it.
+    """
+    submission, _s, _pem, readers, _c = await shared(2 * K_ANONYMITY)
+    for reader in readers[:K_ANONYMITY]:
+        await _receipt(session, reader, submission)
+    before = await _published(session, submission)
+
+    readers[0].status = OrgStatus.SUSPENDED
+    await session.commit()
+    after = await _published(session, submission)
+
+    assert before.retrieved.value == after.retrieved.value == K_ANONYMITY
+    assert after.reach.value == 2 * K_ANONYMITY
+    assert after.as_of == before.as_of
+
+
+@pytest.mark.requirement("SF-80")
+async def test_k_firms_changing_republishes_the_count(session, shared):
+    """The pair: once K firms have done something new, the counts move together."""
+    submission, _s, _pem, readers, _c = await shared(3 * K_ANONYMITY)
+    before = await _published(session, submission)
+    for reader in readers[: K_ANONYMITY - 1]:
+        await _receipt(session, reader, submission)
+    one_short = await _published(session, submission)
+    await _receipt(session, readers[K_ANONYMITY - 1], submission)
+
+    after = await _published(session, submission)
+
+    assert one_short.as_of == before.as_of
+    assert (one_short.retrieved.value, after.retrieved.value) == (None, K_ANONYMITY)
+    assert after.as_of > before.as_of
+
+
+async def test_before_the_first_publication_nothing_is_counted(session, shared):
+    """A distributed submission the job has not reached yet reads as not counted, not as zero."""
+    submission, _s, _pem, _readers, _c = await shared(2 * K_ANONYMITY)
+
+    telemetry = await submission_telemetry(session, submission)
+
+    assert telemetry.as_of is None
+    assert telemetry.reach.value is None

@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import datetime as dt
 import uuid
+from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import (
@@ -1167,6 +1168,43 @@ class SubmissionMilestone(Base):
     )
     milestone: Mapped[str] = mapped_column(String(40), primary_key=True)
     reached_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class CountSubject(StrEnum):
+    """What a published count describes."""
+
+    #: Members' VEX statuses on one distributed vulnerability, for ISAC reviewers.
+    POSTURE = "posture"
+    #: Reach and receipts of one distributed submission, for its submitter.
+    TELEMETRY = "telemetry"
+
+
+class CountSnapshot(Base):
+    """The k-anonymous counts last published for one subject (R2-C1).
+
+    Counts read live could be subtracted. Read before and after one firm's
+    posture write, or around an editor suspending a firm, a count that moves by
+    one says what that firm did. So readers get this snapshot, and
+    ``services.count_snapshots`` replaces it only once at least K organisations'
+    contributions differ from it. One firm's change then never moves a
+    published number alone.
+
+    ``basis`` maps each counted organisation's id to its contribution (a
+    posture status, or the receipt types it holds). The counts are derived from
+    it, and the next snapshot is compared with it organisation by organisation:
+    comparing totals would miss two changes that cancel. It is never served,
+    and offboarding removes the organisation from it.
+    """
+
+    __tablename__ = "count_snapshots"
+    __table_args__ = (
+        CheckConstraint("subject_kind IN ('posture', 'telemetry')", name="count_subject_known"),
+    )
+
+    subject_kind: Mapped[str] = mapped_column(String(20), primary_key=True)
+    subject_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    taken_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    basis: Mapped[dict[str, str]] = mapped_column(JSONB, nullable=False)
 
 
 class InstanceControl(Base):

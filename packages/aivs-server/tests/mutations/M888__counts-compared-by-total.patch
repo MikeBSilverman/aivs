@@ -1,0 +1,21 @@
+Mutation M888: the next snapshot is compared by totals, so firms that swap statuses are no change
+Re-applies: the obvious comparison, which the design rejects
+
+Expect red: packages/aivs-server/tests/unit/test_count_snapshots.py::test_firms_that_swap_statuses_are_changes_though_no_total_moves
+
+diff --git a/packages/aivs-server/src/aivs_server/services/count_snapshots.py b/packages/aivs-server/src/aivs_server/services/count_snapshots.py
+index 0f407f5..bfaa69d 100644
+--- a/packages/aivs-server/src/aivs_server/services/count_snapshots.py
++++ b/packages/aivs-server/src/aivs_server/services/count_snapshots.py
+@@ -63,7 +63,10 @@ class Published:
+ 
+ def changed_organisations(old: Mapping[str, str], new: Mapping[str, str]) -> int:
+     """How many organisations contribute differently, joining or leaving included."""
+-    return sum(1 for org in old.keys() | new.keys() if old.get(org) != new.get(org))
++    from collections import Counter
++
++    before, after = Counter(old.values()), Counter(new.values())
++    return sum(abs(before[key] - after[key]) for key in before.keys() | after.keys())
+ 
+ 
+ def should_publish(old: Mapping[str, str] | None, new: Mapping[str, str]) -> bool:

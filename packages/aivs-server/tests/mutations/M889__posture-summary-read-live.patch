@@ -1,0 +1,18 @@
+Mutation M889: the posture summary is read from the live postures, not the published snapshot
+Re-applies: posture_summary before snapshots (review R-C3, R2-C1)
+
+Expect red: packages/aivs-server/tests/unit/test_posture.py::test_one_firms_posture_write_moves_no_published_count
+
+diff --git a/packages/aivs-server/src/aivs_server/services/posture.py b/packages/aivs-server/src/aivs_server/services/posture.py
+index 28e5490..b952c3d 100644
+--- a/packages/aivs-server/src/aivs_server/services/posture.py
++++ b/packages/aivs-server/src/aivs_server/services/posture.py
+@@ -330,7 +330,7 @@ async def posture_summary(session: AsyncSession, vulnerability_id: str) -> Postu
+     if snapshot is None:
+         return _suppress({}, None)
+     counts: dict[PostureStatus, int] = {}
+-    for status in snapshot.basis.values():
++    for status in (await posture_basis(session, vulnerability_id)).values():
+         counts[PostureStatus(status)] = counts.get(PostureStatus(status), 0) + 1
+     return _suppress(counts, snapshot.taken_at)
+ 

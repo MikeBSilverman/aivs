@@ -71,6 +71,10 @@ async def world(
     )
 
 
+#: The lane rule's own refusal of content the member does not see as public.
+NOT_PUBLIC = "review: about content that is not public"
+
+
 async def _filed(session, response) -> Submission:
     assert response.status_code == 201, response.text
     submission = await session.get(Submission, uuid.UUID(response.json()["submission_id"]))
@@ -114,10 +118,16 @@ async def test_the_same_click_from_a_machine_certificate_waits_for_review(client
 
 @pytest.mark.requirement("SF-66")
 async def test_a_click_on_a_vulnerability_not_yet_public_waits_for_review(client, session, world):
+    """Refused by the lane rule, from what the member sees, not by the ISAC-view check behind it.
+
+    Both refuse a pre-CVE record; asserting the reason is what shows the
+    lane rule's own term still works when the later check would cover for it.
+    """
     submission = await _filed(session, await one_click(client, world.member.person, world.pre_cve))
 
     assert submission.state is SubmissionState.SUBMITTED
     assert submission.lane is SubmissionLane.REVIEW
+    assert (await _transition_reasons(session, submission))[-1] == NOT_PUBLIC
 
 
 @pytest.mark.requirement("SF-66", "SF-49")
@@ -538,6 +548,7 @@ async def test_a_members_own_record_saying_published_does_not_open_the_fast_lane
 
     assert submission.state is SubmissionState.SUBMITTED
     assert submission.lane is SubmissionLane.REVIEW
+    assert (await _transition_reasons(session, submission))[-1] == NOT_PUBLIC
 
 
 async def _transition_reasons(session, submission: Submission) -> list[str | None]:

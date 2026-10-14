@@ -202,6 +202,15 @@ async def test_a_note_on_a_vulnerability_not_yet_public_waits_for_review(client,
     )
 
     assert submission.state is SubmissionState.SUBMITTED
+    # Refused by the lane rule, before publication was attempted: not sent
+    # back by the ISAC-view check, which would cover for a broken lane rule.
+    attempted = await session.scalar(
+        select(AuditLog.id).where(
+            AuditLog.action == AuditAction.CONTRIBUTION_SENT_TO_REVIEW,
+            AuditLog.resource_id == str(submission.id),
+        )
+    )
+    assert attempted is None
 
 
 @pytest.mark.requirement("SF-66")

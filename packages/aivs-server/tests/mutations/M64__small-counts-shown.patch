@@ -1,18 +1,18 @@
 Mutation M64: a count between one and k-1 is shown exactly, pointing at the few who engaged
 Re-applies: telemetry before k-suppression (cf59b02)
 
-Expect red: packages/aivs-server/tests/unit/test_telemetry.py::test_at_k_zero_and_k_are_exact_and_between_reads_fewer_than_k
+Expect red: packages/aivs-server/tests/unit/test_telemetry.py::test_a_count_is_exact_only_when_k_did_and_k_did_not
 
 diff --git a/packages/aivs-server/src/aivs_server/services/telemetry.py b/packages/aivs-server/src/aivs_server/services/telemetry.py
-index 27b0661..381a838 100644
+index c80bbb8..865fcfe 100644
 --- a/packages/aivs-server/src/aivs_server/services/telemetry.py
 +++ b/packages/aivs-server/src/aivs_server/services/telemetry.py
-@@ -81,7 +81,7 @@ class Telemetry:
+@@ -94,8 +94,6 @@ class Telemetry:
  def _suppressed(value: int, *, reach: int) -> Count:
      if reach < K_ANONYMITY:
          return Count(None, f"shown once at least {K_ANONYMITY} organisations could see it")
--    if 0 < value < K_ANONYMITY:
-+    if False:
-         return Count(None, f"fewer than {K_ANONYMITY}")
+-    if value < K_ANONYMITY:
+-        return Count(None, f"fewer than {K_ANONYMITY}")
+     if reach - value < K_ANONYMITY:
+         return Count(None, f"all but fewer than {K_ANONYMITY}")
      return Count(value)
- 

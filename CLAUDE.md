@@ -329,6 +329,18 @@ one after release is not either, because members already hold the content. Three
 directions, three different answers; the code enforces each separately and
 `services/embargo.py` explains why.
 
+**"Currently" in a doc is a claim like any other.** `open-decisions.md`
+described sealed JWE payloads as the "current behaviour" for months; none
+existed. That is "a model with no caller", written in prose. Before writing
+"currently" or "today", grep for the code. Design docs carry a `Status:` line at
+the top, and anything that mentions an unbuilt design says "designed" or
+"planned".
+
+**Docs that list an enum's values are a second description of it.** Reserving
+two `DiscoveryScope` values made five docs' "there is no fourth value" false in
+one commit. When an enum gains a value, even a reserved one, grep the docs for
+its siblings.
+
 **Two descriptions of one thing will drift.** The STIX extension is described by
 both a JSON Schema and a `stix2` registration; they diverged within a day. A
 test now asserts they enumerate the same properties. Any time you write a second

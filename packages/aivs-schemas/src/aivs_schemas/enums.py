@@ -113,7 +113,8 @@ RULE_ELIGIBLE_ORG_TYPES: frozenset[OrgType] = frozenset(
 )
 
 #: Organisation types that may be a circle member at all, by rule or by name
-#: (SF-62). Membership is how content is *read*: researchers and automation
+#: (pinned by ``aivs-server/tests/unit/test_contributor_types.py``; there is no
+#: requirement row). Membership is how content is *read*: researchers and automation
 #: contribute and never read, and a type that is not here cannot be added by
 #: any path. Vendors and government may be added by name only; they are not in
 #: RULE_ELIGIBLE_ORG_TYPES. The hosting ISAC's own organisation stays eligible,

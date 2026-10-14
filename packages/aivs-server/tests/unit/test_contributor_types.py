@@ -1,4 +1,7 @@
-"""Contributors who never read: which organisation types may join a circle (SF-62).
+"""Contributors who never read: which organisation types may join a circle.
+
+The set is ``CIRCLE_ELIGIBLE_ORG_TYPES`` in ``aivs_schemas.enums``, and these
+tests are what pin it; no requirement row carries the rule.
 
 Phase E opens contribution to vendors, researchers, the ISAC's automation and
 government partners. Membership is how content is read, so a declared set

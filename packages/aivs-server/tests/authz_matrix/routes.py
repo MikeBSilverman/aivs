@@ -97,6 +97,9 @@ class RouteClass(enum.StrEnum):
     OWN_RECORD = "own record"
     #: Posture counts, each withheld below k: the ISAC's reviewers; others 404.
     POSTURE_SUMMARY = "posture summary"
+    #: The ISAC's own records, outside any circle: its automation's
+    #: certificate alone; everyone else 404, ISAC staff included.
+    ISAC_RECORDS = "isac records"
     #: Contributing over TAXII: the circle's contributors; its readers 403
     #: (TAXII's answer for readable but not writable); others 404.
     TAXII_INBOX = "taxii inbox"
@@ -403,6 +406,12 @@ ROUTES: tuple[RouteCase, ...] = (
         "/api/v1/vulnerabilities/{stix_id}/posture-summary",
         RouteClass.POSTURE_SUMMARY,
         lambda world: (f"{API}/vulnerabilities/{world.object_stix_id}/posture-summary", None),
+    ),
+    RouteCase(
+        "GET",
+        "/api/v1/isac-records/vulnerabilities",
+        RouteClass.ISAC_RECORDS,
+        lambda _world: (f"{API}/isac-records/vulnerabilities", None),
     ),
     RouteCase(
         "PUT",

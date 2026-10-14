@@ -4,16 +4,21 @@
 Run by the operator, as the ISAC's automation organisation, with that
 organisation's mTLS certificate:
 
-    uv run python scripts/enrich-kev.py --kev-file known_exploited_vulnerabilities.json \\
-        --owner-identity identity--<the ISAC's STIX identity> [--dry-run]
+    uv run python scripts/enrich-kev.py \\
+        --kev-file known_exploited_vulnerabilities.json [--dry-run]
 
 The KEV catalogue is a file the operator downloads from CISA beforehand. The
 script makes no request to anyone but the AIVS instance, so the stack gains no
 egress and the server no scheduler.
 
-For each record of the ISAC's (``created_by_ref`` is the ISAC's identity) that
-carries the intelligence extension 2.0 and names a CVE that KEV lists, the
-script files a newer version with ``kev_listed``, ``kev_date_added``,
+It reads the ISAC's own records from ``/api/v1/isac-records/vulnerabilities``,
+which answers the automation organisation alone, newest version each, chosen
+by the server by who filed them. Not over TAXII: the automation organisation
+reads no circle. And not by ``created_by_ref``, which distribution sets to the
+ISAC's identity on every anonymous member submission too.
+
+For each record that carries the intelligence extension 2.0 and names a CVE
+that KEV lists, the script files a newer version with ``kev_listed``, ``kev_date_added``,
 ``kev_due_date`` and ``kev_ransomware_use`` set. It files nothing for a record
 that already says what KEV says. Each version is an ordinary submission: it is
 the ISAC's own record, so ownership allows it (``services/ownership.py``); its
@@ -31,12 +36,12 @@ import datetime as dt
 import json
 import sys
 import uuid
-from collections.abc import Iterable, Mapping
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Final, TextIO
 
 from aivs_client.config import load_config
-from aivs_client.transport import AivsError, NativeClient, TaxiiClient, build_http_client
+from aivs_client.transport import AivsError, NativeClient, build_http_client
 from aivs_schemas.enums import TLP
 from aivs_schemas.extension.builders import (
     AIVS_EXTENSION_ID,
@@ -100,20 +105,6 @@ def tlp_of(record: Mapping[str, Any]) -> TLP:
     return known[0]
 
 
-def latest_isac_records(
-    objects: Iterable[Mapping[str, Any]], owner_identity: str
-) -> dict[str, Mapping[str, Any]]:
-    """The newest version of each vulnerability the ISAC created, by id."""
-    latest: dict[str, Mapping[str, Any]] = {}
-    for obj in objects:
-        if obj.get("type") != "vulnerability" or obj.get("created_by_ref") != owner_identity:
-            continue
-        held = latest.get(obj["id"])
-        if held is None or str(obj["modified"]) > str(held["modified"]):
-            latest[obj["id"]] = obj
-    return latest
-
-
 def _still_on_1_0(record: Mapping[str, Any]) -> bool:
     extensions = record.get("extensions") or {}
     return AIVS_EXTENSION_ID in extensions and AIVS_INTEL_EXTENSION_ID not in extensions
@@ -142,14 +133,9 @@ def run(args: argparse.Namespace) -> int:
         base_url=args.url, certificate=args.cert, private_key=args.key, ca_bundle=args.ca
     )
     with build_http_client(config) as http:
-        taxii, native = TaxiiClient(http), NativeClient(http)
-        seen = [
-            obj
-            for collection in taxii.collections()
-            for obj in taxii.objects(collection["id"], match_type="vulnerability")
-        ]
+        native = NativeClient(http)
         now = dt.datetime.now(dt.UTC)
-        for record in latest_isac_records(seen, args.owner_identity).values():
+        for record in native.isac_vulnerabilities():
             if _still_on_1_0(record):
                 _say(f"skipped {record['id']}: extension 1.0, which carries no KEV fields")
                 continue
@@ -169,9 +155,6 @@ def run(args: argparse.Namespace) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--kev-file", required=True, help="CISA's KEV catalogue, as JSON")
-    parser.add_argument(
-        "--owner-identity", required=True, help="the ISAC's STIX identity id (created_by_ref)"
-    )
     parser.add_argument("--dry-run", action="store_true", help="say what would be filed")
     for name in ("url", "cert", "key", "ca"):
         parser.add_argument(f"--{name}", default=None)

@@ -231,6 +231,7 @@ async def build_world(f: Factories) -> tuple[World, dict[Principal, Credentials]
     ):
         orgs[name] = await f.make_org(f"matrix-{name.replace('_', '-')}", status=status)
     orgs["add_portal"] = await f.make_org("matrix-add-portal")
+    orgs["automation"] = await f.make_org("matrix-automation", org_type=OrgType.AUTOMATION)
 
     # Quarantined an hour ago, with a certificate registered since: the state
     # in which reconnection is permitted.
@@ -240,7 +241,7 @@ async def build_world(f: Factories) -> tuple[World, dict[Principal, Credentials]
     orgs["reconnect"] = reconnect
     await f.make_cert(reconnect)
 
-    for name in ("isac", "member", "peer", "pending", "suspended", "quarantined"):
+    for name in ("isac", "member", "peer", "pending", "suspended", "quarantined", "automation"):
         world.pems[name], _ = await f.make_cert(orgs[name])
     _second_pem, revocable = await f.make_cert(orgs["peer"])
     world.revocable_certificate_id = revocable.id

@@ -60,12 +60,12 @@ REFUSED_AT_THE_DOOR: frozenset[Principal] = frozenset(
 #: A certificate with no signed-in human. The portal needs a person, so every
 #: portal route redirects these to sign in.
 CERTIFICATE_ONLY: frozenset[Principal] = frozenset(
-    {P.MEMBER_MACHINE, P.PEER_MACHINE, P.ADMIN_CERTIFICATE}
+    {P.MEMBER_MACHINE, P.PEER_MACHINE, P.ADMIN_CERTIFICATE, P.AUTOMATION_MACHINE}
 )
 
 _MEMBER = (P.MEMBER_MACHINE, P.MEMBER_ANALYST, P.MEMBER_ORG_ADMIN)
 _ISAC = (P.ISAC_ANALYST, P.ISAC_EDITOR, P.ISAC_MEMBERSHIP, P.SYSTEM_ADMIN)
-_PAST_THE_DOOR = (*_MEMBER, P.PEER_MACHINE, P.ADMIN_CERTIFICATE, *_ISAC)
+_PAST_THE_DOOR = (*_MEMBER, P.PEER_MACHINE, P.ADMIN_CERTIFICATE, P.AUTOMATION_MACHINE, *_ISAC)
 
 
 def _row(default: Outcome, **overrides: Outcome) -> dict[Principal, Outcome]:
@@ -139,6 +139,7 @@ EXPECTED: Mapping[RouteClass, Mapping[Principal, Outcome]] = {
     # The member wrote the posture and made the TAXII request.
     RouteClass.OWN_RECORD: _allow(*_MEMBER, otherwise=N),
     RouteClass.POSTURE_SUMMARY: _allow(P.ISAC_ANALYST, P.ISAC_EDITOR, otherwise=N),
+    RouteClass.ISAC_RECORDS: _allow(P.AUTOMATION_MACHINE, otherwise=N),
     # The member contributes to the circle; the peer only reads it.
     RouteClass.TAXII_INBOX: {**_allow(*_MEMBER, otherwise=N), P.PEER_MACHINE: F},
     RouteClass.POST_MODERATION: _allow(P.ISAC_EDITOR, otherwise=F),
@@ -148,12 +149,21 @@ EXPECTED: Mapping[RouteClass, Mapping[Principal, Outcome]] = {
         P.ISAC_ANALYST: F,
         P.ISAC_EDITOR: F,
     },
+    # The automation registers its own like any machine certificate: its events
+    # are telemetry on its own filings, not the ISAC's detection alerts, which
+    # are the admin organisation's.
     RouteClass.WEBHOOK_REGISTER: _allow(
-        P.MEMBER_MACHINE, P.MEMBER_ORG_ADMIN, P.PEER_MACHINE, P.SYSTEM_ADMIN, otherwise=F
+        P.MEMBER_MACHINE,
+        P.MEMBER_ORG_ADMIN,
+        P.PEER_MACHINE,
+        P.AUTOMATION_MACHINE,
+        P.SYSTEM_ADMIN,
+        otherwise=F,
     ),
     RouteClass.WEBHOOK_DELETE: {
         **_allow(P.MEMBER_MACHINE, P.MEMBER_ORG_ADMIN, otherwise=F),
         P.PEER_MACHINE: N,
+        P.AUTOMATION_MACHINE: N,
         P.SYSTEM_ADMIN: N,
     },
 }
@@ -351,6 +361,7 @@ _DOC_COLUMNS: tuple[Principal, ...] = (
     P.MEMBER_ORG_ADMIN,
     P.PEER_MACHINE,
     P.ADMIN_CERTIFICATE,
+    P.AUTOMATION_MACHINE,
     P.ISAC_ANALYST,
     P.ISAC_EDITOR,
     P.ISAC_MEMBERSHIP,

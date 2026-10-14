@@ -34,6 +34,7 @@ from aivs_server.api import (
     acknowledgments,
     admin,
     contributions,
+    isac_records,
     lint,
     meta,
     submissions,
@@ -247,6 +248,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(acknowledgments.router)
     app.include_router(admin.router)
     app.include_router(contributions.router)
+    app.include_router(isac_records.router)
     app.include_router(portal_routes.router)
     app.include_router(portal_admin_routes.router)
     app.include_router(taxii_router.router)

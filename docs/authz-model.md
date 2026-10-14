@@ -383,41 +383,45 @@ For every other caller, by route class (✓ allowed). "member" filed the
 submissions the routes address and contributes to the circle; "peer" is another
 member of the same circle, which it only reads; ISAC staff are not members of
 that circle. A "content response" is a one-click or a posture on the circle's
-content; an "own record" is the member's posture or TAXII status.
+content; an "own record" is the member's posture or TAXII status. The
+"automation cert" is the ISAC's one automation organisation, presenting its
+certificate; "isac records" is its read of the ISAC's own canonical records,
+which it versions (KEV status) and cannot reach through a circle.
 
-| Class | member cert | member analyst | member org_admin | peer cert | admin-org cert | ISAC analyst | ISAC editor | ISAC membership | system_admin |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| listing | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| filing | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| own settings | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| health | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| circle content | ✓ | ✓ | ✓ | ✓ | 404 | 404 | 404 | 404 | 404 |
-| submission record | ✓ | ✓ | ✓ | 404 | 404 | ✓ | ✓ | 404 | 404 |
-| telemetry | ✓ | ✓ | ✓ | 404 | 404 | 404 | 404 | 404 | 404 |
-| receipt record | 404 | 404 | 404 | 404 | 404 | ✓ | ✓ | 404 | 404 |
-| draft edit | ✓ | ✓ | ✓ | 404 | 404 | 403 | 403 | 404 | 404 |
-| withdraw | ✓ | ✓ | ✓ | 404 | 404 | 403 | ✓ | 404 | 404 |
-| receipt | 403 | 403 | 403 | ✓ | 404 | 404 | 404 | 404 | 404 |
-| editorial verb | 403 | 403 | 403 | 404 | 404 | 403 | ✓ | 404 | 404 |
-| review queue (portal) | sign in | 404 | 404 | sign in | sign in | ✓ | ✓ | 404 | 404 |
-| membership verb | 403 | 403 | 403 | 403 | 403 | 403 | 403 | ✓ | 403 |
-| quarantine | 403 | 403 | 403 | 403 | 403 | 403 | ✓ | ✓ | ✓ |
-| reconnect | 403 | 403 | 403 | 403 | 403 | 403 | ✓ | ✓ | 403 |
-| certificate revoke | 404 | 404 | 404 | 404 | 404 | 404 | 404 | ✓ | 404 |
-| circle create | 403 | 403 | 403 | 403 | 403 | 403 | ✓ | 403 | 403 |
-| circle screens (portal) | sign in | 403 | 403 | sign in | sign in | 403 | ✓ | ✓ | 403 |
-| pause | 403 | 403 | 403 | 403 | 403 | 403 | ✓ | 403 | ✓ |
-| resume | 403 | 403 | 403 | 403 | 403 | 403 | ✓ | 403 | 403 |
-| status page (portal) | sign in | 403 | 403 | sign in | sign in | 403 | 403 | ✓ | ✓ |
-| content response | ✓ | ✓ | ✓ | ✓ | 404 | 404 | 404 | 404 | 404 |
-| own record | ✓ | ✓ | ✓ | 404 | 404 | 404 | 404 | 404 | 404 |
-| posture summary | 404 | 404 | 404 | 404 | 404 | ✓ | ✓ | 404 | 404 |
-| taxii inbox | ✓ | ✓ | ✓ | 403 | 404 | 404 | 404 | 404 | 404 |
-| post moderation | 403 | 403 | 403 | 403 | 403 | 403 | ✓ | 403 | 403 |
-| proxy filing | 403 | 403 | 403 | 403 | 403 | 403 | ✓ | 403 | 403 |
-| proxy confirm | ✓ | ✓ | ✓ | 404 | 404 | 403 | 403 | 404 | 404 |
-| webhook register | ✓ | 403 | ✓ | ✓ | 403 | 403 | 403 | 403 | ✓ |
-| webhook delete | ✓ | 403 | ✓ | 404 | 403 | 403 | 403 | 403 | 404 |
+| Class | member cert | member analyst | member org_admin | peer cert | admin-org cert | automation cert | ISAC analyst | ISAC editor | ISAC membership | system_admin |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| listing | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| filing | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| own settings | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| health | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| circle content | ✓ | ✓ | ✓ | ✓ | 404 | 404 | 404 | 404 | 404 | 404 |
+| submission record | ✓ | ✓ | ✓ | 404 | 404 | 404 | ✓ | ✓ | 404 | 404 |
+| telemetry | ✓ | ✓ | ✓ | 404 | 404 | 404 | 404 | 404 | 404 | 404 |
+| receipt record | 404 | 404 | 404 | 404 | 404 | 404 | ✓ | ✓ | 404 | 404 |
+| draft edit | ✓ | ✓ | ✓ | 404 | 404 | 404 | 403 | 403 | 404 | 404 |
+| withdraw | ✓ | ✓ | ✓ | 404 | 404 | 404 | 403 | ✓ | 404 | 404 |
+| receipt | 403 | 403 | 403 | ✓ | 404 | 404 | 404 | 404 | 404 | 404 |
+| editorial verb | 403 | 403 | 403 | 404 | 404 | 404 | 403 | ✓ | 404 | 404 |
+| review queue (portal) | sign in | 404 | 404 | sign in | sign in | sign in | ✓ | ✓ | 404 | 404 |
+| membership verb | 403 | 403 | 403 | 403 | 403 | 403 | 403 | 403 | ✓ | 403 |
+| quarantine | 403 | 403 | 403 | 403 | 403 | 403 | 403 | ✓ | ✓ | ✓ |
+| reconnect | 403 | 403 | 403 | 403 | 403 | 403 | 403 | ✓ | ✓ | 403 |
+| certificate revoke | 404 | 404 | 404 | 404 | 404 | 404 | 404 | 404 | ✓ | 404 |
+| circle create | 403 | 403 | 403 | 403 | 403 | 403 | 403 | ✓ | 403 | 403 |
+| circle screens (portal) | sign in | 403 | 403 | sign in | sign in | sign in | 403 | ✓ | ✓ | 403 |
+| pause | 403 | 403 | 403 | 403 | 403 | 403 | 403 | ✓ | 403 | ✓ |
+| resume | 403 | 403 | 403 | 403 | 403 | 403 | 403 | ✓ | 403 | 403 |
+| status page (portal) | sign in | 403 | 403 | sign in | sign in | sign in | 403 | 403 | ✓ | ✓ |
+| content response | ✓ | ✓ | ✓ | ✓ | 404 | 404 | 404 | 404 | 404 | 404 |
+| own record | ✓ | ✓ | ✓ | 404 | 404 | 404 | 404 | 404 | 404 | 404 |
+| posture summary | 404 | 404 | 404 | 404 | 404 | 404 | ✓ | ✓ | 404 | 404 |
+| taxii inbox | ✓ | ✓ | ✓ | 403 | 404 | 404 | 404 | 404 | 404 | 404 |
+| isac records | 404 | 404 | 404 | 404 | 404 | ✓ | 404 | 404 | 404 | 404 |
+| post moderation | 403 | 403 | 403 | 403 | 403 | 403 | 403 | ✓ | 403 | 403 |
+| proxy filing | 403 | 403 | 403 | 403 | 403 | 403 | 403 | ✓ | 403 | 403 |
+| proxy confirm | ✓ | ✓ | ✓ | 404 | 404 | 404 | 403 | 403 | 404 | 404 |
+| webhook register | ✓ | 403 | ✓ | ✓ | 403 | ✓ | 403 | 403 | 403 | ✓ |
+| webhook delete | ✓ | 403 | ✓ | 404 | 403 | 404 | 403 | 403 | 403 | 404 |
 
 How to read the deny cells:
 
@@ -436,8 +440,7 @@ The matrix does not claim:
 - visibility within content a caller may read.
 - audit content.
 - any principal that does not exist yet. The member SSO session, the auditor,
-  automation, researcher and government organisations, and delegated providers
-  are listed in `principals.py` with the phase that adds them, and are not
+  researcher and government organisations, and delegated providers are listed in `principals.py` with the phase that adds them, and are not
   faked.
 
 If you add a route, `test_every_walked_route_is_in_exactly_one_class` fails

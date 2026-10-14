@@ -25,6 +25,7 @@ class Principal(enum.StrEnum):
     MEMBER_ANALYST = "member analyst session"
     MEMBER_ORG_ADMIN = "member org_admin session"
     ADMIN_CERTIFICATE = "admin organisation certificate alone"
+    AUTOMATION_MACHINE = "automation machine certificate"
     ISAC_ANALYST = "ISAC analyst session"
     ISAC_EDITOR = "ISAC editor session"
     ISAC_MEMBERSHIP = "ISAC membership session"
@@ -38,7 +39,6 @@ class Principal(enum.StrEnum):
 PLANNED_PRINCIPALS: dict[str, str] = {
     "member SSO session (ordinary TLS, ceiling below RED)": "added with Phase M",
     "ISAC auditor session": "added with Phase H",
-    "automation machine certificate": "added with Phase E",
     "researcher organisation": "added with Phase E",
     "government organisation": "added with Phase E",
     "approved delegated provider (MSSP)": "added with Phase K",
@@ -79,4 +79,5 @@ CERTIFICATE_ORGS: dict[Principal, str] = {
     Principal.MEMBER_MACHINE: "member",
     Principal.PEER_MACHINE: "peer",
     Principal.ADMIN_CERTIFICATE: "isac",
+    Principal.AUTOMATION_MACHINE: "automation",
 }

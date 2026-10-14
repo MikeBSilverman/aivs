@@ -1,0 +1,35 @@
+"""The ISAC's own records, for its automation to version (``services.isac_records``).
+
+Anyone else gets the 404 a route that does not exist would give: the route is
+for one machine identity, and a member learns nothing from its existence that
+the published API does not already say.
+"""
+
+from __future__ import annotations
+
+import datetime as dt
+from typing import Any
+
+from fastapi import APIRouter, HTTPException, status
+from pydantic import BaseModel
+
+from aivs_server.auth.deps import AuthenticatedContext, SessionDep
+from aivs_server.auth.policy import can_read_isac_records
+from aivs_server.services.isac_records import latest_isac_vulnerabilities
+
+__all__ = ["router"]
+
+router = APIRouter(prefix="/api/v1/isac-records", tags=["automation"])
+
+
+class IsacRecordsOut(BaseModel):
+    objects: list[dict[str, Any]]
+
+
+@router.get("/vulnerabilities", response_model=IsacRecordsOut)
+async def isac_vulnerabilities(ctx: AuthenticatedContext, session: SessionDep) -> IsacRecordsOut:
+    """The newest version of each of the ISAC's vulnerability records. Its automation only."""
+    if not can_read_isac_records(ctx):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Not found")
+    objects = await latest_isac_vulnerabilities(session, now=dt.datetime.now(dt.UTC))
+    return IsacRecordsOut(objects=objects)

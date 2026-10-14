@@ -32,6 +32,7 @@ from typing import TYPE_CHECKING, Final
 from sqlalchemy import ColumnElement, and_, exists, false, or_, true
 
 from aivs_schemas.enums import (
+    TLP,
     VISIBLE_SUBMISSION_STATES,
     CircleRole,
     OperatorRole,
@@ -59,6 +60,7 @@ __all__ = [
     "can_pause_distribution",
     "can_quarantine_org",
     "can_read_circle",
+    "can_read_isac_records",
     "can_reconnect_org",
     "can_resume_distribution",
     "can_reveal_submitter",
@@ -75,6 +77,7 @@ __all__ = [
     "is_isac_staff",
     "is_org_admin",
     "is_system_admin",
+    "isac_record_read_clause",
     "readable_circle_grants",
     "readable_circle_ids",
     "require",
@@ -448,6 +451,47 @@ def can_pause_distribution(ctx: AuthContext) -> bool:
 def can_resume_distribution(ctx: AuthContext) -> bool:
     """Start publishing again: an editorial decision."""
     return is_isac_editor(ctx)
+
+
+def can_read_isac_records(ctx: AuthContext) -> bool:
+    """Read the ISAC's own canonical records, outside any circle, to version them.
+
+    The automation organisation's certificate, and nothing else. It is the
+    ISAC's machine identity -- the database allows one -- and it versions the
+    ISAC's records (KEV status), so it must read them. It cannot reach them
+    through a circle: it is not circle-eligible, and making it a member would
+    hand it every member's content in that circle. So this is a read of its
+    own organisation's records, as ownership counts them, and of nothing a
+    member filed.
+
+    No person: the automation organisation has no analysts, and a session
+    reaching this would be an ISAC power held through a door the role checks
+    do not guard. :func:`isac_record_read_clause` bounds what it returns.
+    """
+    return (
+        is_active(ctx)
+        and ctx.org_type is OrgType.AUTOMATION
+        and ctx.auth_method is AuthMethod.MTLS
+        and ctx.operator_id is None
+    )
+
+
+def isac_record_read_clause(now: dt.datetime) -> ColumnElement[bool]:
+    """What the automation may read of the ISAC's records: released, visible, and not RED.
+
+    Released and visible for the reason every reader's clause has them: an
+    embargoed version is not yet anyone's to act on, and the stop button stops
+    this reader too. Not RED because RED names its recipients one by one, and
+    a machine key on an operator's host is not one of them; KEV status is
+    about published CVEs, which no RED record needs. Callers join
+    ``Submission`` and ``Distribution``.
+    """
+    return and_(
+        Distribution.date_added <= now,
+        Submission.state.in_(tuple(VISIBLE_SUBMISSION_STATES)),
+        Submission.tlp != TLP.RED,
+        _distribution_not_paused(),
+    )
 
 
 def _within_any(intervals: Intervals) -> ColumnElement[bool]:

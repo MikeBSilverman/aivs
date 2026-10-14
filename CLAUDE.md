@@ -157,7 +157,12 @@ a mutation that logged the query string and passed.
 **Suppressions are arguments, not annotations.** A `noqa`, `nosec`, or
 `type: ignore` needs a comment saying why the rule does not apply here. If the
 honest answer is "the rule is right but fixing it is work", fix it. The one
-standing exception is `bind_host` in `config.py`, which is argued in place.
+standing exception is `bind_host` in `config.py`, which is argued in place. A
+dismissed CodeQL or Dependabot alert is a suppression too: dismiss it with the
+argument in the comment (280 characters at most) and the test that pins it, or
+fix the code. The first public scan's three alerts were all false positives; the
+two redirect ones were still turned into a checked helper
+(`redirect_within_portal`) before the residual one was dismissed.
 
 ---
 

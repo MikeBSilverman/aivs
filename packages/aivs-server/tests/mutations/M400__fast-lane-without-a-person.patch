@@ -6,12 +6,12 @@ Expect red: packages/aivs-server/tests/unit/test_one_click.py::test_the_same_cli
 diff --git a/packages/aivs-server/src/aivs_server/services/contributions.py b/packages/aivs-server/src/aivs_server/services/contributions.py
 --- a/packages/aivs-server/src/aivs_server/services/contributions.py
 +++ b/packages/aivs-server/src/aivs_server/services/contributions.py
-@@ -164,8 +164,6 @@
- 
- def fast_lane_problem(ctx: AuthContext, target: Target, *, object_type: str) -> str | None:
-     """Why this contribution must be reviewed rather than published at once, or ``None``."""
+@@ -224,8 +224,6 @@ def filer_problem(ctx: AuthContext) -> str | None:
+     distribute -- publish in the ISAC's name, or replace an editor's record,
+     wherever the ISAC held a contributor membership.
+     """
 -    if ctx.operator_id is None:
 -        return "filed by a machine identity"
-     if ctx.org_type is OrgType.AUTOMATION:
-         return "filed by an automation organisation"
-     if ctx.org_type is OrgType.VENDOR and object_type == "opinion":
+     if ctx.org_type not in SHORTCUT_LANE_ORG_TYPES:
+         return "filed by the ISAC, which files through review"
+     return None

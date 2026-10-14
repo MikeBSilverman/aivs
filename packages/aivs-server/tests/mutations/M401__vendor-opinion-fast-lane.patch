@@ -6,10 +6,10 @@ Expect red: packages/aivs-server/tests/unit/test_one_click.py::test_a_vendors_op
 diff --git a/packages/aivs-server/src/aivs_server/services/contributions.py b/packages/aivs-server/src/aivs_server/services/contributions.py
 --- a/packages/aivs-server/src/aivs_server/services/contributions.py
 +++ b/packages/aivs-server/src/aivs_server/services/contributions.py
-@@ -168,8 +168,6 @@
-         return "filed by a machine identity"
-     if ctx.org_type is OrgType.AUTOMATION:
-         return "filed by an automation organisation"
+@@ -236,8 +236,6 @@ def fast_lane_problem(ctx: AuthContext, target: Target, *, object_type: str) ->
+     filer = filer_problem(ctx)
+     if filer is not None:
+         return filer
 -    if ctx.org_type is OrgType.VENDOR and object_type == "opinion":
 -        return "a vendor's opinion"
      if target.tlp is TLP.RED:

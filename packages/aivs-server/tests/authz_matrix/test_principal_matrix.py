@@ -101,7 +101,10 @@ EXPECTED: Mapping[RouteClass, Mapping[Principal, Outcome]] = {
         **_allow(*_MEMBER, P.ISAC_EDITOR, otherwise=N),
         P.ISAC_ANALYST: F,
     },
-    RouteClass.RECEIPT: _allow(*_MEMBER, P.PEER_MACHINE, otherwise=N),
+    # The route acknowledges the member's own submission: refused to the
+    # member itself (only ISAC staff may acknowledge their own), allowed to the
+    # peer that received it.
+    RouteClass.RECEIPT: {**_allow(P.PEER_MACHINE, otherwise=N), **dict.fromkeys(_MEMBER, F)},
     RouteClass.EDITORIAL: {
         **_allow(P.ISAC_EDITOR, otherwise=N),
         **dict.fromkeys(_MEMBER, F),

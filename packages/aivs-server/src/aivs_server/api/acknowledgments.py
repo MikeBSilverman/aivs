@@ -31,7 +31,11 @@ from aivs_schemas.enums import AckType, AckVia
 from aivs_schemas.models import AcknowledgmentCreate, AcknowledgmentOut, ReceiptOut
 from aivs_server.audit.log import AuditAction, record
 from aivs_server.auth.deps import AuthenticatedContext, SessionDep
-from aivs_server.auth.policy import can_view_submission_receipts
+from aivs_server.auth.policy import (
+    can_acknowledge_own_submission,
+    can_view_submission_receipts,
+    require,
+)
 from aivs_server.db.models import Acknowledgment, Organization
 from aivs_server.services.submissions import load_submission
 
@@ -72,7 +76,10 @@ async def acknowledge(
             Acknowledgment.ack_type == AckType.RETRIEVED,
         )
     )
-    if not visible and submission.submitter_org_id != ctx.org_id:
+    if submission.submitter_org_id == ctx.org_id:
+        # 403, not 404: the submitter knows the submission exists.
+        require(can_acknowledge_own_submission(ctx), "acknowledge_own_submission")
+    elif not visible:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Submission not found")
 
     now = dt.datetime.now(dt.UTC)

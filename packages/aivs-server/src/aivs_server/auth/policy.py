@@ -51,6 +51,7 @@ Intervals = tuple[MembershipInterval, ...]
 
 __all__ = [
     "PolicyDeniedError",
+    "can_acknowledge_own_submission",
     "can_administer_circle",
     "can_change_embargo",
     "can_manage_org",
@@ -184,6 +185,17 @@ def is_isac_staff(ctx: AuthContext) -> bool:
 def is_org_admin(ctx: AuthContext) -> bool:
     """Return whether the caller may administer their own organisation."""
     return is_active(ctx) and OperatorRole.ORG_ADMIN in ctx.operator_roles
+
+
+def can_acknowledge_own_submission(ctx: AuthContext) -> bool:
+    """Acknowledge or action a submission the caller's own organisation filed.
+
+    Only ISAC staff (Mike's decision): an ISAC employee filing an advisory may
+    record that the ISAC acted on it. A member acknowledging its own warning
+    is evidence of nothing, and it would sit in the receipts and the
+    submitter's telemetry beside the members who really did.
+    """
+    return is_isac_staff(ctx)
 
 
 def can_manage_own_webhooks(ctx: AuthContext) -> bool:

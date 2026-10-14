@@ -169,6 +169,13 @@ straight into the database, without the review stamp validation writes, so a
 script that would have been refused on every real record passed. Where a
 fixture must seed, build the row with the writer's own functions.
 
+**A threshold event is gated on the value the reader is shown.** Telemetry
+withheld counts below k, and a "first retrieval" milestone fired at a raw
+count of 1, so a milestone that never arrived said "exactly zero" where the
+count said "fewer than 5". Silence is observed too. And when a rule is
+tightened (one-sided suppression made two-sided), re-run the older guard's
+mutation: the new rule can make it redundant, and its test then asserts nothing.
+
 **Mutation proofs are files, and they are re-run.** Each security fix's
 "re-apply the defect" proof is a patch in `packages/aivs-server/tests/mutations/`,
 naming the tests it must turn red. `scripts/mutation-check.sh` applies each one,
@@ -617,6 +624,15 @@ quarantine existed, and each set the new status whatever the old one was. So
 "activate" returned a quarantined member to service with no fresh certificate,
 no backlog decision and no reconnection record. Adding a state means finding
 every writer of the column; one writer makes that a single place.
+
+**A row lock does not refresh what the session already holds.** With
+`expire_on_commit=False`, `session.get(..., with_for_update=True)` and a
+locking `select` return the identity-map copy loaded earlier in the request,
+not the row they just locked. A self-quarantine read its own org as ACTIVE
+after the ISAC had suspended it, and wrote QUARANTINED over SUSPENDED. Every
+locked load passes `populate_existing=True`. And a test of a stale read must
+hold a reference to the first load: the identity map is weak, so an unreferenced
+object is collected and reloaded fresh, and the test passes against the bug.
 
 **`autoflush=False`, so flush before you query what you just changed.** The
 sessionmaker disables autoflush deliberately. `activate_org` set a status and

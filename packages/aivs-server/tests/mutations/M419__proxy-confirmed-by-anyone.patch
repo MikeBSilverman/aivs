@@ -3,15 +3,15 @@ Re-applies: Phase E slice 4 (T7) -- the guard's absence
 
 Expect red: packages/aivs-server/tests/unit/test_proxy_filing.py::test_only_the_member_confirms_the_editor_is_refused_and_others_see_nothing
 
-diff --git a/packages/aivs-server/src/aivs_server/services/proxy_filing.py b/packages/aivs-server/src/aivs_server/services/proxy_filing.py
---- a/packages/aivs-server/src/aivs_server/services/proxy_filing.py
-+++ b/packages/aivs-server/src/aivs_server/services/proxy_filing.py
-@@ -147,7 +147,7 @@
-     session: AsyncSession, ctx: AuthContext, submission: Submission, *, now: dt.datetime
- ) -> Submission:
-     """The member confirms a filing made in its name. Only that member."""
--    if submission.submitter_org_id != ctx.org_id:
-+    if False:
-         denial = "proxy_confirm_not_owner"
-         raise PolicyDeniedError(denial)
-     if submission.filed_by_operator_id is None:
+diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs-server/src/aivs_server/auth/policy.py
+--- a/packages/aivs-server/src/aivs_server/auth/policy.py
++++ b/packages/aivs-server/src/aivs_server/auth/policy.py
+@@ -354,7 +354,7 @@ def can_confirm_proxy_filing(ctx: AuthContext, submission: Submission) -> bool:
+     collector that confirms whatever arrives would close it unread.
+     """
+     return (
+-        is_active(ctx) and submission.submitter_org_id == ctx.org_id and ctx.operator_id is not None
++        is_active(ctx) and ctx.operator_id is not None
+     )
+ 
+ 

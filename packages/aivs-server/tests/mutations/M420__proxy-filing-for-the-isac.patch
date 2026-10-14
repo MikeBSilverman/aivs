@@ -6,8 +6,8 @@ Expect red: packages/aivs-server/tests/unit/test_proxy_filing.py::test_an_editor
 diff --git a/packages/aivs-server/src/aivs_server/services/proxy_filing.py b/packages/aivs-server/src/aivs_server/services/proxy_filing.py
 --- a/packages/aivs-server/src/aivs_server/services/proxy_filing.py
 +++ b/packages/aivs-server/src/aivs_server/services/proxy_filing.py
-@@ -57,7 +57,6 @@
- #: Organisations an analyst may file for: those that contribute in their own
+@@ -59,7 +59,6 @@ _SHA256_HEX: Final[re.Pattern[str]] = re.compile(r"^[0-9a-f]{64}$")
+ #: Organisations an editor may file for: those that contribute in their own
  #: name. Never the ISAC itself, and never a machine.
  _FILEABLE_FOR: Final[frozenset[OrgType]] = frozenset(OrgType) - {
 -    OrgType.ADMIN,

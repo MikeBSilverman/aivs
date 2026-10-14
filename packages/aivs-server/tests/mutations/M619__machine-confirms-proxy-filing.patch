@@ -1,0 +1,17 @@
+Mutation M619: a member's machine certificate confirms a filing made in its name
+Re-applies: Phase E slice 4 (T7) -- confirm by organisation, not by person
+
+Expect red: packages/aivs-server/tests/unit/test_proxy_filing.py::test_the_members_machine_certificate_cannot_confirm_only_a_person_can
+
+diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs-server/src/aivs_server/auth/policy.py
+--- a/packages/aivs-server/src/aivs_server/auth/policy.py
++++ b/packages/aivs-server/src/aivs_server/auth/policy.py
+@@ -354,7 +354,7 @@ def can_confirm_proxy_filing(ctx: AuthContext, submission: Submission) -> bool:
+     collector that confirms whatever arrives would close it unread.
+     """
+     return (
+-        is_active(ctx) and submission.submitter_org_id == ctx.org_id and ctx.operator_id is not None
++        is_active(ctx) and submission.submitter_org_id == ctx.org_id
+     )
+ 
+ 

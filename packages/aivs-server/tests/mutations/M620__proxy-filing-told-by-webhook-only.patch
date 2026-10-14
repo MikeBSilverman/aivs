@@ -1,0 +1,17 @@
+Mutation M620: a filing made in a member's name is announced by webhook alone
+Re-applies: Phase E slice 4 (T7) -- no notice for a member without a subscribed webhook
+
+Expect red: packages/aivs-server/tests/unit/test_proxy_filing.py::test_a_member_with_no_webhook_sees_the_filing_on_its_dashboard
+
+diff --git a/packages/aivs-server/src/aivs_server/portal/routes.py b/packages/aivs-server/src/aivs_server/portal/routes.py
+--- a/packages/aivs-server/src/aivs_server/portal/routes.py
++++ b/packages/aivs-server/src/aivs_server/portal/routes.py
+@@ -361,7 +361,7 @@ async def dashboard(request: Request, settings: SettingsDep, session: SessionDep
+     context = base_context(request, settings, ctx, await operator_name(session, ctx), "dashboard")
+     context.update(
+         {
+-            "to_confirm": await _filed_for_you(session, ctx, now),
++            "to_confirm": [],
+             "org_name": organization.name if organization else ctx.org_slug,
+             "stats": {
+                 "available": available,

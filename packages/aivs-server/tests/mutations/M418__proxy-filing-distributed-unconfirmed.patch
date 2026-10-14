@@ -7,12 +7,12 @@ Expect red: packages/aivs-server/tests/abuse/test_sharing_abuse.py::test_a_proxy
 diff --git a/packages/aivs-server/src/aivs_server/services/proxy_filing.py b/packages/aivs-server/src/aivs_server/services/proxy_filing.py
 --- a/packages/aivs-server/src/aivs_server/services/proxy_filing.py
 +++ b/packages/aivs-server/src/aivs_server/services/proxy_filing.py
-@@ -168,7 +168,7 @@
+@@ -175,7 +175,7 @@ def awaiting_confirmation(submission: Submission, now: dt.datetime) -> bool:
  
  def awaiting_confirmation_problem(submission: Submission, now: dt.datetime) -> str | None:
      """Why a proxy filing may not be distributed yet, or ``None``."""
--    if submission.filed_by_operator_id is None or submission.proxy_confirmed_at is not None:
+-    if not awaiting_confirmation(submission, now):
 +    if True:
          return None
-     if submission.proxy_confirm_by is not None and now >= submission.proxy_confirm_by:
-         return None
+     deadline = submission.proxy_confirm_by
+     after = deadline.isoformat() if deadline is not None else "its window"

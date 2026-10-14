@@ -42,6 +42,7 @@ __all__ = [
     "TLP_MARKING_IDS",
     "TLP_MARKING_OBJECTS",
     "TLP_NAMES",
+    "is_tlp_marking_id",
     "marking_definition_for",
     "marking_id_for",
     "tlp_for_marking_id",
@@ -162,3 +163,16 @@ def tlp_for_marking_id(marking_id: str) -> TLP | None:
     ours to do.
     """
     return _ID_TO_TLP.get(marking_id)
+
+
+_LEGACY_TLP10_IDS: Final[frozenset[str]] = frozenset(LEGACY_TLP10_MARKING_IDS.values())
+
+
+def is_tlp_marking_id(marking_id: str) -> bool:
+    """Whether ``marking_id`` is a TLP marking, 2.0 or legacy 1.0.
+
+    Unlike :func:`tlp_for_marking_id` this recognises the 1.0 identifiers: a
+    question about *whether* an object carries a TLP must not answer "no" for
+    a TLP it declines to translate.
+    """
+    return marking_id in _ID_TO_TLP or marking_id in _LEGACY_TLP10_IDS

@@ -50,7 +50,7 @@ from aivs_schemas.extension.builders import (
     SERVER_WRITTEN_PROVENANCE,
     format_stix_timestamp,
 )
-from aivs_schemas.tlp import tlp_for_marking_id
+from aivs_schemas.tlp import is_tlp_marking_id, tlp_for_marking_id
 
 #: KEV's ``knownRansomwareCampaignUse`` values, which the extension adopts verbatim.
 RANSOMWARE_USE: Final[frozenset[str]] = frozenset({"Known", "Unknown"})
@@ -89,11 +89,23 @@ def enriched_version(
     if stamp <= str(record.get("modified", "")):
         return None
     version = {key: value for key, value in record.items() if key != "object_marking_refs"}
+    version.update(_markings_the_server_does_not_stamp(record))
     version["modified"] = stamp
     version["extensions"] = _without_server_review(
         {**record["extensions"], AIVS_INTEL_EXTENSION_ID: {**extension, **wanted}}
     )
     return version
+
+
+def _markings_the_server_does_not_stamp(record: Mapping[str, Any]) -> dict[str, Any]:
+    """The record's markings other than TLP, which the server stamps from the submission.
+
+    A statement marking (copyright, terms of use) is part of the record and
+    the server keeps it beside the TLP; dropping it here would publish the
+    KEV version without it.
+    """
+    kept = [ref for ref in record.get("object_marking_refs") or [] if not is_tlp_marking_id(ref)]
+    return {"object_marking_refs": kept} if kept else {}
 
 
 def _without_server_review(extensions: Mapping[str, Any]) -> dict[str, Any]:

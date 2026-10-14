@@ -38,7 +38,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aivs_schemas.enums import TLP, TLP_RESTRICTIVENESS, tlp_at_least_as_restrictive
-from aivs_schemas.tlp import LEGACY_TLP10_MARKING_IDS, marking_id_for, tlp_for_marking_id
+from aivs_schemas.tlp import is_tlp_marking_id, marking_id_for
 from aivs_server.auth.context import AuthContext
 from aivs_server.auth.policy import distribution_visibility_clause
 from aivs_server.db.models import Distribution, StixObject, Submission
@@ -48,12 +48,6 @@ __all__ = ["granular_tlp_problem", "looser_than_referents_problem", "stamp_tlp_m
 #: Object types that carry no handling marking of their own: definitions, not
 #: content.
 _UNMARKED_TYPES: Final[frozenset[str]] = frozenset({"marking-definition"})
-
-_LEGACY_TLP_IDS: Final[frozenset[str]] = frozenset(LEGACY_TLP10_MARKING_IDS.values())
-
-
-def _is_tlp_marking(marking_id: str) -> bool:
-    return tlp_for_marking_id(marking_id) is not None or marking_id in _LEGACY_TLP_IDS
 
 
 def stamp_tlp_marking(raw: Mapping[str, Any], tlp: TLP) -> dict[str, Any]:
@@ -66,7 +60,7 @@ def stamp_tlp_marking(raw: Mapping[str, Any], tlp: TLP) -> dict[str, Any]:
         return dict(raw)
     stamped = marking_id_for(tlp)
     existing = [ref for ref in raw.get("object_marking_refs") or [] if isinstance(ref, str)]
-    conflicting = sorted({ref for ref in existing if _is_tlp_marking(ref) and ref != stamped})
+    conflicting = sorted({ref for ref in existing if is_tlp_marking_id(ref) and ref != stamped})
     if conflicting:
         msg = (
             f"object {raw.get('id', '<no id>')} is marked {', '.join(conflicting)} but the "
@@ -102,7 +96,7 @@ def granular_tlp_problem(objects: Iterable[Mapping[str, Any]], tlp: TLP) -> str 
     conflicting = sorted(
         str(raw.get("id", "<no id>"))
         for raw in objects
-        if any(_is_tlp_marking(ref) and ref != stamped for ref in _granular_marking_refs(raw))
+        if any(is_tlp_marking_id(ref) and ref != stamped for ref in _granular_marking_refs(raw))
     )
     if not conflicting:
         return None

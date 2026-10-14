@@ -105,6 +105,19 @@ def test_a_listed_record_gets_a_newer_version_saying_what_kev_says(script):
     assert "object_marking_refs" not in version, "the server stamps the marking (SF-49)"
 
 
+STATEMENT_MARKING = "marking-definition--0b3e1c6e-7f4a-4a8e-9a39-5d6f2c4b8e11"
+
+
+def test_a_records_other_markings_are_carried_and_only_its_tlp_is_left_to_the_server(script):
+    """The server keeps a statement marking beside the TLP it stamps; so does the script."""
+    record = isac_record("identity--isac")
+    record["object_marking_refs"] = [marking_id_for(TLP.AMBER), STATEMENT_MARKING]
+
+    version = script.enriched_version(record, script.kev_by_cve(KEV_CATALOGUE), now=NOW)
+
+    assert version["object_marking_refs"] == [STATEMENT_MARKING]
+
+
 def test_the_previous_versions_review_is_not_carried(script):
     """The server refuses a submission claiming a review; it writes this version's own."""
     record = validated(isac_record("identity--isac"))

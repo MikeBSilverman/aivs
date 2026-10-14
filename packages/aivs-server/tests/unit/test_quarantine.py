@@ -249,7 +249,10 @@ async def test_a_registration_queued_behind_a_quarantine_is_decided_on_the_locke
     )
     registrar = open_session()
     # As resolve_session does: the request read the organisation, active, first.
-    await registrar.get(Organization, org.id)
+    # Held, as the request's context holds it: the identity map is weak, and an
+    # unreferenced object would simply be loaded afresh.
+    first_read = await registrar.get(Organization, org.id)
+    assert first_read.status is OrgStatus.ACTIVE
     quarantiner = await _quarantine_held_open(open_session, org, dt.datetime.now(dt.UTC))
 
     waited, task = await is_blocked(load_org_for_update(registrar, org.id))

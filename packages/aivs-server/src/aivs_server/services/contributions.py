@@ -40,7 +40,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any, Final
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aivs_schemas.enums import (
@@ -65,9 +65,11 @@ from aivs_server.db.models import (
 )
 from aivs_server.notify.events import queue_visibility_notifications
 from aivs_server.services.disclosure import cve_status
-from aivs_server.services.distribution import distribute_submission
+from aivs_server.services.distribution import DistributionError, distribute_submission
+from aivs_server.services.publication import PublicationPausedError
 from aivs_server.services.references import referenced_ids
 from aivs_server.services.submissions import (
+    SubmissionError,
     apply_transition,
     check_content_rules,
     create_submission,
@@ -94,6 +96,25 @@ POST_MODERABLE_TYPES: Final[frozenset[str]] = frozenset({"note", "opinion", "sig
 RFI_CONTEXT: Final[str] = "rfi"
 
 _HOUR: Final[dt.timedelta] = dt.timedelta(hours=1)
+
+#: Advisory-lock space for the per-organisation allowance ("AIVS"); the object
+#: key is the organisation. Two int4 keys, so it cannot collide with the
+#: publication lock's single bigint key.
+_ALLOWANCE_LOCK_SPACE: Final[int] = 0x41495653
+
+#: What a member is told when a contribution the lane rule admitted turns out to
+#: need an editor for a reason only the ISAC's view of the content shows. One
+#: constant: the reason itself would describe content the member cannot see
+#: (a stricter or embargoed version, a hidden record's state, who owns an id).
+NEEDS_AN_EDITOR: Final[str] = "review: an editor will check it before it is shared"
+
+#: Refusals of the ISAC's-view checks, and of distribution, that send a
+#: shortcut to review instead of answering the member with their reason.
+_REVIEW_INSTEAD: Final[tuple[type[Exception], ...]] = (
+    SubmissionError,
+    DistributionError,
+    PublicationPausedError,
+)
 
 
 class TargetNotFoundError(LookupError):
@@ -187,7 +208,18 @@ def publishable_circles(ctx: AuthContext, target: Target) -> frozenset[uuid.UUID
 async def within_hourly_allowance(
     session: AsyncSession, org_id: uuid.UUID, *, limit: int, now: dt.datetime
 ) -> bool:
-    """Whether ``org_id`` may publish one more contribution without review this hour."""
+    """Whether ``org_id`` may publish one more contribution without review this hour.
+
+    Takes the organisation's allowance lock for the rest of the transaction
+    first. Without it, parallel requests each counted limit - 1 and all went
+    through. Unreviewed publications count by when they were *published*:
+    counting by creation let drafts made an hour earlier be submitted together
+    against an empty allowance.
+    """
+    await session.execute(
+        text("SELECT pg_advisory_xact_lock(:space, hashtext(:org))"),
+        {"space": _ALLOWANCE_LOCK_SPACE, "org": str(org_id)},
+    )
     since = now - _HOUR
     unreviewed = await session.scalar(
         select(func.count())
@@ -195,7 +227,7 @@ async def within_hourly_allowance(
         .where(
             Submission.submitter_org_id == org_id,
             Submission.lane != SubmissionLane.REVIEW,
-            Submission.created_at >= since,
+            Submission.distributed_at >= since,
         )
     )
     inbox = await session.scalar(
@@ -243,16 +275,49 @@ async def publish_without_review(
     *,
     lane: SubmissionLane,
     circle_ids: Iterable[uuid.UUID],
-) -> None:
-    """Validate and distribute a contribution the lane rule admitted, in one transaction.
+) -> bool:
+    """Validate and distribute a contribution the lane rule admitted, or file it for review.
 
     The content rules every validation checks still run (owner-only
-    versioning, the disclosure split, TLP inheritance); what is skipped is the
-    editor, which the lane rule stands in for. Distribution is the ordinary
-    one, under the publication lock.
+    versioning, the disclosure split, TLP inheritance), from the ISAC's view,
+    which sees more than the member. When one refuses, or distribution does,
+    the contribution waits for an editor and the member is told only
+    ``NEEDS_AN_EDITOR``: answering with the reason told a member that a
+    stricter or embargoed version of what it clicked on existed, and its TLP.
+    The work happens in a savepoint, so a refusal leaves the submission
+    exactly as the review lane would. Returns whether it was published.
     """
     # The objects were added in this transaction and autoflush is off.
     await session.flush()
+    try:
+        async with session.begin_nested():
+            await _validate_and_distribute(
+                session, ctx, submission, lane=lane, circle_ids=circle_ids
+            )
+    except _REVIEW_INSTEAD:
+        await _file_for_review(session, ctx, submission)
+        return False
+    return True
+
+
+async def _file_for_review(session: AsyncSession, ctx: AuthContext, submission: Submission) -> None:
+    # The savepoint's rollback expired what it changed; reload before reading.
+    await session.refresh(submission)
+    submission.lane = SubmissionLane.REVIEW
+    if submission.state is SubmissionState.DRAFT:
+        await apply_transition(
+            session, ctx, submission, SubmissionState.SUBMITTED, reason=NEEDS_AN_EDITOR
+        )
+
+
+async def _validate_and_distribute(
+    session: AsyncSession,
+    ctx: AuthContext,
+    submission: Submission,
+    *,
+    lane: SubmissionLane,
+    circle_ids: Iterable[uuid.UUID],
+) -> None:
     await check_content_rules(session, submission)
     reason = f"{lane.value} lane: published without review"
     if submission.state is SubmissionState.DRAFT:
@@ -393,7 +458,10 @@ async def submit_submission(
         .scalars()
         .all()
     )
-    if not _post_moderable(raws, ctx):
+    if TLP(submission.tlp) is TLP.RED or not _post_moderable(raws, ctx):
+        # RED is named people on named devices: it is never published unread,
+        # whatever the referents' TLP. Checking only the targets let a RED note
+        # on a GREEN record reach a whole circle with no editor.
         return submission
     circles = await _post_moderated_circles(session, ctx, raws, now=now)
     if not circles:

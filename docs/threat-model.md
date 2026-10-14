@@ -322,6 +322,7 @@ rule that refuses it (`tests/abuse/test_sharing_abuse.py` drives the sequences):
 | A vendor clicks "doesn't work" on a workaround for its own product. | A vendor's opinion is never published without review, whatever product it concerns (SF-66). |
 | A machine identity, the ISAC's automation included, publishes by clicking. | The fast lane needs a person's session from a member organisation; a certificate alone, or the automation organisation, is filed for review (SF-66). |
 | A reader-only member (a government or vendor in a circle it reads) publishes into that circle through the fast lane. | The fast lane publishes only into circles the organisation contributes to; with none, the click goes to review (SF-66). |
+| Learn, from a shortcut's refusal, what the ISAC holds and the member cannot see: a stricter or embargoed version of the object, a hidden record's disclosure state, who owns an id. | The fast lanes run validation's content rules from the ISAC's view, and a refusal there files the contribution for review with one constant reason (`NEEDS_AN_EDITOR`); the reason itself is for an editor. RED is never published unread, whatever its referents. The allowance is counted under a per-organisation lock, by publication time (SF-66). |
 | A member's MISP or OpenCTI pushes content that would publish itself, or names the firm. | Each TAXII POST becomes a `submitted` submission with source `system`. It is never published without review, it is anonymous (so `identity` objects are refused), it is held to the disclosure split, and it spends the same allowance (SF-69). |
 | An analyst files content in a member's name that the member never sent. | A proxy filing needs a stored consent hash. The member is told at once, contentlessly. The filing cannot be distributed until the member confirms or 24 hours pass, and the member withdraws it with its ordinary stop button (SF-68). |
 | The ISAC, or an auditor at it, reads which members are affected by a vulnerability. | A posture row is its own organisation's alone, and the ISAC gets the 404 an absent row gets. The counts it sees are suppressed below k, including the total that would give a small count away. Its audit row says a posture was set, never which (SF-70). |
@@ -330,6 +331,11 @@ rule that refuses it (`tests/abuse/test_sharing_abuse.py` drives the sequences):
 before an editor reads it; the circle chose that. Retracting such a note
 (`revoke`, which projects a `revoked` version) is not built yet, so an editor's
 remedy is today's: quarantine the organisation, or a new version from the ISAC.
+
+A member can still tell that a click the lane rule should have published went to
+review, which says, as one bit, that the ISAC's view refused it. That is
+accepted (R14): the alternatives are publishing content the ISAC's rules refuse,
+or answering with the reason.
 
 ---
 
@@ -348,6 +354,7 @@ remedy is today's: quarantine the organisation, or a new version from the ISAC.
 | R9 | IP-allowlist mode is materially weaker than WireGuard mode. | Medium | Prefer overlay; document if not |
 | R10 | Rate limiting exists at nginx, per certificate rather than per organization; the application limits only contributions published without review and TAXII inbox posts (per organisation, SF-66). | Low | Keep the shipped nginx limits; revisit if the proxy is replaced |
 | R13 | A post-moderated note's prose reaches members before an editor reads it, and `revoke` is not built yet. | Low–Medium | Editors: post-moderation off by default, per circle |
+| R14 | A contribution that goes to review although nothing the member can see requires it tells the member, as one bit, that the ISAC's view refused it. | Low | Accepted: the reason itself is shown to editors only |
 | R11 | Webhook SSRF residual via DNS rebinding. | Low | Resolve-and-pin; egress policy |
 | R12 | A member firm can poison the corpus with plausible false findings. | Low–Medium | Reviewer judgement |
 

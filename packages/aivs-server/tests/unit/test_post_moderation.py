@@ -8,15 +8,19 @@ against one per-organisation hourly allowance.
 
 from __future__ import annotations
 
+import datetime as dt
 import uuid
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, update
+from sqlalchemy import text as sqlalchemy_text
+from sqlalchemy.exc import DBAPIError
 
-from aivs_schemas.enums import SubmissionLane, SubmissionState
+from aivs_schemas.enums import OrgType, SubmissionLane, SubmissionState
 from aivs_server.audit.log import AuditAction
-from aivs_server.db.models import AuditLog, Circle, Submission
-from tests.unit.contribution_world import STAMP, bundle_of, course_of_action_about
+from aivs_server.db.models import AuditLog, Circle, Submission, SubmissionTransition
+from aivs_server.services.contributions import within_hourly_allowance
+from tests.unit.contribution_world import STAMP, bundle_of, course_of_action_about, seed
 from tests.unit.sharing_world import API, SharingWorld, build_sharing_world, one_click
 
 pytestmark = pytest.mark.db
@@ -81,19 +85,30 @@ async def post_moderation(client, world: SharingWorld, *, enabled: bool) -> None
     assert response.status_code == 204, response.text
 
 
-async def file_and_submit(client, session, headers, objects: list[dict]) -> Submission:
+async def file_and_submit(
+    client, session, headers, objects: list[dict], *, tlp: str = "amber"
+) -> Submission:
+    filed = await draft(client, headers, objects, tlp=tlp)
+    return await submit(client, session, headers, filed)
+
+
+async def draft(client, headers, objects: list[dict], *, tlp: str = "amber"):
     filed = await client.post(
         f"{API}/submissions",
         json={
             "title": "A short contribution",
             "discovery_scope": "own_estate",
-            "tlp": "amber",
+            "tlp": tlp,
             "distribute_anonymously": True,
             "bundle": bundle_of(*objects),
         },
         headers=headers,
     )
     assert filed.status_code == 201, filed.text
+    return filed
+
+
+async def submit(client, session, headers, filed) -> Submission:
     submitted = await client.post(
         f"{API}/submissions/{filed.json()['id']}/submit", json={}, headers=headers
     )
@@ -278,3 +293,100 @@ async def test_clicks_filed_for_review_do_not_spend_the_allowance(client, sessio
 
     assert published.status_code == 201, published.text
     assert published.json()["lane"] == "fast"
+
+
+@pytest.mark.requirement("SF-66")
+async def test_drafts_made_earlier_still_spend_the_allowance_when_published(client, session, world):
+    """The allowance counts publications, not drafts.
+
+    Counted by creation, drafts made an hour before and submitted together
+    met an empty allowance: all of them were published, and nothing was
+    refused for the flood detection to see.
+    """
+    await post_moderation(client, world, enabled=True)
+    drafts = [
+        await draft(client, world.member.person, [note_about(world.published)])
+        for _ in range(HOURLY_LIMIT + 1)
+    ]
+    ids = [uuid.UUID(filed.json()["id"]) for filed in drafts]
+    await session.execute(
+        update(Submission)
+        .where(Submission.id.in_(ids))
+        .values(created_at=dt.datetime.now(dt.UTC) - dt.timedelta(hours=2))
+    )
+    await session.commit()
+
+    states = [(await submit(client, session, world.member.person, filed)).state for filed in drafts]
+
+    assert states == [SubmissionState.DISTRIBUTED] * HOURLY_LIMIT + [SubmissionState.SUBMITTED]
+
+
+@pytest.mark.requirement("SF-66")
+async def test_the_allowance_is_counted_under_the_organisations_lock(session, open_session, world):
+    """A second count for the same organisation waits for the first transaction.
+
+    Without the lock, parallel requests each counted limit - 1 and all went
+    through. The pair: another organisation's count does not wait.
+    """
+    now = dt.datetime.now(dt.UTC)
+    first = open_session()
+    await within_hourly_allowance(first, world.member.org.id, limit=HOURLY_LIMIT, now=now)
+
+    other_org = open_session()
+    await other_org.execute(sqlalchemy_text("SET LOCAL lock_timeout = '200ms'"))
+    await within_hourly_allowance(other_org, world.vendor.org.id, limit=HOURLY_LIMIT, now=now)
+
+    same_org = open_session()
+    await same_org.execute(sqlalchemy_text("SET LOCAL lock_timeout = '200ms'"))
+    with pytest.raises(DBAPIError, match="lock timeout"):
+        await within_hourly_allowance(same_org, world.member.org.id, limit=HOURLY_LIMIT, now=now)
+
+
+@pytest.mark.requirement("SF-66")
+async def test_a_red_note_waits_for_review_though_its_target_is_not_red(client, session, world):
+    """RED is never published unread. The pair is the AMBER note above."""
+    await post_moderation(client, world, enabled=True)
+
+    submission = await file_and_submit(
+        client, session, world.member.person, [note_about(world.published)], tlp="red"
+    )
+
+    assert submission.state is SubmissionState.SUBMITTED
+    assert submission.lane is SubmissionLane.REVIEW
+
+
+@pytest.mark.requirement("SF-48", "SF-66")
+async def test_a_note_reusing_another_firms_id_waits_without_being_told_whose(
+    client, session, world, make_org, make_circle
+):
+    """The ownership check runs from the ISAC's view; its reason never reaches the member.
+
+    Another firm's note, in a circle the member is not in, has the id the
+    member's note reuses. The member learns only that an editor will look.
+    """
+    await post_moderation(client, world, enabled=True)
+    elsewhere = await make_circle("elsewhere")
+    other_firm = await make_org("harbour-trust", org_type=OrgType.GSIB)
+    theirs = note_about(world.published)
+    await seed(session, other_firm, theirs, circle=elsewhere)
+    ours = {**note_about(world.published), "id": theirs["id"]}
+
+    filed = await draft(client, world.member.person, [ours])
+    response = await client.post(
+        f"{API}/submissions/{filed.json()['id']}/submit", json={}, headers=world.member.person
+    )
+
+    assert response.status_code == 200, response.text
+    assert theirs["id"] not in response.text.replace(f'"{filed.json()["id"]}"', "")
+    submission = await session.get(Submission, uuid.UUID(filed.json()["id"]))
+    await session.refresh(submission)
+    assert submission.state is SubmissionState.SUBMITTED
+    assert submission.lane is SubmissionLane.REVIEW
+    reasons = (
+        await session.execute(
+            select(SubmissionTransition.reason).where(
+                SubmissionTransition.submission_id == submission.id
+            )
+        )
+    ).scalars()
+    assert "only the organisation" not in " ".join(reason or "" for reason in reasons)

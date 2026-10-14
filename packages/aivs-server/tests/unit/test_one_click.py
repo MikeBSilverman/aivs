@@ -15,7 +15,9 @@ import pytest
 from sqlalchemy import select
 
 from aivs_schemas.enums import TLP, OrgType, SubmissionLane, SubmissionState
-from aivs_server.db.models import Distribution, StixObject, Submission
+from aivs_server.db.models import Distribution, StixObject, Submission, SubmissionTransition
+from aivs_server.services.contributions import NEEDS_AN_EDITOR
+from tests.unit.contribution_world import LATER, seed, vulnerability_raw
 from tests.unit.sharing_world import SharingWorld, build_sharing_world, one_click
 
 pytestmark = pytest.mark.db
@@ -197,3 +199,48 @@ async def test_a_click_on_an_object_outside_the_callers_circles_reads_as_absent(
 
     assert hidden.status_code == absent.status_code == 404
     assert hidden.text == absent.text
+
+
+# ---------------------------------------------------------------------------
+# What the ISAC sees and the member does not
+# ---------------------------------------------------------------------------
+@pytest.mark.requirement("SF-66", "SF-49")
+async def test_a_stricter_version_the_member_cannot_see_sends_the_click_to_review_unexplained(
+    client, session, isac_org, make_circle, world
+):
+    """The ISAC's view refuses; the member is told only that an editor will look.
+
+    A newer AMBER+STRICT version of the record sits in a circle the member is
+    not in. The click, AMBER from what the member sees, is looser than it, so
+    it may not be published unread -- and answering with that reason told the
+    member the version existed, and its TLP. The pair is the first test in
+    this module: without the hidden version the same click is published.
+    """
+    staff_only = await make_circle("staff-only")
+    await seed(
+        session,
+        isac_org,
+        vulnerability_raw(world.published, cve_status="published", modified=LATER),
+        circle=staff_only,
+        tlp=TLP.AMBER_STRICT,
+    )
+
+    response = await one_click(client, world.member.person, world.published)
+    submission = await _filed(session, response)
+
+    assert submission.state is SubmissionState.SUBMITTED
+    assert submission.lane is SubmissionLane.REVIEW
+    assert "strict" not in response.text.lower()
+    reasons = (
+        (
+            await session.execute(
+                select(SubmissionTransition.reason).where(
+                    SubmissionTransition.submission_id == submission.id
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert reasons[-1] == NEEDS_AN_EDITOR
+    assert not any("strict" in (reason or "") for reason in reasons)

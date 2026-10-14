@@ -599,7 +599,8 @@ async def reconcile_circles_for_org(
     circles = (
         (
             await session.execute(
-                select(Circle).where(
+                select(Circle)
+                .where(
                     Circle.is_active.is_(True),
                     # cardinality(), not `!= []`: an empty ARRAY[] literal has no
                     # inferable element type, so SQLAlchemy emits an untyped
@@ -607,6 +608,10 @@ async def reconcile_circles_for_org(
                     # silently matches nothing.
                     func.cardinality(Circle.auto_member_org_types) > 0,
                 )
+                # Ascending id, the order offboarding locks circles in (after
+                # the organisation, as here). Two transactions taking the same
+                # circle locks in different orders can deadlock (review L2-P4).
+                .order_by(Circle.id)
             )
         )
         .scalars()

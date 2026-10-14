@@ -1,0 +1,20 @@
+Mutation M895: rule reconciliation takes circles in storage order
+Re-applies: reconcile_circles_for_org before review L2-P4
+
+Expect red: packages/aivs-server/tests/unit/test_membership_locks.py::test_rule_reconciliation_takes_circles_in_the_order_offboarding_does
+
+diff --git a/packages/aivs-server/src/aivs_server/services/circles.py b/packages/aivs-server/src/aivs_server/services/circles.py
+index be45131..d682d79 100644
+--- a/packages/aivs-server/src/aivs_server/services/circles.py
++++ b/packages/aivs-server/src/aivs_server/services/circles.py
+@@ -608,10 +608,6 @@ async def reconcile_circles_for_org(
+                     # silently matches nothing.
+                     func.cardinality(Circle.auto_member_org_types) > 0,
+                 )
+-                # Ascending id, the order offboarding locks circles in (after
+-                # the organisation, as here). Two transactions taking the same
+-                # circle locks in different orders can deadlock (review L2-P4).
+-                .order_by(Circle.id)
+             )
+         )
+         .scalars()

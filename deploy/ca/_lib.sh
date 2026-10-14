@@ -80,7 +80,7 @@ aivs_require_openssl() {
 # -----------------------------------------------------------------------------
 
 # Organisation slug: the AIVS identifier for a member, and also a path
-# component under out/clients/. Lowercase DNS-label syntax, which excludes '.',
+# component under out/clients/ and private/clients/. Lowercase DNS-label syntax, which excludes '.',
 # '/', '..' and every shell metacharacter by construction.
 aivs_validate_slug() {
     local slug="$1"

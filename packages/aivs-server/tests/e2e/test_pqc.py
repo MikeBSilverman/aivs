@@ -31,7 +31,7 @@ def negotiate(stack: Stack, *group_args: str) -> str:
     command = (
         "apk add -q --no-cache openssl >/dev/null && echo | openssl s_client "
         f"-connect 127.0.0.1:{port} -servername localhost -CAfile /ca/ca-chain.pem "
-        "-cert /m/e2e-member.crt -key /m/e2e-member.key " + " ".join(group_args) + " 2>&1"
+        "-cert /m/e2e-member.crt -key /k/e2e-member.key " + " ".join(group_args) + " 2>&1"
     )
     result = subprocess.run(  # noqa: S603 - fixed argv; the shell string is built here
         [  # noqa: S607 - docker from PATH, as the harness runs it
@@ -44,6 +44,8 @@ def negotiate(stack: Stack, *group_args: str) -> str:
             f"{work}/ca/out:/ca:ro",
             "-v",
             f"{work}/ca/out/clients/e2e-member:/m:ro",
+            "-v",
+            f"{work}/ca/private/clients/e2e-member:/k:ro",
             CLIENT_IMAGE,
             "sh",
             "-c",

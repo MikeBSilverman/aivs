@@ -69,8 +69,10 @@ Output (deploy/ca/out/clients/<slug>/, mode 0700):
   <slug>.crt           the issued certificate
   <slug>.sha256        its SHA-256 fingerprint -- register this in AIVS
   <slug>.csr           the request that was signed
-  <slug>.key           the private key, only when generated here
   ca-chain.pem         trust anchor for the member to verify the AIVS server
+
+Only when the key is generated here (deploy/ca/private/clients/<slug>/, mode 0700):
+  <slug>.key           the member's private key
 EOF
 }
 
@@ -122,8 +124,12 @@ fi
 OUT_DIR="./out/clients/${ORG_SLUG}"
 CERT_OUT="${OUT_DIR}/${ORG_SLUG}.crt"
 CSR_OUT="${OUT_DIR}/${ORG_SLUG}.csr"
-KEY_OUT="${OUT_DIR}/${ORG_SLUG}.key"
 FPR_OUT="${OUT_DIR}/${ORG_SLUG}.sha256"
+# A generated member key goes under private/, never out/: out/ is mounted into
+# the proxy container, and a member's key there would be readable by whatever
+# compromised the proxy -- exactly the party that could then impersonate them.
+KEY_DIR="./private/clients/${ORG_SLUG}"
+KEY_OUT="${KEY_DIR}/${ORG_SLUG}.key"
 
 # A second issuance for the same slug is a legitimate operation (renewal,
 # re-key) but it must not silently clobber the previous artefacts -- the old
@@ -132,9 +138,17 @@ FPR_OUT="${OUT_DIR}/${ORG_SLUG}.sha256"
 aivs_refuse_overwrite "${CERT_OUT}"
 aivs_refuse_overwrite "${CSR_OUT}"
 
-# 0700: this directory holds a private key in the generated-key mode, and there
-# is no reason for it to be readable by anything but the operator in either.
+# 0700: the CSR in it is the operator's working copy, and nothing else needs to
+# read the directory before its contents are handed to the member.
 aivs_private_dir "${OUT_DIR}"
+
+# Keys an earlier version of this script left under out/ are still mounted into
+# the proxy. Say so on every run until they are gone.
+for stale_key in ./out/clients/*/*.key; do
+    [[ -e "${stale_key}" ]] || continue
+    aivs_warn "${stale_key} is a member private key inside out/, which the proxy mounts.
+         Hand it over if you have not, then shred -u it (or move it under private/clients/)."
+done
 
 # -----------------------------------------------------------------------------
 # Reject weak subscriber keys.
@@ -196,6 +210,8 @@ else
     aivs_warn "generating the member's private key here. Hand it over encrypted
          and out of band, then delete ${KEY_OUT}. Prefer --csr next time."
 
+    aivs_private_dir "./private/clients"
+    aivs_private_dir "${KEY_DIR}"
     aivs_step "Generating member key (${KEY_ALG})"
     aivs_generate_key "${KEY_ALG}" "${KEY_OUT}"
 

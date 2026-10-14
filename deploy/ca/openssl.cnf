@@ -28,6 +28,7 @@
 #
 #   private/              0700  intermediate.key, crlnumber
 #   private/root/         0700  root.key and the root CA's own database
+#   private/clients/<org-slug>/  0700  member key, only in issue-client's fallback mode
 #   newcerts/                   copies of certificates issued by the intermediate
 #   index.txt, serial           the intermediate CA's database
 #   out/                        public material, mounted read-only into nginx
@@ -36,7 +37,7 @@
 #     ca-chain.pem              intermediate + root, the member trust anchor
 #     crl/                      root.crl.pem, intermediate.crl.pem, crl-chain.pem
 #     nginx/                    server.crt, server.key
-#     clients/<org-slug>/       member key, CSR, certificate, fingerprint
+#     clients/<org-slug>/       CSR, certificate, fingerprint (never the key)
 # =============================================================================
 
 # Subject DNs are supplied on the command line with -subj by the scripts, which

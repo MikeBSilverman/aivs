@@ -5,8 +5,9 @@
 #   * the hub's public key and endpoint,
 #   * the overlay address you allocated them in wg0.conf,
 #   * their pre-shared key (over a channel separate from everything else),
-#   * their client certificate, private key and ca-chain.pem from
-#     deploy/ca/out/clients/<slug>/.
+#   * their client certificate and ca-chain.pem from deploy/ca/out/clients/<slug>/,
+#     and, only if you generated it for them, their private key from
+#     deploy/ca/private/clients/<slug>/.
 #
 # They install it as /etc/wireguard/aivs.conf, chmod 0600, and bring it up with
 #     systemctl enable --now wg-quick@aivs

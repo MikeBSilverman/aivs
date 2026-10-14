@@ -175,7 +175,7 @@ From a host that is permitted by the allowlist, using a member certificate:
 
 ```bash
 curl -sv --cert  deploy/ca/out/clients/example-bank/example-bank.crt \
-        --key   deploy/ca/out/clients/example-bank/example-bank.key \
+        --key   deploy/ca/private/clients/example-bank/example-bank.key \
         --cacert deploy/ca/out/ca-chain.pem \
         https://aivs.example-isac.org/taxii2/
 ```
@@ -214,12 +214,14 @@ deploy/ca/
   revoke.sh           revoke, and regenerate the CRLs             [as needed]
 
   private/            0700  issuing key, root key (until moved offline)
+    clients/<slug>/   0700  a member key, only when issue-client.sh generated it
   index.txt, serial   the issuing CA's database
   out/                public material — this is AIVS_CA_DIR
     ca-chain.pem      intermediate + root: the member trust anchor
     nginx/            server.crt, server.key
     crl/              root, intermediate, and the concatenated crl-chain.pem
-    clients/<slug>/   per-member certificate, CSR, fingerprint
+    clients/<slug>/   per-member certificate, CSR, fingerprint (never a key:
+                      out/ is mounted into the proxy)
 ```
 
 **Two tiers, and why.** The issuing key must be usable unattended on a host
@@ -266,8 +268,11 @@ deploy/ca/issue-client.sh --org-slug example-bank --csr /tmp/example-bank.csr
 ```
 
 If the member genuinely cannot produce a CSR, `--org "Example Bank NA"`
-generates the key here. Hand it over encrypted and out of band, then
-`shred -u` your copy. A key that has been emailed must be re-issued.
+generates the key here, under `deploy/ca/private/clients/<slug>/` -- never
+under `out/`, which the proxy mounts. Hand it over encrypted and out of band,
+then `shred -u` your copy. A key that has been emailed must be re-issued. An
+earlier version of the script wrote these keys under `out/clients/`; it warns
+on every run while one is still there.
 
 The `--org-slug` must match the organisation slug registered in AIVS. It is
 validated as a DNS label (lowercase letters, digits, internal dashes), which is

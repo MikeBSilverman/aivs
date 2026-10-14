@@ -4,7 +4,7 @@
         --org-slug example-isac --org-name "Example ISAC" \\
         --email ops@example-isac.org --name "Ops Lead" \\
         --role system_admin --role isac_editor --role isac_membership \\
-        --certificate deploy/ca/out/clients/example-isac/client.crt
+        --certificate deploy/ca/out/clients/example-isac/example-isac.crt
 
 Every ISAC power requires a signed-in human, and enrolling an organisation,
 registering a certificate or creating an operator are themselves ISAC powers.

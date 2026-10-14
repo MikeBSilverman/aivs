@@ -197,7 +197,7 @@ write_state() {
   "ca_chain": "${WORK}/ca/out/ca-chain.pem",
   "isac": {
     "cert": "${WORK}/ca/out/clients/e2e-isac/e2e-isac.crt",
-    "key": "${WORK}/ca/out/clients/e2e-isac/e2e-isac.key",
+    "key": "${WORK}/ca/private/clients/e2e-isac/e2e-isac.key",
     "email": "ops@e2e-isac.test",
     "password_file": "${WORK}/secrets/isac-password",
     "totp_uri_file": "${WORK}/secrets/isac-totp-uri"
@@ -205,7 +205,7 @@ write_state() {
   "member": {
     "slug": "e2e-member",
     "cert": "${WORK}/ca/out/clients/e2e-member/e2e-member.crt",
-    "key": "${WORK}/ca/out/clients/e2e-member/e2e-member.key"
+    "key": "${WORK}/ca/private/clients/e2e-member/e2e-member.key"
   },
   "root_signed": {
     "cert": "${WORK}/rogue/root-signed.crt",

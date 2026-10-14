@@ -294,10 +294,10 @@ services:
         read_only: true
       # The issuing CA's *certificate* only, as one read-only file. The proxy
       # mounts the whole CA output directory; the application must not, because
-      # that directory holds private keys: the proxy's server key
-      # (out/nginx/server.key) and any member key issue-client.sh generated in
-      # its fallback mode (out/clients/<slug>/<slug>.key). The issuing CA's own
-      # key is outside it, in deploy/ca/private/, and is mounted nowhere.
+      # that directory holds the proxy's server key (out/nginx/server.key). A
+      # member key issue-client.sh generates in its fallback mode, and the
+      # issuing CA's own key, are outside it, in deploy/ca/private/, which is
+      # mounted nowhere.
       - type: bind
         source: ${AIVS_CA_DIR:?set AIVS_CA_DIR in deploy/.env to the ABSOLUTE path of deploy/ca/out}/intermediate/intermediate.crt
         target: /etc/aivs/issuing-ca.pem

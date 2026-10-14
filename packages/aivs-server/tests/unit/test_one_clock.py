@@ -23,14 +23,22 @@ from aivs_schemas.enums import OrgType
 from aivs_server.api import admin as admin_api
 from aivs_server.db import models
 from aivs_server.db.clock import database_now
+from aivs_server.portal import routes as portal_routes
 from aivs_server.services import circles as circles_service
 from aivs_server.services import distribution as distribution_service
 from aivs_server.services import embargo as embargo_service
 from aivs_server.services.circles import reconcile_circle
 from aivs_server.services.distribution import distribute_submission
-from aivs_server.services.embargo import EmbargoError, extend_embargo, release_embargo_now
+from aivs_server.services.embargo import (
+    EmbargoError,
+    extend_embargo,
+    release_embargo_now,
+    sweep_due_embargoes,
+)
 from aivs_server.taxii import router as taxii_router
 from tests.conftest import proxy_headers
+from tests.unit.test_portal import make_operator as make_portal_operator
+from tests.unit.test_portal import sign_in
 
 pytestmark = pytest.mark.db
 
@@ -155,6 +163,28 @@ async def test_an_extension_on_a_lagging_app_clock_cannot_retract_released_conte
     assert stamps == {elapsed}
 
 
+async def test_the_sweeper_decides_what_is_due_on_the_database_clock(
+    session, monkeypatch, embargoed
+):
+    """Due a minute ago by the database; an hour off by a lagging replica."""
+    submission_id, _circle = embargoed
+    elapsed = await database_now(session) - dt.timedelta(minutes=1)
+    await session.execute(
+        update(models.Distribution)
+        .where(models.Distribution.submission_id == submission_id)
+        .values(date_added=elapsed)
+    )
+    await session.execute(
+        update(models.Embargo)
+        .where(models.Embargo.submission_id == submission_id)
+        .values(release_at=elapsed)
+    )
+    await session.commit()
+    skew_clock(monkeypatch, embargo_service, -HOUR)
+
+    assert await sweep_due_embargoes(session) == 1
+
+
 # ---------------------------------------------------------------------------
 # Readers
 # ---------------------------------------------------------------------------
@@ -203,6 +233,36 @@ async def test_a_reader_ahead_of_the_writers_neither_shows_an_embargo_nor_skips_
     assert first.status_code == 200
     assert "embargoed" not in {item["name"] for item in first.json().get("objects", [])}
     assert {item["name"] for item in second.json().get("objects", [])} == {"distributed next"}
+
+
+async def test_the_portal_dashboard_lists_no_embargo_early_on_a_fast_clock(
+    client,
+    session,
+    monkeypatch,
+    secret_box,
+    make_org,
+    make_cert,
+    make_circle,
+    join_circle,
+    publish,
+):
+    org = await make_org("meridian-global", org_type=OrgType.GSIB)
+    pem, _ = await make_cert(org)
+    operator, secret = await make_portal_operator(session, secret_box, org)
+    circle = await make_circle("sector")
+    await join_circle(org, circle)
+    publisher = await make_org("atlantic-clearing", org_type=OrgType.GSIB)
+    now = await database_now(session)
+    await publish(publisher, circle, name="already shared", date_added=now - HOUR)
+    await publish(publisher, circle, name="held for half an hour", date_added=now + HOUR / 2)
+    await sign_in(client, operator, secret, pem)
+    skew_clock(monkeypatch, portal_routes, HOUR)
+
+    dashboard = await client.get("/portal/", headers=proxy_headers(pem))
+
+    assert dashboard.status_code == 200
+    assert "already shared" in dashboard.text
+    assert "held for half an hour" not in dashboard.text
 
 
 # ---------------------------------------------------------------------------

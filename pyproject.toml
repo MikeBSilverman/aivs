@@ -70,6 +70,11 @@ src = [
 extend-exclude = ["packages/aivs-server/alembic/versions"]
 
 [tool.ruff.lint]
+# Preview for exactly one rule, PLR1702 (nesting depth), which ruff has not yet
+# stabilised. explicit-preview-rules keeps preview from switching on anything
+# a broader selector such as "PL" would otherwise pull in.
+preview = true
+explicit-preview-rules = true
 select = [
     "F",      # pyflakes
     "E", "W", # pycodestyle
@@ -101,6 +106,8 @@ select = [
     "PTH",    # use pathlib
     "ERA",    # commented-out code
     "PL",     # pylint subset
+    "PLR1702", # nesting depth, preview: three levels is the ceiling (CLAUDE.md section 8)
+    "C90",    # McCabe complexity, max 10 (CLAUDE.md section 8)
     "TRY",    # tryceratops (exception antipatterns)
     "FLY",
     "PERF",
@@ -118,6 +125,10 @@ ignore = [
 # Type-dispatch and state-machine functions legitimately return from more than
 # six branches; forcing them through a single exit point would obscure them.
 max-returns = 8
+max-nested-blocks = 3
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
 
 [tool.ruff.lint.per-file-ignores]
 # EM101 exists to keep long messages out of `raise`. CertificateRejectedError

@@ -588,12 +588,13 @@ needs splitting, not a suppression (section 2: suppressions are arguments). The
 one documented exception is type-dispatch and state-machine functions, for
 which `max-returns` is raised in `pyproject.toml` with its reason.
 
-The complexity and nesting limits are *not yet gated*. Turning on `C901`
-(max 10) and `PLR1702` (max 3 nested blocks, a preview rule) found seven
-functions over the limit as of 2026-10-13. A gate that starts out red gets
-ignored, so these should be refactored first and the gate turned on in the same
-commit. Until then, these are review rules, and new code must not add to the
-list.
+Both limits are gated: `C90` (max-complexity 10) and `PLR1702` (max 3 nested
+blocks) are in `pyproject.toml`. `PLR1702` is a ruff *preview* rule, so lint
+preview is on with `explicit-preview-rules`, which enables preview for the
+rules named and nothing else. Check a gate fires by giving it something to
+refuse: a probe passed with `--select` on the command line, which replaces the
+configured selection, and reported nothing. The seven functions over the limits
+on 2026-10-13 were refactored first, so the gates started green.
 
 **Name things positively.** Use `is_visible`, `has_session`, `allow_docs`,
 `include_withdrawn`. Do not use `is_not_visible`, `no_session`,

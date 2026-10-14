@@ -1,0 +1,17 @@
+Mutation M52: within one date_added the page order does not follow insertion, so a cursor can skip a row
+Re-applies: 7b9ef27 "Harden config interlock and paging key after adversarial security review"
+
+Expect red: packages/aivs-server/tests/unit/test_security_regressions.py::test_paging_a_same_millisecond_batch_skips_nothing
+
+diff --git a/packages/aivs-server/src/aivs_server/taxii/queries.py b/packages/aivs-server/src/aivs_server/taxii/queries.py
+--- a/packages/aivs-server/src/aivs_server/taxii/queries.py
++++ b/packages/aivs-server/src/aivs_server/taxii/queries.py
+@@ -196,7 +196,7 @@
+             > tuple_(literal(cursor.date_added), literal(cursor.seq))
+         )
+ 
+-    return query.order_by(visible.c.date_added.asc(), visible.c.seq.asc()).limit(limit + 1)
++    return query.order_by(visible.c.date_added.asc(), visible.c.seq.desc()).limit(limit + 1)
+ 
+ 
+ def build_version_listing_query(

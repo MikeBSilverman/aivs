@@ -1,0 +1,17 @@
+Mutation M54: a webhook delivery whose signing key cannot be opened is spent instead of deferred
+Re-applies: 98d6bcc "Defer webhook deliveries whose signing key cannot be opened, never spend them"
+
+Expect red: packages/aivs-server/tests/unit/test_dispatcher.py::test_an_unopenable_signing_key_defers_the_delivery_until_it_is_fixed
+
+diff --git a/packages/aivs-server/src/aivs_server/notify/dispatcher.py b/packages/aivs-server/src/aivs_server/notify/dispatcher.py
+--- a/packages/aivs-server/src/aivs_server/notify/dispatcher.py
++++ b/packages/aivs-server/src/aivs_server/notify/dispatcher.py
+@@ -192,7 +192,7 @@
+         # `consecutive_failures` is not incremented either: it describes the
+         # member's endpoint, which was never at fault.
+         delivery.error = KEY_UNAVAILABLE_ERROR
+-        delivery.next_attempt_at = now + _KEY_UNAVAILABLE_RETRY
++        delivery.attempts = settings.webhook_max_attempts
+         logger.error(
+             "webhook signing key could not be opened; check AIVS_SECRET_ENCRYPTION_KEY",
+             extra={"webhook_id": str(webhook.id), "delivery_id": delivery.id},

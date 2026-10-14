@@ -1,0 +1,17 @@
+Mutation M58: a system admin may resume distribution, an editorial decision
+Re-applies: eaa73db "Add the incident stop button: pause all distribution, and serve nothing while paused"
+
+Expect red: packages/aivs-server/tests/authz_matrix/test_principal_matrix.py::test_each_principal_gets_exactly_its_row[system_admin]
+
+diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs-server/src/aivs_server/auth/policy.py
+--- a/packages/aivs-server/src/aivs_server/auth/policy.py
++++ b/packages/aivs-server/src/aivs_server/auth/policy.py
+@@ -415,7 +415,7 @@
+ 
+ def can_resume_distribution(ctx: AuthContext) -> bool:
+     """Start publishing again: an editorial decision."""
+-    return is_isac_editor(ctx)
++    return is_isac_editor(ctx) or is_system_admin(ctx)
+ 
+ 
+ def _within_any(intervals: Intervals) -> ColumnElement[bool]:

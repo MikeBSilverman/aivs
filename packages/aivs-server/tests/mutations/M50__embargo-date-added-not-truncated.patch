@@ -1,0 +1,17 @@
+Mutation M50: an embargo's release instant is stored at microseconds, so date_added never round-trips through added_after
+Re-applies: ebfda69 "Close the publication-surface findings from the Phase A review"
+
+Expect red: packages/aivs-server/tests/unit/test_publication_guards.py::test_a_distribution_is_stamped_after_the_current_millisecond
+
+diff --git a/packages/aivs-server/src/aivs_server/services/distribution.py b/packages/aivs-server/src/aivs_server/services/distribution.py
+--- a/packages/aivs-server/src/aivs_server/services/distribution.py
++++ b/packages/aivs-server/src/aivs_server/services/distribution.py
+@@ -276,7 +276,7 @@
+     # last object again on every poll. Never earlier than the next millisecond:
+     # see earliest_publication_instant.
+     earliest = earliest_publication_instant(now)
+-    requested = truncate_to_taxii_precision(release_at) if release_at else earliest
++    requested = release_at if release_at else earliest
+     date_added = max(requested, earliest)
+ 
+     circles = await _resolve_target_circles(session, submission, circle_ids)

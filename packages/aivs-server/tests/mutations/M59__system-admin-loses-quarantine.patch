@@ -1,0 +1,17 @@
+Mutation M59: a system admin can no longer quarantine, so the person who notices an incident cannot stop it
+Re-applies: 28c0257 "Add quarantine: cut a member off during an incident, reconnect on fresh credentials"
+
+Expect red: packages/aivs-server/tests/authz_matrix/test_principal_matrix.py::test_each_principal_gets_exactly_its_row[system_admin]
+
+diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs-server/src/aivs_server/auth/policy.py
+--- a/packages/aivs-server/src/aivs_server/auth/policy.py
++++ b/packages/aivs-server/src/aivs_server/auth/policy.py
+@@ -382,7 +382,7 @@
+     own ``org_admin`` for itself -- "we are compromised, cut us off" needs no
+     one's approval, because stopping is the safe direction.
+     """
+-    if is_isac_membership(ctx) or is_isac_editor(ctx) or is_system_admin(ctx):
++    if is_isac_membership(ctx) or is_isac_editor(ctx):
+         return True
+     return is_org_admin(ctx) and ctx.org_id == target_org_id
+ 

@@ -1,0 +1,17 @@
+Mutation M53: a TOTP seed the server cannot open counts against the operator's lockout
+Re-applies: 28e05c5 "Treat an unopenable TOTP seed as a server fault, not a failed login"
+
+Expect red: packages/aivs-server/tests/unit/test_sessions.py::test_an_unopenable_seed_is_a_server_fault_not_a_failed_login
+
+diff --git a/packages/aivs-server/src/aivs_server/auth/sessions.py b/packages/aivs-server/src/aivs_server/auth/sessions.py
+--- a/packages/aivs-server/src/aivs_server/auth/sessions.py
++++ b/packages/aivs-server/src/aivs_server/auth/sessions.py
+@@ -163,7 +163,7 @@
+     seed = secret_box.unseal(
+         operator.totp_secret_encrypted, purpose=SecretPurpose.TOTP, subject=operator.id
+     )
+-    if seed is None and password_ok:
++    if False:
+         # The server cannot open its own copy of the seed: a key-encryption key
+         # missing, rotated away, or misconfigured. That is our fault, not the
+         # operator's, so it must not count towards their lockout -- charging it

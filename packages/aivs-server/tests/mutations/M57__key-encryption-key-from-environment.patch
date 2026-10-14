@@ -1,0 +1,17 @@
+Mutation M57: outside dev the key-encryption key is accepted from the environment
+Re-applies: e69842a "Read the key-encryption key from a 0600 file outside dev"
+
+Expect red: packages/aivs-server/tests/unit/test_key_file.py::test_outside_dev_the_environment_form_is_refused_and_the_file_accepted
+
+diff --git a/packages/aivs-server/src/aivs_server/config.py b/packages/aivs-server/src/aivs_server/config.py
+--- a/packages/aivs-server/src/aivs_server/config.py
++++ b/packages/aivs-server/src/aivs_server/config.py
+@@ -553,7 +553,7 @@
+     def _key_and_identity_violations(self) -> list[str]:
+         """Where the keys come from, and what anchors member identity."""
+         violations: list[str] = []
+-        if self.secret_encryption_key_file is None:
++        if False:
+             # Read from the environment, where docker inspect,
+             # /proc/<pid>/environ, crash dumps and orchestration dashboards all
+             # show it.

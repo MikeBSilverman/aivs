@@ -1,0 +1,17 @@
+Mutation M48: the production posture is skipped for every environment except 'production', so staging runs with dev bypasses
+Re-applies: 7b9ef27 "Harden config interlock and paging key after adversarial security review"
+
+Expect red: packages/aivs-server/tests/unit/test_security_regressions.py::test_hardened_environments_refuse_dev_bypasses
+
+diff --git a/packages/aivs-server/src/aivs_server/config.py b/packages/aivs-server/src/aivs_server/config.py
+--- a/packages/aivs-server/src/aivs_server/config.py
++++ b/packages/aivs-server/src/aivs_server/config.py
+@@ -480,7 +480,7 @@
+         proxy-authentication control. Fail closed: anything that is not an
+         engineer's laptop is held to the production posture.
+         """
+-        if self.environment == "dev":
++        if self.environment != "production":
+             return self
+ 
+         violations = [

@@ -29,7 +29,7 @@ from tests.conftest import StubEndpoint, is_blocked, proxy_headers
 
 pytestmark = pytest.mark.db
 
-NOW = dt.datetime(2026, 10, 13, 12, 0, 0, 400_000, tzinfo=dt.UTC)
+NOW = dt.datetime(2026, 10, 13, 12, 0, 0, 400_123, tzinfo=dt.UTC)
 
 
 async def _pause(session, paused: bool = True) -> None:

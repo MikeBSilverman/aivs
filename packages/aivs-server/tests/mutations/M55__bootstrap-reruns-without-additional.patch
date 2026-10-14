@@ -1,0 +1,17 @@
+Mutation M55: the bootstrap mints another operator on a live instance without --additional
+Re-applies: 9b251a9 "Close the identity-lifecycle findings from the Phase A review"
+
+Expect red: packages/aivs-server/tests/unit/test_lifecycle_guards.py::test_the_bootstrap_on_a_live_instance_needs_an_explicit_flag_and_is_recorded
+
+diff --git a/packages/aivs-server/src/aivs_server/bootstrap_operator.py b/packages/aivs-server/src/aivs_server/bootstrap_operator.py
+--- a/packages/aivs-server/src/aivs_server/bootstrap_operator.py
++++ b/packages/aivs-server/src/aivs_server/bootstrap_operator.py
+@@ -146,7 +146,7 @@
+     """
+     organisation, created = await _isac_organisation(session, slug=org_slug, name=org_name)
+     existing_admins = await _active_system_admins(session, organisation)
+-    if existing_admins and not additional:
++    if False:
+         msg = (
+             f"this instance already has {existing_admins} active system admin(s); "
+             "pass --additional to create another operator (it is recorded and alerted)"

@@ -1,0 +1,18 @@
+Mutation M66: a milestone is announced below k, telling the submitter that one of a handful engaged
+Re-applies: telemetry before k-suppression (cf59b02)
+
+Expect red: packages/aivs-server/tests/unit/test_telemetry.py::test_a_milestone_is_announced_once_and_never_below_k[2-announced1]
+
+diff --git a/packages/aivs-server/src/aivs_server/services/telemetry.py b/packages/aivs-server/src/aivs_server/services/telemetry.py
+index 27b0661..4ad6e6e 100644
+--- a/packages/aivs-server/src/aivs_server/services/telemetry.py
++++ b/packages/aivs-server/src/aivs_server/services/telemetry.py
+@@ -219,7 +219,7 @@ async def queue_milestones(
+     announced = 0
+     for submission in await _recently_engaged(session, now - lookback):
+         reach = await _reach(session, submission)
+-        if reach < K_ANONYMITY:
++        if False:
+             continue
+         sent = await _already_sent(session, submission.id)
+         for milestone, ack_type, threshold in _MILESTONES:

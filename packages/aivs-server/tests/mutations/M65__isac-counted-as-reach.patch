@@ -1,0 +1,18 @@
+Mutation M65: the hosting ISAC counts as reach, so a circle of four members and the ISAC passes k
+Re-applies: telemetry before k-suppression (cf59b02)
+
+Expect red: packages/aivs-server/tests/unit/test_telemetry.py::test_at_k_zero_and_k_are_exact_and_between_reads_fewer_than_k
+
+diff --git a/packages/aivs-server/src/aivs_server/services/telemetry.py b/packages/aivs-server/src/aivs_server/services/telemetry.py
+index 27b0661..9fb3a3a 100644
+--- a/packages/aivs-server/src/aivs_server/services/telemetry.py
++++ b/packages/aivs-server/src/aivs_server/services/telemetry.py
+@@ -90,7 +90,7 @@ def _is_counted(org_id: Any, submitter_org_id: uuid.UUID) -> Any:
+     """Organisations that count as reach: not the submitter, not the ISAC itself."""
+     return and_(
+         org_id != submitter_org_id,
+-        org_id.in_(select(Organization.id).where(Organization.org_type != OrgType.ADMIN)),
++        org_id.in_(select(Organization.id)),
+     )
+ 
+ 

@@ -385,3 +385,44 @@ async def test_reconnection_reconciles_circle_rules_like_any_activation(
     assert org_id not in before
     assert org_id in await members_of_rule_circle()
 
+
+@pytest.mark.requirement("SF-43")
+async def test_a_repair_cannot_hand_over_the_gap_a_new_interval_reconnection_withheld(
+    client, isac, member_in_circle, publish, ca, session
+):
+    """The gap stays withheld; the pair is the content before the quarantine.
+
+    The repair starts the open interval exactly where the closed one ended, so
+    the exclusion constraint has nothing to refuse: only the service's rule does.
+    """
+    _isac_org, isac_headers = isac
+    org, _old_pem, circle, collection = member_in_circle
+    now = dt.datetime.now(dt.UTC)
+    await publish(org, circle, name="before", date_added=now - dt.timedelta(hours=2))
+    await client.post(f"{API}/orgs/{org.id}/quarantine", json=REASON, headers=isac_headers)
+    await session.refresh(org)
+    gap_starts = org.quarantined_at
+    await publish(org, circle, name="during", date_added=dt.datetime.now(dt.UTC))
+    new_pem, _fp, _cert = ca.issue(f"after-{uuid.uuid4().hex[:6]}")
+    await client.post(
+        f"{API}/orgs/{org.id}/certificates",
+        json={"certificate_pem": new_pem},
+        headers=isac_headers,
+    )
+    await client.post(
+        f"{API}/orgs/{org.id}/reconnect",
+        json={**REASON, "backlog": "new_interval"},
+        headers=isac_headers,
+    )
+
+    repair = await client.post(
+        f"{API}/circles/{circle.id}/members",
+        json={"org_ids": [str(org.id)], "joined_at": gap_starts.isoformat()},
+        headers=isac_headers,
+    )
+
+    assert repair.status_code == 409, repair.text
+    feed = await client.get(
+        f"/taxii2/aivs/collections/{collection.id}/objects/", headers=proxy_headers(new_pem)
+    )
+    assert {item["name"] for item in feed.json().get("objects", [])} == {"before"}

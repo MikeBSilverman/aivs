@@ -488,7 +488,10 @@ async def add_members_screen(
     """Add a pasted roster of organisations to a circle.
 
     ``joined_at`` is the audited repair for an administrative mistake -- a firm
-    removed in error, restored with the history it had. Empty means "from now".
+    added later than it should have been. Empty means "from now". For a firm
+    that has left the circle before, the service refuses any start earlier than
+    the one it has: the gap is never handed over, and the earlier interval's
+    content is kept without a repair.
     """
     ctx, csrf_hash = await current_session(request, settings, session)
     require_csrf(csrf_token, csrf_hash)
@@ -519,9 +522,9 @@ async def add_members_screen(
         set_notice(response, settings, "error", str(exc))
         return response
     except IntegrityError:
-        # The exclusion constraint: a start date reaching into a period when
-        # the organisation was out of the circle. Refused by the database, so
-        # the gap cannot be handed over by a typo.
+        # The exclusion constraint: a start date overlapping an earlier
+        # interval. The service refuses the gap after it first
+        # (MembershipStartRefusedError); this is the database's backstop.
         await session.rollback()
         set_notice(
             response,

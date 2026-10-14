@@ -23,7 +23,8 @@ The `admin` org is the tenant operator, not a sharing participant, and there is
 exactly one. Members are `gsib`, `section9` or `crit_infra`, which are the only
 types a membership *rule* can admit. `vendor` and `government` may be added to a
 circle by name only. `researcher` and `automation` read no circle: no path can
-make them a circle member (`CIRCLE_ELIGIBLE_ORG_TYPES`, SF-62). They contribute.
+make them a circle member (`CIRCLE_ELIGIBLE_ORG_TYPES`,
+`unit/test_contributor_types.py`). They contribute.
 The one read either has is the automation organisation's machine certificate
 reading the ISAC's own vulnerability records at
 `/api/v1/isac-records/vulnerabilities` (`can_read_isac_records`), which the KEV
@@ -31,8 +32,11 @@ enrichment script builds its versions from: the newest released version of
 each, never RED, nothing while distribution is paused, and no member's content.
 
 **Circle** — the unit of trust tiering. Named, slugged, with an `is_active` flag
-and a `minimum_tlp` floor. Membership is an explicit `circle_memberships` row
-carrying a role, unique on `(circle_id, org_id)`.
+and a `minimum_tlp` floor. Membership is a set of `circle_memberships` intervals
+`[joined_at, left_at)`, each carrying a role: at most one open interval per
+`(circle_id, org_id)`, and no two that overlap. A start can be repaired earlier
+only for an organisation that has never left the circle; for one that has, the
+gap after its earlier interval is never handed over (SF-43).
 
 **TaxiiCollection** — the outward projection of a circle. Its UUID is what
 members put in their TAXII client configuration, so it is stable for the life of

@@ -57,6 +57,7 @@ from aivs_server.db.models import Circle, CircleMembership, Organization
 
 __all__ = [
     "CircleMembershipError",
+    "MembershipStartRefusedError",
     "ReconcileResult",
     "add_circle_members",
     "reconcile_circle",
@@ -68,6 +69,10 @@ __all__ = [
 
 class CircleMembershipError(ValueError):
     """A membership change could not be applied as asked."""
+
+
+class MembershipStartRefusedError(CircleMembershipError):
+    """A ``joined_at`` would hand over a period the organisation was out of the circle."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -170,6 +175,69 @@ def _refuse_unsafe_additions(
         raise CircleMembershipError(msg)
 
 
+async def _orgs_that_have_left(
+    session: AsyncSession, circle_id: uuid.UUID, org_ids: list[uuid.UUID]
+) -> set[uuid.UUID]:
+    """The organisations among ``org_ids`` with a closed interval in this circle."""
+    return set(
+        (
+            await session.execute(
+                select(CircleMembership.org_id).where(
+                    CircleMembership.circle_id == circle_id,
+                    CircleMembership.org_id.in_(org_ids),
+                    CircleMembership.left_at.is_not(None),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+
+def _reaches_into_a_gap(
+    current: CircleMembership | None, joined_at: dt.datetime, now: dt.datetime
+) -> bool:
+    """Whether ``joined_at`` starts the open interval earlier than it would otherwise.
+
+    Asked only of an organisation that has left the circle before, whose every
+    earlier interval ended at or before the open one's start (or ``now``, for
+    one about to be opened). Anything earlier than that start is the gap.
+    """
+    start_otherwise = now if current is None else current.joined_at
+    return joined_at < start_otherwise
+
+
+async def _refuse_starts_in_a_gap(
+    session: AsyncSession,
+    circle_id: uuid.UUID,
+    existing: dict[uuid.UUID, CircleMembership],
+    organisations: list[Organization],
+    joined_at: dt.datetime,
+    now: dt.datetime,
+) -> None:
+    """Refuse a start moved earlier for an organisation that has left this circle before.
+
+    The exclusion constraint refuses only an overlap, so a start moved back to
+    the instant an earlier interval ended passed it and handed over the gap --
+    including what a "new interval" reconnection deliberately withheld from a
+    quarantined member. Nothing records why an interval closed (a removal and a
+    quarantine both write ``operator``), so every gap is refused: the earlier
+    interval's content is kept whatever happens, and only the gap is lost.
+    """
+    left_before = await _orgs_that_have_left(session, circle_id, [org.id for org in organisations])
+    refused = sorted(
+        org.slug
+        for org in organisations
+        if org.id in left_before and _reaches_into_a_gap(existing.get(org.id), joined_at, now)
+    )
+    if refused:
+        msg = (
+            "a membership start cannot move earlier for an organisation that has left "
+            f"this circle before; that would hand over the gap: {', '.join(refused)}"
+        )
+        raise MembershipStartRefusedError(msg)
+
+
 async def _lock_circle(session: AsyncSession, circle_id: uuid.UUID) -> None:
     """Serialise every membership change to one circle.
 
@@ -203,8 +271,10 @@ async def add_circle_members(
     It used to be ignored for an organisation already present -- the skip ran
     first -- so the one repair the docs described could not reach the case it
     existed for. Backdating grants access to content shared before the row was
-    written, which is why it is recorded. It cannot reach into the gap before a
-    previous interval ended: the exclusion constraint refuses an overlap.
+    written, which is why it is recorded. For an organisation that has left the
+    circle before, a start may not move earlier at all: the exclusion
+    constraint refuses only an overlap with the earlier interval, and the gap
+    between the two is what a removal or a quarantine withheld.
 
     Refused for a quarantined organisation: a membership opened during the
     quarantine lies wholly inside the gap a "new interval" reconnection must
@@ -214,6 +284,8 @@ async def add_circle_members(
     _refuse_unsafe_additions(organisations, joined_at, now)
     await _lock_circle(session, circle.id)
     existing = await _open_memberships(session, circle.id)
+    if joined_at is not None:
+        await _refuse_starts_in_a_gap(session, circle.id, existing, organisations, joined_at, now)
 
     added: list[uuid.UUID] = []
     repaired: list[uuid.UUID] = []

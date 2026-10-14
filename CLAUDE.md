@@ -598,9 +598,13 @@ catalogue. Removal deleted the row too, so the rule quietly reinstated firms an
 operator had taken out. Now leaving closes `[joined_at, left_at)` and records
 `ended_by`; rejoining opens a new interval; visibility is the union of the
 intervals; a GiST exclusion constraint forbids overlap, so a `joined_at` repair
-cannot overlap an earlier interval. (It can move a start later, into a gap; that
-is the audited repair, recorded with what it backdated to.) Suspension and quarantine touch none of it — they are
-refused per request. Anything that reads membership filters on the *open*
+cannot overlap an earlier interval. The constraint does not stop a start moving
+*earlier into the gap* after an earlier interval -- adjacent ranges do not
+overlap -- and that handed over exactly what a "new interval" reconnection had
+withheld. So `add_circle_members` refuses any earlier start for an organisation
+that has left the circle before; a backdating repair is for one that never
+left. Suspension and quarantine touch none of it — they are refused per
+request. Anything that reads membership filters on the *open*
 interval (notifications got this wrong: a former member was told about content
 released after it left).
 

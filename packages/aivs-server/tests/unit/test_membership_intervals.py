@@ -12,6 +12,7 @@ from __future__ import annotations
 import datetime as dt
 
 import pytest
+from sqlalchemy import select
 
 from aivs_server.db.models import CircleMembership
 from tests.conftest import proxy_headers
@@ -127,19 +128,10 @@ async def test_joined_at_repairs_an_existing_member(
     assert membership.joined_at == restored_to
 
 
-async def test_a_repair_cannot_overlap_an_earlier_interval(
-    client, isac_headers, make_org, make_circle, session
-):
-    """The exclusion constraint refuses an interval overlapping an earlier one.
-
-    Without it, backdating a rejoined member's start would hand over exactly the
-    content shared while it was out. The control is a repair that stays clear of
-    the earlier interval, which succeeds.
-    """
-    circle = await make_circle("section9")
-    member = await make_org("rejoiner")
+async def _rejoined(session, circle, member) -> tuple[dt.datetime, dt.datetime]:
+    """A member in for ten days, out for ten, back for ten. Returns (left, rejoined)."""
     now = dt.datetime.now(dt.UTC)
-    left = now - 20 * DAY
+    left, rejoined = now - 20 * DAY, now - 10 * DAY
     session.add_all(
         [
             CircleMembership(
@@ -149,21 +141,108 @@ async def test_a_repair_cannot_overlap_an_earlier_interval(
                 left_at=left,
                 ended_by="operator",
             ),
-            CircleMembership(circle_id=circle.id, org_id=member.id, joined_at=now - 10 * DAY),
+            CircleMembership(circle_id=circle.id, org_id=member.id, joined_at=rejoined),
         ]
     )
     await session.commit()
+    return left, rejoined
 
-    into_the_gap = await client.post(
+
+async def _repair(client, headers, circle, member, joined_at: dt.datetime):
+    return await client.post(
         f"{API}/circles/{circle.id}/members",
-        json={"org_ids": [str(member.id)], "joined_at": (left - DAY).isoformat()},
-        headers=isac_headers,
-    )
-    clear_of_it = await client.post(
-        f"{API}/circles/{circle.id}/members",
-        json={"org_ids": [str(member.id)], "joined_at": (left + DAY).isoformat()},
-        headers=isac_headers,
+        json={"org_ids": [str(member.id)], "joined_at": joined_at.isoformat()},
+        headers=headers,
     )
 
-    assert into_the_gap.status_code == 409
-    assert clear_of_it.status_code in (200, 201, 204)
+
+@pytest.mark.requirement("SF-43")
+async def test_a_repair_cannot_overlap_an_earlier_interval(
+    client, isac_headers, make_org, make_circle, session
+):
+    """Backdating a rejoined member over its earlier interval is refused.
+
+    The control is a repair that moves the start later, which succeeds.
+    """
+    circle = await make_circle("section9")
+    member = await make_org("rejoiner")
+    left, rejoined = await _rejoined(session, circle, member)
+
+    over_the_interval = await _repair(client, isac_headers, circle, member, left - DAY)
+    later = await _repair(client, isac_headers, circle, member, rejoined + DAY)
+
+    assert over_the_interval.status_code == 409
+    assert later.status_code in (200, 201, 204)
+
+
+@pytest.mark.requirement("SF-43")
+async def test_a_repair_cannot_move_a_start_earlier_into_the_gap(
+    client, isac_headers, make_org, make_circle, session, make_cert, make_collection, publish
+):
+    """The gap after an earlier interval is never handed over by a repair.
+
+    The exclusion constraint refuses only an overlap, so a start moved to the
+    day after the member left -- or to the very instant -- passed it and handed
+    over what was shared while it was out. The pair: a member with no earlier
+    interval in the circle can still be backdated.
+    """
+    circle = await make_circle("section9")
+    collection = await make_collection(circle)
+    member = await make_org("rejoiner")
+    pem, _ = await make_cert(member)
+    never_left = await make_org("late-joiner")
+    await _rejoined(session, circle, member)
+    left = (
+        await session.execute(
+            select(CircleMembership.left_at).where(
+                CircleMembership.org_id == member.id, CircleMembership.left_at.is_not(None)
+            )
+        )
+    ).scalar_one()
+    session.add(
+        CircleMembership(
+            circle_id=circle.id, org_id=never_left.id, joined_at=dt.datetime.now(dt.UTC)
+        )
+    )
+    await session.commit()
+    await publish(never_left, circle, name="in the gap", date_added=left + DAY)
+
+    at_the_departure = await _repair(client, isac_headers, circle, member, left)
+    into_the_gap = await _repair(client, isac_headers, circle, member, left + DAY)
+    no_earlier_interval = await _repair(client, isac_headers, circle, never_left, left)
+
+    assert at_the_departure.status_code == 409, at_the_departure.text
+    assert into_the_gap.status_code == 409, into_the_gap.text
+    assert "in the gap" not in await _objects(client, collection, pem)
+    assert no_earlier_interval.status_code in (200, 201, 204)
+
+
+@pytest.mark.requirement("SF-43")
+async def test_a_departed_member_rejoins_from_now_not_from_a_backdated_start(
+    client, isac_headers, make_org, make_circle, session
+):
+    """Re-adding with a start inside the gap is refused; re-adding from now is not."""
+    circle = await make_circle("section9")
+    member = await make_org("leaver")
+    now = dt.datetime.now(dt.UTC)
+    left = now - 20 * DAY
+    session.add(
+        CircleMembership(
+            circle_id=circle.id,
+            org_id=member.id,
+            joined_at=now - 30 * DAY,
+            left_at=left,
+            ended_by="operator",
+        )
+    )
+    await session.commit()
+
+    backdated = await _repair(client, isac_headers, circle, member, left + DAY)
+    from_now = await client.post(
+        f"{API}/circles/{circle.id}/members",
+        json={"org_ids": [str(member.id)]},
+        headers=isac_headers,
+    )
+
+    assert backdated.status_code == 409, backdated.text
+    assert from_now.status_code in (200, 201, 204)

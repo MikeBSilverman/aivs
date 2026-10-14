@@ -360,9 +360,10 @@ class CircleMembership(TimestampMixin, Base):
             unique=True,
             postgresql_where=text("left_at IS NULL"),
         ),
-        # ... and no two intervals that overlap. Without this an audited
-        # joined_at repair could backdate a new interval over the gap of an
-        # earlier one and hand that gap's content over after all.
+        # ... and no two intervals that overlap. Without this a joined_at
+        # repair could backdate an interval over an earlier one. It does not
+        # stop a start moving back into the gap *after* an earlier interval
+        # (adjacent ranges do not overlap); add_circle_members refuses that.
         ExcludeConstraint(
             ("circle_id", "="),
             ("org_id", "="),

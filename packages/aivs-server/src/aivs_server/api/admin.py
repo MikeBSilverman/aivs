@@ -63,6 +63,7 @@ from aivs_server.services.certificates import CertificateRegistrationError
 from aivs_server.services.certificates import register_certificate as register_certificate_for
 from aivs_server.services.circles import (
     CircleMembershipError,
+    MembershipStartRefusedError,
     add_circle_members,
     reconcile_circle,
     remove_circle_member,
@@ -423,6 +424,9 @@ async def add_circle_member(
             now=dt.datetime.now(dt.UTC),
         )
         await session.commit()
+    except MembershipStartRefusedError as exc:
+        await session.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except CircleMembershipError as exc:
         await session.rollback()
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc

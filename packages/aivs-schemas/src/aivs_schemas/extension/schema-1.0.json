@@ -129,6 +129,8 @@
       ]
     },
     "embargo_policy": {
+
+      "description": "The submitter's stated embargo intent. Advisory metadata for the consumer, like embargo_release_at: the server releases content by its own embargo record, on a timer or by an editor's early release, and does not yet release anything on a vendor's acknowledgement, whatever this says.",
       "type": "string",
       "enum": [
         "timer",

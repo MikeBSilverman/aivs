@@ -1,0 +1,16 @@
+Mutation M653: a shortcut sent to review keeps no record of which rule refused
+Re-applies: publish_without_review swallowing the refusal (W-P3)
+
+Expect red: packages/aivs-server/tests/unit/test_one_click.py::test_the_rule_that_sent_a_click_to_review_is_kept_for_the_isac_and_logged_without_it
+
+diff --git a/packages/aivs-server/src/aivs_server/services/contributions.py b/packages/aivs-server/src/aivs_server/services/contributions.py
+--- a/packages/aivs-server/src/aivs_server/services/contributions.py
++++ b/packages/aivs-server/src/aivs_server/services/contributions.py
+@@ -343,7 +343,6 @@ async def publish_without_review(
+             )
+     except _REVIEW_INSTEAD as refusal:
+         await _file_for_review(session, ctx, submission)
+-        await _keep_the_reason(session, ctx, submission, lane=lane, refusal=refusal)
+         return False
+     return True
+ 

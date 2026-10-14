@@ -1,0 +1,17 @@
+Mutation M655: a one-click names its target in the request line
+Re-applies: POST /api/v1/objects/{stix_id}/contributions (D-C4)
+
+Expect red: packages/aivs-server/tests/unit/test_one_click.py::test_no_member_contribution_or_posture_route_carries_an_object_id_in_its_path
+
+diff --git a/packages/aivs-server/src/aivs_server/api/contributions.py b/packages/aivs-server/src/aivs_server/api/contributions.py
+--- a/packages/aivs-server/src/aivs_server/api/contributions.py
++++ b/packages/aivs-server/src/aivs_server/api/contributions.py
+@@ -139,7 +139,7 @@ def _present(submission: Any, ctx: Any) -> SubmissionOut:
+ # ---------------------------------------------------------------------------
+ # One click
+ # ---------------------------------------------------------------------------
+-@router.post("/contributions", status_code=status.HTTP_201_CREATED, response_model=ContributionOut)
++@router.post("/objects/{stix_id}/contributions", status_code=status.HTTP_201_CREATED, response_model=ContributionOut)
+ async def one_click(
+     payload: ContributionIn,
+     ctx: AuthenticatedContext,

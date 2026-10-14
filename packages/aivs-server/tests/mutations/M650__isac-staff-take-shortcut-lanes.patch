@@ -1,0 +1,20 @@
+Mutation M650: the shortcut lanes refuse only the automation type, so ISAC staff publish in the ISAC's name
+Re-applies: fast_lane_problem's deny-only AUTOMATION check (W-C1)
+
+Expect red: packages/aivs-server/tests/unit/test_one_click.py::test_the_isacs_own_staff_wait_for_review_in_a_circle_the_isac_contributes_to[isac_analyst]
+Expect red: packages/aivs-server/tests/unit/test_one_click.py::test_the_isacs_own_staff_wait_for_review_in_a_circle_the_isac_contributes_to[system_admin]
+Expect red: packages/aivs-server/tests/unit/test_one_click.py::test_only_a_person_at_a_member_organisation_takes_a_shortcut_lane[admin]
+Expect red: packages/aivs-server/tests/unit/test_post_moderation.py::test_the_isacs_analyst_cannot_overwrite_an_editors_record_through_post_moderation
+
+diff --git a/packages/aivs-server/src/aivs_server/services/contributions.py b/packages/aivs-server/src/aivs_server/services/contributions.py
+--- a/packages/aivs-server/src/aivs_server/services/contributions.py
++++ b/packages/aivs-server/src/aivs_server/services/contributions.py
+@@ -226,7 +226,7 @@ def filer_problem(ctx: AuthContext) -> str | None:
+     """
+     if ctx.operator_id is None:
+         return "filed by a machine identity"
+-    if ctx.org_type not in SHORTCUT_LANE_ORG_TYPES:
++    if ctx.org_type is OrgType.AUTOMATION:
+         return "filed by the ISAC, which files through review"
+     return None
+ 

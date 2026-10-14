@@ -1,0 +1,17 @@
+Mutation M651: a shortcut lane reads 'published' only from the member's view
+Re-applies: _is_public alone deciding public content (W-C4)
+
+Expect red: packages/aivs-server/tests/unit/test_one_click.py::test_a_newer_isac_version_no_longer_published_sends_the_click_to_review_unexplained[validated]
+Expect red: packages/aivs-server/tests/unit/test_one_click.py::test_a_newer_isac_version_no_longer_published_sends_the_click_to_review_unexplained[distributed-elsewhere]
+
+diff --git a/packages/aivs-server/src/aivs_server/services/contributions.py b/packages/aivs-server/src/aivs_server/services/contributions.py
+--- a/packages/aivs-server/src/aivs_server/services/contributions.py
++++ b/packages/aivs-server/src/aivs_server/services/contributions.py
+@@ -397,7 +397,6 @@ async def _validate_and_distribute(
+     circle_ids: Iterable[uuid.UUID],
+ ) -> None:
+     await check_content_rules(session, submission)
+-    await _refuse_unless_published_in_the_isacs_view(session, submission)
+     reason = f"{lane.value} lane: published without review"
+     if submission.state is SubmissionState.DRAFT:
+         await record_transition(session, ctx, submission, SubmissionState.SUBMITTED, reason=reason)

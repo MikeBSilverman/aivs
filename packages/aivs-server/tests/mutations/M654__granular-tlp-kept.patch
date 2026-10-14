@@ -1,0 +1,19 @@
+Mutation M654: a TLP in granular_markings other than the submission's is accepted and distributed
+Re-applies: nothing reading granular_markings (W-C2)
+
+Expect red: packages/aivs-server/tests/unit/test_markings.py::test_a_granular_tlp_marking_unlike_the_submissions_is_refused_at_ingest
+Expect red: packages/aivs-server/tests/unit/test_markings.py::test_a_granular_tlp_marking_unlike_the_submissions_is_refused_at_distribution
+
+diff --git a/packages/aivs-server/src/aivs_server/services/submissions.py b/packages/aivs-server/src/aivs_server/services/submissions.py
+--- a/packages/aivs-server/src/aivs_server/services/submissions.py
++++ b/packages/aivs-server/src/aivs_server/services/submissions.py
+@@ -542,9 +542,6 @@ async def contribution_problem(
+     together, from one view: the submitter's at ingest (``visible_to`` its
+     context), the ISAC's at validate and distribution (``visible_to=None``).
+     """
+-    granular = granular_tlp_problem(objects, TLP(submission.tlp))
+-    if granular is not None:
+-        return granular
+     disclosure = await disclosure_problem(
+         session,
+         discovery_scope=submission.discovery_scope,

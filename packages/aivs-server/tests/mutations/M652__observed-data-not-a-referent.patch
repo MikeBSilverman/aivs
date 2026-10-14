@@ -1,0 +1,17 @@
+Mutation M652: a sighting's observed_data_refs are not looked up as referents
+Re-applies: observed_data_refs in _NOT_SUBJECT_REFERENCES (W-P2)
+
+Expect red: packages/aivs-server/tests/unit/test_post_moderation.py::test_a_sighting_citing_evidence_the_member_cannot_see_waits_for_review[hidden-evidence]
+Expect red: packages/aivs-server/tests/unit/test_post_moderation.py::test_a_sighting_is_at_least_as_strict_as_the_evidence_it_cites
+
+diff --git a/packages/aivs-server/src/aivs_server/services/references.py b/packages/aivs-server/src/aivs_server/services/references.py
+--- a/packages/aivs-server/src/aivs_server/services/references.py
++++ b/packages/aivs-server/src/aivs_server/services/references.py
+@@ -30,6 +30,7 @@ _NOT_SUBJECT_REFERENCES: Final[frozenset[str]] = frozenset(
+         "object_marking_refs",
+         "marking_ref",
+         "where_sighted_refs",
++        "observed_data_refs",
+     }
+ )
+ 

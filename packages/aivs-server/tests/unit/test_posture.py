@@ -21,7 +21,7 @@ from aivs_schemas.enums import CircleRole, OrgStatus, PostureStatus
 from aivs_server.audit.log import AuditAction
 from aivs_server.auth.context import AuthContext, AuthMethod, CircleGrant, MembershipInterval
 from aivs_server.db.models import AuditLog, OrgPosture
-from aivs_server.services.posture import _suppress, record_posture
+from aivs_server.services.posture import VexStatement, _suppress, record_posture
 from aivs_server.services.telemetry import K_ANONYMITY
 from tests.authz_matrix.test_authz_matrix import walk_routes
 from tests.conftest import proxy_headers
@@ -75,9 +75,20 @@ async def seed_visible_indicator(session, world) -> str:
     return stix_id
 
 
+#: The statements VEX requires with each status, so tests about who may read a
+#: posture are not refused for leaving one out (test_vex.py is about those rules).
+_VEX_REQUIRES: dict[str, dict[str, str]] = {
+    "affected": {"action_statement": "Patching the affected gateways this week."},
+    "not_affected": {"justification": "component_not_present"},
+}
+
+
 async def set_posture(client, headers, vulnerability: str, **body: Any):
+    required = _VEX_REQUIRES.get(str(body.get("status")), {})
     return await client.put(
-        f"{API}/postures", json={"vulnerability": vulnerability, **body}, headers=headers
+        f"{API}/postures",
+        json={"vulnerability": vulnerability, **required, **body},
+        headers=headers,
     )
 
 
@@ -172,7 +183,11 @@ def test_no_member_posture_route_carries_a_vulnerability_id_in_its_path(app):
     posture_paths = {path for path, _method in walk_routes(app.routes) if "posture" in path}
 
     member_paths = posture_paths - {"/api/v1/vulnerabilities/{stix_id}/posture-summary"}
-    assert member_paths == {"/api/v1/postures", "/api/v1/postures/{posture_id}"}
+    assert member_paths == {
+        "/api/v1/postures",
+        "/api/v1/postures/openvex",
+        "/api/v1/postures/{posture_id}",
+    }
 
 
 @pytest.mark.requirement("SF-70")
@@ -189,8 +204,7 @@ async def test_two_first_writes_of_one_posture_make_one_row(world, open_session)
         first,
         ctx,
         vulnerability_id=world.published,
-        status=PostureStatus.UNDER_INVESTIGATION,
-        detection_deployed=False,
+        statement=VexStatement(PostureStatus.UNDER_INVESTIGATION),
         now=now,
     )
     loser = asyncio.create_task(
@@ -198,8 +212,11 @@ async def test_two_first_writes_of_one_posture_make_one_row(world, open_session)
             second,
             ctx,
             vulnerability_id=world.published,
-            status=PostureStatus.AFFECTED,
-            detection_deployed=True,
+            statement=VexStatement(
+                PostureStatus.AFFECTED,
+                action_statement="Patched the gateway",
+                detection_deployed=True,
+            ),
             now=now,
         )
     )

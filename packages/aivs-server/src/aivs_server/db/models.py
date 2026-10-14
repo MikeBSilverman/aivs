@@ -58,6 +58,7 @@ from aivs_schemas.enums import (
     SubmissionLane,
     SubmissionSource,
     SubmissionState,
+    VexJustification,
 )
 from aivs_server.db.base import Base, TimestampMixin, pg_enum
 
@@ -1016,9 +1017,27 @@ class OrgPosture(Base):
     status: Mapped[PostureStatus] = mapped_column(
         pg_enum(PostureStatus, "posture_status"), nullable=False
     )
+    #: VEX: why a ``not_affected`` product is not affected.
+    justification: Mapped[VexJustification | None] = mapped_column(
+        pg_enum(VexJustification, "vex_justification"), nullable=True
+    )
+    #: VEX: how the vulnerability does or does not reach this estate.
+    impact_statement: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: VEX: what the organisation is doing about an ``affected`` product.
+    action_statement: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: VEX: the products the statement is about, as the organisation names them
+    #: (a PURL, a CPE, or a plain name). Empty means its estate as a whole.
+    products: Mapped[list[str]] = mapped_column(
+        ARRAY(String(200)), nullable=False, default=list, server_default=text("'{}'")
+    )
     detection_deployed: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default=text("false")
     )
+    #: Ours: when the organisation last confirmed the posture holds. Written by
+    #: the server when the member says it validated, never supplied as a time.
+    validated_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    #: Ours: the organisation's own note on what it checked.
+    evidence_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     updated_by_operator_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("operators.id", ondelete="SET NULL"), nullable=True
     )
@@ -1029,4 +1048,21 @@ class OrgPosture(Base):
     __table_args__ = (
         UniqueConstraint("org_id", "vulnerability_stix_id", name="uq_org_postures_org_vuln"),
         Index("ix_org_postures_vuln", "vulnerability_stix_id"),
+        # VEX's own rules, held by the database so an export is always a valid
+        # VEX document: a justification only explains not_affected, a
+        # not_affected statement says why, and an affected one says what is
+        # being done (OpenVEX 0.2.0, "Status Justifications" and
+        # "action_statement").
+        CheckConstraint(
+            "justification IS NULL OR status = 'not_affected'",
+            name="justification_only_when_not_affected",
+        ),
+        CheckConstraint(
+            "status <> 'not_affected' OR justification IS NOT NULL OR impact_statement IS NOT NULL",
+            name="not_affected_says_why",
+        ),
+        CheckConstraint(
+            "status <> 'affected' OR action_statement IS NOT NULL",
+            name="affected_says_what_is_done",
+        ),
     )

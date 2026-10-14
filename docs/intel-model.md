@@ -231,9 +231,13 @@ it adds a principal row to the authorization matrix.
   can see which member is `affected` holds a fact member counsel will not
   let it hold; the ISAC sees k-aggregates. STIX has no object for a private
   per-organisation assertion, which is why this is a table. The table
-  (`org_postures`) arrived in phase E with the posture click: `status` and
-  `detection_deployed` (SF-70). The statements, `validated_at`,
-  `evidence_note` and the export stay here.
+  (`org_postures`) arrived in phase E with the posture click; phase H made it
+  a full VEX statement, with VEX's rules held by the database, and an OpenVEX
+  export of the member's own rows (`/api/v1/postures/openvex`, SF-70). What VEX
+  has no field for stays out of the export. Still to build here: the one
+  click from the advisory that also writes the `actioned` receipt, as an
+  explicit choice of the member's (a receipt derived from the status would
+  tell the ISAC the status), once portal reads leave a retrieval receipt.
 - **The member evidence pack**: receipts, posture, validation and the
   advisory version in force at each instant, content-hashed.
 - **An `auditor` role** with an expiry, reading audit and receipts within

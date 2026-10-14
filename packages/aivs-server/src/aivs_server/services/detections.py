@@ -191,6 +191,35 @@ async def _not_found_burst(
     ]
 
 
+async def _posture_export_burst(
+    session: AsyncSession, now: dt.datetime, window: dt.timedelta, threshold: int
+) -> list[Finding]:
+    """One organisation exporting its postures over and over.
+
+    The export is the firm's whole "where we are affected" list in one
+    response, so a stolen member credential needs only a request to take it.
+    A collector syncing VEX polls it a few times a day; a burst is someone
+    else. The alert names the organisation and the count, never a statement.
+    """
+    bursts = await _audit_bursts(
+        session,
+        action=AuditAction.POSTURE_EXPORTED,
+        group_by=AuditLog.org_id,
+        since=now - window,
+        threshold=threshold,
+    )
+    return [
+        Finding(
+            rule="posture_export_burst",
+            severity="high",
+            subject=org_id,
+            summary=f"{count} posture exports by one organisation in {window}",
+            count=count,
+        )
+        for org_id, count in bursts
+    ]
+
+
 async def _contribution_flood(
     session: AsyncSession, now: dt.datetime, window: dt.timedelta, threshold: int
 ) -> list[Finding]:
@@ -396,6 +425,7 @@ RULES: Final[tuple[Rule, ...]] = (
     ),
     Rule("not_found_burst", "medium", dt.timedelta(minutes=10), 50, _not_found_burst),
     Rule("contribution_flood", "medium", dt.timedelta(hours=1), 1, _contribution_flood),
+    Rule("posture_export_burst", "high", dt.timedelta(hours=1), 20, _posture_export_burst),
     Rule(
         "first_distribution_to_circle",
         "medium",

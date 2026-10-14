@@ -140,6 +140,8 @@ class AuditAction:
     CONTRIBUTION_SENT_TO_REVIEW = "contribution.sent_to_review"
     CIRCLE_POST_MODERATION_SET = "circle.post_moderation_set"
     POSTURE_RECORDED = "posture.recorded"
+    #: That an organisation exported its postures; never what, or how many.
+    POSTURE_EXPORTED = "posture.exported"
     TAXII_INBOX_RECEIVED = "taxii.inbox_received"
     DISTRIBUTION_PAUSED = "instance.distribution_paused"
     DISTRIBUTION_RESUMED = "instance.distribution_resumed"

@@ -401,6 +401,12 @@ ROUTES: tuple[RouteCase, ...] = (
     ),
     RouteCase(
         "GET",
+        "/api/v1/postures/openvex",
+        RouteClass.LISTING,
+        lambda _world: (f"{API}/postures/openvex", None),
+    ),
+    RouteCase(
+        "GET",
         "/api/v1/postures/{posture_id}",
         RouteClass.OWN_RECORD,
         lambda world: (f"{API}/postures/{world.posture_id}", None),

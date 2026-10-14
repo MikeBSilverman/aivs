@@ -10,6 +10,7 @@ Each scenario asserts the step that refuses it and what the ISAC is told.
 
 from __future__ import annotations
 
+import dataclasses
 import datetime as dt
 import json
 
@@ -175,3 +176,42 @@ async def test_a_proxy_filing_the_member_never_sent_is_stopped_before_it_reaches
     await session.refresh(submission)
     assert submission.state is SubmissionState.WITHDRAWN
     assert await _published_count(session, world.member.org.id) == 0
+
+
+@pytest.mark.requirement("SF-70")
+async def test_a_stolen_certificate_taking_the_posture_list_is_noticed_without_the_list(
+    client, session, world
+):
+    """Rule ``posture_export_burst``. The export is the firm's own, so every
+    request is authorised; what gives a stolen certificate away is repetition,
+    and what the ISAC is told names the firm, never a statement."""
+    statement = "Isolating the gateways at the Frankfurt site until patched."
+    await client.put(
+        f"{API}/postures",
+        json={
+            "vulnerability": world.published,
+            "status": "affected",
+            "action_statement": statement,
+        },
+        headers=world.member.person,
+    )
+    rule = next(rule for rule in RULES if rule.name == "posture_export_burst")
+
+    for _ in range(rule.threshold - 1):
+        assert (
+            await client.get(f"{API}/postures/openvex", headers=world.member.machine)
+        ).status_code == 200
+    quiet = await run_detections(
+        session, quarantine_policy="propose", now=dt.datetime.now(dt.UTC), rules=[rule]
+    )
+    taken = await client.get(f"{API}/postures/openvex", headers=world.member.machine)
+    raised = await run_detections(
+        session, quarantine_policy="propose", now=dt.datetime.now(dt.UTC), rules=[rule]
+    )
+
+    assert statement in taken.text, "the export itself is the member's, and works"
+    assert quiet == []
+    assert [(f.rule, f.subject) for f in raised] == [
+        ("posture_export_burst", str(world.member.org.id))
+    ]
+    assert statement not in json.dumps([dataclasses.asdict(f) for f in raised], default=str)

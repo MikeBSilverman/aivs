@@ -667,5 +667,6 @@ def test_no_member_contribution_or_posture_route_carries_an_object_id_in_its_pat
     assert member_paths == {
         "/api/v1/contributions",
         "/api/v1/postures",
+        "/api/v1/postures/openvex",
         "/api/v1/postures/{posture_id}",
     }

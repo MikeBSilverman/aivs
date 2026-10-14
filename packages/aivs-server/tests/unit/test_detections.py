@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
+import re
 import uuid
+from pathlib import Path
 
 import pytest
 from sqlalchemy import select
@@ -284,3 +286,16 @@ async def test_readyz_names_a_degraded_component_without_failing_the_probe(
     assert body["status"] == "degraded"
     assert body["components"]["webhook_dispatcher"]["state"] == "degraded"
     assert body["components"]["embargo_sweeper"]["state"] == "ok"
+
+
+def test_every_rule_is_in_the_runbooks_table():
+    """The operator reads the table, not RULES; two descriptions of one thing drift.
+
+    They did: ``contribution_flood`` raised alerts for a phase before the
+    runbook said what to do about one.
+    """
+    runbook = (Path(__file__).resolve().parents[4] / "docs" / "operator-runbook.md").read_text(
+        encoding="utf-8"
+    )
+    documented = set(re.findall(r"^\| `([a-z_]+)` \|", runbook, flags=re.MULTILINE))
+    assert {rule.name for rule in RULES} <= documented

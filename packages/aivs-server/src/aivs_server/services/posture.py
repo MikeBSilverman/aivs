@@ -11,6 +11,12 @@ recorded a posture, so "6 of 6 affected", or an exact zero beside a total,
 states each named firm's status. The total is withheld whenever a withheld
 count could be worked out from it.
 
+A posture is a VEX statement (OpenVEX / CSAF VEX): the status, and the
+statements VEX requires with it -- why a product is ``not_affected``, what is
+being done where it is ``affected`` -- plus the products it covers. The
+database holds VEX's rules (``OrgPosture``'s checks), so the member's export is
+always a valid VEX document. ``validated_at`` and ``evidence_note`` are ours.
+
 The one-click records ``under_investigation``; nothing defaults a member to
 ``affected``. ``actioned`` -- "we did something about it" -- stays a receipt,
 which is the one per-member fact the ISAC holds by design.
@@ -33,13 +39,14 @@ from __future__ import annotations
 import datetime as dt
 import uuid
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Final
 
 from sqlalchemy import exists, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from aivs_schemas.enums import PostureStatus
+from aivs_schemas.enums import PostureStatus, VexJustification
 from aivs_server.audit.log import AuditAction, record
 from aivs_server.auth.context import AuthContext
 from aivs_server.db.models import Distribution, OrgPosture, StixObject
@@ -52,15 +59,55 @@ from aivs_server.services.telemetry import (
 )
 
 __all__ = [
+    "PostureError",
     "PostureSummary",
+    "VexStatement",
     "is_distributed_vulnerability",
     "own_posture",
     "own_postures",
     "posture_summary",
     "record_posture",
+    "vex_problem",
 ]
 
 _VULNERABILITY_PREFIX: Final[str] = "vulnerability--"
+
+
+@dataclass(frozen=True, slots=True)
+class VexStatement:
+    """What a member says about one vulnerability in its estate."""
+
+    status: PostureStatus
+    justification: VexJustification | None = None
+    impact_statement: str | None = None
+    action_statement: str | None = None
+    products: tuple[str, ...] = ()
+    detection_deployed: bool = False
+    #: The member confirms, now, that the statement holds. The server stamps
+    #: the time; a member never supplies one.
+    validated: bool = False
+    evidence_note: str | None = None
+
+
+def vex_problem(statement: VexStatement) -> str | None:
+    """Why ``statement`` is not a valid VEX statement, or ``None``.
+
+    The database enforces the same three rules; this says which one, in words a
+    member can act on, before the write.
+    """
+    if statement.justification is not None and statement.status is not PostureStatus.NOT_AFFECTED:
+        return "a justification explains not_affected only; remove it or change the status"
+    if statement.status is PostureStatus.NOT_AFFECTED and not (
+        statement.justification or statement.impact_statement
+    ):
+        return "not_affected needs a justification or an impact statement saying why (VEX)"
+    if statement.status is PostureStatus.AFFECTED and not statement.action_statement:
+        return "affected needs an action statement saying what is being done (VEX)"
+    return None
+
+
+class PostureError(ValueError):
+    """The statement breaks one of VEX's rules; the message names it."""
 
 
 async def record_posture(
@@ -68,8 +115,7 @@ async def record_posture(
     ctx: AuthContext,
     *,
     vulnerability_id: str,
-    status: PostureStatus,
-    detection_deployed: bool,
+    statement: VexStatement,
     now: dt.datetime,
 ) -> OrgPosture:
     """Set the caller's own posture on a vulnerability it can see."""
@@ -77,10 +123,12 @@ async def record_posture(
         raise TargetNotFoundError(vulnerability_id)
     if await resolve_target(session, ctx, vulnerability_id, now=now) is None:
         raise TargetNotFoundError(vulnerability_id)
+    problem = vex_problem(statement)
+    if problem is not None:
+        raise PostureError(problem)
 
-    row = await _own_row_locked(session, ctx, vulnerability_id, status=status)
-    row.status = status
-    row.detection_deployed = detection_deployed
+    row = await _own_row_locked(session, ctx, vulnerability_id, statement=statement)
+    _apply(row, statement, now=now)
     row.updated_by_operator_id = ctx.operator_id
     row.updated_at = now
     await session.flush()
@@ -95,8 +143,27 @@ async def record_posture(
     return row
 
 
+def _apply(row: OrgPosture, statement: VexStatement, *, now: dt.datetime) -> None:
+    """Write the statement onto the row.
+
+    A validation was of the statement as it stood: a new status voids it unless
+    the member validates again in the same write.
+    """
+    if statement.validated:
+        row.validated_at = now
+    elif row.status is not statement.status:
+        row.validated_at = None
+    row.status = statement.status
+    row.justification = statement.justification
+    row.impact_statement = statement.impact_statement
+    row.action_statement = statement.action_statement
+    row.products = list(statement.products)
+    row.detection_deployed = statement.detection_deployed
+    row.evidence_note = statement.evidence_note
+
+
 async def _own_row_locked(
-    session: AsyncSession, ctx: AuthContext, vulnerability_id: str, *, status: PostureStatus
+    session: AsyncSession, ctx: AuthContext, vulnerability_id: str, *, statement: VexStatement
 ) -> OrgPosture:
     """The caller's row for this vulnerability, created if absent, locked for update.
 
@@ -106,7 +173,14 @@ async def _own_row_locked(
     """
     await session.execute(
         insert(OrgPosture)
-        .values(org_id=ctx.org_id, vulnerability_stix_id=vulnerability_id, status=status)
+        .values(
+            org_id=ctx.org_id,
+            vulnerability_stix_id=vulnerability_id,
+            status=statement.status,
+            justification=statement.justification,
+            impact_statement=statement.impact_statement,
+            action_statement=statement.action_statement,
+        )
         .on_conflict_do_nothing(index_elements=["org_id", "vulnerability_stix_id"])
     )
     return (

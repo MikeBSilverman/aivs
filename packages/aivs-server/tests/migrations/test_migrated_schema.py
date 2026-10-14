@@ -202,6 +202,48 @@ def test_the_migrated_schema_refuses_a_second_isac_organisation(migrated_url: st
         engine.dispose()
 
 
+@pytest.mark.parametrize(
+    ("columns", "values", "check"),
+    [
+        ("status", "'affected'", "affected_says_what_is_done"),
+        ("status", "'not_affected'", "not_affected_says_why"),
+        (
+            "status, justification",
+            "'fixed', 'component_not_present'",
+            "justification_only_when_not_affected",
+        ),
+    ],
+    ids=["affected", "not-affected", "justification-on-fixed"],
+)
+def test_the_migrated_schema_refuses_a_posture_vex_would_reject(
+    migrated_url: str, columns: str, values: str, check: str
+):
+    """VEX's rules are in the migration, not only the model: attempted, not looked up."""
+    org_id = "00000000-0000-4000-8000-000000000301"
+    engine = create_engine(migrated_url)
+    try:
+        with engine.connect() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO organizations "
+                    "(id, name, slug, org_type, status, stix_identity_id) "
+                    "VALUES (:id, 'Vex', 'vex-firm', 'gsib', 'active', :identity)"
+                ),
+                {"id": org_id, "identity": f"identity--{org_id}"},
+            )
+            with pytest.raises(DBAPIError, match=check):
+                connection.execute(
+                    text(
+                        f"INSERT INTO org_postures (org_id, vulnerability_stix_id, {columns}) "  # noqa: S608 - columns and values from the parametrize list
+                        f"VALUES (:org, 'vulnerability--x', {values})"
+                    ),
+                    {"org": org_id},
+                )
+            connection.rollback()
+    finally:
+        engine.dispose()
+
+
 def _declared_enum_labels() -> dict[str, set[str]]:
     """Every native enum type the models declare, with the labels it stores."""
     return {

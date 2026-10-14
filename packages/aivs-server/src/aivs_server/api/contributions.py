@@ -15,7 +15,13 @@ from typing import Annotated, Any
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
 
-from aivs_schemas.enums import TLP, DiscoveryScope, PostureStatus, SubmissionState
+from aivs_schemas.enums import (
+    TLP,
+    DiscoveryScope,
+    PostureStatus,
+    SubmissionState,
+    VexJustification,
+)
 from aivs_schemas.extension.builders import (
     BundleValidationError,
     ExtensionValidationError,
@@ -38,6 +44,8 @@ from aivs_server.services.contributions import (
     contribute,
 )
 from aivs_server.services.posture import (
+    PostureError,
+    VexStatement,
     own_posture,
     own_postures,
     posture_summary,
@@ -45,6 +53,7 @@ from aivs_server.services.posture import (
 )
 from aivs_server.services.proxy_filing import confirm_proxy_filing, file_on_behalf
 from aivs_server.services.submissions import STORAGE_ERRORS, SubmissionError, load_submission
+from aivs_server.services.vex_export import openvex_document
 
 __all__ = ["router"]
 
@@ -81,13 +90,40 @@ class ContributionOut(BaseModel):
     lane: str
 
 
+#: Prose a member writes for itself and its regulator: multi-line, bounded, and
+#: free of NUL, which PostgreSQL refuses in text and would otherwise turn a
+#: member's typo into a server error.
+_Statement = Annotated[str, Field(min_length=1, max_length=2000, pattern=r"^[^\x00]+$")]
+#: One line per product: a PURL, a CPE, or a name.
+_Product = Annotated[str, Field(min_length=1, max_length=200, pattern=r"^[^\x00-\x1f\x7f]+$")]
+
+
 class PostureIn(_In):
     #: In the body, never the path: request lines are logged with the caller's
     #: identity and forwarded off the platform (SF-70).
     vulnerability: Annotated[str, Field(min_length=1, max_length=100)]
     #: The one-click's default: never ``affected`` unless the member says so.
     status: PostureStatus = PostureStatus.UNDER_INVESTIGATION
+    justification: VexJustification | None = None
+    impact_statement: _Statement | None = None
+    action_statement: _Statement | None = None
+    products: Annotated[list[_Product], Field(max_length=50)] = []
     detection_deployed: bool = False
+    #: "We confirmed, now, that this holds." The server records when.
+    validated: bool = False
+    evidence_note: _Statement | None = None
+
+    def statement(self) -> VexStatement:
+        return VexStatement(
+            status=self.status,
+            justification=self.justification,
+            impact_statement=self.impact_statement,
+            action_statement=self.action_statement,
+            products=tuple(self.products),
+            detection_deployed=self.detection_deployed,
+            validated=self.validated,
+            evidence_note=self.evidence_note,
+        )
 
 
 class PostureOut(BaseModel):
@@ -96,7 +132,13 @@ class PostureOut(BaseModel):
     id: uuid.UUID
     vulnerability_stix_id: str
     status: PostureStatus
+    justification: VexJustification | None
+    impact_statement: str | None
+    action_statement: str | None
+    products: list[str]
     detection_deployed: bool
+    validated_at: dt.datetime | None
+    evidence_note: str | None
     updated_at: dt.datetime
 
 
@@ -182,13 +224,14 @@ async def set_posture(payload: PostureIn, ctx: AuthenticatedContext, session: Se
             session,
             ctx,
             vulnerability_id=payload.vulnerability,
-            status=payload.status,
-            detection_deployed=payload.detection_deployed,
+            statement=payload.statement(),
             now=dt.datetime.now(dt.UTC),
         )
         await session.commit()
     except TargetNotFoundError:
         raise _NOT_FOUND from None
+    except PostureError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     await session.refresh(row)
     return row
 
@@ -197,6 +240,28 @@ async def set_posture(payload: PostureIn, ctx: AuthenticatedContext, session: Se
 async def list_postures(ctx: AuthenticatedContext, session: SessionDep) -> Any:
     """This organisation's own postures. Nobody else's, whoever asks."""
     return await own_postures(session, ctx)
+
+
+@router.get("/postures/openvex")
+async def export_postures(ctx: AuthenticatedContext, session: SessionDep) -> dict[str, Any]:
+    """This organisation's own postures as an OpenVEX document. Nobody else's.
+
+    Declared before ``/postures/{posture_id}``, which would otherwise take
+    "openvex" for an id and refuse it as malformed.
+    """
+    document = await openvex_document(session, ctx, now=dt.datetime.now(dt.UTC))
+    # The act, never the content or the number of statements: the audit log is
+    # the ISAC's, and a count of postures is a fact about the firm's exposure.
+    await record(
+        session,
+        action=AuditAction.POSTURE_EXPORTED,
+        ctx=ctx,
+        resource_type="posture",
+        resource_id=str(ctx.org_id),
+        details={},
+    )
+    await session.commit()
+    return document
 
 
 @router.get("/postures/{posture_id}", response_model=PostureOut)

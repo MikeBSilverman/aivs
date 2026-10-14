@@ -276,63 +276,11 @@ async def resolve_session(
     """
     now = now or dt.datetime.now(dt.UTC)
 
-    row = (
-        await session.execute(
-            select(PortalSession).where(PortalSession.token_hash == _digest(token))
-        )
-    ).scalar_one_or_none()
-
-    if row is None:
-        raise SessionRejectedError("unknown_session")
-    if row.revoked_at is not None:
-        raise SessionRejectedError("session_revoked")
-    if row.expires_at <= now:
-        raise SessionRejectedError("session_expired")
-
-    idle_deadline = row.last_seen_at + dt.timedelta(minutes=settings.session_idle_timeout_minutes)
-    if idle_deadline <= now:
-        raise SessionRejectedError("session_idle_timeout")
-
-    # The binding. A cookie replayed from outside this organisation's
-    # certificate-bearing path fails here, which is what makes the password and
-    # the certificate two independent factors rather than one.
-    #
-    # Unconditional. These checks used to sit inside `if row.cert_fingerprint is
-    # not None`, so a session row with a null fingerprint resolved to a full
-    # context with no certificate requirement at all -- the cookie alone would
-    # have been sufficient, from any network path that could reach the app. No
-    # caller could produce such a row, but "permit only this" is the shape that
-    # stays correct when the next caller arrives.
-    if row.cert_fingerprint is None:
-        raise SessionRejectedError("session_unbound")
-    if cert_fingerprint is None or not constant_time_equals(row.cert_fingerprint, cert_fingerprint):
-        raise SessionRejectedError("session_certificate_mismatch")
-
-    certificate = (
-        await session.execute(
-            select(ClientCertificate).where(
-                ClientCertificate.fingerprint_sha256 == row.cert_fingerprint
-            )
-        )
-    ).scalar_one_or_none()
-    if certificate is None or certificate.status is not CertStatus.ACTIVE:
-        # Revoking a certificate locks out the humans using it, not only the
-        # machines, and takes effect on the next request.
-        raise SessionRejectedError("session_certificate_revoked")
-    if certificate.not_after <= now:
-        # The same check get_auth_context makes on the machine path: where the
-        # recorded registration and the certificate itself disagree, the database
-        # is the authority. Without it a registration whose expiry was shortened
-        # kept working for portal sessions while machine calls were refused.
-        raise SessionRejectedError("session_certificate_expired")
-
-    operator = await session.get(Operator, row.operator_id)
-    if operator is None or not operator.is_active:
-        raise SessionRejectedError("operator_inactive")
-
-    organization = await session.get(Organization, row.org_id)
-    if organization is None or organization.status is not OrgStatus.ACTIVE:
-        raise SessionRejectedError("org_inactive")
+    row = await _load_live_session(session, settings, token=token, now=now)
+    _check_certificate_binding(row, cert_fingerprint)
+    await _check_bound_certificate(session, row, now=now)
+    operator = await _load_active_operator(session, row)
+    organization = await _load_active_organization(session, row)
 
     circles = await load_circle_grants(session, organization.id)
 
@@ -353,6 +301,86 @@ async def resolve_session(
         source_ip=source_ip,
     )
     return context, row.csrf_token_hash
+
+
+async def _load_live_session(
+    session: AsyncSession, settings: Settings, *, token: str, now: dt.datetime
+) -> PortalSession:
+    """The session row for ``token``, refused if revoked or past either deadline."""
+    row = (
+        await session.execute(
+            select(PortalSession).where(PortalSession.token_hash == _digest(token))
+        )
+    ).scalar_one_or_none()
+
+    if row is None:
+        raise SessionRejectedError("unknown_session")
+    if row.revoked_at is not None:
+        raise SessionRejectedError("session_revoked")
+    if row.expires_at <= now:
+        raise SessionRejectedError("session_expired")
+
+    idle_deadline = row.last_seen_at + dt.timedelta(minutes=settings.session_idle_timeout_minutes)
+    if idle_deadline <= now:
+        raise SessionRejectedError("session_idle_timeout")
+    return row
+
+
+def _check_certificate_binding(row: PortalSession, cert_fingerprint: str | None) -> None:
+    """Refuse unless this request presents the certificate the session is bound to.
+
+    A cookie replayed from outside this organisation's certificate-bearing path
+    fails here, which is what makes the password and the certificate two
+    independent factors rather than one.
+
+    Unconditional. These checks used to sit inside `if row.cert_fingerprint is
+    not None`, so a session row with a null fingerprint resolved to a full
+    context with no certificate requirement at all -- the cookie alone would
+    have been sufficient, from any network path that could reach the app. No
+    caller could produce such a row, but "permit only this" is the shape that
+    stays correct when the next caller arrives.
+    """
+    if row.cert_fingerprint is None:
+        raise SessionRejectedError("session_unbound")
+    if cert_fingerprint is None or not constant_time_equals(row.cert_fingerprint, cert_fingerprint):
+        raise SessionRejectedError("session_certificate_mismatch")
+
+
+async def _check_bound_certificate(
+    session: AsyncSession, row: PortalSession, *, now: dt.datetime
+) -> None:
+    """Refuse unless the session's certificate is still registered, active and unexpired."""
+    certificate = (
+        await session.execute(
+            select(ClientCertificate).where(
+                ClientCertificate.fingerprint_sha256 == row.cert_fingerprint
+            )
+        )
+    ).scalar_one_or_none()
+    if certificate is None or certificate.status is not CertStatus.ACTIVE:
+        # Revoking a certificate locks out the humans using it, not only the
+        # machines, and takes effect on the next request.
+        raise SessionRejectedError("session_certificate_revoked")
+    if certificate.not_after <= now:
+        # The same check get_auth_context makes on the machine path: where the
+        # recorded registration and the certificate itself disagree, the database
+        # is the authority. Without it a registration whose expiry was shortened
+        # kept working for portal sessions while machine calls were refused.
+        raise SessionRejectedError("session_certificate_expired")
+
+
+async def _load_active_operator(session: AsyncSession, row: PortalSession) -> Operator:
+    operator = await session.get(Operator, row.operator_id)
+    if operator is None or not operator.is_active:
+        raise SessionRejectedError("operator_inactive")
+    return operator
+
+
+async def _load_active_organization(session: AsyncSession, row: PortalSession) -> Organization:
+    organization = await session.get(Organization, row.org_id)
+    if organization is None or organization.status is not OrgStatus.ACTIVE:
+        raise SessionRejectedError("org_inactive")
+    return organization
 
 
 async def revoke_session(session: AsyncSession, *, token: str) -> None:

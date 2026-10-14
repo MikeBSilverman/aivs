@@ -186,41 +186,68 @@ class BodySizeLimitMiddleware:
             return
 
         declared = _header_value(scope, b"content-length")
-        if declared is not None:
-            try:
-                if int(declared) > self.max_bytes:
-                    await _send_json_error(send, 413, "Request body too large")
-                    return
-            except ValueError:
-                await _send_json_error(send, 400, "Malformed Content-Length header")
-                return
+        refusal = _declared_length_refusal(declared, self.max_bytes)
+        if refusal is not None:
+            await _send_json_error(send, *refusal)
+            return
 
-        received = 0
-        response_started = False
-
-        async def counting_receive() -> MutableMapping[str, Any]:
-            nonlocal received
-            message = await receive()
-            if message["type"] == "http.request":
-                received += len(message.get("body", b""))
-                if received > self.max_bytes:
-                    raise _BodyTooLargeError
-            return message
-
-        async def tracking_send(message: MutableMapping[str, Any]) -> None:
-            nonlocal response_started
-            if message["type"] == "http.response.start":
-                response_started = True
-            await send(message)
-
+        counting_receive = _CountingReceive(receive, self.max_bytes)
+        tracking_send = _StartTrackingSend(send)
         try:
             await self.app(scope, counting_receive, tracking_send)
         except _BodyTooLargeError:
             # Only safe to write a response if the application had not already
             # begun one; otherwise the connection is simply dropped, which is
             # the correct outcome for a client that lied about its body size.
-            if not response_started:
+            if not tracking_send.response_started:
                 await _send_json_error(send, 413, "Request body too large")
+
+
+def _declared_length_refusal(declared: str | None, max_bytes: int) -> tuple[int, str] | None:
+    """The status and message refusing a declared ``Content-Length``, or ``None``.
+
+    ``None`` means "not refused here", which includes a request that declares no
+    length at all: the streamed count still applies to it.
+    """
+    if declared is None:
+        return None
+    try:
+        declared_bytes = int(declared)
+    except ValueError:
+        return 400, "Malformed Content-Length header"
+    if declared_bytes > max_bytes:
+        return 413, "Request body too large"
+    return None
+
+
+class _CountingReceive:
+    """Wraps ``receive``, raising once the body consumed exceeds the limit."""
+
+    def __init__(self, receive: Receive, max_bytes: int) -> None:
+        self._receive = receive
+        self._max_bytes = max_bytes
+        self._received = 0
+
+    async def __call__(self) -> MutableMapping[str, Any]:
+        message = await self._receive()
+        if message["type"] == "http.request":
+            self._received += len(message.get("body", b""))
+            if self._received > self._max_bytes:
+                raise _BodyTooLargeError
+        return message
+
+
+class _StartTrackingSend:
+    """Wraps ``send``, recording whether a response has begun."""
+
+    def __init__(self, send: Send) -> None:
+        self._send = send
+        self.response_started = False
+
+    async def __call__(self, message: MutableMapping[str, Any]) -> None:
+        if message["type"] == "http.response.start":
+            self.response_started = True
+        await self._send(message)
 
 
 #: Where the portal is mounted. Shared so that anything reproducing this

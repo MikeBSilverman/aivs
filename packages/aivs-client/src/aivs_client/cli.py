@@ -210,6 +210,33 @@ def collections(
 # ---------------------------------------------------------------------------
 # Collection
 # ---------------------------------------------------------------------------
+def _poll_collection(
+    taxii: TaxiiClient,
+    cursors: CursorStore,
+    collection_id: str,
+    *,
+    since: str | None,
+    full: bool,
+) -> int:
+    """Emit one collection's new objects on stdout, then advance its cursor.
+
+    Returns the number of objects emitted.
+    """
+    start = since if since else (None if full else cursors.get(collection_id))
+    taxii.last_date_added = None
+    count = 0
+    for obj in taxii.objects(collection_id, added_after=start):
+        typer.echo(json.dumps(obj, separators=(",", ":")))
+        count += 1
+
+    # Advance only after the objects are out; if the pipe broke, the
+    # next run should collect them again rather than skip them.
+    latest = getattr(taxii, "last_date_added", None)
+    if latest and not full:
+        cursors.set(collection_id, latest)
+    return count
+
+
 @app.command()
 def poll(
     collection: Annotated[str, typer.Argument(help="Collection id, or 'all'.")] = "all",
@@ -253,18 +280,7 @@ def poll(
 
             total = 0
             for collection_id in targets:
-                start = since if since else (None if full else cursors.get(collection_id))
-                taxii.last_date_added = None
-                count = 0
-                for obj in taxii.objects(collection_id, added_after=start):
-                    typer.echo(json.dumps(obj, separators=(",", ":")))
-                    count += 1
-
-                # Advance only after the objects are out; if the pipe broke, the
-                # next run should collect them again rather than skip them.
-                latest = getattr(taxii, "last_date_added", None)
-                if latest and not full:
-                    cursors.set(collection_id, latest)
+                count = _poll_collection(taxii, cursors, collection_id, since=since, full=full)
                 total += count
                 _err(f"{collection_id}: {count} object(s)")
             _err(f"collected {total} object(s)")

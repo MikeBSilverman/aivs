@@ -21,6 +21,7 @@ from __future__ import annotations
 import datetime as dt
 import uuid
 from collections.abc import Iterable
+from dataclasses import dataclass
 from typing import Any, Final
 
 from sqlalchemy import delete, func, select
@@ -293,6 +294,95 @@ async def _reject_stored_self_identifying_content(
     )
 
 
+@dataclass(frozen=True, slots=True)
+class _ParsedObject:
+    """One bundle object, checked against everything storage and STIX require."""
+
+    stix_id: str
+    stix_type: str
+    spec_version: str
+    created: dt.datetime
+    modified: dt.datetime
+
+
+def _parse_object(obj: dict[str, Any]) -> _ParsedObject:
+    """Check one object and return the fields it is stored under.
+
+    Each refusal names the object, so a member's malformed bundle is a 400 that
+    says what to fix rather than a database error surfacing as a server fault.
+    """
+    stix_id = obj.get("id")
+    if not isinstance(stix_id, str) or "--" not in stix_id:
+        msg = f"object has a missing or malformed 'id': {stix_id!r}"
+        raise SubmissionError(msg)
+
+    stix_type = obj.get("type")
+    if not isinstance(stix_type, str):
+        msg = f"object {stix_id} has a missing or malformed 'type'"
+        raise SubmissionError(msg)
+
+    created_raw = obj.get("created")
+    modified_raw = obj.get("modified", created_raw)
+    if created_raw is None:
+        # Marking definitions and some meta objects legitimately carry no
+        # modified; they must still carry created.
+        msg = f"object {stix_id} has no 'created' timestamp"
+        raise SubmissionError(msg)
+
+    created = _parse_stix_timestamp(created_raw, "created", stix_id)
+    modified = _parse_stix_timestamp(modified_raw, "modified", stix_id)
+    if modified < created:
+        # STIX requires modified >= created. Beyond validity, a backwards pair
+        # inverts `match[version]=last`, which resolves max(modified): a
+        # submitter's corrected object would lose to their original.
+        msg = (
+            f"object {stix_id} has 'modified' ({modified.isoformat()}) earlier "
+            f"than 'created' ({created.isoformat()})"
+        )
+        raise SubmissionError(msg)
+
+    _check_column_bounds(stix_id, stix_type)
+
+    spec_version = obj.get("spec_version", "2.1")
+    if spec_version != "2.1":
+        msg = f"object {stix_id} declares spec_version {spec_version!r}; AIVS stores 2.1 only"
+        raise SubmissionError(msg)
+
+    return _ParsedObject(stix_id, stix_type, spec_version, created, modified)
+
+
+def _check_column_bounds(stix_id: str, stix_type: str) -> None:
+    """Bounds matching the storage columns, checked before storage sees them."""
+    for value, limit, field in (
+        (stix_id, _MAX_STIX_ID, "id"),
+        (stix_type, _MAX_STIX_TYPE, "type"),
+    ):
+        if len(value) > limit:
+            msg = f"object '{value[:60]}...' has a '{field}' longer than {limit} characters"
+            raise SubmissionError(msg)
+
+
+async def _reject_identity_problems(
+    session: AsyncSession, submission: Submission, objects: list[Any]
+) -> None:
+    """Refuse a bundle that names its anonymous submitter, or impersonates a peer."""
+    if submission.distribute_anonymously:
+        reject_self_identifying_content(
+            objects,
+            own_identity_id=await submitter_identity_id(session, submission.submitter_org_id),
+        )
+
+    impersonated = await foreign_identity_ids(
+        session, objects, submitter_org_id=submission.submitter_org_id
+    )
+    if impersonated:
+        msg = (
+            "identity objects may not use an identifier registered to another "
+            f"organisation: {', '.join(impersonated)}"
+        )
+        raise SubmissionError(msg)
+
+
 async def replace_submission_objects(
     session: AsyncSession, submission: Submission, bundle: dict[str, Any]
 ) -> int:
@@ -309,92 +399,33 @@ async def replace_submission_objects(
     # Validates every object in the bundle, including ones AIVS does not read,
     # and enforces the extension allowlist.
     validate_bundle(bundle)
-
-    if submission.distribute_anonymously:
-        reject_self_identifying_content(
-            bundle.get("objects") or [],
-            own_identity_id=await submitter_identity_id(session, submission.submitter_org_id),
-        )
-
-    impersonated = await foreign_identity_ids(
-        session, bundle.get("objects") or [], submitter_org_id=submission.submitter_org_id
-    )
-    if impersonated:
-        msg = (
-            "identity objects may not use an identifier registered to another "
-            f"organisation: {', '.join(impersonated)}"
-        )
-        raise SubmissionError(msg)
+    objects = bundle.get("objects") or []
+    await _reject_identity_problems(session, submission, objects)
 
     await session.execute(delete(StixObject).where(StixObject.submission_id == submission.id))
 
     seen: set[tuple[str, dt.datetime]] = set()
     rows: list[StixObject] = []
-
-    for obj in bundle.get("objects") or []:
-        stix_id = obj.get("id")
-        if not isinstance(stix_id, str) or "--" not in stix_id:
-            msg = f"object has a missing or malformed 'id': {stix_id!r}"
-            raise SubmissionError(msg)
-
-        stix_type = obj.get("type")
-        if not isinstance(stix_type, str):
-            msg = f"object {stix_id} has a missing or malformed 'type'"
-            raise SubmissionError(msg)
-
-        created_raw = obj.get("created")
-        modified_raw = obj.get("modified", created_raw)
-        if created_raw is None:
-            # Marking definitions and some meta objects legitimately carry no
-            # modified; they must still carry created.
-            msg = f"object {stix_id} has no 'created' timestamp"
-            raise SubmissionError(msg)
-
-        created = _parse_stix_timestamp(created_raw, "created", stix_id)
-        modified = _parse_stix_timestamp(modified_raw, "modified", stix_id)
-
-        if modified < created:
-            # STIX requires modified >= created. Beyond validity, a backwards
-            # pair inverts `match[version]=last`, which resolves max(modified):
-            # a submitter's corrected object would lose to their original.
-            msg = (
-                f"object {stix_id} has 'modified' ({modified.isoformat()}) earlier "
-                f"than 'created' ({created.isoformat()})"
-            )
-            raise SubmissionError(msg)
-
-        # Bounds matching the storage columns, checked here so that oversized
-        # member content is a 400 naming the offending object rather than a
-        # database error surfacing as a server fault.
-        for value, limit, field in (
-            (stix_id, _MAX_STIX_ID, "id"),
-            (stix_type, _MAX_STIX_TYPE, "type"),
-        ):
-            if len(value) > limit:
-                msg = f"object '{value[:60]}...' has a '{field}' longer than {limit} characters"
-                raise SubmissionError(msg)
-
-        spec_version = obj.get("spec_version", "2.1")
-        if spec_version != "2.1":
-            msg = f"object {stix_id} declares spec_version {spec_version!r}; AIVS stores 2.1 only"
-            raise SubmissionError(msg)
-
-        key = (stix_id, modified)
+    for obj in objects:
+        parsed = _parse_object(obj)
+        key = (parsed.stix_id, parsed.modified)
         if key in seen:
             # The same version twice in one bundle would violate the per-
             # submission uniqueness constraint; report it as the client error it
             # is rather than surfacing a database exception.
-            msg = f"bundle contains {stix_id} at version {modified.isoformat()} more than once"
+            msg = (
+                f"bundle contains {parsed.stix_id} at version "
+                f"{parsed.modified.isoformat()} more than once"
+            )
             raise SubmissionError(msg)
         seen.add(key)
-
         rows.append(
             StixObject(
-                stix_id=stix_id,
-                type=stix_type,
-                spec_version=spec_version,
-                created=created,
-                modified=modified,
+                stix_id=parsed.stix_id,
+                type=parsed.stix_type,
+                spec_version=parsed.spec_version,
+                created=parsed.created,
+                modified=parsed.modified,
                 submission_id=submission.id,
                 raw=obj,
                 **_extract_indexed_fields(obj),

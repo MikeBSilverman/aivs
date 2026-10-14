@@ -28,7 +28,7 @@ from __future__ import annotations
 import copy
 import datetime as dt
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Final
@@ -249,13 +249,7 @@ def assert_extensions_allowed(obj: Mapping[str, Any]) -> None:
         if not isinstance(extensions, Mapping):
             msg = f"'extensions' must be an object, got {type(extensions).__name__}"
             raise UnknownExtensionError(msg)
-        unknown = sorted(set(extensions) - ALLOWED_EXTENSION_IDS)
-        if unknown:
-            msg = (
-                f"object {obj.get('id', '<no id>')} carries unsupported extension(s): "
-                f"{', '.join(unknown)}"
-            )
-            raise UnknownExtensionError(msg)
+        _refuse_unknown_extensions(extensions, f"object {obj.get('id', '<no id>')}")
 
     # Nested objects carry their own extensions, and the allowlist has to reach
     # them. An observed-data SDO's deprecated-but-valid `objects` property holds
@@ -263,13 +257,8 @@ def assert_extensions_allowed(obj: Mapping[str, Any]) -> None:
     # only the top level meant a bundle whose top-level `extensions` was absent
     # passed untouched and was then stored and served verbatim -- which is the
     # delivery mechanism this allowlist exists to prevent, reached one level down.
-    for value in obj.values():
-        if isinstance(value, Mapping):
-            _assert_nested_extensions_allowed(value)
-        elif isinstance(value, list):
-            for item in value:
-                if isinstance(item, Mapping):
-                    _assert_nested_extensions_allowed(item)
+    for child in _child_objects(obj):
+        _assert_nested_extensions_allowed(child)
 
 
 def _assert_nested_extensions_allowed(obj: Mapping[str, Any], depth: int = 0) -> None:
@@ -284,21 +273,27 @@ def _assert_nested_extensions_allowed(obj: Mapping[str, Any], depth: int = 0) ->
 
     extensions = obj.get("extensions")
     if isinstance(extensions, Mapping):
-        unknown = sorted(set(extensions) - ALLOWED_EXTENSION_IDS)
-        if unknown:
-            msg = (
-                f"nested object {obj.get('id', '<no id>')} carries unsupported "
-                f"extension(s): {', '.join(unknown)}"
-            )
-            raise UnknownExtensionError(msg)
+        _refuse_unknown_extensions(extensions, f"nested object {obj.get('id', '<no id>')}")
 
+    for child in _child_objects(obj):
+        _assert_nested_extensions_allowed(child, depth + 1)
+
+
+def _refuse_unknown_extensions(extensions: Mapping[str, Any], described: str) -> None:
+    """Raise if ``extensions`` names anything outside the allowlist."""
+    unknown = sorted(set(extensions) - ALLOWED_EXTENSION_IDS)
+    if unknown:
+        msg = f"{described} carries unsupported extension(s): {', '.join(unknown)}"
+        raise UnknownExtensionError(msg)
+
+
+def _child_objects(obj: Mapping[str, Any]) -> Iterator[Mapping[str, Any]]:
+    """Yield the objects one level inside ``obj``: mapping values, and mappings in lists."""
     for value in obj.values():
         if isinstance(value, Mapping):
-            _assert_nested_extensions_allowed(value, depth + 1)
+            yield value
         elif isinstance(value, list):
-            for item in value:
-                if isinstance(item, Mapping):
-                    _assert_nested_extensions_allowed(item, depth + 1)
+            yield from (item for item in value if isinstance(item, Mapping))
 
 
 def _reject_authoritative_object_forgery(obj: Mapping[str, Any]) -> None:

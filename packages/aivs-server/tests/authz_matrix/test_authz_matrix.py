@@ -20,7 +20,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from httpx import ASGITransport, AsyncClient
+from httpx import ASGITransport, AsyncClient, Response
 from sqlalchemy import func, select
 
 from aivs_schemas.enums import OrgStatus, OrgType
@@ -330,26 +330,35 @@ async def test_no_portal_route_serves_content_without_a_session(app):
     ) as anonymous:
         for path, method in portal_routes(app):
             response = await anonymous.request(method, concrete(path), data={})
-
-            if path == "/portal/login":
-                # GET renders the form; POST is refused for want of credentials.
-                if method == "GET" and response.status_code != 200:
-                    served.append(f"{method} {path} -> {response.status_code}")
-                if method == "POST" and response.status_code < 400:
-                    served.append(f"{method} {path} -> {response.status_code}")
-                continue
-
-            # Everything else: a redirect to sign in, or a refusal. Never 2xx.
-            if response.status_code < 300:
-                served.append(f"{method} {path} -> {response.status_code}")
-            if 300 <= response.status_code < 400:
-                target = response.headers.get("location", "")
-                if not target.startswith("/portal/login"):
-                    served.append(f"{method} {path} redirected to {target!r}")
+            failure = anonymous_portal_failure(path, method, response)
+            if failure:
+                served.append(failure)
 
     assert not served, (
         "these portal routes served content or acted without a session:\n  " + "\n  ".join(served)
     )
+
+
+def anonymous_portal_failure(path: str, method: str, response: Response) -> str | None:
+    """Describe how a portal route failed to refuse an anonymous caller, or ``None``."""
+    status = response.status_code
+    if path == "/portal/login":
+        return _sign_in_page_failure(method, response)
+
+    # Everything else: a redirect to sign in, or a refusal. Never 2xx.
+    if status < 300:
+        return f"{method} {path} -> {status}"
+    target = response.headers.get("location", "")
+    if status < 400 and not target.startswith("/portal/login"):
+        return f"{method} {path} redirected to {target!r}"
+    return None
+
+
+def _sign_in_page_failure(method: str, response: Response) -> str | None:
+    """GET renders the form; POST is refused for want of credentials."""
+    status = response.status_code
+    is_wrong = (method == "GET" and status != 200) or (method == "POST" and status < 400)
+    return f"{method} /portal/login -> {status}" if is_wrong else None
 
 
 async def test_the_sign_in_page_leaks_nothing_about_members(app):

@@ -9,6 +9,7 @@ one organisation never changes what another route sees.
 from __future__ import annotations
 
 import datetime as dt
+import json
 import uuid
 from dataclasses import dataclass, field
 from typing import Any
@@ -18,7 +19,7 @@ from cryptography.hazmat.primitives import hashes
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from aivs_schemas.enums import OrgStatus, OrgType
+from aivs_schemas.enums import CircleRole, OrgStatus, OrgType
 from aivs_server.auth.secretbox import SecretBox, SecretPurpose
 from aivs_server.auth.sessions import establish_session
 from aivs_server.config import Settings
@@ -30,6 +31,8 @@ from tests.authz_matrix.principals import (
     Principal,
 )
 from tests.conftest import ISAC_STAFF_ROLES, TEST_PROXY_SECRET, proxy_headers
+from tests.unit.contribution_world import seed as seed_record
+from tests.unit.contribution_world import vulnerability_raw
 
 API = "/api/v1/submissions"
 STAMP = "2026-08-01T00:00:00.000Z"
@@ -46,6 +49,11 @@ class World:
     unregistered_pem: str = ""
     revocable_certificate_id: uuid.UUID | None = None
     webhook_id: uuid.UUID | None = None
+    #: The ISAC's published record in the circle: what the TAXII inbox takes
+    #: contributions on.
+    public_stix_id: str = ""
+    posture_id: uuid.UUID | None = None
+    taxii_status_id: uuid.UUID | None = None
 
 
 @dataclass
@@ -82,6 +90,19 @@ def _bundle(name: str) -> tuple[dict[str, Any], str]:
         ],
     }
     return bundle, stix_id
+
+
+def inbox_note(public_stix_id: str) -> dict[str, Any]:
+    """A contribution on the ISAC's published record: what the inbox takes."""
+    return {
+        "type": "note",
+        "spec_version": "2.1",
+        "id": f"note--{uuid.uuid4()}",
+        "created": STAMP,
+        "modified": STAMP,
+        "content": "Seen at a member over TAXII.",
+        "object_refs": [public_stix_id],
+    }
 
 
 async def _session_credentials(
@@ -153,6 +174,39 @@ class _Seeder:
         await self.step(submission_id, "distribute", body)
         return submission_id, stix_id
 
+    async def filed_on_behalf(self, member_id: uuid.UUID) -> uuid.UUID:
+        bundle, _stix_id = _bundle("Matrix proxy")
+        response = await self.client.post(
+            f"{API}/on-behalf",
+            json={
+                "title": "Matrix proxy",
+                "discovery_scope": "ai_system",
+                "tlp": "amber",
+                "bundle": bundle,
+                "on_behalf_of": str(member_id),
+                "consent_sha256": "c0" * 32,
+            },
+            headers=self.editor,
+        )
+        assert response.status_code == 201, response.text
+        return uuid.UUID(response.json()["id"])
+
+    async def posture(self, stix_id: str) -> uuid.UUID:
+        response = await self.client.put(
+            f"/api/v1/vulnerabilities/{stix_id}/posture", json={}, headers=self.member
+        )
+        assert response.status_code == 200, response.text
+        return uuid.UUID(response.json()["id"])
+
+    async def inbox(self, collection_id: uuid.UUID | None, public_stix_id: str) -> uuid.UUID:
+        response = await self.client.post(
+            f"/taxii2/aivs/collections/{collection_id}/objects/",
+            content=json.dumps({"objects": [inbox_note(public_stix_id)]}),
+            headers={**self.member, "content-type": "application/taxii+json;version=2.1"},
+        )
+        assert response.status_code == 202, response.text
+        return uuid.UUID(response.json()["id"])
+
 
 async def build_world(f: Factories) -> tuple[World, dict[Principal, Credentials]]:
     world = World()
@@ -194,11 +248,23 @@ async def build_world(f: Factories) -> tuple[World, dict[Principal, Credentials]
     world.orgs = {name: org.id for name, org in orgs.items()}
 
     circle = await f.make_circle("matrix-circle")
-    for name in ("member", "peer", "remove", "remove_portal"):
+    # The member contributes to the circle; the peer only reads it.
+    await f.join_circle(orgs["member"], circle, role=CircleRole.CONTRIBUTOR)
+    for name in ("peer", "remove", "remove_portal"):
         await f.join_circle(orgs[name], circle)
     collection = await f.make_collection(circle)
     world.circle_id = circle.id
     world.collection_id = collection.id
+    # The ISAC's own record, seeded directly: its filing path is not what the
+    # matrix is about, and only the routes that contribute to it read it.
+    world.public_stix_id = f"vulnerability--{uuid.uuid4()}"
+    await seed_record(
+        f.session,
+        orgs["isac"],
+        vulnerability_raw(world.public_stix_id, cve_status="published"),
+        circle=circle,
+    )
+    await f.session.commit()
 
     webhook_id = uuid.uuid4()
     f.session.add(
@@ -237,6 +303,9 @@ async def _seed_submissions(world: World, seed: _Seeder) -> None:
     for name in ("extend", "release"):
         world.submissions[name], _ = await seed.distributed(f"Matrix {name}", release_at=later)
     world.submissions["reveal"], _ = await seed.distributed("Matrix reveal", anonymous=True)
+    world.submissions["proxy"] = await seed.filed_on_behalf(world.orgs["member"])
+    world.posture_id = await seed.posture(world.object_stix_id)
+    world.taxii_status_id = await seed.inbox(world.collection_id, world.public_stix_id)
 
 
 async def _credentials(

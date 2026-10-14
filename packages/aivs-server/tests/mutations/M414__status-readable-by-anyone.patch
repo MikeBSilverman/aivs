@@ -1,0 +1,16 @@
+Mutation M414: a TAXII status is readable by any organisation
+Re-applies: Phase E slice 4 (T7) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_taxii_inbox.py::test_the_status_is_readable_by_the_poster_alone
+
+diff --git a/packages/aivs-server/src/aivs_server/services/inbox.py b/packages/aivs-server/src/aivs_server/services/inbox.py
+--- a/packages/aivs-server/src/aivs_server/services/inbox.py
++++ b/packages/aivs-server/src/aivs_server/services/inbox.py
+@@ -145,6 +145,6 @@
+ ) -> TaxiiStatus | None:
+     """The status resource, if the caller's organisation made the request; else ``None``."""
+     row = await session.get(TaxiiStatus, status_id)
+-    if row is None or row.org_id != ctx.org_id:
++    if row is None:
+         return None
+     return row

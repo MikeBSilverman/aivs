@@ -1,0 +1,17 @@
+Mutation M410: submit publishes whatever the circle's post-moderation setting
+Re-applies: Phase E slice 4 (T7) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_post_moderation.py::test_the_same_note_in_a_circle_without_post_moderation_waits_for_review
+
+diff --git a/packages/aivs-server/src/aivs_server/services/contributions.py b/packages/aivs-server/src/aivs_server/services/contributions.py
+--- a/packages/aivs-server/src/aivs_server/services/contributions.py
++++ b/packages/aivs-server/src/aivs_server/services/contributions.py
+@@ -354,7 +354,7 @@
+     if not referenced:
+         return frozenset()
+     open_circles = frozenset(
+-        (await session.execute(select(Circle.id).where(Circle.post_moderated.is_(True))))
++        (await session.execute(select(Circle.id)))
+         .scalars()
+         .all()
+     )

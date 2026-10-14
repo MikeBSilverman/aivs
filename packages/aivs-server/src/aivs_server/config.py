@@ -232,6 +232,11 @@ class Settings(BaseSettings):
     #: Default and maximum page sizes for TAXII object listings.
     taxii_default_page_size: int = Field(default=100, ge=1, le=1000)
     taxii_max_page_size: int = Field(default=500, ge=1, le=1000)
+    #: Contributions an organisation may publish without review in one hour:
+    #: one-click, post-moderated and TAXII inbox filings together (SF-66). A
+    #: member clicking is a few an hour; a flood is a script or a stolen
+    #: certificate, refused past this and raised as ``contribution_flood``.
+    contribution_hourly_limit: int = Field(default=30, ge=1, le=1000)
 
     # -- Portal sessions ---------------------------------------------------
     #: Signs pagination cursors, CSRF tokens, and session cookies.

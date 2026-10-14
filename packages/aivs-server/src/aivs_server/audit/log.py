@@ -133,6 +133,13 @@ class AuditAction:
     SUBMISSION_UPDATED = "submission.updated"
     SUBMISSION_TRANSITIONED = "submission.transitioned"
     SUBMISSION_DISTRIBUTED = "submission.distributed"
+    SUBMISSION_FILED_ON_BEHALF = "submission.filed_on_behalf"
+    SUBMISSION_PROXY_CONFIRMED = "submission.proxy_confirmed"
+    CONTRIBUTION_PUBLISHED = "contribution.published"
+    CONTRIBUTION_RATE_LIMITED = "contribution.rate_limited"
+    CIRCLE_POST_MODERATION_SET = "circle.post_moderation_set"
+    POSTURE_RECORDED = "posture.recorded"
+    TAXII_INBOX_RECEIVED = "taxii.inbox_received"
     DISTRIBUTION_PAUSED = "instance.distribution_paused"
     DISTRIBUTION_RESUMED = "instance.distribution_resumed"
 

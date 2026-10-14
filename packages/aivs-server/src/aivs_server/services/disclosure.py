@@ -58,7 +58,7 @@ from aivs_server.db.models import (
 )
 from aivs_server.services.references import external_references_by_type
 
-__all__ = ["DisclosureScope", "disclosure_problem"]
+__all__ = ["DisclosureScope", "cve_status", "disclosure_problem"]
 
 #: One refusal for a target that is absent, invisible to the caller, or not the
 #: ISAC's. Identical in every case, because any difference is an existence
@@ -95,7 +95,7 @@ class DisclosureScope:
     now: dt.datetime
 
 
-def _cve_status(raw: Mapping[str, Any]) -> str | None:
+def cve_status(raw: Mapping[str, Any]) -> str | None:
     extensions = raw.get("extensions") or {}
     for extension_id in (AIVS_INTEL_EXTENSION_ID, AIVS_EXTENSION_ID):
         body = extensions.get(extension_id)
@@ -175,7 +175,7 @@ async def _target_problem(
     if current is None:
         return UNKNOWN_TARGET
     if scope_value is DiscoveryScope.DISCLOSED_THIRD_PARTY:
-        if _cve_status(current) == "published":
+        if cve_status(current) == "published":
             return None
         return (
             f"{stix_id} is not public yet; a contribution before disclosure is "

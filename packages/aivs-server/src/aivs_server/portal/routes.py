@@ -72,6 +72,7 @@ from aivs_server.portal.shared import (
     stamp,
     tlp_label,
 )
+from aivs_server.services.contributions import submit_submission
 from aivs_server.services.distribution import DistributionError, distribute_submission
 from aivs_server.services.provenance import consequential_changes
 from aivs_server.services.publication import PublicationPausedError
@@ -701,6 +702,15 @@ async def perform_action(
                 circle_ids=list(circle_ids),
                 visible_at=release_at or dt.datetime.now(dt.UTC),
             )
+        elif verb == "submit":
+            await submit_submission(
+                session,
+                ctx,
+                submission,
+                reason=None,
+                hourly_limit=settings.contribution_hourly_limit,
+                now=dt.datetime.now(dt.UTC),
+            )
         elif verb == "validate":
             acknowledged = frozenset(
                 str(value) for value in (await request.form()).getlist("acknowledge")
@@ -818,6 +828,7 @@ async def submit_finding(
             discovery_scope=payload.discovery_scope,
             distribute_anonymously=payload.distribute_anonymously,
             bundle=payload.bundle,
+            filed_for=None,
             via="portal",
         )
         # One commit, so the submission and the record of it land together. A

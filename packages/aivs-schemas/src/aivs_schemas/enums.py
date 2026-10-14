@@ -37,6 +37,8 @@ __all__ = [
     "OperatorRole",
     "OrgStatus",
     "OrgType",
+    "PostureStatus",
+    "SubmissionLane",
     "SubmissionSource",
     "SubmissionState",
     "is_transition_allowed",
@@ -249,6 +251,35 @@ class SubmissionSource(StrEnum):
 
     MEMBER = "member"
     SYSTEM = "system"
+
+
+class SubmissionLane(StrEnum):
+    """How a submission reached members (Phase E, "making members share").
+
+    ``REVIEW`` is the ordinary path: an ISAC editor validates and distributes.
+    ``FAST`` is a one-click structural contribution -- no free text, on public
+    content, from a person -- which the server validates and publishes at once.
+    ``POST_MODERATED`` is a short contribution published on submit into a circle
+    whose editor allows it, for an editor to revoke after the fact. Both
+    non-review lanes count against one per-organisation hourly limit (SF-66).
+    """
+
+    REVIEW = "review"
+    FAST = "fast"
+    POST_MODERATED = "post_moderated"
+
+
+class PostureStatus(StrEnum):
+    """An organisation's VEX status for one vulnerability: CSAF VEX / OpenVEX verbatim.
+
+    Private to the organisation (SF-70). The one-click records
+    ``UNDER_INVESTIGATION``; nothing records ``AFFECTED`` for a member by default.
+    """
+
+    NOT_AFFECTED = "not_affected"
+    AFFECTED = "affected"
+    FIXED = "fixed"
+    UNDER_INVESTIGATION = "under_investigation"
 
 
 class EmbargoPolicy(StrEnum):

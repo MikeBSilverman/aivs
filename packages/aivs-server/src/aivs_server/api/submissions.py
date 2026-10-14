@@ -39,7 +39,7 @@ from aivs_schemas.models import (
 )
 from aivs_server.audit.log import AuditAction, record
 from aivs_server.auth.context import AuthContext
-from aivs_server.auth.deps import AuthenticatedContext, SessionDep
+from aivs_server.auth.deps import AuthenticatedContext, SessionDep, SettingsDep
 from aivs_server.auth.policy import (
     can_change_embargo,
     can_reveal_submitter,
@@ -60,6 +60,7 @@ from aivs_server.notify.events import (
     circle_ids_for_submission,
     queue_visibility_notifications,
 )
+from aivs_server.services.contributions import submit_submission
 from aivs_server.services.distribution import DistributionError, distribute_submission
 from aivs_server.services.embargo import EmbargoError, extend_embargo, release_embargo_now
 from aivs_server.services.submissions import (
@@ -140,6 +141,7 @@ async def create(
             discovery_scope=payload.discovery_scope,
             distribute_anonymously=payload.distribute_anonymously,
             bundle=payload.bundle,
+            filed_for=None,
         )
         await session.commit()
     except _CLIENT_ERRORS as exc:
@@ -278,12 +280,28 @@ async def submit(
     payload: TransitionRequest,
     ctx: AuthenticatedContext,
     session: SessionDep,
+    settings: SettingsDep,
 ) -> SubmissionOut:
-    """Hand a draft to the hosting ISAC for review."""
-    return _present(
-        await _transition(session, ctx, submission_id, SubmissionState.SUBMITTED, payload.reason),
-        ctx,
-    )
+    """Hand a draft to the hosting ISAC for review.
+
+    A short contribution on public content in a circle an editor opened to
+    post-moderation is published at once instead (``services.contributions``).
+    """
+    submission = await _require_visible_submission(session, ctx, submission_id, for_update=True)
+    try:
+        await submit_submission(
+            session,
+            ctx,
+            submission,
+            reason=payload.reason,
+            hourly_limit=settings.contribution_hourly_limit,
+            now=dt.datetime.now(dt.UTC),
+        )
+    except _CLIENT_ERRORS as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    await session.commit()
+    await session.refresh(submission)
+    return _present(submission, ctx)
 
 
 @router.post("/{submission_id}/validate", response_model=SubmissionOut)

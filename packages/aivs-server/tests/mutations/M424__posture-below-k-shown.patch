@@ -1,0 +1,17 @@
+Mutation M424: counts are shown whatever the total
+Re-applies: Phase E slice 4 (T7) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_posture.py::test_below_k_the_isac_sees_nothing
+
+diff --git a/packages/aivs-server/src/aivs_server/services/posture.py b/packages/aivs-server/src/aivs_server/services/posture.py
+--- a/packages/aivs-server/src/aivs_server/services/posture.py
++++ b/packages/aivs-server/src/aivs_server/services/posture.py
+@@ -103,7 +103,7 @@
+ 
+ def _suppress(counts: Mapping[PostureStatus, int]) -> PostureSummary:
+     total = sum(counts.values())
+-    if total < K_ANONYMITY:
++    if False:
+         withheld = Count(None, f"shown once at least {K_ANONYMITY} organisations have one")
+         return PostureSummary(withheld, dict.fromkeys(PostureStatus, withheld))
+     by_status = {

@@ -1,0 +1,17 @@
+Mutation M404: the fast lane publishes into every circle the member reads
+Re-applies: Phase E slice 4 (T7) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_one_click.py::test_a_reader_only_member_waits_for_review
+
+diff --git a/packages/aivs-server/src/aivs_server/services/contributions.py b/packages/aivs-server/src/aivs_server/services/contributions.py
+--- a/packages/aivs-server/src/aivs_server/services/contributions.py
++++ b/packages/aivs-server/src/aivs_server/services/contributions.py
+@@ -181,7 +181,7 @@
+ 
+ def publishable_circles(ctx: AuthContext, target: Target) -> frozenset[uuid.UUID]:
+     """The circles a contribution on ``target`` may reach without review."""
+-    return target.circle_ids & writable_circle_ids(ctx)
++    return target.circle_ids
+ 
+ 
+ async def within_hourly_allowance(

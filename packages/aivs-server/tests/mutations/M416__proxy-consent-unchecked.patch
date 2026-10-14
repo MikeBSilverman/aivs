@@ -1,0 +1,18 @@
+Mutation M416: any string passes as the consent artefact's hash
+Re-applies: Phase E slice 4 (T7) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_proxy_filing.py::test_a_filing_without_a_consent_artefact_is_refused_and_nothing_is_filed[upper]
+Expect red: packages/aivs-server/tests/unit/test_proxy_filing.py::test_a_filing_without_a_consent_artefact_is_refused_and_nothing_is_filed[not-hex]
+
+diff --git a/packages/aivs-server/src/aivs_server/services/proxy_filing.py b/packages/aivs-server/src/aivs_server/services/proxy_filing.py
+--- a/packages/aivs-server/src/aivs_server/services/proxy_filing.py
++++ b/packages/aivs-server/src/aivs_server/services/proxy_filing.py
+@@ -105,7 +105,7 @@
+     scope, anonymity, bundle).
+     """
+     require(is_isac_editor(ctx), "proxy_filing_requires_isac_editor")
+-    if not _SHA256_HEX.match(consent_sha256):
++    if False:
+         msg = "consent_sha256 must be the SHA-256 of the consent artefact, in lower-case hex"
+         raise SubmissionError(msg)
+     member = await _member_for(session, org_id)

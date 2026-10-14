@@ -1,0 +1,17 @@
+Mutation M409: a grouping of any context is post-moderated
+Re-applies: Phase E slice 4 (T7) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_post_moderation.py::test_a_grouping_is_post_moderated_only_as_a_request_for_information
+
+diff --git a/packages/aivs-server/src/aivs_server/services/contributions.py b/packages/aivs-server/src/aivs_server/services/contributions.py
+--- a/packages/aivs-server/src/aivs_server/services/contributions.py
++++ b/packages/aivs-server/src/aivs_server/services/contributions.py
+@@ -339,8 +339,6 @@
+         object_type = raw.get("type")
+         if object_type not in POST_MODERABLE_TYPES:
+             return False
+-        if object_type == "grouping" and raw.get("context") != RFI_CONTEXT:
+-            return False
+         if object_type == "opinion" and ctx.org_type is OrgType.VENDOR:
+             return False
+     return bool(raws)

@@ -21,6 +21,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from tests.authz_matrix.world import inbox_note
+
 if TYPE_CHECKING:
     from tests.authz_matrix.world import World
 
@@ -83,6 +85,24 @@ class RouteClass(enum.StrEnum):
     #: Deleting a webhook, addressed by id: whoever may register one, for their
     #: own organisation's; others 404, those who may not 403 (before any lookup).
     WEBHOOK_DELETE = "webhook delete"
+    #: Responding to content (a one-click contribution, a posture): whoever can
+    #: read the object; others 404. The ISAC files through review instead.
+    CONTENT_RESPONSE = "content response"
+    #: A record of one organisation's own (its posture, its TAXII status): that
+    #: organisation only; everyone else 404, the ISAC included.
+    OWN_RECORD = "own record"
+    #: Posture counts, each withheld below k: the ISAC's reviewers; others 404.
+    POSTURE_SUMMARY = "posture summary"
+    #: Contributing over TAXII: the circle's contributors; its readers 403
+    #: (TAXII's answer for readable but not writable); others 404.
+    TAXII_INBOX = "taxii inbox"
+    #: Turning a circle's post-moderation on or off: an editor.
+    POST_MODERATION = "post moderation"
+    #: Filing for a member on its consent: an editor.
+    PROXY_FILING = "proxy filing"
+    #: Confirming a filing made in one's name: that member; a reviewer who can
+    #: see it 403.
+    PROXY_CONFIRM = "proxy confirm"
     #: Signing in and out: the same for every caller.
     SIGN_IN = "sign in"
     #: Liveness, readiness and metrics, for the orchestrator: everyone.
@@ -98,6 +118,8 @@ class RouteCase:
     build: Callable[[World], tuple[str, dict[str, Any] | None]]
     #: The portal takes forms, the machine surface JSON.
     is_portal: bool = False
+    #: Sent as the body's media type where a route requires its own (TAXII's).
+    content_type: str | None = None
 
     @property
     def key(self) -> tuple[str, str]:
@@ -160,6 +182,17 @@ def _taxii(suffix: str) -> Callable[[World], Any]:
         return f"{TAXII}{path}", None
 
     return build
+
+
+def _inbox_envelope(world: World) -> tuple[str, dict[str, Any]]:
+    path = f"{TAXII}/collections/{world.collection_id}/objects/"
+    return path, {"objects": [inbox_note(world.public_stix_id)]}
+
+
+def _on_behalf(world: World) -> tuple[str, dict[str, Any]]:
+    path, body = _new_submission(world)
+    consent = {"on_behalf_of": str(world.orgs["member"]), "consent_sha256": "c0" * 32}
+    return f"{path}/on-behalf", {**body, **consent}
 
 
 def _portal_sub(
@@ -335,6 +368,57 @@ ROUTES: tuple[RouteCase, ...] = (
         RouteClass.EDITORIAL,
         _portal_sub("validate_portal", "/validate", {}),
         is_portal=True,
+    ),
+    # ----- making members share -------------------------------------------
+    RouteCase(
+        "POST",
+        "/api/v1/objects/{stix_id}/contributions",
+        RouteClass.CONTENT_RESPONSE,
+        lambda world: (f"{API}/objects/{world.object_stix_id}/contributions", {"kind": "seen"}),
+    ),
+    RouteCase(
+        "PUT",
+        "/api/v1/vulnerabilities/{stix_id}/posture",
+        RouteClass.CONTENT_RESPONSE,
+        lambda world: (f"{API}/vulnerabilities/{world.object_stix_id}/posture", {}),
+    ),
+    RouteCase(
+        "GET",
+        "/api/v1/postures/{posture_id}",
+        RouteClass.OWN_RECORD,
+        lambda world: (f"{API}/postures/{world.posture_id}", None),
+    ),
+    RouteCase(
+        "GET",
+        "/api/v1/vulnerabilities/{stix_id}/posture-summary",
+        RouteClass.POSTURE_SUMMARY,
+        lambda world: (f"{API}/vulnerabilities/{world.object_stix_id}/posture-summary", None),
+    ),
+    RouteCase(
+        "PUT",
+        "/api/v1/circles/{circle_id}/post-moderation",
+        RouteClass.POST_MODERATION,
+        lambda world: (f"{API}/circles/{world.circle_id}/post-moderation", {"enabled": False}),
+    ),
+    RouteCase("POST", "/api/v1/submissions/on-behalf", RouteClass.PROXY_FILING, _on_behalf),
+    RouteCase(
+        "POST",
+        "/api/v1/submissions/{submission_id}/confirm",
+        RouteClass.PROXY_CONFIRM,
+        _sub("proxy", "/confirm", {}),
+    ),
+    RouteCase(
+        "POST",
+        "/taxii2/aivs/collections/{collection_id}/objects/",
+        RouteClass.TAXII_INBOX,
+        _inbox_envelope,
+        content_type="application/taxii+json;version=2.1",
+    ),
+    RouteCase(
+        "GET",
+        "/taxii2/aivs/status/{status_id}/",
+        RouteClass.OWN_RECORD,
+        lambda world: (f"{TAXII}/status/{world.taxii_status_id}/", None),
     ),
     # ----- organisations, certificates, rosters ---------------------------
     RouteCase("GET", "/api/v1/orgs", RouteClass.LISTING, _fixed(f"{API}/orgs")),
@@ -546,8 +630,8 @@ ROUTES: tuple[RouteCase, ...] = (
 #: not a total, so one surface vanishing from the walk cannot hide behind another
 #: growing. Raise a floor when a surface grows; lowering one is a decision.
 SURFACE_FLOORS: dict[str, int] = {
-    "/api/v1": 31,
-    "/taxii2": 8,
+    "/api/v1": 38,
+    "/taxii2": 10,
     "/portal/admin": 10,
     "/portal": 20,
     "/healthz": 1,

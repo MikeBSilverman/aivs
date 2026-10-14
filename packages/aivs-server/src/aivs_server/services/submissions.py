@@ -59,11 +59,14 @@ from aivs_server.taxii.resources import truncate_to_taxii_precision
 
 __all__ = [
     "STORAGE_ERRORS",
+    "ProxyFiling",
     "SubmissionError",
     "apply_transition",
+    "check_content_rules",
     "contribution_problem",
     "create_submission",
     "foreign_identity_ids",
+    "record_transition",
     "replace_submission_objects",
     "self_identifying_problem",
     "update_submission",
@@ -569,13 +572,30 @@ async def _stored_raws(session: AsyncSession, submission: Submission) -> list[An
 
 
 async def _refuse_contribution_problem(
-    session: AsyncSession, ctx: AuthContext, submission: Submission, objects: list[Any]
+    session: AsyncSession,
+    visible_to: AuthContext | None,
+    submission: Submission,
+    objects: list[Any],
 ) -> None:
     problem = await contribution_problem(
-        session, submission, objects, visible_to=ctx, now=dt.datetime.now(dt.UTC)
+        session, submission, objects, visible_to=visible_to, now=dt.datetime.now(dt.UTC)
     )
     if problem is not None:
         raise SubmissionError(problem)
+
+
+@dataclass(frozen=True, slots=True)
+class ProxyFiling:
+    """An ISAC analyst filing for a member (SF-68): who, and on what consent.
+
+    ``consent_sha256`` binds the filing to the member's consent artefact -- the
+    forwarded mail or the click -- which the ISAC keeps; ``confirm_by`` is when
+    silence counts as confirmation.
+    """
+
+    org_id: uuid.UUID
+    consent_sha256: str
+    confirm_by: dt.datetime
 
 
 async def create_submission(
@@ -588,9 +608,10 @@ async def create_submission(
     discovery_scope: Any,
     distribute_anonymously: bool,
     bundle: dict[str, Any],
+    filed_for: ProxyFiling | None,
     via: str = "api",
 ) -> Submission:
-    """Create a draft submission owned by the caller's organisation.
+    """Create a draft submission owned by the caller's organisation, or the one it files for.
 
     ``via`` records which surface filed it. It is a detail on the single audit
     record this function writes, rather than a second record written by the
@@ -598,13 +619,19 @@ async def create_submission(
 
     The submitter is taken from the authenticated context, never from the
     request body: a member must not be able to file content in another firm's
-    name.
+    name. The one exception is ``filed_for``, which only an ISAC editor's
+    proxy filing passes (``services.proxy_filing``), and which records the
+    editor and the member's consent beside it. Required rather than defaulted,
+    so every caller says which it is.
     """
     submission = Submission(
-        submitter_org_id=ctx.org_id,
-        created_by_operator_id=ctx.operator_id,
+        submitter_org_id=filed_for.org_id if filed_for else ctx.org_id,
+        created_by_operator_id=None if filed_for else ctx.operator_id,
+        filed_by_operator_id=ctx.operator_id if filed_for else None,
+        proxy_consent_sha256=filed_for.consent_sha256 if filed_for else None,
+        proxy_confirm_by=filed_for.confirm_by if filed_for else None,
         state=SubmissionState.DRAFT,
-        source=source_for(ctx),
+        source=SubmissionSource.MEMBER if filed_for else source_for(ctx),
         tlp=tlp,
         discovery_scope=discovery_scope,
         distribute_anonymously=distribute_anonymously,
@@ -615,7 +642,11 @@ async def create_submission(
     await session.flush()
 
     object_count = await replace_submission_objects(session, submission, bundle)
-    await _refuse_contribution_problem(session, ctx, submission, bundle.get("objects") or [])
+    # An analyst filing for a member is ISAC staff, who see everything; the
+    # rules are then checked from that view, as validate will check them.
+    await _refuse_contribution_problem(
+        session, None if filed_for else ctx, submission, bundle.get("objects") or []
+    )
 
     session.add(
         SubmissionTransition(
@@ -640,6 +671,7 @@ async def create_submission(
             "object_count": object_count,
             "anonymous": distribute_anonymously,
             "via": via,
+            "filed_for": str(filed_for.org_id) if filed_for else None,
         },
     )
     return submission
@@ -778,6 +810,28 @@ async def apply_transition(
     if target is SubmissionState.VALIDATED:
         await _prepare_validation(session, ctx, submission, acknowledged_changes)
 
+    await record_transition(session, ctx, submission, target, reason=reason)
+    return submission
+
+
+async def record_transition(
+    session: AsyncSession,
+    ctx: AuthContext,
+    submission: Submission,
+    target: SubmissionState,
+    *,
+    reason: str | None,
+) -> None:
+    """Make the move and write its history, in the caller's transaction.
+
+    No authorization: :func:`apply_transition` checks the editorial right, and
+    the one other caller, the fast lane (``services.contributions``), checks the
+    lane rule that stands in for it. Legality in the state machine is checked
+    here, because no path may skip it.
+    """
+    if not is_transition_allowed(submission.state, target):
+        msg = f"cannot move a submission from '{submission.state.value}' to '{target.value}'"
+        raise SubmissionError(msg)
     previous = submission.state
     submission.state = target
     if target is SubmissionState.DISTRIBUTED and submission.distributed_at is None:
@@ -801,7 +855,26 @@ async def apply_transition(
         resource_id=str(submission.id),
         details={"from": previous.value, "to": target.value, "reason": reason},
     )
-    return submission
+
+
+async def check_content_rules(session: AsyncSession, submission: Submission) -> None:
+    """Owner-only versioning, the disclosure split and TLP inheritance, from the ISAC's view.
+
+    What validate checks of any submission's content, without the parts that
+    need a human reviewer (the AI gate, the reviewer stamp). The fast lane runs
+    this before publishing what no editor looked at.
+    """
+    raws = await _stored_raws(session, submission)
+    for problem in (
+        await foreign_owned_versions_problem(
+            session, raws, owner_org_id=submission.submitter_org_id
+        ),
+        await contribution_problem(
+            session, submission, raws, visible_to=None, now=dt.datetime.now(dt.UTC)
+        ),
+    ):
+        if problem is not None:
+            raise SubmissionError(problem)
 
 
 async def load_submission(

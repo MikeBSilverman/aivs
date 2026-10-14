@@ -17,6 +17,7 @@ behind a route that does not exist yet.
 from __future__ import annotations
 
 import enum
+import json
 from collections.abc import Mapping
 from typing import Any
 
@@ -128,6 +129,22 @@ EXPECTED: Mapping[RouteClass, Mapping[Principal, Outcome]] = {
     RouteClass.STATUS_PAGE: {
         **_allow(P.SYSTEM_ADMIN, P.ISAC_MEMBERSHIP, otherwise=F),
         **dict.fromkeys(CERTIFICATE_ONLY, S),
+    },
+    # The world's object is the member's AMBER finding in the circle, which the
+    # ISAC is not a member of; its reviewers see the workflow record, not the
+    # content, so they 404 here as on the circle's TAXII content.
+    RouteClass.CONTENT_RESPONSE: _allow(*_MEMBER, P.PEER_MACHINE, otherwise=N),
+    # The member wrote the posture and made the TAXII request.
+    RouteClass.OWN_RECORD: _allow(*_MEMBER, otherwise=N),
+    RouteClass.POSTURE_SUMMARY: _allow(P.ISAC_ANALYST, P.ISAC_EDITOR, otherwise=N),
+    # The member contributes to the circle; the peer only reads it.
+    RouteClass.TAXII_INBOX: {**_allow(*_MEMBER, otherwise=N), P.PEER_MACHINE: F},
+    RouteClass.POST_MODERATION: _allow(P.ISAC_EDITOR, otherwise=F),
+    RouteClass.PROXY_FILING: _allow(P.ISAC_EDITOR, otherwise=F),
+    RouteClass.PROXY_CONFIRM: {
+        **_allow(*_MEMBER, otherwise=N),
+        P.ISAC_ANALYST: F,
+        P.ISAC_EDITOR: F,
     },
     RouteClass.WEBHOOK_REGISTER: _allow(
         P.MEMBER_MACHINE, P.MEMBER_ORG_ADMIN, P.PEER_MACHINE, P.SYSTEM_ADMIN, otherwise=F
@@ -283,6 +300,9 @@ def _in_safe_order(routes: tuple[RouteCase, ...]) -> list[RouteCase]:
 
 async def _call(http: AsyncClient, route: RouteCase, world: Any, credentials: Any) -> Response:
     path, body = route.build(world)
+    if route.content_type is not None:
+        headers = {**credentials.api_headers, "content-type": route.content_type}
+        return await http.request(route.method, path, content=json.dumps(body), headers=headers)
     if not route.is_portal:
         return await http.request(route.method, path, json=body, headers=credentials.api_headers)
     if route.method == "GET":

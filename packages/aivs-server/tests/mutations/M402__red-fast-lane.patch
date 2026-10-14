@@ -1,0 +1,17 @@
+Mutation M402: a click on RED content is published at once
+Re-applies: Phase E slice 4 (T7) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_one_click.py::test_a_click_on_red_content_waits_for_review_and_is_red_itself
+
+diff --git a/packages/aivs-server/src/aivs_server/services/contributions.py b/packages/aivs-server/src/aivs_server/services/contributions.py
+--- a/packages/aivs-server/src/aivs_server/services/contributions.py
++++ b/packages/aivs-server/src/aivs_server/services/contributions.py
+@@ -170,8 +170,6 @@
+         return "filed by an automation organisation"
+     if ctx.org_type is OrgType.VENDOR and object_type == "opinion":
+         return "a vendor's opinion"
+-    if target.tlp is TLP.RED:
+-        return "about RED content"
+     if not target.is_public:
+         return "about content that is not public"
+     if not publishable_circles(ctx, target):

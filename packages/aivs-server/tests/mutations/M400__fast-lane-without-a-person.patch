@@ -1,0 +1,17 @@
+Mutation M400: a click from a certificate alone is published at once
+Re-applies: Phase E slice 4 (T7) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_one_click.py::test_the_same_click_from_a_machine_certificate_waits_for_review
+
+diff --git a/packages/aivs-server/src/aivs_server/services/contributions.py b/packages/aivs-server/src/aivs_server/services/contributions.py
+--- a/packages/aivs-server/src/aivs_server/services/contributions.py
++++ b/packages/aivs-server/src/aivs_server/services/contributions.py
+@@ -164,8 +164,6 @@
+ 
+ def fast_lane_problem(ctx: AuthContext, target: Target, *, object_type: str) -> str | None:
+     """Why this contribution must be reviewed rather than published at once, or ``None``."""
+-    if ctx.operator_id is None:
+-        return "filed by a machine identity"
+     if ctx.org_type is OrgType.AUTOMATION:
+         return "filed by an automation organisation"
+     if ctx.org_type is OrgType.VENDOR and object_type == "opinion":

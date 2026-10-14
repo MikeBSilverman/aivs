@@ -1,0 +1,16 @@
+Mutation M417: the member is not told of a filing in its name
+Re-applies: Phase E slice 4 (T7) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_proxy_filing.py::test_the_member_is_told_at_once_and_the_notice_carries_no_content
+
+diff --git a/packages/aivs-server/src/aivs_server/services/proxy_filing.py b/packages/aivs-server/src/aivs_server/services/proxy_filing.py
+--- a/packages/aivs-server/src/aivs_server/services/proxy_filing.py
++++ b/packages/aivs-server/src/aivs_server/services/proxy_filing.py
+@@ -131,7 +131,6 @@
+         .scalars()
+         .all()
+     )
+-    _queue_notice(session, hooks, submission)
+     await record(
+         session,
+         action=AuditAction.SUBMISSION_FILED_ON_BEHALF,

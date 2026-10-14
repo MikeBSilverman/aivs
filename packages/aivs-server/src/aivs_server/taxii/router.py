@@ -24,6 +24,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aivs_schemas.enums import AckVia
+from aivs_schemas.extension.builders import (
+    BundleValidationError,
+    ExtensionValidationError,
+    UnknownExtensionError,
+)
 from aivs_server.audit.log import AuditAction, record
 from aivs_server.auth.context import AuthContext
 from aivs_server.auth.deps import AuthenticatedContext, SessionDep, SettingsDep
@@ -35,12 +40,23 @@ from aivs_server.auth.policy import (
 )
 from aivs_server.config import Settings
 from aivs_server.db.models import Circle, TaxiiCollection
+from aivs_server.services.contributions import ContributionRateLimitedError
+from aivs_server.services.inbox import receive_envelope, status_of
 from aivs_server.services.publication import wait_for_publications
 from aivs_server.services.receipts import record_retrievals
+from aivs_server.services.submissions import SubmissionError
 from aivs_server.taxii import resources
 from aivs_server.taxii.filters import FilterError, parse_filters
 from aivs_server.taxii.paging import Cursor, CursorError, decode_cursor, encode_cursor
 from aivs_server.taxii.queries import build_object_listing_query, build_version_listing_query
+
+#: Content problems in an inbox envelope, reported back to the platform as 400.
+INBOX_CLIENT_ERRORS: Final = (
+    SubmissionError,
+    BundleValidationError,
+    ExtensionValidationError,
+    UnknownExtensionError,
+)
 
 __all__ = ["API_ROOT", "router"]
 
@@ -583,3 +599,88 @@ async def get_manifest(
     )
     _date_added_headers(response, page)
     return response
+
+
+# ---------------------------------------------------------------------------
+# The inbox: the TAXII write path, SF-69
+# ---------------------------------------------------------------------------
+def _require_taxii_content_type(request: Request) -> None:
+    """A POST must say it carries a TAXII envelope (section 3.2)."""
+    content_type = request.headers.get("content-type", "")
+    if not content_type.startswith("application/taxii+json"):
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="send the envelope as application/taxii+json;version=2.1",
+        )
+
+
+@router.post(f"/{API_ROOT}/collections/{{collection_id}}/objects/")
+async def add_objects(
+    collection_id: uuid.UUID,
+    request: Request,
+    _: TaxiiAccept,
+    ctx: AuthenticatedContext,
+    session: SessionDep,
+    settings: SettingsDep,
+) -> Response:
+    """Contribute objects to a collection (section 5.5), as one submission for review.
+
+    Readable but not writable answers 403, as TAXII says; a collection the
+    caller cannot read answers 404 like an absent one. See ``services.inbox``
+    for what a POST becomes.
+    """
+    collection, circle, _intervals = await _load_readable_collection(session, ctx, collection_id)
+    if not (collection.can_write and can_submit_to_circle(ctx, circle.id)):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not writable")
+    # After authorization, so a caller who may not write learns nothing more
+    # from a wrong media type than from a right one.
+    _require_taxii_content_type(request)
+    try:
+        envelope = json.loads(await request.body())
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="not JSON") from exc
+    try:
+        received = await receive_envelope(
+            session,
+            ctx,
+            collection=collection,
+            circle=circle,
+            envelope=envelope,
+            hourly_limit=settings.contribution_hourly_limit,
+            now=dt.datetime.now(dt.UTC),
+        )
+        await session.commit()
+    except ContributionRateLimitedError:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="this organisation's hourly allowance for contributions is used",
+        ) from None
+    except INBOX_CLIENT_ERRORS as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return _taxii_response(_status_payload(received), status_code=status.HTTP_202_ACCEPTED)
+
+
+@router.get(f"/{API_ROOT}/status/{{status_id}}/")
+async def get_status(
+    status_id: uuid.UUID, _: TaxiiAccept, ctx: AuthenticatedContext, session: SessionDep
+) -> Response:
+    """A POST's status (section 4.3): the organisation that made it only; others 404."""
+    found = await status_of(session, ctx, status_id)
+    if found is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Status not found")
+    return _taxii_response(_status_payload(found))
+
+
+def _status_payload(row: Any) -> dict[str, Any]:
+    return resources.status_resource(
+        status_id=str(row.id),
+        status=row.status,
+        total_count=row.total_count,
+        success_count=row.success_count,
+        failure_count=row.failure_count,
+        pending_count=row.pending_count,
+        request_timestamp=row.request_timestamp,
+        successes=row.successes,
+        failures=row.failures,
+        pendings=row.pendings,
+    )

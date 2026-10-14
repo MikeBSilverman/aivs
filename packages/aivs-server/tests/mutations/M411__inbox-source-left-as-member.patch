@@ -1,0 +1,16 @@
+Mutation M411: an inbox filing keeps the member source
+Re-applies: Phase E slice 4 (T7) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_taxii_inbox.py::test_a_post_lands_as_a_submitted_system_submission_not_a_distributed_one
+
+diff --git a/packages/aivs-server/src/aivs_server/services/inbox.py b/packages/aivs-server/src/aivs_server/services/inbox.py
+--- a/packages/aivs-server/src/aivs_server/services/inbox.py
++++ b/packages/aivs-server/src/aivs_server/services/inbox.py
+@@ -105,7 +105,6 @@
+         filed_for=None,
+         via="taxii",
+     )
+-    submission.source = SubmissionSource.SYSTEM
+     submission.lane = SubmissionLane.REVIEW
+     await apply_transition(
+         session, ctx, submission, SubmissionState.SUBMITTED, reason="TAXII inbox"

@@ -1,0 +1,17 @@
+Mutation M413: a reader of a collection may POST to it
+Re-applies: Phase E slice 4 (T7) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_taxii_inbox.py::test_a_reader_of_the_circle_is_refused_with_taxiis_403
+
+diff --git a/packages/aivs-server/src/aivs_server/taxii/router.py b/packages/aivs-server/src/aivs_server/taxii/router.py
+--- a/packages/aivs-server/src/aivs_server/taxii/router.py
++++ b/packages/aivs-server/src/aivs_server/taxii/router.py
+@@ -630,7 +630,7 @@
+     for what a POST becomes.
+     """
+     collection, circle, _intervals = await _load_readable_collection(session, ctx, collection_id)
+-    if not (collection.can_write and can_submit_to_circle(ctx, circle.id)):
++    if not collection.can_write:
+         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not writable")
+     # After authorization, so a caller who may not write learns nothing more
+     # from a wrong media type than from a right one.

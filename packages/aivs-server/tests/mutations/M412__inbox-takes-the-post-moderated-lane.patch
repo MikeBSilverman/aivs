@@ -1,0 +1,24 @@
+Mutation M412: an inbox filing is submitted like a person's draft
+Re-applies: Phase E slice 4 (T7) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_taxii_inbox.py::test_a_post_from_a_person_into_a_post_moderated_circle_still_waits_for_review
+Expect red: packages/aivs-server/tests/unit/test_taxii_inbox.py::test_a_post_lands_as_a_submitted_system_submission_not_a_distributed_one
+
+diff --git a/packages/aivs-server/src/aivs_server/services/inbox.py b/packages/aivs-server/src/aivs_server/services/inbox.py
+--- a/packages/aivs-server/src/aivs_server/services/inbox.py
++++ b/packages/aivs-server/src/aivs_server/services/inbox.py
+@@ -105,10 +105,10 @@
+         filed_for=None,
+         via="taxii",
+     )
+-    submission.source = SubmissionSource.SYSTEM
+-    submission.lane = SubmissionLane.REVIEW
+-    await apply_transition(
+-        session, ctx, submission, SubmissionState.SUBMITTED, reason="TAXII inbox"
++    from aivs_server.services.contributions import submit_submission
++
++    await submit_submission(
++        session, ctx, submission, reason="TAXII inbox", hourly_limit=hourly_limit, now=now
+     )
+ 
+     status = TaxiiStatus(

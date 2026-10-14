@@ -1,0 +1,17 @@
+Mutation M423: the total is shown beside a withheld count
+Re-applies: Phase E slice 4 (T7) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_posture.py::test_a_small_count_is_withheld_and_so_is_the_total_that_would_reveal_it
+
+diff --git a/packages/aivs-server/src/aivs_server/services/posture.py b/packages/aivs-server/src/aivs_server/services/posture.py
+--- a/packages/aivs-server/src/aivs_server/services/posture.py
++++ b/packages/aivs-server/src/aivs_server/services/posture.py
+@@ -115,7 +115,7 @@
+     # A total beside one withheld count gives the withheld one away by subtraction.
+     any_withheld = any(count.value is None for count in by_status.values())
+     shown_total = (
+-        Count(None, "withheld so a small count cannot be derived") if any_withheld else Count(total)
++        Count(total)
+     )
+     return PostureSummary(shown_total, by_status)
+ 

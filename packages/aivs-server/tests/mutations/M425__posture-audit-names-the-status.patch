@@ -1,0 +1,17 @@
+Mutation M425: the audit row records which posture was set
+Re-applies: Phase E slice 4 (T7) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_posture.py::test_the_audit_row_says_a_posture_was_set_never_which
+
+diff --git a/packages/aivs-server/src/aivs_server/services/posture.py b/packages/aivs-server/src/aivs_server/services/posture.py
+--- a/packages/aivs-server/src/aivs_server/services/posture.py
++++ b/packages/aivs-server/src/aivs_server/services/posture.py
+@@ -76,7 +76,7 @@
+         ctx=ctx,
+         resource_type="posture",
+         resource_id=str(row.id),
+-        details={},
++        details={"status": status.value},
+     )
+     return row
+ 

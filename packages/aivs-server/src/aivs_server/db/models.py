@@ -54,6 +54,8 @@ from aivs_schemas.enums import (
     OperatorRole,
     OrgStatus,
     OrgType,
+    PostureStatus,
+    SubmissionLane,
     SubmissionSource,
     SubmissionState,
 )
@@ -73,6 +75,7 @@ __all__ = [
     "Embargo",
     "InstanceControl",
     "Operator",
+    "OrgPosture",
     "Organization",
     "PortalSession",
     "StixObject",
@@ -252,6 +255,12 @@ class Circle(TimestampMixin, Base):
     #: looser than its floor. Lets an operator declare "Section 9 content is
     #: AMBER+STRICT or tighter" once, structurally, instead of per submission.
     minimum_tlp: Mapped[TLP] = mapped_column(pg_enum(TLP, "tlp"), nullable=False, default=TLP.AMBER)
+    #: Whether short contributions on public content in this circle publish on
+    #: submit, for an editor to revoke afterwards. Off unless an editor turns
+    #: it on (``services.contributions``).
+    post_moderated: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     #: Organisation types whose active members belong here automatically, e.g.
     #: ``["section9"]``. Empty means membership is entirely manual.
@@ -439,6 +448,30 @@ class Submission(TimestampMixin, Base):
         default=SubmissionSource.MEMBER,
         server_default=SubmissionSource.MEMBER.value,
     )
+    #: How it reached members: reviewed, a one-click fast-lane contribution, or
+    #: post-moderated. The non-review lanes share one hourly limit per
+    #: organisation, counted from this column (``services.contributions``).
+    lane: Mapped[SubmissionLane] = mapped_column(
+        pg_enum(SubmissionLane, "submission_lane"),
+        nullable=False,
+        default=SubmissionLane.REVIEW,
+        server_default=SubmissionLane.REVIEW.value,
+    )
+    #: Set when an ISAC analyst filed this for the member it is attributed to
+    #: (SF-68). The member may confirm or withdraw it; until it does, or until
+    #: ``proxy_confirm_by`` passes, it is not distributed.
+    filed_by_operator_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("operators.id", ondelete="RESTRICT"), nullable=True
+    )
+    #: SHA-256 of the member's consent: the forwarded mail, or the click. The
+    #: artefact itself stays with the ISAC; this binds the filing to it.
+    proxy_consent_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    proxy_confirm_by: Mapped[dt.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    proxy_confirmed_at: Mapped[dt.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     #: When true the distribution pipeline rewrites ``created_by_ref`` on
     #: outbound objects to the hosting ISAC's identity and withholds the
     #: submitter from every consumer-facing view. Receipts still resolve
@@ -460,6 +493,10 @@ class Submission(TimestampMixin, Base):
         CheckConstraint(
             "(state <> 'distributed') OR (distributed_at IS NOT NULL)",
             name="distributed_has_timestamp",
+        ),
+        CheckConstraint(
+            "(filed_by_operator_id IS NULL) = (proxy_consent_sha256 IS NULL)",
+            name="proxy_filing_has_consent",
         ),
         Index("ix_submissions_org_state", "submitter_org_id", "state"),
     )
@@ -929,4 +966,41 @@ class AuditLog(Base):
         ),
         CheckConstraint("outcome IN ('success', 'failure', 'denied')", name="outcome_valid"),
         Index("ix_audit_log_org_at", "org_id", "at"),
+    )
+
+
+class OrgPosture(Base):
+    """One organisation's VEX status for one vulnerability (SF-70).
+
+    Private to that organisation: no other member and no one at the ISAC reads
+    a row. The ISAC and submitters see counts, suppressed below k. A table
+    rather than STIX because no STIX object holds a private per-organisation
+    assertion that is never distributed.
+    """
+
+    __tablename__ = "org_postures"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        primary_key=True, server_default=func.gen_random_uuid(), default=uuid.uuid4
+    )
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    vulnerability_stix_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    status: Mapped[PostureStatus] = mapped_column(
+        pg_enum(PostureStatus, "posture_status"), nullable=False
+    )
+    detection_deployed: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    updated_by_operator_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("operators.id", ondelete="SET NULL"), nullable=True
+    )
+    updated_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint("org_id", "vulnerability_stix_id", name="uq_org_postures_org_vuln"),
+        Index("ix_org_postures_vuln", "vulnerability_stix_id"),
     )

@@ -1,0 +1,18 @@
+Mutation M405: a one-click is never refused for the hourly allowance
+Re-applies: Phase E slice 4 (T7) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_post_moderation.py::test_a_one_click_past_the_allowance_is_refused_and_the_refusal_is_kept
+Expect red: packages/aivs-server/tests/abuse/test_sharing_abuse.py::test_a_scripted_session_flooding_one_clicks_is_cut_off_and_noticed
+
+diff --git a/packages/aivs-server/src/aivs_server/services/contributions.py b/packages/aivs-server/src/aivs_server/services/contributions.py
+--- a/packages/aivs-server/src/aivs_server/services/contributions.py
++++ b/packages/aivs-server/src/aivs_server/services/contributions.py
+@@ -297,7 +297,7 @@
+         raise TargetNotFoundError(target_id)
+     built = _one_click_object(kind, target_id, now)
+     lane_problem = fast_lane_problem(ctx, target, object_type=str(built["type"]))
+-    if lane_problem is None and not await within_hourly_allowance(
++    if False and not await within_hourly_allowance(
+         session, ctx.org_id, limit=hourly_limit, now=now
+     ):
+         await record_rate_limited(ctx, lane=SubmissionLane.FAST.value, limit=hourly_limit)

@@ -379,8 +379,10 @@ same for every caller: the form renders, a wrong password is refused with 403,
 and signing out lands on the sign-in page.
 
 For every other caller, by route class (✓ allowed). "member" filed the
-submissions the routes address; "peer" is another member of the same circle;
-ISAC staff are not members of that circle.
+submissions the routes address and contributes to the circle; "peer" is another
+member of the same circle, which it only reads; ISAC staff are not members of
+that circle. A "content response" is a one-click or a posture on the circle's
+content; an "own record" is the member's posture or TAXII status.
 
 | Class | member cert | member analyst | member org_admin | peer cert | admin-org cert | ISAC analyst | ISAC editor | ISAC membership | system_admin |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -404,6 +406,13 @@ ISAC staff are not members of that circle.
 | status page (portal) | sign in | 403 | 403 | sign in | sign in | 403 | 403 | ✓ | ✓ |
 | own settings | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | webhook delete | ✓ | ✓ | ✓ | 404 | 404 | 404 | 404 | 404 | 404 |
+| content response | ✓ | ✓ | ✓ | ✓ | 404 | 404 | 404 | 404 | 404 |
+| own record | ✓ | ✓ | ✓ | 404 | 404 | 404 | 404 | 404 | 404 |
+| posture summary | 404 | 404 | 404 | 404 | 404 | ✓ | ✓ | 404 | 404 |
+| taxii inbox | ✓ | ✓ | ✓ | 403 | 404 | 404 | 404 | 404 | 404 |
+| post moderation | 403 | 403 | 403 | 403 | 403 | 403 | ✓ | 403 | 403 |
+| proxy filing | 403 | 403 | 403 | 403 | 403 | 403 | ✓ | 403 | 403 |
+| proxy confirm | ✓ | ✓ | ✓ | 404 | 404 | 403 | 403 | 404 | 404 |
 
 How to read the deny cells:
 

@@ -10,7 +10,7 @@ diff --git a/packages/aivs-server/src/aivs_server/services/disclosure.py b/packa
      if current is None:
          return UNKNOWN_TARGET
      if scope_value is DiscoveryScope.DISCLOSED_THIRD_PARTY:
--        if _cve_status(current) == "published":
+-        if cve_status(current) == "published":
 +        if True:
              return None
          return (

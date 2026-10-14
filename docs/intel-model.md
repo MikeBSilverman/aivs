@@ -170,13 +170,23 @@ vulnerability, plus sightings, opinions, receipts and transitions, as one
 timeline. There is no `cases` table: assignee and priority are columns on
 `submissions`, and priority defaults from the SSVC coordinator tree.
 
+**One-click contributions.** "We see this too" (a `sighting` with no
+`where_sighted_refs`), "works" and "doesn't work" (an `opinion`) are built by
+the server from a click, anonymous by default, and published at once when the
+lane rule holds: a person filed it from a member's session, the target is a
+published vulnerability or a contribution on one, it is not RED, it is not a
+vendor's opinion, and it goes only into circles the member contributes to.
+Otherwise it is filed for review (`services/contributions.py`, SF-66).
+
 **Post-moderation, per circle.** For `note`, `opinion`, `sighting` and RFI
 `grouping`s on already-distributed public-lane objects, a circle may let a
 contribution distribute on submit, under the same attribution, TLP and
 self-identification checks, with an editor able to `revoke` afterwards.
 Everything in the pre-CVE lane, everything RED, and every `vulnerability`,
 `course-of-action`, `indicator`, `attack-pattern` and `report` still needs a
-human `validate`.
+human `validate`. Everything published without review, with every TAXII inbox
+post, spends one hourly allowance per organisation, and a refusal raises
+`contribution_flood`. `revoke` is not built yet.
 
 **Telemetry back to the submitter**, computed from the rows the pipeline
 already writes: reach, retrieved, acknowledged and actioned counts, aggregate
@@ -217,7 +227,10 @@ it adds a principal row to the authorization matrix.
   `evidence_note`. It is private to the organisation, because an ISAC that
   can see which member is `affected` holds a fact member counsel will not
   let it hold; the ISAC sees k-aggregates. STIX has no object for a private
-  per-organisation assertion, which is why this is a table.
+  per-organisation assertion, which is why this is a table. The table
+  (`org_postures`) arrived in phase E with the posture click: `status` and
+  `detection_deployed` (SF-70). The statements, `validated_at`,
+  `evidence_note` and the export stay here.
 - **The member evidence pack**: receipts, posture, validation and the
   advisory version in force at each instant, content-hashed.
 - **An `auditor` role** with an expiry, reading audit and receipts within

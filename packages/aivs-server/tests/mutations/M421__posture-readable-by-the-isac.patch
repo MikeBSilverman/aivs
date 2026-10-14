@@ -1,0 +1,17 @@
+Mutation M421: the ISAC's reviewers read any member's posture
+Re-applies: Phase E slice 4 (T7) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_posture.py::test_the_isac_reading_a_members_posture_gets_the_404_an_absent_row_gets
+
+diff --git a/packages/aivs-server/src/aivs_server/services/posture.py b/packages/aivs-server/src/aivs_server/services/posture.py
+--- a/packages/aivs-server/src/aivs_server/services/posture.py
++++ b/packages/aivs-server/src/aivs_server/services/posture.py
+@@ -86,7 +86,7 @@
+ ) -> OrgPosture | None:
+     """The posture row, if it is the caller's own; otherwise ``None``, as if absent."""
+     row = await session.get(OrgPosture, posture_id)
+-    if row is None or row.org_id != ctx.org_id:
++    if row is None or (row.org_id != ctx.org_id and not ctx.operator_roles):
+         return None
+     return row
+ 

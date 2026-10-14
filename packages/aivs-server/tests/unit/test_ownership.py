@@ -156,3 +156,50 @@ async def test_last_is_the_newest_version_the_caller_may_see_not_the_newest_stor
         headers=proxy_headers(insider_pem),
     )
     assert [obj["name"] for obj in inner_feed.json()["objects"]] == ["withheld"]
+
+
+# ---------------------------------------------------------------------------
+# The ISAC's automation is the ISAC
+# ---------------------------------------------------------------------------
+@pytest.fixture
+async def automation(make_org, make_cert):
+    org = await make_org("isac-automation", org_type=OrgType.AUTOMATION)
+    pem, _ = await make_cert(org)
+    return org, pem
+
+
+@pytest.mark.requirement("SF-48")
+async def test_the_isacs_automation_versions_the_isacs_record(
+    client, session, world, isac_org, automation
+):
+    """What the KEV enrichment does: a newer version of the ISAC's canonical record."""
+    record = f"vulnerability--{uuid.uuid4()}"
+    await seed(
+        session, isac_org, vulnerability_raw(record, cve_status="published"), circle=world["circle"]
+    )
+    _org, pem = automation
+
+    _id, validated = await filed_and_validated(
+        client, pem, world["editor"], [finding(record, modified=LATER, name="with KEV dates")]
+    )
+
+    assert validated.status_code == 200, validated.text
+
+
+@pytest.mark.requirement("SF-48")
+async def test_the_isacs_automation_cannot_version_a_members_object(client, world, automation):
+    shared = f"vulnerability--{uuid.uuid4()}"
+    _owner, owner_pem = world["meridian-global"]
+    first, validated = await filed_and_validated(
+        client, owner_pem, world["editor"], [finding(shared, modified=STAMP, name="member's")]
+    )
+    assert validated.status_code == 200
+    assert (await distribute(client, first, world["editor"], world["circle"])).status_code == 200
+    _org, pem = automation
+
+    _id, refused = await filed_and_validated(
+        client, pem, world["editor"], [finding(shared, modified=LATER, name="automation's")]
+    )
+
+    assert refused.status_code == 409
+    assert shared in refused.json()["title"]

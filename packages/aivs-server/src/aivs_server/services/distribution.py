@@ -56,6 +56,7 @@ from aivs_server.db.models import (
 from aivs_server.services.embargo import record_embargo
 from aivs_server.services.markings import stamp_tlp_marking
 from aivs_server.services.ownership import foreign_owned_versions_problem
+from aivs_server.services.proxy_filing import awaiting_confirmation_problem
 from aivs_server.services.publication import earliest_publication_instant, hold_publication_lock
 from aivs_server.services.submissions import (
     contribution_problem,
@@ -309,6 +310,9 @@ async def distribute_submission(
         raise DistributionError(msg)
 
     _validate_release_time(release_at, now)
+    waiting = awaiting_confirmation_problem(submission, now)
+    if waiting is not None:
+        raise DistributionError(waiting)
 
     # Truncated because TAXII timestamps carry milliseconds. Without this a
     # member echoing X-TAXII-Date-Added-Last back as added_after receives the

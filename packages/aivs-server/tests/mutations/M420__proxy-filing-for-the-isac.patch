@@ -1,0 +1,16 @@
+Mutation M420: an editor may file in the ISAC's own name
+Re-applies: Phase E slice 4 (T7) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_proxy_filing.py::test_an_editor_cannot_file_for_the_isac_or_a_machine[the-isac]
+
+diff --git a/packages/aivs-server/src/aivs_server/services/proxy_filing.py b/packages/aivs-server/src/aivs_server/services/proxy_filing.py
+--- a/packages/aivs-server/src/aivs_server/services/proxy_filing.py
++++ b/packages/aivs-server/src/aivs_server/services/proxy_filing.py
+@@ -57,7 +57,6 @@
+ #: Organisations an analyst may file for: those that contribute in their own
+ #: name. Never the ISAC itself, and never a machine.
+ _FILEABLE_FOR: Final[frozenset[OrgType]] = frozenset(OrgType) - {
+-    OrgType.ADMIN,
+     OrgType.AUTOMATION,
+ }
+ 

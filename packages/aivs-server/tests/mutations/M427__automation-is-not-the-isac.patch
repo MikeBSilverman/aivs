@@ -1,0 +1,18 @@
+Mutation M427: the ISAC's automation may not version the ISAC's record
+Re-applies: Phase E slice 4 (T7) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_ownership.py::test_the_isacs_automation_versions_the_isacs_record
+Expect red: packages/aivs-server/tests/unit/test_enrich_kev.py::test_the_version_the_script_builds_is_validated_by_an_editor
+
+diff --git a/packages/aivs-server/src/aivs_server/services/ownership.py b/packages/aivs-server/src/aivs_server/services/ownership.py
+--- a/packages/aivs-server/src/aivs_server/services/ownership.py
++++ b/packages/aivs-server/src/aivs_server/services/ownership.py
+@@ -46,7 +46,7 @@
+ async def _owners_like(session: AsyncSession, org_id: uuid.UUID) -> set[uuid.UUID]:
+     """``org_id`` and every organisation whose versions count as its own."""
+     org_type = await session.scalar(select(Organization.org_type).where(Organization.id == org_id))
+-    if org_type not in _ISAC_OWNER_TYPES:
++    if True:
+         return {org_id}
+     isac = await session.execute(
+         select(Organization.id).where(Organization.org_type.in_(tuple(_ISAC_OWNER_TYPES)))

@@ -1,0 +1,18 @@
+Mutation M406: TAXII inbox posts do not spend the hourly allowance
+Re-applies: Phase E slice 4 (T7) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_taxii_inbox.py::test_posts_past_the_hourly_allowance_are_refused_and_the_refusal_is_kept
+Expect red: packages/aivs-server/tests/abuse/test_sharing_abuse.py::test_a_platform_flooding_the_inbox_is_cut_off_and_noticed
+
+diff --git a/packages/aivs-server/src/aivs_server/services/contributions.py b/packages/aivs-server/src/aivs_server/services/contributions.py
+--- a/packages/aivs-server/src/aivs_server/services/contributions.py
++++ b/packages/aivs-server/src/aivs_server/services/contributions.py
+@@ -203,7 +203,7 @@
+         .select_from(TaxiiStatus)
+         .where(TaxiiStatus.org_id == org_id, TaxiiStatus.request_timestamp >= since)
+     )
+-    return (unreviewed or 0) + (inbox or 0) < limit
++    return (unreviewed or 0) < limit
+ 
+ 
+ async def record_rate_limited(ctx: AuthContext, *, lane: str, limit: int) -> None:

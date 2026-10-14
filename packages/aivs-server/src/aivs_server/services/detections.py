@@ -190,6 +190,35 @@ async def _not_found_burst(
     ]
 
 
+async def _contribution_flood(
+    session: AsyncSession, now: dt.datetime, window: dt.timedelta, threshold: int
+) -> list[Finding]:
+    """An organisation that hit its hourly allowance for unreviewed contributions (SF-66).
+
+    Read from the audited refusals rather than from a count of contributions,
+    so the rule fires exactly when the limit bites, whatever the instance sets
+    ``contribution_hourly_limit`` to. A member clicking never gets there; a
+    script, or a stolen certificate, does.
+    """
+    bursts = await _audit_bursts(
+        session,
+        action=AuditAction.CONTRIBUTION_RATE_LIMITED,
+        group_by=AuditLog.org_id,
+        since=now - window,
+        threshold=threshold,
+    )
+    return [
+        Finding(
+            rule="contribution_flood",
+            severity="medium",
+            subject=org_id,
+            summary=f"one organisation was refused {count} unreviewed contribution(s) in {window}",
+            count=count,
+        )
+        for org_id, count in bursts
+    ]
+
+
 async def _first_distribution_to_circle(
     session: AsyncSession, now: dt.datetime, window: dt.timedelta, threshold: int
 ) -> list[Finding]:
@@ -365,6 +394,7 @@ RULES: Final[tuple[Rule, ...]] = (
         _signing_key_unavailable,
     ),
     Rule("not_found_burst", "medium", dt.timedelta(minutes=10), 50, _not_found_burst),
+    Rule("contribution_flood", "medium", dt.timedelta(hours=1), 1, _contribution_flood),
     Rule(
         "first_distribution_to_circle",
         "medium",

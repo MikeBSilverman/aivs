@@ -1,0 +1,17 @@
+Mutation M419: anyone who can see a proxy filing may confirm it
+Re-applies: Phase E slice 4 (T7) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_proxy_filing.py::test_only_the_member_confirms_the_editor_is_refused_and_others_see_nothing
+
+diff --git a/packages/aivs-server/src/aivs_server/services/proxy_filing.py b/packages/aivs-server/src/aivs_server/services/proxy_filing.py
+--- a/packages/aivs-server/src/aivs_server/services/proxy_filing.py
++++ b/packages/aivs-server/src/aivs_server/services/proxy_filing.py
+@@ -147,7 +147,7 @@
+     session: AsyncSession, ctx: AuthContext, submission: Submission, *, now: dt.datetime
+ ) -> Submission:
+     """The member confirms a filing made in its name. Only that member."""
+-    if submission.submitter_org_id != ctx.org_id:
++    if False:
+         denial = "proxy_confirm_not_owner"
+         raise PolicyDeniedError(denial)
+     if submission.filed_by_operator_id is None:

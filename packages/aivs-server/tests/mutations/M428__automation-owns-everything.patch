@@ -1,0 +1,17 @@
+Mutation M428: the ISAC's automation may version anyone's object
+Re-applies: Phase E slice 4 (T7) -- the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_ownership.py::test_the_isacs_automation_cannot_version_a_members_object
+
+diff --git a/packages/aivs-server/src/aivs_server/services/ownership.py b/packages/aivs-server/src/aivs_server/services/ownership.py
+--- a/packages/aivs-server/src/aivs_server/services/ownership.py
++++ b/packages/aivs-server/src/aivs_server/services/ownership.py
+@@ -46,6 +46,8 @@
+ async def _owners_like(session: AsyncSession, org_id: uuid.UUID) -> set[uuid.UUID]:
+     """``org_id`` and every organisation whose versions count as its own."""
+     org_type = await session.scalar(select(Organization.org_type).where(Organization.id == org_id))
++    if org_type is OrgType.AUTOMATION:
++        return set((await session.execute(select(Organization.id))).scalars().all())
+     if org_type not in _ISAC_OWNER_TYPES:
+         return {org_id}
+     isac = await session.execute(

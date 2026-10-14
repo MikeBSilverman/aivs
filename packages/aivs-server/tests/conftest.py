@@ -332,6 +332,7 @@ _ALL_TABLES = (
     "stix_objects",
     "submission_transitions",
     "embargoes",
+    "org_postures",
     "submissions",
     "taxii_collections",
     "circle_memberships",

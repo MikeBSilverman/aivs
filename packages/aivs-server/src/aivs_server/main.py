@@ -30,7 +30,15 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from aivs_server.api import acknowledgments, admin, lint, meta, submissions, telemetry
+from aivs_server.api import (
+    acknowledgments,
+    admin,
+    contributions,
+    lint,
+    meta,
+    submissions,
+    telemetry,
+)
 from aivs_server.audit.log import AuditAction, record_denial
 from aivs_server.auth.deps import request_source_ip
 from aivs_server.auth.policy import PolicyDeniedError
@@ -238,6 +246,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(submissions.router)
     app.include_router(acknowledgments.router)
     app.include_router(admin.router)
+    app.include_router(contributions.router)
     app.include_router(portal_routes.router)
     app.include_router(portal_admin_routes.router)
     app.include_router(taxii_router.router)

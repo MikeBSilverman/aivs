@@ -306,6 +306,31 @@ cannot file against a target it cannot see: the canonical record of a
 pre-disclosure case is distributed to its coordination circle, so a reporter
 outside it gets the uniform refusal and files through the ISAC.
 
+## Cross-cutting: contributions published without review
+
+Phase E lets some contributions reach members with no editor in the loop: a
+one-click ("we see this too", "works", "doesn't work") on public content, and a
+short contribution in a circle an editor has made post-moderated. It also opens
+two new ways in that still go through review: the TAXII inbox, and an analyst
+filing for a member. What a member, a script, or an insider might try, with the
+rule that refuses it (`tests/abuse/test_sharing_abuse.py` drives the sequences):
+
+| What they try | What stops it |
+| --- | --- |
+| A script, or a stolen certificate behind a person's session, floods a circle with one-clicks. | An hourly allowance per organisation for everything published without review, inbox posts included; past it a one-click is refused, and the refusal is audited and raises `contribution_flood` (SF-66). |
+| Publish prose, a pre-CVE finding, or RED content through the fast lane. | The lane rule: only a click with no free text, about a published vulnerability or a contribution on one, never RED, takes it. Prose takes it only in a circle an editor made post-moderated, and only for a note, opinion, sighting or RFI grouping (SF-66). |
+| A vendor clicks "doesn't work" on a workaround for its own product. | A vendor's opinion is never published without review, whatever product it concerns (SF-66). |
+| A machine identity, the ISAC's automation included, publishes by clicking. | The fast lane needs a person's session from a member organisation; a certificate alone, or the automation organisation, is filed for review (SF-66). |
+| A reader-only member (a government or vendor in a circle it reads) publishes into that circle through the fast lane. | The fast lane publishes only into circles the organisation contributes to; with none, the click goes to review (SF-66). |
+| A member's MISP or OpenCTI pushes content that would publish itself, or names the firm. | Each TAXII POST becomes a `submitted` submission with source `system`. It is never published without review, it is anonymous (so `identity` objects are refused), it is held to the disclosure split, and it spends the same allowance (SF-69). |
+| An analyst files content in a member's name that the member never sent. | A proxy filing needs a stored consent hash. The member is told at once, contentlessly. The filing cannot be distributed until the member confirms or 24 hours pass, and the member withdraws it with its ordinary stop button (SF-68). |
+| The ISAC, or an auditor at it, reads which members are affected by a vulnerability. | A posture row is its own organisation's alone, and the ISAC gets the 404 an absent row gets. The counts it sees are suppressed below k, including the total that would give a small count away. Its audit row says a posture was set, never which (SF-70). |
+
+**What this does not stop.** The prose of a post-moderated note reaches members
+before an editor reads it; the circle chose that. Retracting such a note
+(`revoke`, which projects a `revoked` version) is not built yet, so an editor's
+remedy is today's: quarantine the organisation, or a new version from the ISAC.
+
 ---
 
 ## Consolidated residual risk register
@@ -321,7 +346,8 @@ outside it gets the uniform refusal and files through the ISAC.
 | R7 | `record_independently` swallows its own failures — audit-write outages are silent. | Medium | Alert on the log line |
 | R8 | Audit redaction is key-name based; a secret under an unlisted key is permanent. | Medium | Review of new audit detail keys |
 | R9 | IP-allowlist mode is materially weaker than WireGuard mode. | Medium | Prefer overlay; document if not |
-| R10 | Rate limiting exists only at nginx, per certificate rather than per organization; the application has none of its own. | Low | Keep the shipped nginx limits; revisit if the proxy is replaced |
+| R10 | Rate limiting exists at nginx, per certificate rather than per organization; the application limits only contributions published without review and TAXII inbox posts (per organisation, SF-66). | Low | Keep the shipped nginx limits; revisit if the proxy is replaced |
+| R13 | A post-moderated note's prose reaches members before an editor reads it, and `revoke` is not built yet. | Low–Medium | Editors: post-moderation off by default, per circle |
 | R11 | Webhook SSRF residual via DNS rebinding. | Low | Resolve-and-pin; egress policy |
 | R12 | A member firm can poison the corpus with plausible false findings. | Low–Medium | Reviewer judgement |
 

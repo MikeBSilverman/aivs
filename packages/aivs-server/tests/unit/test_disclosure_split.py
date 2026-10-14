@@ -308,6 +308,39 @@ async def test_a_vendor_opinion_outside_the_members_circles_gives_the_answer_non
 
 
 @pytest.mark.requirement("SF-47")
+async def test_a_vendor_placed_only_where_the_member_cannot_read_gives_the_answer_none_gives(
+    client, session, world, make_circle
+):
+    """The vendor is a party through a circle the target reached that the member reads.
+
+    The member can read the vendor's agreement here; what it cannot see is the
+    circle that makes the vendor a party, and acceptance must not tell it that.
+    """
+    target = await canonical(session, world, cve_status="pre-cve")
+    elsewhere = await make_circle("vendor-and-isac-only")
+    vendor, _pem = world["vendor"]
+    await world["join_circle"](vendor, elsewhere)
+    canonical_row = await session.scalar(select(StixObject).where(StixObject.stix_id == target))
+    session.add(
+        Distribution(
+            stix_object_id=canonical_row.id,
+            circle_id=elsewhere.id,
+            submission_id=canonical_row.submission_id,
+            date_added=dt.datetime.now(dt.UTC) - dt.timedelta(minutes=1),
+        )
+    )
+    await session.commit()
+    _member, pem = world["member"]
+
+    before = await coordinated(client, pem, target)
+    await vendor_says(session, world, target, "agree")
+    after = await coordinated(client, pem, target)
+
+    assert before.status_code == 400
+    assert after.content == before.content
+
+
+@pytest.mark.requirement("SF-47")
 async def test_a_vendor_opinion_the_member_can_read_admits_the_coordinated_contribution(
     client, session, world
 ):

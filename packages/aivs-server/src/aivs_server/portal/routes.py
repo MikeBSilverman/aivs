@@ -29,7 +29,12 @@ from aivs_schemas.enums import TLP, CertStatus, OrgStatus, SubmissionState
 from aivs_schemas.models import SubmissionCreate
 from aivs_server.audit.log import AuditAction, account_reference, record_independently
 from aivs_server.auth.context import AuthContext
-from aivs_server.auth.deps import SessionDep, SettingsDep, request_source_ip
+from aivs_server.auth.deps import (
+    SessionDep,
+    SettingsDep,
+    request_certificate_fingerprint,
+    request_source_ip,
+)
 from aivs_server.auth.policy import (
     can_confirm_proxy_filing,
     can_review_submissions,
@@ -64,7 +69,6 @@ from aivs_server.portal.shared import (
     LOGIN_FAILED,
     TEMPLATES,
     base_context,
-    client_fingerprint,
     current_session,
     operator_name,
     redirect_within_portal,
@@ -142,7 +146,7 @@ async def login(
     expected = request.cookies.get("aivs_login_csrf", "")
     require_csrf(csrf_token, expected)
 
-    fingerprint = client_fingerprint(request, settings)
+    fingerprint = request_certificate_fingerprint(request, settings)
     if fingerprint is None:
         # No certificate, no session: the binding established below is what makes
         # the password and the transport two independent factors.

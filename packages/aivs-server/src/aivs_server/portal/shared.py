@@ -26,11 +26,15 @@ from aivs_schemas.enums import TLP
 from aivs_schemas.tlp import TLP_NAMES
 from aivs_server.audit.log import AuditAction, record_independently
 from aivs_server.auth.context import AuthContext
-from aivs_server.auth.deps import SessionDep, request_source_ip
-from aivs_server.auth.mtls import CertificateRejectedError, extract_client_certificate
+from aivs_server.auth.deps import (
+    SessionDep,
+    request_certificate_fingerprint,
+    request_source_ip,
+    resolve_request_session,
+)
 from aivs_server.auth.passwords import constant_time_equals
 from aivs_server.auth.policy import can_view_instance_status, is_isac_staff
-from aivs_server.auth.sessions import SessionRejectedError, resolve_session
+from aivs_server.auth.sessions import SessionRejectedError
 from aivs_server.config import Settings
 from aivs_server.db.models import Operator
 
@@ -38,7 +42,6 @@ __all__ = [
     "LOGIN_FAILED",
     "TEMPLATES",
     "base_context",
-    "client_fingerprint",
     "current_session",
     "operator_name",
     "redirect_to_login",
@@ -57,21 +60,6 @@ TEMPLATES = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 LOGIN_FAILED = "Those credentials were not accepted."
 
 
-def client_fingerprint(request: Request, settings: Settings) -> str | None:
-    """Fingerprint of the certificate on this request, or ``None``.
-
-    The portal is reached through the same mTLS proxy as everything else, so
-    this is the organisation's identity. Absent means the deployment is not
-    behind the proxy, which the session binding then refuses.
-    """
-    headers = {key.lower(): value for key, value in request.headers.items()}
-    peer = request.client.host if request.client else None
-    try:
-        return extract_client_certificate(settings, headers, peer).fingerprint_sha256
-    except CertificateRejectedError:
-        return None
-
-
 async def current_session(
     request: Request, settings: Settings, session: SessionDep
 ) -> tuple[AuthContext, str]:
@@ -80,13 +68,14 @@ async def current_session(
     if not token:
         raise redirect_to_login()
     try:
-        resolved = await resolve_session(
-            session,
+        # Identity is resolved in auth.deps, as the API's is; this function
+        # decides only what a refusal looks like here.
+        resolved = await resolve_request_session(
+            request,
             settings,
+            session,
             token=token,
-            cert_fingerprint=client_fingerprint(request, settings),
-            request_id=request.scope.get("aivs_request_id", ""),
-            source_ip=request_source_ip(request, settings),
+            cert_fingerprint=request_certificate_fingerprint(request, settings),
         )
     except SessionRejectedError as exc:
         await record_independently(

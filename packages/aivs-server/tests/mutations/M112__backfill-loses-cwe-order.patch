@@ -1,0 +1,17 @@
+Mutation M112: the migration backfills cwe_ids in an order that is not first-seen
+Re-applies: (T6, uncommitted) "Extension 2.0 and the index columns"
+
+Expect red: packages/aivs-server/tests/migrations/test_index_backfill.py::test_existing_rows_get_the_values_ingest_would_have_given_them
+
+diff --git a/packages/aivs-server/alembic/versions/20261014_0325_1e2fc8ecb375_index_the_intelligence_extension.py b/packages/aivs-server/alembic/versions/20261014_0325_1e2fc8ecb375_index_the_intelligence_extension.py
+--- a/packages/aivs-server/alembic/versions/20261014_0325_1e2fc8ecb375_index_the_intelligence_extension.py
++++ b/packages/aivs-server/alembic/versions/20261014_0325_1e2fc8ecb375_index_the_intelligence_extension.py
+@@ -79,7 +79,7 @@
+ UPDATE stix_objects AS t
+ SET cwe_ids = agg.ids
+ FROM (
+-    SELECT id, (array_agg(cwe ORDER BY first_seen))[1:50] AS ids FROM refs GROUP BY id
++    SELECT id, (array_agg(cwe ORDER BY cwe))[1:50] AS ids FROM refs GROUP BY id
+ ) AS agg
+ WHERE t.id = agg.id
+ """

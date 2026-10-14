@@ -28,7 +28,7 @@ from __future__ import annotations
 import copy
 import datetime as dt
 import json
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Final
@@ -42,6 +42,7 @@ from stix2.properties import (
     FloatProperty,
     IntegerProperty,
     ListProperty,
+    ReferenceProperty,
     StringProperty,
 )
 
@@ -51,6 +52,13 @@ from aivs_schemas.enums import (
     CVEStatus,
     DiscoveryScope,
 )
+from aivs_schemas.extension.errors import (
+    BundleValidationError,
+    ExtensionValidationError,
+    ObjectPolicyError,
+    UnknownExtensionError,
+)
+from aivs_schemas.extension.policy import apply_type_policy
 from aivs_schemas.tlp import (
     LEGACY_TLP10_MARKING_IDS,
     TLP20_EXTENSION_DEFINITION_ID,
@@ -59,19 +67,30 @@ from aivs_schemas.tlp import (
 
 __all__ = [
     "AIVS_EXTENSION_ID",
+    "AIVS_INTEL_EXTENSION_ID",
     "AIVS_PROJECT_IDENTITY_ID",
+    "AIVS_PROVENANCE_EXTENSION_ID",
     "ALLOWED_EXTENSION_IDS",
     "EXPLOIT_CHAIN_GROUPING_CONTEXT",
+    "INTEL_EXTENSION_TYPES",
     "MAX_BUNDLE_OBJECTS",
     "RELATIONSHIP_CHAINS_TO",
+    "SERVER_WRITTEN_PROVENANCE",
+    "AivsIntelExtension",
     "AivsPreCveExtension",
+    "AivsProvenanceExtension",
     "BundleValidationError",
     "ExtensionValidationError",
+    "ObjectPolicyError",
     "UnknownExtensionError",
     "assert_extensions_allowed",
     "build_extension_body",
     "extension_definition_sdo",
     "extension_json_schema",
+    "intel_extension_definition_sdo",
+    "intel_json_schema",
+    "provenance_extension_definition_sdo",
+    "provenance_json_schema",
     "validate_bundle",
     "validate_stix_object",
 ]
@@ -79,6 +98,29 @@ __all__ = [
 #: Fixed identifier for the AIVS property-extension. Minted once; never changes.
 #: A new identifier would be a new, unrecognised extension to every member's TIP.
 AIVS_EXTENSION_ID: Final[str] = "extension-definition--530ad906-a948-4467-8fd2-7fd13639ded6"
+
+#: The intelligence extension, 2.0. A new identifier rather than a new version
+#: of the 1.0 one: 1.0 stays registered and accepted, and a consumer that only
+#: understands 1.0 must not mistake a 2.0 body for one it can read.
+AIVS_INTEL_EXTENSION_ID: Final[str] = "extension-definition--a61c713d-42f5-4e19-bffc-6870dc66d209"
+
+#: The provenance extension: who at the ISAC reviewed an object, and what the
+#: submitter says produced it.
+AIVS_PROVENANCE_EXTENSION_ID: Final[str] = (
+    "extension-definition--b9ebb26e-6564-439d-af75-ebc68cf19bc0"
+)
+
+#: The object types the 2.0 extension has a definition for. On any other type
+#: it is refused: a body nobody defined for that type means nothing to anyone.
+INTEL_EXTENSION_TYPES: Final[frozenset[str]] = frozenset(
+    {"vulnerability", "course-of-action", "indicator"}
+)
+
+#: Provenance fields the server writes when the ISAC validates. A submitter
+#: that sets one is claiming a review that did not happen (SF-6).
+SERVER_WRITTEN_PROVENANCE: Final[frozenset[str]] = frozenset(
+    {"human_reviewed_by_ref", "reviewed_at"}
+)
 
 #: The AIVS project's own STIX identity, which authors the extension definition.
 #: Distinct from any hosting ISAC's identity -- the extension is shared across
@@ -89,7 +131,12 @@ AIVS_PROJECT_IDENTITY_ID: Final[str] = "identity--e50b8964-5a9a-4d4b-a016-16ea04
 #: rather than stored: we redistribute what we accept, so accepting content we
 #: cannot validate would make AIVS a delivery mechanism for it.
 ALLOWED_EXTENSION_IDS: Final[frozenset[str]] = frozenset(
-    {AIVS_EXTENSION_ID, TLP20_EXTENSION_DEFINITION_ID}
+    {
+        AIVS_EXTENSION_ID,
+        AIVS_INTEL_EXTENSION_ID,
+        AIVS_PROVENANCE_EXTENSION_ID,
+        TLP20_EXTENSION_DEFINITION_ID,
+    }
 )
 
 #: Relationship type linking one vulnerability to the next step of a chain.
@@ -119,29 +166,6 @@ _MAX_NESTING_DEPTH: Final[int] = 12
 _RESERVED_MARKING_IDS: Final[frozenset[str]] = frozenset(
     set(TLP_MARKING_IDS.values()) | set(LEGACY_TLP10_MARKING_IDS.values())
 )
-
-
-class ExtensionValidationError(ValueError):
-    """An object's AIVS extension body failed schema validation."""
-
-
-class BundleValidationError(ValueError):
-    """An inbound bundle was structurally malformed.
-
-    Distinct from the per-object errors below, and a ``ValueError`` subclass so
-    that a caller translating validation failures into HTTP 400 catches one
-    family rather than having to enumerate ``ValueError`` and ``TypeError``
-    separately.
-    """
-
-
-class UnknownExtensionError(ValueError):
-    """An object carried an extension AIVS does not recognise.
-
-    Raised rather than ignored: silently dropping an unrecognised extension
-    would change the meaning of content that a member may have relied on, and
-    silently keeping it would redistribute unvalidated data.
-    """
 
 
 # ---------------------------------------------------------------------------
@@ -202,50 +226,209 @@ class AivsPreCveExtension:
     extension_type = "property-extension"
 
 
-@lru_cache(maxsize=1)
-def extension_definition_sdo() -> Mapping[str, Any]:
-    """Return the ``extension-definition`` SDO that declares this extension.
+#: Vocabularies of the 2.0 extension, verbatim from the standard each names
+#: (schema-2.0.json says which), plus the values marked *ours* there. Declared
+#: once here for stix2; the parity tests pin them to the JSON Schema.
+_SSVC_EXPLOITATION: Final[tuple[str, ...]] = ("none", "poc", "active")
+_SSVC_AUTOMATABLE: Final[tuple[str, ...]] = ("yes", "no")
+_SSVC_TECHNICAL_IMPACT: Final[tuple[str, ...]] = ("partial", "total")
+_SSVC_DECISION: Final[tuple[str, ...]] = ("Track", "Track*", "Attend", "Act")
+_KEV_RANSOMWARE_USE: Final[tuple[str, ...]] = ("Known", "Unknown")
+_REMEDIATION_CATEGORY: Final[tuple[str, ...]] = (
+    "vendor_fix",
+    "mitigation",
+    "workaround",
+    "no_fix_planned",
+    "none_available",
+    "validation",
+    "rollback",
+)
+_RESTART_REQUIRED: Final[tuple[str, ...]] = (
+    "none",
+    "vulnerable_component",
+    "service",
+    "parent",
+    "dependencies",
+    "connected",
+    "machine",
+    "zone",
+    "system",
+)
+_ACTION_TYPE: Final[tuple[str, ...]] = (
+    "config_change",
+    "credential_rotation",
+    "dependency_upgrade",
+    "compromise_assessment",
+)
 
-    Published in every distributed bundle so that a consumer encountering the
-    extension for the first time can resolve what it means without an
-    out-of-band lookup.
-    """
-    raw: dict[str, Any] = json.loads((_SCHEMA_DIR / "definition.json").read_text(encoding="utf-8"))
-    if raw["id"] != AIVS_EXTENSION_ID:
+
+# One registration for every type the 2.0 extension applies to, because stix2
+# registers an extension per identifier, not per object type. Required here is
+# only what every type's definition requires; per-type requirements are the
+# JSON Schema's, which validate_stix_object applies by the object's type.
+@CustomExtension(
+    AIVS_INTEL_EXTENSION_ID,
+    [
+        ("aivs_schema_version", StringProperty(required=True)),
+        # vulnerability -- carried from 1.0
+        ("ai_discovery_method", EnumProperty(allowed=[m.value for m in AIDiscoveryMethod])),
+        ("ai_model_name", StringProperty()),
+        ("ai_harness_name", StringProperty()),
+        ("ai_harness_version", StringProperty()),
+        ("ai_confidence", IntegerProperty(min=0, max=100)),
+        ("ai_reproduction_available", BooleanProperty()),
+        (
+            "discovery_scope",
+            EnumProperty(
+                allowed=[s.value for s in DiscoveryScope if s in ACCEPTED_DISCOVERY_SCOPES]
+            ),
+        ),
+        ("affected_products", ListProperty(DictionaryProperty(spec_version="2.1"))),
+        ("cvss_v4_vector", StringProperty()),
+        ("cvss_v4_base_score", FloatProperty(min=0, max=10)),
+        ("cvss_v4_severity", StringProperty()),
+        ("embargo_policy", StringProperty()),
+        ("embargo_release_at", StringProperty()),
+        ("remediation_summary", StringProperty()),
+        ("workaround_available", BooleanProperty()),
+        ("cve_status", EnumProperty(allowed=[s.value for s in CVEStatus])),
+        ("cve_id", StringProperty()),
+        ("exploit_chain_position", IntegerProperty(min=1, max=100)),
+        # vulnerability -- new in 2.0
+        ("cvss_v3_vector", StringProperty()),
+        ("ssvc_exploitation", EnumProperty(allowed=list(_SSVC_EXPLOITATION))),
+        ("ssvc_automatable", EnumProperty(allowed=list(_SSVC_AUTOMATABLE))),
+        ("ssvc_technical_impact", EnumProperty(allowed=list(_SSVC_TECHNICAL_IMPACT))),
+        ("ssvc_decision", EnumProperty(allowed=list(_SSVC_DECISION))),
+        ("epss_score", FloatProperty(min=0, max=1)),
+        ("epss_percentile", FloatProperty(min=0, max=1)),
+        ("epss_date", StringProperty()),
+        ("kev_listed", BooleanProperty()),
+        ("kev_date_added", StringProperty()),
+        ("kev_due_date", StringProperty()),
+        ("kev_ransomware_use", EnumProperty(allowed=list(_KEV_RANSOMWARE_USE))),
+        ("novel_attack_vector", BooleanProperty()),
+        # course-of-action
+        ("category", EnumProperty(allowed=list(_REMEDIATION_CATEGORY))),
+        ("restart_required", EnumProperty(allowed=list(_RESTART_REQUIRED))),
+        ("action_type", EnumProperty(allowed=list(_ACTION_TYPE))),
+        ("residual_risk", StringProperty()),
+        ("validation_check", DictionaryProperty(spec_version="2.1")),
+        # indicator
+        ("telemetry_sources", ListProperty(StringProperty)),
+        ("false_positive_notes", StringProperty()),
+    ],
+)
+class AivsIntelExtension:
+    """The 2.0 intelligence properties on vulnerability, course-of-action and indicator."""
+
+    extension_type = "property-extension"
+
+
+@CustomExtension(
+    AIVS_PROVENANCE_EXTENSION_ID,
+    [
+        ("human_reviewed_by_ref", ReferenceProperty(valid_types="identity", spec_version="2.1")),
+        ("reviewed_at", StringProperty()),
+        ("generated_by", StringProperty()),
+        ("factors", ListProperty(StringProperty)),
+    ],
+)
+class AivsProvenanceExtension:
+    """Who reviewed an object at the ISAC, and what the submitter says produced it."""
+
+    extension_type = "property-extension"
+
+
+def _load_definition(filename: str, expected_id: str) -> Mapping[str, Any]:
+    raw: dict[str, Any] = json.loads((_SCHEMA_DIR / filename).read_text(encoding="utf-8"))
+    if raw["id"] != expected_id:
         msg = (
-            f"definition.json declares id {raw['id']!r} but the code expects "
-            f"{AIVS_EXTENSION_ID!r}; these must never diverge"
+            f"{filename} declares id {raw['id']!r} but the code expects "
+            f"{expected_id!r}; these must never diverge"
         )
         raise RuntimeError(msg)
     return raw
 
 
-@lru_cache(maxsize=1)
-def extension_json_schema() -> Mapping[str, Any]:
-    """Return the JSON Schema for the extension body."""
-    schema: dict[str, Any] = json.loads(
-        (_SCHEMA_DIR / "schema-1.0.json").read_text(encoding="utf-8")
-    )
+def _load_schema(filename: str) -> Mapping[str, Any]:
+    schema: dict[str, Any] = json.loads((_SCHEMA_DIR / filename).read_text(encoding="utf-8"))
     return schema
 
 
 @lru_cache(maxsize=1)
-def _schema_validator() -> jsonschema.protocols.Validator:
-    """Return a compiled validator.
+def extension_definition_sdo() -> Mapping[str, Any]:
+    """Return the ``extension-definition`` SDO that declares the 1.0 extension.
 
-    Compiled once because schema compilation is the expensive part and every
-    inbound object pays it otherwise.
+    Published in every distributed bundle so that a consumer encountering the
+    extension for the first time can resolve what it means without an
+    out-of-band lookup.
+    """
+    return _load_definition("definition.json", AIVS_EXTENSION_ID)
+
+
+@lru_cache(maxsize=1)
+def intel_extension_definition_sdo() -> Mapping[str, Any]:
+    """Return the ``extension-definition`` SDO for the 2.0 intelligence extension."""
+    return _load_definition("definition-2.0.json", AIVS_INTEL_EXTENSION_ID)
+
+
+@lru_cache(maxsize=1)
+def provenance_extension_definition_sdo() -> Mapping[str, Any]:
+    """Return the ``extension-definition`` SDO for the provenance extension."""
+    return _load_definition("definition-provenance-1.0.json", AIVS_PROVENANCE_EXTENSION_ID)
+
+
+@lru_cache(maxsize=1)
+def extension_json_schema() -> Mapping[str, Any]:
+    """Return the JSON Schema for the 1.0 extension body."""
+    return _load_schema("schema-1.0.json")
+
+
+@lru_cache(maxsize=1)
+def intel_json_schema() -> Mapping[str, Any]:
+    """Return the JSON Schema for the 2.0 extension: one definition per object type."""
+    return _load_schema("schema-2.0.json")
+
+
+@lru_cache(maxsize=1)
+def provenance_json_schema() -> Mapping[str, Any]:
+    """Return the JSON Schema for the provenance extension body."""
+    return _load_schema("schema-provenance-1.0.json")
+
+
+def _compile(schema: Mapping[str, Any]) -> jsonschema.protocols.Validator:
+    """Compile a validator, refusing a malformed schema.
+
+    Compiled once per schema (callers cache) because compilation is the
+    expensive part and every inbound object pays it otherwise.
     """
     # Deep copy, not dict(). A shallow copy shares `properties`, `allOf` and
     # every subschema with the lru_cached mapping, so anything that reached into
-    # extension_json_schema() and mutated a nested value would silently change
-    # the compiled validator for every subsequent inbound object.
-    schema = copy.deepcopy(dict(extension_json_schema()))
-    validator_cls = jsonschema.validators.validator_for(schema)
-    # Fail at import time on a malformed schema rather than on the first
-    # inbound object, when the failure would look like a member's fault.
-    validator_cls.check_schema(schema)
-    return validator_cls(schema)
+    # the loaded schema and mutated a nested value would silently change the
+    # compiled validator for every subsequent inbound object.
+    copied = copy.deepcopy(dict(schema))
+    validator_cls = jsonschema.validators.validator_for(copied)
+    # Fail at first use on a malformed schema rather than on an inbound object,
+    # when the failure would look like a member's fault.
+    validator_cls.check_schema(copied)
+    return validator_cls(copied)
+
+
+@lru_cache(maxsize=1)
+def _schema_validator() -> jsonschema.protocols.Validator:
+    return _compile(extension_json_schema())
+
+
+@lru_cache(maxsize=len(INTEL_EXTENSION_TYPES))
+def _intel_validator(object_type: str) -> jsonschema.protocols.Validator:
+    """The 2.0 definition for one object type, with the shared ``$defs`` in reach."""
+    return _compile({**intel_json_schema(), "$ref": f"#/$defs/{object_type}"})
+
+
+@lru_cache(maxsize=1)
+def _provenance_validator() -> jsonschema.protocols.Validator:
+    return _compile(provenance_json_schema())
 
 
 def assert_extensions_allowed(obj: Mapping[str, Any]) -> None:
@@ -356,22 +539,81 @@ def validate_stix_object(obj: Mapping[str, Any]) -> None:
     """
     assert_extensions_allowed(obj)
     _reject_authoritative_object_forgery(obj)
+    apply_type_policy(obj)
 
     extensions = obj.get("extensions") or {}
-    body = extensions.get(AIVS_EXTENSION_ID)
+    _refuse_both_intel_versions(obj, extensions)
+    _validate_body(obj, extensions.get(AIVS_EXTENSION_ID), _schema_validator, "AIVS extension")
+    _validate_intel_body(obj, extensions.get(AIVS_INTEL_EXTENSION_ID))
+    provenance = extensions.get(AIVS_PROVENANCE_EXTENSION_ID)
+    _validate_body(obj, provenance, _provenance_validator, "provenance extension")
+    _refuse_server_written_provenance(obj, provenance)
+
+
+def _validate_body(
+    obj: Mapping[str, Any],
+    body: Any,
+    validator: Callable[[], jsonschema.protocols.Validator],
+    described: str,
+) -> None:
+    """Validate one extension body against its schema; absent is fine."""
     if body is None:
         return
     if not isinstance(body, Mapping):
-        msg = f"AIVS extension body on {obj.get('id', '<no id>')} must be an object"
+        msg = f"{described} body on {obj.get('id', '<no id>')} must be an object"
         raise ExtensionValidationError(msg)
 
-    errors = sorted(_schema_validator().iter_errors(dict(body)), key=lambda e: list(e.path))
+    errors = sorted(validator().iter_errors(dict(body)), key=lambda e: list(e.path))
     if errors:
         detail = "; ".join(
             f"{'.'.join(str(p) for p in err.path) or '<root>'}: {err.message}" for err in errors[:5]
         )
-        msg = f"AIVS extension on {obj.get('id', '<no id>')} failed validation: {detail}"
+        msg = f"{described} on {obj.get('id', '<no id>')} failed validation: {detail}"
         raise ExtensionValidationError(msg)
+
+
+def _validate_intel_body(obj: Mapping[str, Any], body: Any) -> None:
+    """Validate a 2.0 body against the definition for the object's own type."""
+    if body is None:
+        return
+    object_type = obj.get("type")
+    if object_type not in INTEL_EXTENSION_TYPES:
+        msg = (
+            f"the AIVS 2.0 extension has no definition for {object_type!r} "
+            f"(object {obj.get('id', '<no id>')}); it applies to "
+            f"{', '.join(sorted(INTEL_EXTENSION_TYPES))}"
+        )
+        raise ExtensionValidationError(msg)
+    _validate_body(obj, body, lambda: _intel_validator(object_type), "AIVS 2.0 extension")
+
+
+def _refuse_both_intel_versions(obj: Mapping[str, Any], extensions: Mapping[str, Any]) -> None:
+    """One description of a vulnerability, not two that can disagree.
+
+    The 2.0 vulnerability definition carries every 1.0 property; an object with
+    both could state two CVE ids or two scopes, and a consumer would read
+    whichever it understood.
+    """
+    if AIVS_EXTENSION_ID in extensions and AIVS_INTEL_EXTENSION_ID in extensions:
+        msg = (
+            f"object {obj.get('id', '<no id>')} carries both the 1.0 and the 2.0 AIVS "
+            "extension; use one"
+        )
+        raise ObjectPolicyError(msg)
+
+
+def _refuse_server_written_provenance(obj: Mapping[str, Any], provenance: Any) -> None:
+    """A review is recorded by the ISAC that did it, never asserted by a submitter (SF-6)."""
+    if not isinstance(provenance, Mapping):
+        return
+    claimed = sorted(SERVER_WRITTEN_PROVENANCE & set(provenance))
+    if claimed:
+        msg = (
+            f"object {obj.get('id', '<no id>')} sets {', '.join(claimed)}: the ISAC "
+            "records who reviewed an object when it validates it, and a submission "
+            "may not claim a review"
+        )
+        raise ObjectPolicyError(msg)
 
 
 def validate_bundle(bundle: Mapping[str, Any]) -> int:

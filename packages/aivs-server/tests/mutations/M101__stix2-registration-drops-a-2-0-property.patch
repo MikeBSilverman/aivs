@@ -1,0 +1,16 @@
+Mutation M101: the stix2 registration no longer declares a property the JSON Schema defines
+Re-applies: (T6, uncommitted) "Extension 2.0 and the index columns"
+
+Expect red: packages/aivs-schemas/tests/test_extension_2_0.py::test_2_0_registration_and_schema_describe_the_same_properties
+
+diff --git a/packages/aivs-schemas/src/aivs_schemas/extension/builders.py b/packages/aivs-schemas/src/aivs_schemas/extension/builders.py
+--- a/packages/aivs-schemas/src/aivs_schemas/extension/builders.py
++++ b/packages/aivs-schemas/src/aivs_schemas/extension/builders.py
+@@ -307,7 +307,6 @@
+         ("kev_date_added", StringProperty()),
+         ("kev_due_date", StringProperty()),
+         ("kev_ransomware_use", EnumProperty(allowed=list(_KEV_RANSOMWARE_USE))),
+-        ("novel_attack_vector", BooleanProperty()),
+         # course-of-action
+         ("category", EnumProperty(allowed=list(_REMEDIATION_CATEGORY))),
+         ("restart_required", EnumProperty(allowed=list(_RESTART_REQUIRED))),

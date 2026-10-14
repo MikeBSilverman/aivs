@@ -1,0 +1,16 @@
+Mutation M110: cwe_ids keeps a CWE reference each time it appears
+Re-applies: (T6, uncommitted) "Extension 2.0 and the index columns"
+
+Expect red: packages/aivs-server/tests/unit/test_index_columns.py::test_cwe_ids_are_the_cwe_references_in_order_without_repeats
+
+diff --git a/packages/aivs-server/src/aivs_server/services/indexing.py b/packages/aivs-server/src/aivs_server/services/indexing.py
+--- a/packages/aivs-server/src/aivs_server/services/indexing.py
++++ b/packages/aivs-server/src/aivs_server/services/indexing.py
+@@ -105,7 +105,6 @@
+         if (
+             isinstance(external_id, str)
+             and len(external_id) <= _CWE_WIDTH
+-            and external_id not in found
+         ):
+             found.append(external_id)
+     return found[:_MAX_CWE_IDS] or None

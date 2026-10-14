@@ -11,10 +11,11 @@ what the embargo is, and where it sits relative to CVE publication.
 This extension serves the pre-CVE lane, which is the front of what AIVS covers:
 the platform is meant to follow a vulnerability from that first finding through
 CVE issuance to the detection, mitigation and verification work that follows.
-The later stages are planned as an additive version 2.0 of this extension —
-vocabularies for remediation, detection and exploitation status taken from
-existing standards rather than invented — and nothing of it is built. Version
-1.0 below is what the server accepts today.
+The later stages are carried by **extension 2.0** (section 9): the
+vocabularies defenders work from, taken verbatim from existing standards, on
+`vulnerability`, `course-of-action` and `indicator`, plus a separate
+**provenance** extension. Both are accepted today alongside 1.0. Sections 1–8
+describe 1.0; section 9 describes what 2.0 adds and changes.
 
 Implementation: `packages/aivs-schemas/src/aivs_schemas/extension/`.
 
@@ -30,6 +31,8 @@ Implementation: `packages/aivs-schemas/src/aivs_schemas/extension/`.
 | Applies to | the `vulnerability` SDO |
 | Current schema version | `1.0` (the value of `aivs_schema_version`) |
 | `extension-definition` object `version` | `1.0.0` |
+| 2.0 extension definition id | `extension-definition--a61c713d-42f5-4e19-bffc-6870dc66d209` (`definition-2.0.json`, `schema-2.0.json`) |
+| Provenance extension definition id | `extension-definition--b9ebb26e-6564-439d-af75-ebc68cf19bc0` (`definition-provenance-1.0.json`, `schema-provenance-1.0.json`) |
 
 The extension definition id is **minted once and never changes**. A new
 identifier would be a new, unrecognised extension to every member's TIP, and
@@ -370,10 +373,20 @@ exports `AIVS_EXTENSION_VERSION` separately from `__version__` for exactly this
 reason. The `extension-definition` SDO's own `version` field
 (`1.0.0`) tracks the same series in semver form.
 
-A `2.0` would be a new schema file (`schema-2.0.json`) served under the same
-extension definition id, with the definition SDO's `modified` and `version`
-updated. Consumers would branch on `aivs_schema_version`, which is precisely why
-it is required on every object.
+**2.0 has its own extension definition id.** This section used to say a 2.0
+would be served under the 1.0 id, with consumers branching on
+`aivs_schema_version`. That was reversed when 2.0 was built, for two reasons:
+
+- 2.0 changes the shape of a property 1.0 consumers already read
+  (`affected_products[].version_range` becomes a `vers:` range).
+- 2.0 applies to object types 1.0 never did.
+
+A consumer written for 1.0, finding a 2.0 body under the identifier it knows,
+would misread it. Finding an identifier it does not know, it ignores the
+extension, which STIX consumers already do. So 1.0 keeps its identifier and stays
+accepted, 2.0 has its own, and an object may carry one or the other but never
+both (section 9). `aivs_schema_version` is still required on every body. A
+future 2.x addition follows the additive rules above under the 2.0 identifier.
 
 Corresponding rule for the enums in `aivs_schemas.enums`, stated in that module:
 values are a wire contract, persisted in PostgreSQL enum types and consumed by
@@ -647,3 +660,122 @@ Timestamps go through `format_stix_timestamp`, which requires UTC with a literal
 `Z` and millisecond precision, and **refuses a naive datetime** rather than
 assuming UTC — guessing a timezone on an embargo release time is exactly the kind
 of assumption that publishes content hours early.
+
+---
+
+## 9. Extension 2.0, and the rules each type carries
+
+2.0 is one property-extension with a definition per object type
+(`schema-2.0.json`, `$defs`). The definition applied is the one for the type of
+the object carrying it. On any type without a definition, the extension is
+refused, because a body nobody defined for that type means nothing to anyone.
+`aivs_schema_version` is `"2.0"`.
+
+Standards' names and values are adopted verbatim. Every property that is ours
+says so in the schema, so nothing of ours is mistaken for a field a standards
+body later defines (`intel-model.md` §4).
+
+### `vulnerability`
+
+It carries every 1.0 property except the reserved `sealed_payload` fields.
+The 1.0 conditional rules still hold: a CVE id only once assigned, a timer
+embargo needs a release time, and a CVSS score needs its vector. A test pins each carried property's schema to its
+1.0 description, so the two cannot drift. The changes are:
+
+| Property | Values | From |
+| --- | --- | --- |
+| `affected_products[].version_range` | A `vers:` range, e.g. `vers:semver/>=4.0.0\|<4.2.1`. Free text is refused. | purl-spec VERSION-RANGE-SPEC |
+| `affected_products[].fixed_versions` | List of version strings | Ours |
+| `cvss_v3_vector` | `CVSS:3.0/…` or `CVSS:3.1/…` | CVSS |
+| `ssvc_exploitation` | `none`, `poc`, `active` | CISA SSVC v2 |
+| `ssvc_automatable` | `yes`, `no` | CISA SSVC v2 |
+| `ssvc_technical_impact` | `partial`, `total` | CISA SSVC v2 |
+| `ssvc_decision` | `Track`, `Track*`, `Attend`, `Act` | CISA SSVC |
+| `epss_score`, `epss_percentile` | 0–1; requires `epss_date` | FIRST EPSS |
+| `epss_date` | `YYYY-MM-DD` | FIRST EPSS |
+| `kev_listed` | boolean; `true` requires `kev_date_added` | CISA KEV |
+| `kev_date_added`, `kev_due_date` | `YYYY-MM-DD`; only with `kev_listed: true` | CISA KEV |
+| `kev_ransomware_use` | `Known`, `Unknown`; only with `kev_listed: true` | CISA KEV |
+| `novel_attack_vector` | boolean | Ours |
+
+The SSVC decision points are flat properties rather than one `ssvc` object.
+The `stix2` registration cannot describe an enumeration inside a nested
+dictionary, and a value the parity test cannot see is a value the two
+descriptions can disagree on.
+
+CVE and CWE identifiers go in `external_references`, as STIX intends:
+`source_name: "cve"` with `CVE-YYYY-NNNN…`, and `source_name: "cwe"` with
+`CWE-N`. On any `vulnerability`, with or without the extension, a reference in
+either scheme must be in that scheme's format, because a malformed one would be
+indexed as if it named something.
+
+### `course-of-action`
+
+| Property | Values | From |
+| --- | --- | --- |
+| `category` (required) | `vendor_fix`, `mitigation`, `workaround`, `no_fix_planned`, `none_available`; plus ours, `validation` and `rollback` | CSAF 2.0 `remediation.category` |
+| `restart_required` | `none`, `vulnerable_component`, `service`, `parent`, `dependencies`, `connected`, `machine`, `zone`, `system` | CSAF 2.0 |
+| `action_type` | `config_change`, `credential_rotation`, `dependency_upgrade`, `compromise_assessment` | Ours |
+| `residual_risk` | Text | Ours |
+| `validation_check` | `{tool, query_or_command, expected_result}`, all three required | Ours: CSAF stops before verification |
+
+### `indicator`
+
+The extension adds `telemetry_sources` (the log sources the pattern needs) and
+`false_positive_notes`, both ours.
+
+**Every inbound indicator, with or without the extension**, must also:
+
+- state a `pattern_type` from STIX's vocabulary (`stix`, `pcre`, `sigma`,
+  `snort`, `suricata`, `yara`) or one of ours (`kql`, `spl`);
+- carry `valid_from` and `valid_until`, with `valid_until` later. STIX makes
+  `valid_until` optional; AIVS requires it, because an indicator with no end
+  is blocked by members for years after the address changes hands (SF-46);
+- expire within **90 days** if it is a STIX pattern naming a network address
+  (`ipv4-addr`, `ipv6-addr`, `domain-name`, `url`), and within **two years**
+  otherwise (hashes, rules).
+
+These are type rules rather than extension rules on purpose. A rule that
+applied only when the extension was present could be avoided by leaving the
+extension off.
+
+### `attack-pattern`
+
+There is no 2.0 definition; ATT&CK and CAPEC already supply what is needed, in
+standard properties. On every inbound `attack-pattern`:
+
+- a `mitre-attack` reference must be a technique id (`T1190`, `T1059.001`);
+- a `capec` reference must be `CAPEC-N`;
+- every `kill_chain_phases` entry must name both `kill_chain_name` and
+  `phase_name`.
+
+### The provenance extension
+
+This is a separate extension, valid on any object type
+(`schema-provenance-1.0.json`):
+
+| Property | Who writes it |
+| --- | --- |
+| `human_reviewed_by_ref` | The server, when the ISAC validates. **Refused from a submitter.** |
+| `reviewed_at` | The server, when the ISAC validates. **Refused from a submitter.** |
+| `generated_by` | The submitter: what produced the object. A claim, not the source type the server derives from the principal. |
+| `factors` | The submitter: the inputs weighed, as short labels. |
+
+A submitter that sets a reviewer field is claiming a review that did not happen
+(SF-6). Writing those fields at validation lands in a later slice of phase E.
+Until it does, nothing writes them, and nothing accepts them from outside.
+
+### What the server indexes from 2.0
+
+Six columns on `stix_objects` are extracted from `raw` at ingest, and are
+backfilled for rows stored before them:
+
+- `remediation_category`
+- `pattern_type`
+- `valid_until` (at TAXII's millisecond precision)
+- `ssvc_exploitation`
+- `kev_listed`
+- `cwe_ids`
+
+`raw` stays canonical, and a test holds each column equal to its source.
+`services/indexing.py` names the reader of each.

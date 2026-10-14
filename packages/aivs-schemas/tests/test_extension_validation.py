@@ -20,6 +20,8 @@ from aivs_schemas.enums import (
 )
 from aivs_schemas.extension.builders import (
     AIVS_EXTENSION_ID,
+    AIVS_INTEL_EXTENSION_ID,
+    AIVS_PROVENANCE_EXTENSION_ID,
     ALLOWED_EXTENSION_IDS,
     MAX_BUNDLE_OBJECTS,
     AivsPreCveExtension,
@@ -89,14 +91,24 @@ def test_unknown_extension_definition_is_rejected():
         validate_stix_object(obj)
 
 
-def test_allowlist_contains_only_the_two_intended_extensions():
-    """AIVS's own extension and TLP 2.0, by identity rather than by count.
+def test_allowlist_contains_only_the_intended_extensions():
+    """AIVS's own three extensions and TLP 2.0, by identity rather than by count.
 
-    Asserting `len == 2` holds for any two distinct constants, so swapping
+    Asserting a length holds for any set of distinct constants, so swapping
     TLP 2.0 for an arbitrary third-party extension would have passed -- in the
     only test of the contents of the gate that decides what AIVS redistributes.
     """
-    assert frozenset({AIVS_EXTENSION_ID, TLP20_EXTENSION_DEFINITION_ID}) == ALLOWED_EXTENSION_IDS
+    assert (
+        frozenset(
+            {
+                AIVS_EXTENSION_ID,
+                AIVS_INTEL_EXTENSION_ID,
+                AIVS_PROVENANCE_EXTENSION_ID,
+                TLP20_EXTENSION_DEFINITION_ID,
+            }
+        )
+        == ALLOWED_EXTENSION_IDS
+    )
 
 
 def test_a_tlp20_marked_object_is_accepted():

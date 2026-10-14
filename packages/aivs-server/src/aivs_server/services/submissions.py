@@ -29,12 +29,17 @@ from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aivs_schemas.enums import ACCEPTED_DISCOVERY_SCOPES, SubmissionState, is_transition_allowed
-from aivs_schemas.extension.builders import AIVS_EXTENSION_ID, validate_bundle
+from aivs_schemas.extension.builders import (
+    AIVS_EXTENSION_ID,
+    AIVS_INTEL_EXTENSION_ID,
+    validate_bundle,
+)
 from aivs_schemas.models import DISCOVERY_SCOPE_REFUSAL
 from aivs_server.audit.log import AuditAction, record
 from aivs_server.auth.context import AuthContext
 from aivs_server.auth.policy import PolicyDeniedError, can_transition_submission, require
 from aivs_server.db.models import Organization, StixObject, Submission, SubmissionTransition
+from aivs_server.services.indexing import intel_index_fields
 from aivs_server.taxii.resources import truncate_to_taxii_precision
 
 __all__ = [
@@ -138,7 +143,10 @@ def _extract_indexed_fields(obj: dict[str, Any]) -> dict[str, Any]:
                 extracted["cve_id"] = external_id[:40]
                 break
 
-    body = (obj.get("extensions") or {}).get(AIVS_EXTENSION_ID)
+    # 1.0 and 2.0 describe a vulnerability's CVE and score with the same
+    # property names, and validation refuses an object carrying both.
+    extensions = obj.get("extensions") or {}
+    body = extensions.get(AIVS_EXTENSION_ID) or extensions.get(AIVS_INTEL_EXTENSION_ID)
     if isinstance(body, dict):
         score = body.get("cvss_v4_base_score")
         if isinstance(score, (int, float)) and 0 <= score <= _CVSS_MAX:
@@ -148,6 +156,7 @@ def _extract_indexed_fields(obj: dict[str, Any]) -> dict[str, Any]:
             if isinstance(cve_id, str):
                 extracted["cve_id"] = cve_id[:40]
 
+    extracted.update(intel_index_fields(obj))
     return extracted
 
 

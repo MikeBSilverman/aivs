@@ -54,6 +54,28 @@ The model the code holds now, as of phase D:
 - **The AIVS property-extension 1.0** on `vulnerability` carries AI discovery
   provenance, `discovery_scope`, `cve_status`, affected products, CVSS v4 and
   embargo metadata ([`stix-extension.md`](stix-extension.md)).
+- **Extension 2.0** (its own identifier; 1.0 stays accepted, and an object
+  carries one or the other) brings the §4 vocabularies onto three types:
+  - `vulnerability`: SSVC decision points, EPSS, KEV, CVSS v3, and affected
+    versions as `vers:` ranges with `fixed_versions`;
+  - `course-of-action`: the CSAF remediation category plus ours, the CSAF
+    restart vocabulary, `action_type`, `residual_risk` and
+    `validation_check`;
+  - `indicator`: `telemetry_sources` and `false_positive_notes`.
+
+  A **provenance** extension records who at the ISAC reviewed an object. Its
+  reviewer fields are refused from a submitter. Nothing writes them yet: that
+  is validate's job, in a later slice of E.
+  ([`stix-extension.md`](stix-extension.md) §9.)
+- **Type rules, extension or not.** Every inbound indicator states a runnable
+  `pattern_type` and a `valid_until`, at most 90 days after `valid_from` for a
+  network address and two years for anything else (SF-46). CVE, CWE, ATT&CK
+  and CAPEC references must be in their scheme's format.
+- **Index columns** on `stix_objects`, extracted from `raw` and backfilled for
+  existing rows, each held equal to its source by a test:
+  `remediation_category`, `pattern_type`, `valid_until`,
+  `ssvc_exploitation`, `kev_listed`, `cwe_ids`. Nothing reads them yet;
+  `services/indexing.py` names the reader each is for.
 - **Discovery scope.** A submission may be filed as `own_product`,
   `own_estate` or `ai_system`. Two further values, `disclosed_third_party` and
   `coordinated_disclosure`, exist in the Postgres type and the Python enum,
@@ -123,20 +145,18 @@ ISAC and the vendor) and distributes the case to it. The ordinary pipeline
 applies, so the reporter's anonymity holds against the vendor as it does
 against members.
 
-**Extension 2.0** (additive; the 1.0 id stays registered) brings the
-vocabularies of §4 onto `vulnerability` (SSVC, EPSS, KEV, CWE),
-`course-of-action` (CSAF remediation category plus ours: `validation`,
-`rollback`, `action_type`, `residual_risk`, `validation_check`), `indicator`
-(`pattern_type`, `telemetry_sources`, required `valid_until`) and
-`attack-pattern` (ATT&CK and CAPEC references), plus a `provenance` extension
-whose reviewer fields are written by `validate` from the authenticated
-context, never from the payload. The schema ↔ `stix2` parity test extends to
-every new vocabulary.
+**Extension 2.0 and the index columns exist (§2).** What remains for this
+phase:
 
-**Index columns, not a second model.** Fields the portal filters on
-(`remediation_category`, `pattern_type`, `ssvc_exploitation`, `epss_score`,
-`kev_listed`, `cwe_ids`, `attack_technique_ids`, `valid_until`) are extracted
-from `raw` as `cve_id` is today, each with a test that it equals its source.
+- `validate` writes the provenance reviewer fields from the authenticated
+  context;
+- the readers of the index columns are built;
+- two columns wait for a reader:
+  - `epss_score`, for EPSS enrichment, which the plan defers until an analyst
+    asks for it;
+  - `attack_technique_ids`, which no phase-E reader needs.
+
+  Each lands with its first reader, as CLAUDE.md §5 requires of any column.
 
 **Readiness is computed, never stored.** For each of remediation,
 mitigation, detection and validation the value is `available`,
@@ -236,7 +256,7 @@ body later defines (NVD in particular, §4.1).
 
 | Standard | Where it lives | Adopted | Ours (and why) |
 |---|---|---|---|
-| **STIX 2.1** | Canonical model; `stix_objects.raw`. SDOs `vulnerability`, `course-of-action`, `indicator`, `attack-pattern`, `grouping`, `opinion`, `sighting`, `report`, `identity`, `note`, `campaign`, `threat-actor`; SCO `artifact`; SRO `relationship`. | Types, `confidence`, `revoked`, `modified`, `external_references`, `object_marking_refs`, `pattern_type`, `identity_class`, `roles`, `kill_chain_phases`, `valid_from/until`. | Property extension 1.0 (exists) and 2.0. |
+| **STIX 2.1** | Canonical model; `stix_objects.raw`. SDOs `vulnerability`, `course-of-action`, `indicator`, `attack-pattern`, `grouping`, `opinion`, `sighting`, `report`, `identity`, `note`, `campaign`, `threat-actor`; SCO `artifact`; SRO `relationship`. | Types, `confidence`, `revoked`, `modified`, `external_references`, `object_marking_refs`, `pattern_type`, `identity_class`, `roles`, `kill_chain_phases`, `valid_from/until`. | Property extension 1.0 and 2.0, and the provenance extension (all exist). |
 | **TAXII 2.1 / TLP 2.0** | Delivery; markings; circle floors. | Unchanged. | A statement marking "shareable with regulator" (H). |
 | **CVE** | `external_references[cve]`; `cve_id`; `cve_status`. | Id format; CVE 5.x `affected[]` shape. | `cve_status`: the pre-CVE phase has no standard. |
 | **NVD records** | `external_references[source_name=nvd]` on the matching object; `provenance.source` per property. | Whatever NVD issues. | Our values keep their own names beside NVD's; `isac_assessment` records agreement or contradiction. |

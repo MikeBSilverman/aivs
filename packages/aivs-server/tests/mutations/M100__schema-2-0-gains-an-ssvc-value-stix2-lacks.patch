@@ -1,0 +1,18 @@
+Mutation M100: the JSON Schema enumerates an SSVC value the stix2 registration does not
+Re-applies: (T6, uncommitted) "Extension 2.0 and the index columns"
+
+Expect red: packages/aivs-schemas/tests/test_extension_2_0.py::test_2_0_registration_and_schema_enumerate_the_same_values
+
+diff --git a/packages/aivs-schemas/src/aivs_schemas/extension/schema-2.0.json b/packages/aivs-schemas/src/aivs_schemas/extension/schema-2.0.json
+--- a/packages/aivs-schemas/src/aivs_schemas/extension/schema-2.0.json
++++ b/packages/aivs-schemas/src/aivs_schemas/extension/schema-2.0.json
+@@ -148,7 +148,8 @@
+           "enum": [
+             "none",
+             "poc",
+-            "active"
++            "active",
++            "unknown"
+           ]
+         },
+         "ssvc_automatable": {

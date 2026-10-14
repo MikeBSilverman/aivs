@@ -1,0 +1,15 @@
+{
+  "type": "extension-definition",
+  "spec_version": "2.1",
+  "id": "extension-definition--a61c713d-42f5-4e19-bffc-6870dc66d209",
+  "created_by_ref": "identity--e50b8964-5a9a-4d4b-a016-16ea043c2c56",
+  "created": "2026-10-14T00:00:00.000Z",
+  "modified": "2026-10-14T00:00:00.000Z",
+  "name": "AIVS Intelligence Extension",
+  "description": "Adds the properties defenders work from to the STIX vulnerability, course-of-action and indicator SDOs: SSVC decision points, EPSS, CISA KEV status and CVSS v3.1 on a vulnerability, with affected versions as vers ranges; the CSAF remediation category, restart requirement and a way to verify the fix on a course of action; and the telemetry an indicator needs and what else it matches. Standards' vocabularies are adopted verbatim. Supersedes the AIVS Pre-CVE AI Vulnerability Extension on vulnerability objects, which remains accepted.",
+  "schema": "https://schemas.aivs.example/aivs-intel/2.0/schema.json",
+  "version": "2.0.0",
+  "extension_types": [
+    "property-extension"
+  ]
+}

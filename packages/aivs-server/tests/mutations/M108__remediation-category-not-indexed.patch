@@ -1,0 +1,17 @@
+Mutation M108: the remediation_category column is not filled from the course of action's category
+Re-applies: (T6, uncommitted) "Extension 2.0 and the index columns"
+
+Expect red: packages/aivs-server/tests/unit/test_index_columns.py::test_remediation_category_is_the_course_of_actions_category
+
+diff --git a/packages/aivs-server/src/aivs_server/services/indexing.py b/packages/aivs-server/src/aivs_server/services/indexing.py
+--- a/packages/aivs-server/src/aivs_server/services/indexing.py
++++ b/packages/aivs-server/src/aivs_server/services/indexing.py
+@@ -53,7 +53,7 @@
+     body = _intel_body(obj)
+     object_type = obj.get("type")
+     return {
+-        "remediation_category": _string(body, "category")
++        "remediation_category": _string(body, "remediation_category")
+         if object_type == "course-of-action"
+         else None,
+         "pattern_type": _string(obj, "pattern_type") if object_type == "indicator" else None,

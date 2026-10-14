@@ -1,0 +1,18 @@
+Mutation M105: a submitter's provenance may set the reviewer fields the ISAC writes
+Re-applies: (T6, uncommitted) "Extension 2.0 and the index columns"
+
+Expect red: packages/aivs-schemas/tests/test_extension_2_0.py::test_a_submitter_may_not_claim_a_review
+Expect red: packages/aivs-server/tests/unit/test_index_columns.py::test_a_claimed_review_is_refused_at_the_api
+
+diff --git a/packages/aivs-schemas/src/aivs_schemas/extension/builders.py b/packages/aivs-schemas/src/aivs_schemas/extension/builders.py
+--- a/packages/aivs-schemas/src/aivs_schemas/extension/builders.py
++++ b/packages/aivs-schemas/src/aivs_schemas/extension/builders.py
+@@ -606,7 +606,7 @@
+     """A review is recorded by the ISAC that did it, never asserted by a submitter (SF-6)."""
+     if not isinstance(provenance, Mapping):
+         return
+-    claimed = sorted(SERVER_WRITTEN_PROVENANCE & set(provenance))
++    claimed: list[str] = []
+     if claimed:
+         msg = (
+             f"object {obj.get('id', '<no id>')} sets {', '.join(claimed)}: the ISAC "

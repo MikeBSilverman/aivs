@@ -1,0 +1,17 @@
+Mutation M102: a property 2.0 carries from 1.0 is described differently in the two schemas
+Re-applies: (T6, uncommitted) "Extension 2.0 and the index columns"
+
+Expect red: packages/aivs-schemas/tests/test_extension_2_0.py::test_every_property_2_0_carries_from_1_0_is_described_identically
+
+diff --git a/packages/aivs-schemas/src/aivs_schemas/extension/schema-2.0.json b/packages/aivs-schemas/src/aivs_schemas/extension/schema-2.0.json
+--- a/packages/aivs-schemas/src/aivs_schemas/extension/schema-2.0.json
++++ b/packages/aivs-schemas/src/aivs_schemas/extension/schema-2.0.json
+@@ -70,7 +70,7 @@
+         },
+         "cvss_v4_vector": {
+           "type": "string",
+-          "pattern": "^CVSS:4\\.0/",
++          "pattern": "^CVSS:4",
+           "maxLength": 400
+         },
+         "cvss_v4_base_score": {

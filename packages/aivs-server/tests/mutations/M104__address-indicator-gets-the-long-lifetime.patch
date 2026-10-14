@@ -1,0 +1,17 @@
+Mutation M104: an indicator naming a network address may be valid as long as a hash
+Re-applies: (T6, uncommitted) "Extension 2.0 and the index columns"
+
+Expect red: packages/aivs-schemas/tests/test_extension_2_0.py::test_an_address_indicator_expires_within_ninety_days
+
+diff --git a/packages/aivs-schemas/src/aivs_schemas/extension/policy.py b/packages/aivs-schemas/src/aivs_schemas/extension/policy.py
+--- a/packages/aivs-schemas/src/aivs_schemas/extension/policy.py
++++ b/packages/aivs-schemas/src/aivs_schemas/extension/policy.py
+@@ -121,7 +121,7 @@
+         and _NETWORK_OBSERVABLE.search(pattern) is not None
+     )
+     if names_an_address:
+-        return NETWORK_INDICATOR_LIFETIME, "network-address"
++        return MAX_INDICATOR_LIFETIME, "network-address"
+     return MAX_INDICATOR_LIFETIME, "hash and rule"
+ 
+ 

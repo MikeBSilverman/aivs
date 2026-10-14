@@ -1,0 +1,17 @@
+Mutation M109: valid_until is stored at microseconds rather than TAXII's milliseconds
+Re-applies: (T6, uncommitted) "Extension 2.0 and the index columns"
+
+Expect red: packages/aivs-server/tests/unit/test_index_columns.py::test_valid_until_is_the_indicators_expiry_at_taxii_precision
+
+diff --git a/packages/aivs-server/src/aivs_server/services/indexing.py b/packages/aivs-server/src/aivs_server/services/indexing.py
+--- a/packages/aivs-server/src/aivs_server/services/indexing.py
++++ b/packages/aivs-server/src/aivs_server/services/indexing.py
+@@ -92,7 +92,7 @@
+         return None
+     if parsed.tzinfo is None:
+         return None
+-    return truncate_to_taxii_precision(parsed.astimezone(dt.UTC))
++    return parsed.astimezone(dt.UTC)
+ 
+ 
+ def _cwe_ids(obj: Mapping[str, Any]) -> list[str] | None:

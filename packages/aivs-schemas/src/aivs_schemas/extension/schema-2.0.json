@@ -1,0 +1,531 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.aivs.example/aivs-intel/2.0/schema.json",
+  "title": "AIVS Intelligence Extension 2.0",
+  "description": "Property-extension for the STIX 2.1 vulnerability, course-of-action and indicator SDOs. The definition that applies is chosen by the type of the object carrying the extension; the extension on any other type is refused. Standards' names and values are adopted verbatim; every property of ours says so. Property names follow STIX 2.1 section 7.3.2.1.",
+  "$defs": {
+    "vulnerability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "extension_type",
+        "aivs_schema_version",
+        "discovery_scope",
+        "cve_status",
+        "affected_products"
+      ],
+      "properties": {
+        "extension_type": {
+          "const": "property-extension"
+        },
+        "aivs_schema_version": {
+          "description": "Always 2.0 for this schema. Consumers use it to decide whether they understand the payload.",
+          "const": "2.0"
+        },
+        "ai_discovery_method": {
+          "description": "How an AI system discovered the finding. Optional: absent when no AI system was involved, and absence asserts nothing about how the finding was made.",
+          "type": "string",
+          "enum": [
+            "sast-harness",
+            "dast",
+            "fuzzing",
+            "exploit-chain-search",
+            "model-audit",
+            "red-team",
+            "manual-review",
+            "other"
+          ]
+        },
+        "ai_model_name": {
+          "description": "Model that performed or led the discovery, e.g. 'claude-mythos-5'.",
+          "type": "string",
+          "maxLength": 200
+        },
+        "ai_harness_name": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "ai_harness_version": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "ai_confidence": {
+          "description": "Submitter's confidence that the finding is real and exploitable, 0-100. Absent means not asserted, which is not the same as low.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "ai_reproduction_available": {
+          "description": "Whether the submitter holds a working reproduction. Deliberately a boolean and not the reproduction itself: AIVS distributes warning, not weaponised proof-of-concept.",
+          "type": "boolean"
+        },
+        "discovery_scope": {
+          "description": "The submitter's relationship to the affected system. AIVS accepts findings in the submitter's own products and estate, and findings about AI systems generally. It is not a channel for undisclosed vulnerabilities in uninvolved third parties' software.",
+          "type": "string",
+          "enum": [
+            "own_product",
+            "own_estate",
+            "ai_system"
+          ]
+        },
+        "cvss_v4_vector": {
+          "type": "string",
+          "pattern": "^CVSS:4\\.0/",
+          "maxLength": 400
+        },
+        "cvss_v4_base_score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 10
+        },
+        "cvss_v4_severity": {
+          "type": "string",
+          "enum": [
+            "none",
+            "low",
+            "medium",
+            "high",
+            "critical"
+          ]
+        },
+        "embargo_policy": {
+          "type": "string",
+          "enum": [
+            "timer",
+            "coordinated",
+            "manual"
+          ]
+        },
+        "embargo_release_at": {
+          "description": "STIX timestamp at which the submitter intends this to become releasable. Advisory metadata for the consumer; the authoritative gate is server-side visibility.",
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?Z$"
+        },
+        "remediation_summary": {
+          "type": "string",
+          "maxLength": 5000
+        },
+        "workaround_available": {
+          "type": "boolean"
+        },
+        "cve_status": {
+          "description": "Where the finding sits relative to public CVE issuance.",
+          "type": "string",
+          "enum": [
+            "pre-cve",
+            "requested",
+            "assigned",
+            "published"
+          ]
+        },
+        "cve_id": {
+          "type": "string",
+          "pattern": "^CVE-[0-9]{4}-[0-9]{4,}$"
+        },
+        "exploit_chain_position": {
+          "description": "1-based position of this vulnerability within an exploit chain. The chain itself is expressed with STIX relationships of type 'chains-to' and collected by a grouping with context 'exploit-chain'.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "affected_products": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 200,
+          "items": {
+            "$ref": "#/$defs/affected_product"
+          }
+        },
+        "cvss_v3_vector": {
+          "description": "CVSS v3.0 or v3.1 vector, verbatim.",
+          "type": "string",
+          "pattern": "^CVSS:3\\.[01]/",
+          "maxLength": 200
+        },
+        "ssvc_exploitation": {
+          "description": "SSVC v2 decision point Exploitation, CISA's values verbatim.",
+          "type": "string",
+          "enum": [
+            "none",
+            "poc",
+            "active"
+          ]
+        },
+        "ssvc_automatable": {
+          "description": "SSVC v2 decision point Automatable, CISA's values verbatim.",
+          "type": "string",
+          "enum": [
+            "yes",
+            "no"
+          ]
+        },
+        "ssvc_technical_impact": {
+          "description": "SSVC v2 decision point Technical Impact, CISA's values verbatim.",
+          "type": "string",
+          "enum": [
+            "partial",
+            "total"
+          ]
+        },
+        "ssvc_decision": {
+          "description": "The CISA SSVC decision, verbatim.",
+          "type": "string",
+          "enum": [
+            "Track",
+            "Track*",
+            "Attend",
+            "Act"
+          ]
+        },
+        "epss_score": {
+          "description": "FIRST EPSS probability of exploitation in the next 30 days.",
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "epss_percentile": {
+          "description": "FIRST EPSS percentile.",
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "epss_date": {
+          "description": "The EPSS model date the score is from.",
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+        },
+        "kev_listed": {
+          "description": "Whether CISA's Known Exploited Vulnerabilities catalogue lists this vulnerability.",
+          "type": "boolean"
+        },
+        "kev_date_added": {
+          "description": "KEV dateAdded.",
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+        },
+        "kev_due_date": {
+          "description": "KEV dueDate.",
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+        },
+        "kev_ransomware_use": {
+          "description": "KEV knownRansomwareCampaignUse, verbatim.",
+          "type": "string",
+          "enum": [
+            "Known",
+            "Unknown"
+          ]
+        },
+        "novel_attack_vector": {
+          "description": "Ours. Whether the ISAC judges this a new class of attack rather than a new instance of a known one.",
+          "type": "boolean"
+        }
+      },
+      "allOf": [
+        {
+          "$comment": "A CVE identifier is required once the submitter says one has been assigned, and forbidden before that. Prevents a placeholder id being read as authoritative.",
+          "if": {
+            "properties": {
+              "cve_status": {
+                "enum": [
+                  "assigned",
+                  "published"
+                ]
+              }
+            },
+            "required": [
+              "cve_status"
+            ]
+          },
+          "then": {
+            "required": [
+              "cve_id"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "cve_id"
+              ]
+            }
+          }
+        },
+        {
+          "$comment": "A timer embargo without a release time is not an embargo.",
+          "if": {
+            "properties": {
+              "embargo_policy": {
+                "const": "timer"
+              }
+            },
+            "required": [
+              "embargo_policy"
+            ]
+          },
+          "then": {
+            "required": [
+              "embargo_release_at"
+            ]
+          }
+        },
+        {
+          "$comment": "A CVSS score without its vector cannot be audited or recomputed.",
+          "if": {
+            "required": [
+              "cvss_v4_base_score"
+            ]
+          },
+          "then": {
+            "required": [
+              "cvss_v4_vector"
+            ]
+          }
+        },
+        {
+          "$comment": "A KEV date means nothing on a vulnerability KEV does not list.",
+          "if": {
+            "anyOf": [
+              {
+                "required": [
+                  "kev_date_added"
+                ]
+              },
+              {
+                "required": [
+                  "kev_due_date"
+                ]
+              },
+              {
+                "required": [
+                  "kev_ransomware_use"
+                ]
+              }
+            ]
+          },
+          "then": {
+            "required": [
+              "kev_listed"
+            ],
+            "properties": {
+              "kev_listed": {
+                "const": true
+              }
+            }
+          }
+        },
+        {
+          "$comment": "A listing without the date it was listed cannot be compared with anything.",
+          "if": {
+            "properties": {
+              "kev_listed": {
+                "const": true
+              }
+            },
+            "required": [
+              "kev_listed"
+            ]
+          },
+          "then": {
+            "required": [
+              "kev_date_added"
+            ]
+          }
+        },
+        {
+          "$comment": "An EPSS score is a statement about one model date.",
+          "if": {
+            "anyOf": [
+              {
+                "required": [
+                  "epss_score"
+                ]
+              },
+              {
+                "required": [
+                  "epss_percentile"
+                ]
+              }
+            ]
+          },
+          "then": {
+            "required": [
+              "epss_date"
+            ]
+          }
+        }
+      ]
+    },
+    "course-of-action": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "extension_type",
+        "aivs_schema_version",
+        "category"
+      ],
+      "properties": {
+        "extension_type": {
+          "const": "property-extension"
+        },
+        "aivs_schema_version": {
+          "description": "Always 2.0 for this schema. Consumers use it to decide whether they understand the payload.",
+          "const": "2.0"
+        },
+        "category": {
+          "description": "CSAF 2.0 remediation category verbatim, plus two of ours: validation (how to confirm a fix took) and rollback (how to undo one).",
+          "type": "string",
+          "enum": [
+            "vendor_fix",
+            "mitigation",
+            "workaround",
+            "no_fix_planned",
+            "none_available",
+            "validation",
+            "rollback"
+          ]
+        },
+        "restart_required": {
+          "description": "CSAF 2.0 restart_required category, verbatim.",
+          "type": "string",
+          "enum": [
+            "none",
+            "vulnerable_component",
+            "service",
+            "parent",
+            "dependencies",
+            "connected",
+            "machine",
+            "zone",
+            "system"
+          ]
+        },
+        "action_type": {
+          "description": "Ours. What kind of work the action is.",
+          "type": "string",
+          "enum": [
+            "config_change",
+            "credential_rotation",
+            "dependency_upgrade",
+            "compromise_assessment"
+          ]
+        },
+        "residual_risk": {
+          "description": "Ours. What remains exposed after the action is taken.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "validation_check": {
+          "description": "Ours. How a defender confirms the action worked. CSAF stops before verification.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "tool",
+            "query_or_command",
+            "expected_result"
+          ],
+          "properties": {
+            "tool": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "query_or_command": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4000
+            },
+            "expected_result": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            }
+          }
+        }
+      }
+    },
+    "indicator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "extension_type",
+        "aivs_schema_version"
+      ],
+      "properties": {
+        "extension_type": {
+          "const": "property-extension"
+        },
+        "aivs_schema_version": {
+          "description": "Always 2.0 for this schema. Consumers use it to decide whether they understand the payload.",
+          "const": "2.0"
+        },
+        "telemetry_sources": {
+          "description": "Ours. The log sources the pattern needs, so a member knows whether it can run it.",
+          "type": "array",
+          "maxItems": 20,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          }
+        },
+        "false_positive_notes": {
+          "description": "Ours. What else the pattern matches.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        }
+      }
+    },
+    "affected_product": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "vendor",
+        "product"
+      ],
+      "properties": {
+        "vendor": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "product": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "version_range": {
+          "description": "A vers range (package-url/purl-spec VERSION-RANGE-SPEC): 'vers:<scheme>/<constraints>'. Free text is refused, because a range a machine cannot evaluate cannot answer 'am I affected'.",
+          "type": "string",
+          "pattern": "^vers:[a-z0-9][a-z0-9.+-]*/[^\\s]+$",
+          "maxLength": 500
+        },
+        "fixed_versions": {
+          "description": "Ours. The versions that contain the fix, as a readable list beside the machine range.",
+          "type": "array",
+          "maxItems": 50,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          }
+        },
+        "cpe": {
+          "description": "CPE 2.3 formatted string, where the submitter can supply one.",
+          "type": "string",
+          "pattern": "^cpe:2\\.3:[aho\\*\\-]",
+          "maxLength": 500
+        },
+        "purl": {
+          "description": "Package URL, more practical than CPE for software dependencies.",
+          "type": "string",
+          "pattern": "^pkg:",
+          "maxLength": 500
+        }
+      }
+    }
+  }
+}

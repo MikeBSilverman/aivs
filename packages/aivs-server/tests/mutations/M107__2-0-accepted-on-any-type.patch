@@ -1,0 +1,17 @@
+Mutation M107: the 2.0 extension is accepted on a type it has no definition for
+Re-applies: (T6, uncommitted) "Extension 2.0 and the index columns"
+
+Expect red: packages/aivs-schemas/tests/test_extension_2_0.py::test_the_2_0_extension_is_refused_on_a_type_it_does_not_define
+
+diff --git a/packages/aivs-schemas/src/aivs_schemas/extension/builders.py b/packages/aivs-schemas/src/aivs_schemas/extension/builders.py
+--- a/packages/aivs-schemas/src/aivs_schemas/extension/builders.py
++++ b/packages/aivs-schemas/src/aivs_schemas/extension/builders.py
+@@ -577,7 +577,7 @@
+     if body is None:
+         return
+     object_type = obj.get("type")
+-    if object_type not in INTEL_EXTENSION_TYPES:
++    if False:
+         msg = (
+             f"the AIVS 2.0 extension has no definition for {object_type!r} "
+             f"(object {obj.get('id', '<no id>')}); it applies to "

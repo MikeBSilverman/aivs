@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.aivs.example/aivs-provenance/1.0/schema.json",
+  "title": "AIVS Provenance Extension 1.0",
+  "description": "Property-extension on any STIX object: who reviewed it at the ISAC, and how it was generated. The reviewer fields are written by the server when the ISAC validates; a submitter that sets them is refused.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "extension_type"
+  ],
+  "properties": {
+    "extension_type": {
+      "const": "property-extension"
+    },
+    "human_reviewed_by_ref": {
+      "description": "The ISAC operator identity that validated the object. Server-written.",
+      "type": "string",
+      "pattern": "^identity--[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "reviewed_at": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?Z$",
+      "description": "When the ISAC validated the object. Server-written."
+    },
+    "generated_by": {
+      "description": "The submitter's statement of what produced the object (a tool, a model, a person's role). A claim, not the source type the server derives from the principal.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "factors": {
+      "description": "The inputs the submitter weighed, as short labels.",
+      "type": "array",
+      "maxItems": 20,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      }
+    }
+  }
+}

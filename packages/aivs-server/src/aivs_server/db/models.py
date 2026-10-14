@@ -514,6 +514,14 @@ class StixObject(Base):
     name: Mapped[str | None] = mapped_column(String(300), nullable=True)
     cve_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
     cvss_score: Mapped[float | None] = mapped_column(Numeric(3, 1), nullable=True)
+    # Extension 2.0 and standard STIX properties, extracted by
+    # services.indexing; its docstring names the reader of each.
+    remediation_category: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    pattern_type: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    valid_until: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ssvc_exploitation: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    kev_listed: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    cwe_ids: Mapped[list[str] | None] = mapped_column(ARRAY(String(20)), nullable=True)
 
     __table_args__ = (
         # Uniqueness is per submission, not global. A STIX object version is

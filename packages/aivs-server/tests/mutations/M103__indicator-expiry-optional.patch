@@ -1,0 +1,22 @@
+Mutation M103: an indicator with no valid_until is accepted, as STIX allows
+Re-applies: (T6, uncommitted) "Extension 2.0 and the index columns"
+
+Expect red: packages/aivs-schemas/tests/test_extension_2_0.py::test_an_indicator_without_an_expiry_is_refused
+Expect red: packages/aivs-server/tests/unit/test_index_columns.py::test_an_indicator_without_an_expiry_is_refused_at_the_api
+
+diff --git a/packages/aivs-schemas/src/aivs_schemas/extension/policy.py b/packages/aivs-schemas/src/aivs_schemas/extension/policy.py
+--- a/packages/aivs-schemas/src/aivs_schemas/extension/policy.py
++++ b/packages/aivs-schemas/src/aivs_schemas/extension/policy.py
+@@ -99,7 +99,11 @@
+         raise ObjectPolicyError(msg)
+ 
+     valid_from = _timestamp(obj, "valid_from")
+-    valid_until = _timestamp(obj, "valid_until")
++    valid_until = (
++        _timestamp(obj, "valid_until")
++        if "valid_until" in obj
++        else valid_from + MAX_INDICATOR_LIFETIME
++    )
+     if valid_until <= valid_from:
+         msg = f"{described}: valid_until must be later than valid_from"
+         raise ObjectPolicyError(msg)

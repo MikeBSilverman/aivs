@@ -62,6 +62,7 @@ from aivs_server.db.models import (
     Webhook,
     WebhookDelivery,
 )
+from aivs_server.db.webhook_lock import deliverable_webhooks
 from aivs_server.services.count_snapshots import K_ANONYMITY, publish_if_changed, published
 from aivs_server.services.ownership import ISAC_OWNER_TYPES
 
@@ -280,9 +281,7 @@ async def _announce(
     )
     hooks = (
         await session.execute(
-            select(Webhook).where(
-                Webhook.org_id == submission.submitter_org_id, Webhook.is_active.is_(True)
-            )
+            deliverable_webhooks().where(Webhook.org_id == submission.submitter_org_id)
         )
     ).scalars()
     for hook in hooks:

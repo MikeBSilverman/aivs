@@ -1,0 +1,15 @@
+Mutation M896: webhooks to notify are read without a lock
+Re-applies: the five delivery writers before review L2-P3
+
+Expect red: packages/aivs-server/tests/unit/test_notifications.py::test_a_webhook_deleted_mid_distribution_is_skipped_not_a_failure
+
+diff --git a/packages/aivs-server/src/aivs_server/db/webhook_lock.py b/packages/aivs-server/src/aivs_server/db/webhook_lock.py
+index e235531..05f6aea 100644
+--- a/packages/aivs-server/src/aivs_server/db/webhook_lock.py
++++ b/packages/aivs-server/src/aivs_server/db/webhook_lock.py
+@@ -27,5 +27,4 @@ def deliverable_webhooks() -> Select[tuple[Webhook]]:
+     return (
+         select(Webhook)
+         .where(Webhook.is_active.is_(True))
+-        .with_for_update(key_share=True, of=Webhook)
+     )

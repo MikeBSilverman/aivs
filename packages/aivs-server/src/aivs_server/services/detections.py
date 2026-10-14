@@ -41,6 +41,7 @@ from aivs_server.db.models import (
     Webhook,
     WebhookDelivery,
 )
+from aivs_server.db.webhook_lock import deliverable_webhooks
 from aivs_server.notify.dispatcher import KEY_UNAVAILABLE_ERROR
 from aivs_server.observability import HEARTBEATS
 from aivs_server.services.org_status import load_org_for_update
@@ -642,9 +643,9 @@ async def _queue_alert(session: AsyncSession, finding: Finding, now: dt.datetime
     hooks = (
         (
             await session.execute(
-                select(Webhook)
+                deliverable_webhooks()
                 .join(Organization, Organization.id == Webhook.org_id)
-                .where(Organization.org_type == OrgType.ADMIN, Webhook.is_active.is_(True))
+                .where(Organization.org_type == OrgType.ADMIN)
             )
         )
         .scalars()

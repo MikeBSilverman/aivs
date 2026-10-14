@@ -64,6 +64,7 @@ from aivs_server.db.models import (
     Webhook,
     WebhookDelivery,
 )
+from aivs_server.db.webhook_lock import deliverable_webhooks
 from aivs_server.services.guidance import affected_product_names
 from aivs_server.services.sector_events import subjects_in_open_events
 
@@ -245,11 +246,7 @@ async def _deliver_now(
     visible_at: dt.datetime,
     facts: NoticeFacts,
 ) -> int:
-    webhooks = (
-        await session.scalars(
-            select(Webhook).where(Webhook.org_id == org_id, Webhook.is_active.is_(True))
-        )
-    ).all()
+    webhooks = (await session.scalars(deliverable_webhooks().where(Webhook.org_id == org_id))).all()
     queued = 0
     for webhook in webhooks:
         # An empty `events` list means "subscribe to everything".

@@ -25,7 +25,6 @@ import re
 import uuid
 from typing import Any, Final
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aivs_schemas.enums import OrgStatus, OrgType, SubmissionState
@@ -33,6 +32,7 @@ from aivs_server.audit.log import AuditAction, record
 from aivs_server.auth.context import AuthContext
 from aivs_server.auth.policy import can_confirm_proxy_filing, is_isac_editor, require
 from aivs_server.db.models import Organization, Submission, Webhook, WebhookDelivery
+from aivs_server.db.webhook_lock import deliverable_webhooks
 from aivs_server.services.submissions import (
     ProxyFiling,
     SubmissionError,
@@ -125,11 +125,7 @@ async def file_on_behalf(
         session, ctx, submission, SubmissionState.SUBMITTED, reason="filed on the member's behalf"
     )
     hooks = list(
-        (
-            await session.execute(
-                select(Webhook).where(Webhook.org_id == member.id, Webhook.is_active.is_(True))
-            )
-        )
+        (await session.execute(deliverable_webhooks().where(Webhook.org_id == member.id)))
         .scalars()
         .all()
     )

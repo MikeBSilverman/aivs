@@ -445,3 +445,44 @@ async def test_a_former_member_is_not_notified_and_a_current_one_is(
     notified = {delivery.webhook_id for delivery in await deliveries(session)}
     assert former_hook_id not in notified
     assert current_hook.id in notified
+
+
+async def test_a_webhook_deleted_mid_distribution_is_skipped_not_a_failure(
+    session, open_session, subscriber, make_org, make_circle, make_collection, publish
+):
+    """Offboarding deletes a member's webhooks. If it committed between a distribution
+    reading the webhook and inserting the delivery, the insert's foreign key failed
+    and the whole distribution with it: one member leaving stopped content reaching
+    everyone else. The read now key-share locks the webhook, so the distribution
+    waits for the deletion and then finds nothing to notify."""
+    import asyncio  # noqa: PLC0415 - one test
+
+    from sqlalchemy import delete  # noqa: PLC0415 - one test
+
+    from aivs_server.notify.events import queue_visibility_notifications  # noqa: PLC0415
+    from tests.conftest import is_blocked  # noqa: PLC0415 - one test
+
+    circle = await make_circle("race")
+    await make_collection(circle)
+    _reader, _pem, webhook = await subscriber(circle)
+    submitter = await make_org("race-submitter", org_type=OrgType.GSIB)
+    submission, _obj, _row = await publish(submitter, circle)
+    offboarding, distributing = open_session(), open_session()
+    await offboarding.execute(delete(Webhook).where(Webhook.id == webhook.id))
+
+    async def notify_and_commit() -> int:
+        queued = await queue_visibility_notifications(
+            distributing,
+            submission_id=submission.id,
+            circle_ids=[circle.id],
+            visible_at=dt.datetime.now(dt.UTC) - dt.timedelta(seconds=1),
+        )
+        await distributing.commit()
+        return queued
+
+    blocked, task = await is_blocked(notify_and_commit())
+    await offboarding.commit()
+    queued = await asyncio.wait_for(task, timeout=10)
+
+    assert blocked, "the distribution read the webhook past an uncommitted deletion"
+    assert queued == 0

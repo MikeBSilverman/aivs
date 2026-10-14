@@ -4,14 +4,14 @@ Re-applies: 3bf6757 "Detect abuse of the platform itself, and make every backgro
 Expect red: packages/aivs-server/tests/unit/test_detections.py::test_a_finding_is_audited_logged_as_ocsf_and_cef_and_sent_to_the_isac_only
 
 diff --git a/packages/aivs-server/src/aivs_server/services/detections.py b/packages/aivs-server/src/aivs_server/services/detections.py
+index c646851..c897c18 100644
 --- a/packages/aivs-server/src/aivs_server/services/detections.py
 +++ b/packages/aivs-server/src/aivs_server/services/detections.py
-@@ -469,7 +469,7 @@
+@@ -645,7 +645,6 @@ async def _queue_alert(session: AsyncSession, finding: Finding, now: dt.datetime
              await session.execute(
-                 select(Webhook)
+                 deliverable_webhooks()
                  .join(Organization, Organization.id == Webhook.org_id)
--                .where(Organization.org_type == OrgType.ADMIN, Webhook.is_active.is_(True))
-+                .where(Webhook.is_active.is_(True))
+-                .where(Organization.org_type == OrgType.ADMIN)
              )
          )
          .scalars()

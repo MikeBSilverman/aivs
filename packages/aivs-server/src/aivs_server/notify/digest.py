@@ -51,6 +51,7 @@ from aivs_server.db.models import (
     Webhook,
     WebhookDelivery,
 )
+from aivs_server.db.webhook_lock import deliverable_webhooks
 from aivs_server.notify.events import EVENT_SUBMISSION_VISIBLE, notice_facts
 from aivs_server.services.publication import publication_paused
 
@@ -312,11 +313,7 @@ async def _item(session: AsyncSession, notice: PendingNotice) -> DigestItem:
 async def _queue_webhooks(
     session: AsyncSession, org: Organization, items: Sequence[DigestItem], base_url: str
 ) -> int:
-    webhooks = (
-        await session.scalars(
-            select(Webhook).where(Webhook.org_id == org.id, Webhook.is_active.is_(True))
-        )
-    ).all()
+    webhooks = (await session.scalars(deliverable_webhooks().where(Webhook.org_id == org.id))).all()
     subscribed = [
         webhook
         for webhook in webhooks

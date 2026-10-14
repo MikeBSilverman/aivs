@@ -102,6 +102,10 @@ async def test_an_oversized_type_is_refused(client, member):
     _org, pem = member
     response = await post(client, pem, object_bundle(vulnerability(type="x" * 100)))
     assert response.status_code == 400
+    # The docstring's claim, asserted: storage would also refuse it, as a
+    # generic 400 that names nothing. Found by a mutation that dropped the
+    # ingest bound and left this test green.
+    assert "longer than" in response.json()["title"]
 
 
 async def test_a_foreign_spec_version_is_refused(client, member):

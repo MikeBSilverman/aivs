@@ -159,6 +159,36 @@ async def test_an_operator_can_enrol_and_activate_an_organisation(client, signed
     assert created.status is OrgStatus.ACTIVE
 
 
+async def test_a_refused_enrolment_says_why_without_the_databases_words(
+    client, signed_in_admin, make_org
+):
+    """A taken slug is named as such; the raw IntegrityError (SQL, constraint
+    names, parameters) never reaches the screen. The pair is a fresh slug."""
+    _org, pem = signed_in_admin
+    await make_org("atlantic-clearing", org_type=OrgType.SECTION9)
+
+    async def enrol(slug: str) -> str:
+        await client.post(
+            f"{ADMIN}/orgs",
+            data={
+                "csrf_token": csrf(client),
+                "slug": slug,
+                "name": "Atlantic Clearing",
+                "org_type": "section9",
+            },
+            headers=proxy_headers(pem),
+        )
+        return (await client.get(f"{ADMIN}/orgs", headers=proxy_headers(pem))).text
+
+    taken = await enrol("atlantic-clearing")
+    fresh = await enrol("pacific-clearing")
+
+    assert "already exists" in taken
+    for leak in ("IntegrityError", "duplicate key", "INSERT INTO", "organizations_slug"):
+        assert leak not in taken
+    assert "Enrolled pacific-clearing" in fresh
+
+
 async def test_enrolling_without_a_csrf_token_is_refused(client, signed_in_admin):
     _org, pem = signed_in_admin
     response = await client.post(

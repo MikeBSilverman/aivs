@@ -147,6 +147,12 @@ async def orgs_screen(request: Request, settings: SettingsDep, session: SessionD
     return render(request, "admin_orgs.html", context)
 
 
+_ENROLMENT_CONFLICT = (
+    "an organisation with that slug already exists, or the instance already has "
+    "its one automation organisation"
+)
+
+
 @router.post("/orgs")
 async def enrol_org(
     request: Request,
@@ -188,9 +194,16 @@ async def enrol_org(
             details={"org_type": org_type, "via": "portal"},
         )
         await session.commit()
-    except (IntegrityError, ValueError) as exc:
+    except ValidationError as exc:
         await session.rollback()
-        set_notice(response, settings, "error", f"Could not enrol {slug}: {exc}")
+        problems = "; ".join(str(error["msg"]) for error in exc.errors())
+        set_notice(response, settings, "error", f"Could not enrol {slug}: {problems}")
+        return response
+    except IntegrityError:
+        # Its own words, never the exception's: those carry the SQL statement,
+        # its parameters and constraint names. The API says the same.
+        await session.rollback()
+        set_notice(response, settings, "error", f"Could not enrol {slug}: {_ENROLMENT_CONFLICT}")
         return response
 
     set_notice(response, settings, "info", f"Enrolled {slug}. Activate it to grant access.")

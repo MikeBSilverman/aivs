@@ -158,13 +158,27 @@ async def test_the_source_is_derived_from_the_filing_organisation(
 # The AI gate
 # ---------------------------------------------------------------------------
 @pytest.mark.requirement("SF-6")
-async def test_a_machine_filed_disruptive_restart_needs_an_editor_to_name_it(client, world):
-    coa = workaround(restart_required="system")
+@pytest.mark.parametrize("restart", ["system", "parent"])
+async def test_a_machine_filed_disruptive_restart_needs_an_editor_to_name_it(
+    client, world, restart
+):
+    """Each restart SF-6 names, so dropping one from the set is seen."""
+    coa = workaround(restart_required=restart)
 
     _id, refused = await validate_filing(client, world, world["robot_pem"], [coa])
 
     assert refused.status_code == 409
     assert f"{coa['id']}:restart_required" in refused.json()["title"]
+
+
+@pytest.mark.requirement("SF-6")
+async def test_a_machine_filed_service_restart_validates_without_naming(client, world):
+    """Restarting the product alone is routine; the gate is for what takes more down."""
+    _id, validated = await validate_filing(
+        client, world, world["robot_pem"], [workaround(restart_required="service")]
+    )
+
+    assert validated.status_code == 200, validated.text
 
 
 @pytest.mark.requirement("SF-6")

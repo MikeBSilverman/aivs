@@ -347,12 +347,17 @@ async def test_a_member_cannot_acknowledge_content_never_delivered_to_them(
 async def test_receipts_record_retrieval_then_action(
     client, member, make_circle, join_circle, make_collection, publish
 ):
-    """The regulatory artefact, end to end: delivered, then acted on."""
+    """The regulatory artefact, end to end: delivered, then acted on.
+
+    Another firm files it: a member acknowledging its own submission is refused
+    (only ISAC staff may), so the member here is a recipient, as in life.
+    """
     org, pem = await member()
+    submitter, submitter_pem = await member("atlantic-clearing")
     circle = await make_circle("section9")
     await join_circle(org, circle)
     collection = await make_collection(circle)
-    submission, _obj, _dist = await publish(org, circle)
+    submission, _obj, _dist = await publish(submitter, circle)
 
     # Collecting the content writes the retrieval receipt.
     feed = await client.get(
@@ -371,8 +376,9 @@ async def test_receipts_record_retrieval_then_action(
     )
     assert actioned.status_code == 201
 
+    # The submitter reads the receipts; recipients never see each other's.
     receipts = await client.get(
-        f"{API}/submissions/{submission.id}/receipts", headers=proxy_headers(pem)
+        f"{API}/submissions/{submission.id}/receipts", headers=proxy_headers(submitter_pem)
     )
     assert receipts.status_code == 200
     by_type = {entry["ack_type"]: entry for entry in receipts.json()}

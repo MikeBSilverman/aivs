@@ -280,6 +280,13 @@ alone orders migrations, since two sessions adding one on the same parent fork
 an import nobody you know of changed, check `git status` before debugging: a
 shared tree can hold another session mid-edit.
 
+**The suite connects as a superuser, which readiness refuses.** Outside `dev`
+`/readyz` answers 503 while the app's connection could undo the append-only
+triggers, and the suite runs as the embedded cluster's `aivs` in environment
+`test`. A test that needs a ready instance takes the `safe_database_role`
+fixture, which stands in for the application role at that one check; do not
+make the instance `dev` instead, which changes what else the request is held to.
+
 **Settings are session-scoped in the suite.** A module needing a different
 setting overrides the `app` fixture and swaps `app.state.settings` for a
 `model_copy`; overriding `settings` itself raises `ScopeMismatch`.

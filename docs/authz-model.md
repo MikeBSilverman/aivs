@@ -22,8 +22,13 @@ Organization ──< CircleMembership >── Circle ──1..n──> TaxiiColl
 The `admin` org is the tenant operator, not a sharing participant, and there is
 exactly one. Members are `gsib`, `section9` or `crit_infra`, which are the only
 types a membership *rule* can admit. `vendor` and `government` may be added to a
-circle by name only. `researcher` and `automation` contribute and never read: no
-path can make them a circle member (`CIRCLE_ELIGIBLE_ORG_TYPES`, SF-62).
+circle by name only. `researcher` and `automation` read no circle: no path can
+make them a circle member (`CIRCLE_ELIGIBLE_ORG_TYPES`, SF-62). They contribute.
+The one read either has is the automation organisation's machine certificate
+reading the ISAC's own vulnerability records at
+`/api/v1/isac-records/vulnerabilities` (`can_read_isac_records`), which the KEV
+enrichment script builds its versions from: the newest released version of
+each, never RED, nothing while distribution is paused, and no member's content.
 
 **Circle** — the unit of trust tiering. Named, slugged, with an `is_active` flag
 and a `minimum_tlp` floor. Membership is an explicit `circle_memberships` row

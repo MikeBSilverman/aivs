@@ -1,10 +1,9 @@
 """The proxy's TLS configuration, as committed (SF-71).
 
 Static checks of the files a deployment runs. The negotiated group itself is
-an end-to-end property; until the e2e tier exists it was verified by hand
-against nginx 1.29 with OpenSSL 3.5 clients: hybrid offered -> X25519MLKEM768,
-classical only -> X25519. These tests stop the configuration drifting away
-from what was verified.
+an end-to-end property, checked against the running proxy by
+``tests/e2e/test_pqc.py``; these tests stop the committed configuration
+drifting away from the shape that run verified.
 """
 
 from __future__ import annotations
@@ -17,23 +16,26 @@ import pytest
 HYBRID_GROUP = "X25519MLKEM768"
 
 
-def _directive(conf: str, name: str) -> list[str]:
-    match = re.search(rf"^\s*{name}\s+([^;]+);", conf, re.MULTILINE)
-    assert match, f"{name} is not set"
-    return match.group(1).split(":")
+def _group_tuples(conf: str) -> list[list[str]]:
+    """``ssl_ecdh_curve`` as OpenSSL 3.5 reads it: tuples split by ``/``, groups by ``:``."""
+    match = re.search(r"^\s*ssl_ecdh_curve\s+([^;]+);", conf, re.MULTILINE)
+    assert match, "ssl_ecdh_curve is not set"
+    return [group_tuple.split(":") for group_tuple in match.group(1).split("/")]
 
 
 @pytest.mark.requirement("SF-71")
 @pytest.mark.requirement("NFR-S14")
-def test_the_hybrid_post_quantum_group_is_offered_first_with_a_classical_fallback(
+def test_the_hybrid_post_quantum_group_is_preferred_with_a_classical_fallback(
     repo_root: Path,
 ):
-    """First, because nginx honours the server's order when the client offers
-    both; with a classical fallback after it, because a TLS 1.2 or older client
-    cannot do ML-KEM and must still connect."""
-    groups = _directive((repo_root / "deploy/nginx/nginx.conf").read_text(), "ssl_ecdh_curve")
-    assert groups[0] == HYBRID_GROUP
-    assert "X25519" in groups[1:], "a classical fallback must remain"
+    """Alone in the first tuple, because within a tuple OpenSSL takes whichever
+    group the client already sent a key share for: written as one list, a client
+    that supports ML-KEM but led with X25519 was given X25519. The fallback stays
+    in a later tuple, because a TLS 1.2 or older client cannot do ML-KEM and must
+    still connect."""
+    tuples = _group_tuples((repo_root / "deploy/nginx/nginx.conf").read_text())
+    assert tuples[0] == [HYBRID_GROUP]
+    assert any("X25519" in later for later in tuples[1:]), "a classical fallback must remain"
 
 
 @pytest.mark.requirement("SF-71")

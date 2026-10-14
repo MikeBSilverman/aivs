@@ -115,8 +115,10 @@ services:
     # set it to the host's WireGuard overlay address to make AIVS unreachable
     # from the public internet entirely, which is the recommended topology (see
     # deploy/wireguard/ and deploy/nginx/allowlist.conf.example).
+    # AIVS_BIND_PORT exists for hosts where 443 is already taken; members dial
+    # whatever it is, so AIVS_PUBLIC_BASE_URL must carry it when it is not 443.
     ports:
-      - "${AIVS_BIND_ADDRESS:-0.0.0.0}:443:8443"
+      - "${AIVS_BIND_ADDRESS:-0.0.0.0}:${AIVS_BIND_PORT:-443}:8443"
 
     environment:
       # Consumed by deploy/nginx/templates/10-proxy-auth.conf.template at
@@ -431,10 +433,18 @@ services:
 # Three, so that reachability is a property of the topology rather than of
 # everyone remembering to configure a firewall.
 #
-#   frontend  proxy <-> the host's published port. Nothing else is on it.
+#   frontend  The proxy alone. Meant to carry the published port; in practice
+#             Docker publishes through whichever network it picks as the
+#             proxy's gateway, which today is `backend`. An external member's
+#             address survives either way; docs/deployment-topology.md
+#             ("What address nginx records") has the measurements.
 #   backend   proxy <-> app. Not internal: the app needs egress for outbound
 #             webhook delivery to members. Fixed subnet so the proxy can have a
-#             static address that the app's trusted_proxy_cidrs pins to a /32.
+#             static address that the app's trusted_proxy_cidrs pins to a /32,
+#             and an ip_range so that address is never handed out dynamically:
+#             without it the app, which starts first, was given .2 and the
+#             proxy could not start ("Address already in use") -- on every
+#             clean host, which no check short of starting the stack noticed.
 #   data      app <-> db, internal: true. No gateway, no route off the host,
 #             in either direction.
 #
@@ -454,6 +464,11 @@ networks:
     ipam:
       config:
         - subnet: 172.29.10.0/24
+          # Static addresses (the proxy's .2) live below .128; Docker allocates
+          # only from this range. tests/unit/test_deployment_contract.py fails
+          # if a static address falls inside it.
+          ip_range: 172.29.10.128/25
+          gateway: 172.29.10.1
 
   data:
     name: aivs_data

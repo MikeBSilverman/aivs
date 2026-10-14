@@ -98,6 +98,7 @@ $EDITOR deploy/.env
 #    - AIVS_DB_PASSWORD           openssl rand -base64 36 | tr '+/' '-_'   (URL-safe!)
 #    - AIVS_CA_DIR                ABSOLUTE path to deploy/ca/out
 #    - AIVS_PUBLIC_BASE_URL       exactly what members will dial, https://
+#    - AIVS_BIND_PORT             only if 443 is taken; then the base URL carries it
 
 # 2. Create the certificate authority. Prompts twice for the root passphrase.
 deploy/ca/init-ca.sh --org "Example Financial ISAC" --country US
@@ -137,6 +138,13 @@ docker compose --env-file deploy/.env up -d
 # 9. Verify. All three services must report healthy.
 docker compose --env-file deploy/.env ps
 ```
+
+`scripts/e2e.sh up` runs this whole sequence against a throwaway CA and work
+directory, then tests the result through nginx; `scripts/e2e.sh down` removes
+it. It is the check for any change to the compose files or to `deploy/`:
+`docker compose config` validates syntax, but the first defect it found -- the
+app taking the proxy's static address, so the proxy could not start on any
+clean host -- only appears when the stack actually starts.
 
 `--env-file deploy/.env` is required on **every** compose invocation. Compose
 looks for a `.env` beside `docker-compose.yml` by default, which does not exist

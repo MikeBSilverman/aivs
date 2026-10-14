@@ -15,11 +15,13 @@ a run where it cannot have run.
 
 from __future__ import annotations
 
+import datetime as dt
 import json
 import os
 import re
 import ssl
 import subprocess
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -130,6 +132,23 @@ class Stack:
         assert result.returncode == 0, result.stderr
         return result.stdout.strip()
 
+    def _unspent_totp_code(self, seed: str) -> str:
+        """A code for a time step this harness has not signed in with yet.
+
+        Each code signs in once (RFC 6238 section 5.2), and the enrolment step
+        and the tests sign the same operator in within seconds of each other,
+        so the step last used is kept beside the state and a repeat waits for
+        the next window rather than being refused.
+        """
+        totp = pyotp.TOTP(seed)
+        spent_path = Path(self.raw["work"]) / "secrets" / "isac-last-totp-step"
+        spent = int(spent_path.read_text(encoding="utf-8")) if spent_path.is_file() else -1
+        if totp.timecode(dt.datetime.now(dt.UTC)) <= spent:
+            time.sleep(_seconds_to_next_step(totp))
+        now = dt.datetime.now(dt.UTC)
+        spent_path.write_text(str(totp.timecode(now)), encoding="utf-8")
+        return totp.at(now)
+
     def isac_bearer(self) -> dict[str, str]:
         """Sign the ISAC operator in through the portal; return API headers for that session.
 
@@ -139,7 +158,7 @@ class Stack:
         """
         password = Path(self.raw["isac"]["password_file"]).read_text(encoding="utf-8")
         uri = Path(self.raw["isac"]["totp_uri_file"]).read_text(encoding="utf-8")
-        seed = parse_qs(urlparse(uri).query)["secret"][0]
+        code = self._unspent_totp_code(parse_qs(urlparse(uri).query)["secret"][0])
         with self.client(self.isac) as browser:
             form = browser.get("/portal/login")
             assert form.status_code == 200, form.text
@@ -150,7 +169,7 @@ class Stack:
                 data={
                     "email": self.raw["isac"]["email"],
                     "password": password,
-                    "totp_code": pyotp.TOTP(seed).now(),
+                    "totp_code": code,
                     "csrf_token": token.group(1),
                 },
             )
@@ -158,6 +177,10 @@ class Stack:
             session_token = signed_in.cookies.get("aivs_session")
         assert session_token, "sign-in set no session cookie"
         return {"authorization": f"Bearer {session_token}"}
+
+
+def _seconds_to_next_step(totp: pyotp.TOTP) -> float:
+    return totp.interval - (time.time() % totp.interval) + 0.5
 
 
 def load_stack() -> Stack:

@@ -12,8 +12,8 @@
 #
 # It follows deploy/README.md section 3 in order, with the operator's choices
 # made by script: an ephemeral CA, generated secrets, the proxy bound to
-# loopback on AIVS_E2E_PORT (default 18443; the only override, in
-# tests/e2e/compose.e2e.yml). Everything it creates lives under AIVS_E2E_DIR, never in the
+# loopback on AIVS_E2E_PORT (default 18443, through AIVS_BIND_PORT). The
+# compose file is used exactly as shipped: no override file. Everything it creates lives under AIVS_E2E_DIR, never in the
 # repository: nothing cryptographic is ever written into the checkout
 # (CLAUDE.md section 6), not even into a git-ignored path.
 #
@@ -34,8 +34,6 @@ REPO="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 WORK="${AIVS_E2E_DIR:-${TMPDIR:-/tmp}/aivs-e2e}"
 PROJECT="aivs-e2e"
 PORT="${AIVS_E2E_PORT:-18443}"
-export AIVS_E2E_PORT="${PORT}"
-OVERRIDE="${REPO}/packages/aivs-server/tests/e2e/compose.e2e.yml"
 # The proxy image, as compose would choose it; used here only to chown files
 # to the uids the containers run as, which needs root on the host otherwise.
 PROXY_IMAGE="${AIVS_PROXY_IMAGE:-nginxinc/nginx-unprivileged:1.29-alpine}"
@@ -48,8 +46,7 @@ log() { printf '==> %s\n' "$*" >&2; }
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 
 compose() {
-    docker compose -p "${PROJECT}" --env-file "${WORK}/.env" \
-        -f "${REPO}/docker-compose.yml" -f "${OVERRIDE}" "$@"
+    docker compose -p "${PROJECT}" --env-file "${WORK}/.env" -f "${REPO}/docker-compose.yml" "$@"
 }
 
 # -----------------------------------------------------------------------------
@@ -128,7 +125,7 @@ make_env() {
 AIVS_INSTANCE_NAME=E2E Test ISAC
 AIVS_PUBLIC_BASE_URL=https://localhost:${PORT}
 AIVS_BIND_ADDRESS=127.0.0.1
-AIVS_E2E_PORT=${PORT}
+AIVS_BIND_PORT=${PORT}
 AIVS_LOG_LEVEL=INFO
 AIVS_CA_DIR=${WORK}/ca/out
 AIVS_PROXY_SHARED_SECRET=$(random_secret)
@@ -183,7 +180,7 @@ write_state() {
   "repo": "${REPO}",
   "env_file": "${WORK}/.env",
   "base_url": "https://localhost:${PORT}",
-  "compose_files": ["${REPO}/docker-compose.yml", "${OVERRIDE}"],
+  "compose_files": ["${REPO}/docker-compose.yml"],
   "ca_chain": "${WORK}/ca/out/ca-chain.pem",
   "isac": {
     "cert": "${WORK}/ca/out/clients/e2e-isac/e2e-isac.crt",

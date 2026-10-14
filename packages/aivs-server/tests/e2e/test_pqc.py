@@ -70,13 +70,8 @@ def test_a_classical_only_client_still_connects_with_x25519(stack):
     assert "X25519, 253 bits" in negotiate(stack, "-groups", "X25519")
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "the server takes the key share the client sent first rather than asking for "
-        "the hybrid one: ssl_ecdh_curve orders support, not preference. Strict, so it "
-        "fails the day the configuration makes the server prefer the hybrid group."
-    ),
-)
 def test_a_client_that_prefers_classical_but_supports_hybrid_still_gets_hybrid(stack):
+    """The server's preference, not only its order: the hybrid group sits in a
+    tuple of its own, so the server asks for that key share rather than accepting
+    the X25519 one the client sent first."""
     assert "X25519MLKEM768" in negotiate(stack, "-groups", "X25519:X25519MLKEM768")

@@ -180,6 +180,25 @@ address, answered with **429** rather than nginx's default 503 — a throttled
 member should see "slow down", not "the service is broken". A TAXII collection
 poller runs at roughly 1 r/s, so this leaves two orders of magnitude of headroom.
 
+**What address nginx records, and therefore the audit log.** Measured with
+Docker Engine 29 against the shipped compose file (T5, 2026-10-14). A member
+connecting from another host arrives through Docker's NAT with its own source
+address preserved: nginx's `remote_addr`, the `X-Real-IP` it sets, and the
+audit row's `source_ip` are the member's address. A client on the Docker host
+itself -- loopback, or another container dialling the host's address -- is
+relayed by `docker-proxy` and appears as a bridge gateway (172.29.10.1). So the
+per-address connection limit and the `auth_failure_burst` detection see real
+member addresses in production, and only a local client shares one.
+
+The published port is delivered to the proxy's **`backend`** address, not its
+`frontend` one: Docker publishes through whichever network it picks as the
+container's gateway, and nothing in the compose file chooses. That changes
+nothing for an external member's address (above). Docker Engine 28+ with
+Compose 2.33+ can choose it explicitly (`gw_priority: 1` on the proxy's
+`frontend` attachment, verified to move ingress and the proxy's default route
+to `frontend`); it is not set because it would raise the supported floor from
+Engine 24 for a change no member-facing property depends on.
+
 `X-Request-Id` is nginx's own `$request_id`, never the client's. Accepting a
 caller-chosen correlation id would let a member forge audit-trail entries or
 deliberately collide with another member's requests.

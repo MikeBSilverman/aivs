@@ -9,6 +9,7 @@ baked into the volume on first start.
 from __future__ import annotations
 
 import http.server
+import ipaddress
 import re
 import socket
 import threading
@@ -98,3 +99,54 @@ def test_ready_only_when_readyz_answers_200(readyz_answering):
     assert is_ready(readyz_answering(200)) is True
     assert is_ready(readyz_answering(503)) is False
     assert is_ready(closed_port) is False
+
+
+def _static_address_collisions(compose: dict) -> list[str]:
+    """Static addresses Docker could also hand to a container dynamically.
+
+    Docker allocates from a network's ``ip_range`` when one is set, otherwise
+    from the whole subnet, and does not skip addresses another service merely
+    asked for. A static address inside that pool goes to whichever container
+    starts first.
+    """
+    pools = {}
+    for name, network in compose.get("networks", {}).items():
+        for config in (network.get("ipam") or {}).get("config", []):
+            subnet = ipaddress.ip_network(config["subnet"])
+            pools[name] = (subnet, ipaddress.ip_network(config.get("ip_range", config["subnet"])))
+    problems = []
+    for service_name, service in compose["services"].items():
+        networks = service.get("networks") or {}
+        if not isinstance(networks, dict):
+            continue
+        for network_name, attachment in networks.items():
+            address = (attachment or {}).get("ipv4_address")
+            if address is None:
+                continue
+            subnet, pool = pools[network_name]
+            ip = ipaddress.ip_address(address)
+            if ip not in subnet or ip in pool:
+                problems.append(f"{service_name} {address} on {network_name} (pool {pool})")
+    return problems
+
+
+def test_no_static_address_can_be_handed_out_dynamically():
+    """The first `up` on a clean host failed: the app started first, was given the
+    proxy's .2, and the proxy then could not start. `docker compose config` passes
+    that file; only this check, or starting the stack, sees it."""
+    assert _static_address_collisions(_compose("docker-compose.yml")) == []
+
+
+def test_the_collision_check_sees_the_shape_that_failed():
+    compose = _compose("docker-compose.yml")
+    del compose["networks"]["backend"]["ipam"]["config"][0]["ip_range"]
+
+    assert _static_address_collisions(compose) == [
+        "proxy 172.29.10.2 on backend (pool 172.29.10.0/24)"
+    ]
+
+
+def test_the_published_port_is_configurable_and_defaults_to_443():
+    ports = _compose("docker-compose.yml")["services"]["proxy"]["ports"]
+
+    assert ports == ["${AIVS_BIND_ADDRESS:-0.0.0.0}:${AIVS_BIND_PORT:-443}:8443"]

@@ -11,6 +11,13 @@ An instance that already enrolled two automation organisations fails this
 upgrade, deliberately: one of them is versioning the ISAC's records without
 being the ISAC's, and an operator must decide which.
 
+The index runs in an autocommit block. Its predicate names the enum value
+``automation``, which an earlier revision adds with ``ALTER TYPE ... ADD
+VALUE``; migrations share one transaction here, and PostgreSQL refuses a new
+enum value before the transaction that added it commits. So an instance
+upgrading from before that revision -- every fresh install -- failed at this
+step, while an instance that already had the value passed.
+
 Revision ID: 219524b682c5
 Revises: 3479c9a76d03
 Created: 2026-10-14 07:25:15.120206+00:00
@@ -31,13 +38,14 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.create_index(
-        "uq_organizations_one_automation",
-        "organizations",
-        ["org_type"],
-        unique=True,
-        postgresql_where=sa.text("org_type = 'automation'"),
-    )
+    with op.get_context().autocommit_block():
+        op.create_index(
+            "uq_organizations_one_automation",
+            "organizations",
+            ["org_type"],
+            unique=True,
+            postgresql_where=sa.text("org_type = 'automation'"),
+        )
 
 
 def downgrade() -> None:

@@ -46,7 +46,7 @@ from aivs_server.auth.policy import PolicyDeniedError, can_transition_submission
 from aivs_server.db.models import Organization, StixObject, Submission, SubmissionTransition
 from aivs_server.services.disclosure import DisclosureScope, disclosure_problem
 from aivs_server.services.indexing import intel_index_fields
-from aivs_server.services.markings import looser_than_referents_problem
+from aivs_server.services.markings import granular_tlp_problem, looser_than_referents_problem
 from aivs_server.services.ownership import foreign_owned_versions_problem
 from aivs_server.services.provenance import (
     consequential_changes,
@@ -538,10 +538,13 @@ async def contribution_problem(
 ) -> str | None:
     """Why this content may not be filed under this submission's scope and TLP, or ``None``.
 
-    The disclosure split and the TLP inheritance rule together, from one view:
-    the submitter's at ingest (``visible_to`` its context), the ISAC's at
-    validate and distribution (``visible_to=None``).
+    Granular TLP markings, the disclosure split and the TLP inheritance rule
+    together, from one view: the submitter's at ingest (``visible_to`` its
+    context), the ISAC's at validate and distribution (``visible_to=None``).
     """
+    granular = granular_tlp_problem(objects, TLP(submission.tlp))
+    if granular is not None:
+        return granular
     disclosure = await disclosure_problem(
         session,
         discovery_scope=submission.discovery_scope,

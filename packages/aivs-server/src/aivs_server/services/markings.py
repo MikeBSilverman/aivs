@@ -14,6 +14,11 @@ object already carrying a *different* TLP marking is refused rather than
 silently corrected: the submitter said two things, and the server will not pick
 one for them.
 
+The stamp sets ``object_marking_refs`` only. A TLP in ``granular_markings``
+applies to the properties it selects and is read over the object's own, so a
+granular TLP other than the submission's is refused too, wherever the content
+rules run (ingest, validate, distribution).
+
 **A derivative could launder its referent.** A CLEAR ``opinion`` on an
 AMBER+STRICT vulnerability repeats, at CLEAR, that the vulnerability exists and
 what someone thinks of it. A contribution's TLP must be at least as restrictive
@@ -38,7 +43,7 @@ from aivs_server.auth.context import AuthContext
 from aivs_server.auth.policy import distribution_visibility_clause
 from aivs_server.db.models import Distribution, StixObject, Submission
 
-__all__ = ["looser_than_referents_problem", "stamp_tlp_marking"]
+__all__ = ["granular_tlp_problem", "looser_than_referents_problem", "stamp_tlp_marking"]
 
 #: Object types that carry no handling marking of their own: definitions, not
 #: content.
@@ -70,6 +75,42 @@ def stamp_tlp_marking(raw: Mapping[str, Any], tlp: TLP) -> dict[str, Any]:
         raise ValueError(msg)
     others = [ref for ref in existing if ref != stamped]
     return {**raw, "object_marking_refs": [stamped, *others]}
+
+
+def _granular_marking_refs(raw: Mapping[str, Any]) -> list[str]:
+    granular = raw.get("granular_markings")
+    if not isinstance(granular, list):
+        return []
+    return [
+        marking["marking_ref"]
+        for marking in granular
+        if isinstance(marking, Mapping) and isinstance(marking.get("marking_ref"), str)
+    ]
+
+
+def granular_tlp_problem(objects: Iterable[Mapping[str, Any]], tlp: TLP) -> str | None:
+    """Why objects may not carry their granular TLP markings at ``tlp``, or ``None`` (SF-49).
+
+    A granular marking applies a TLP to the properties it selects, and a TIP
+    honours it over the object's own marking. The stamp sets the object's
+    marking only, so a CLEAR granular marking inside an AMBER submission went
+    out unchanged and made its content shareable with anyone. Refused, as an
+    object-level conflict is, rather than stripped: the submitter said two
+    things. A granular marking at the submission's TLP says one, and is kept.
+    """
+    stamped = marking_id_for(tlp)
+    conflicting = sorted(
+        str(raw.get("id", "<no id>"))
+        for raw in objects
+        if any(_is_tlp_marking(ref) and ref != stamped for ref in _granular_marking_refs(raw))
+    )
+    if not conflicting:
+        return None
+    return (
+        f"objects carry a TLP in granular_markings other than the submission's {tlp.value}: "
+        f"{', '.join(conflicting)}. TLP is set per submission; remove the granular TLP "
+        "marking or change the submission's TLP"
+    )
 
 
 async def _referent_tlps(

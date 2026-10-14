@@ -6,7 +6,7 @@ import uuid
 
 import pytest
 
-from aivs_schemas.enums import TLP, OrgType
+from aivs_schemas.enums import TLP, OrgType, SubmissionState
 from aivs_schemas.tlp import marking_id_for
 from tests.conftest import proxy_headers
 from tests.unit.contribution_world import (
@@ -96,6 +96,56 @@ async def test_an_object_already_marked_with_the_same_tlp_is_distributed(client,
     assert await delivered_markings(client, world, "amber", objects=[same]) == [
         marking_id_for(TLP.AMBER)
     ]
+
+
+# ---------------------------------------------------------------------------
+# A TLP in granular_markings
+# ---------------------------------------------------------------------------
+def marked_in_part(tlp: TLP) -> dict:
+    """A finding whose name alone is marked ``tlp``, as a granular marking."""
+    return finding(granular_markings=[{"marking_ref": marking_id_for(tlp), "selectors": ["name"]}])
+
+
+@pytest.mark.requirement("SF-49")
+async def test_a_granular_tlp_marking_unlike_the_submissions_is_refused_at_ingest(client, world):
+    """A CLEAR marking on part of an AMBER object survived the stamp, untouched.
+
+    A TIP honours a granular marking over the object's own for the property it
+    selects, so the name went out shareable with anyone. The pair is the same
+    granular marking at the submission's TLP.
+    """
+    clear = marked_in_part(TLP.CLEAR)
+
+    filed = await file(client, world["pem"], [clear], tlp="amber")
+
+    assert filed.status_code == 400, filed.text
+    assert clear["id"] in filed.text
+    assert "granular" in filed.text
+
+
+@pytest.mark.requirement("SF-49")
+async def test_a_granular_marking_at_the_submissions_tlp_is_distributed(client, world):
+    same = marked_in_part(TLP.AMBER)
+
+    assert await delivered_markings(client, world, "amber", objects=[same]) == [
+        marking_id_for(TLP.AMBER)
+    ]
+
+
+@pytest.mark.requirement("SF-49")
+async def test_a_granular_tlp_marking_unlike_the_submissions_is_refused_at_distribution(
+    client, session, world
+):
+    """However the object reached a validated submission, distribution refuses it too."""
+    clear = marked_in_part(TLP.CLEAR)
+    validated = await seed(
+        session, world["member"], clear, circle=None, state=SubmissionState.VALIDATED
+    )
+
+    distributed = await distribute(client, validated.id, world["editor"], world["circle"])
+
+    assert distributed.status_code == 409, distributed.text
+    assert "granular" in distributed.text
 
 
 # ---------------------------------------------------------------------------

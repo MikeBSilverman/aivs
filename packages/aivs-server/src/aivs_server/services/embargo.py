@@ -126,7 +126,7 @@ async def release_embargo_now(
     Safe in the direction it moves. See the module docstring.
     """
     # Before the clock is read: see services.publication.
-    await hold_publication_lock(session)
+    await hold_publication_lock(session, refuse_while_paused=True)
     now = now or dt.datetime.now(dt.UTC)
     # The next millisecond, not this one. A released row keeps the `seq` it was
     # given when it was *distributed*, which is necessarily lower than that of
@@ -231,7 +231,7 @@ async def extend_embargo(
     """
     # Before the clock is read: the "already visible" test below compares
     # against it. See services.publication.
-    await hold_publication_lock(session)
+    await hold_publication_lock(session, refuse_while_paused=False)
     now = now or dt.datetime.now(dt.UTC)
     if release_at.tzinfo is None:
         msg = "release_at must be timezone-aware"
@@ -319,7 +319,7 @@ async def sweep_due_embargoes(session: AsyncSession, *, now: dt.datetime | None 
     no member is told that anything exists; it catches up on resume.
     """
     try:
-        await hold_publication_lock(session)
+        await hold_publication_lock(session, refuse_while_paused=True)
     except PublicationPausedError:
         await session.rollback()
         return 0

@@ -603,7 +603,9 @@ GSIBs.
    by the clock. No member is told anything either: the embargo sweeper does
    nothing and members' webhook deliveries are held, then sent on resume. The
    ISAC's own endpoints still receive their alerts, including the one raised by
-   the pause itself. Members' polling cursors do not move on an empty page, so
+   the pause itself. Extending an embargo still works while paused, because it
+   only moves content later: push out anything at risk **before** you resume,
+   or every embargo whose time passed during the pause opens at once. Members' polling cursors do not move on an empty page, so
    nothing is skipped when you resume. An ISAC editor or system admin may
    pause; only an editor may resume.
 2. Isolate: stop the overlay or the allowlist. Members will notice; that is fine.

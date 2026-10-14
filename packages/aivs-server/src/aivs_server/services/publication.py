@@ -69,15 +69,24 @@ class PublicationPausedError(RuntimeError):
 _PUBLICATION_LOCK_KEY: Final[int] = 0x41495653_00000001  # "AIVS", lock 1
 
 
-async def hold_publication_lock(session: AsyncSession) -> None:
+async def hold_publication_lock(session: AsyncSession, *, refuse_while_paused: bool) -> None:
     """Take the publication lock exclusively until this transaction ends.
 
     Call before reading the clock to stamp ``date_added``. A ``now`` read
     before the lock is acquired reopens the race this lock exists to close.
+
+    ``refuse_while_paused`` is the caller's to state. Everything that makes
+    content visible sooner refuses during a pause. Extending an embargo moves
+    content later, so it is allowed: an editor who paused because embargoed
+    content is at risk must be able to push it out before resuming, or every
+    timer that passed during the pause opens at once on resume (Mike, end of
+    Phase A).
     """
     await session.execute(
         text("SELECT pg_advisory_xact_lock(:key)"), {"key": _PUBLICATION_LOCK_KEY}
     )
+    if not refuse_while_paused:
+        return
     # Checked under the lock, so a pause that commits while a writer waits is
     # seen by that writer rather than raced past.
     paused = await session.scalar(

@@ -94,7 +94,7 @@ async def test_the_sweeper_waits_for_an_open_publication(open_session, session, 
     await _embargoed(session, submission_id, dt.datetime.now(dt.UTC) - dt.timedelta(seconds=1))
     holder, sweeper = open_session(), open_session()
 
-    await hold_publication_lock(holder)
+    await hold_publication_lock(holder, refuse_while_paused=True)
     blocked, task = await is_blocked(sweep_due_embargoes(sweeper))
     await holder.rollback()
     released = await asyncio.wait_for(task, timeout=5)
@@ -270,7 +270,7 @@ async def test_a_taxii_page_waits_for_an_open_publication_and_not_otherwise(
 
     idle, _task = await is_blocked(client.get(objects, headers=headers))
     holder = open_session()
-    await hold_publication_lock(holder)
+    await hold_publication_lock(holder, refuse_while_paused=True)
     blocked, task = await is_blocked(client.get(objects, headers=headers))
     await holder.rollback()
     page = await asyncio.wait_for(task, timeout=5)
@@ -289,7 +289,7 @@ async def test_extending_an_embargo_waits_for_an_open_publication(
     await _embargoed(session, submission_id, dt.datetime.now(dt.UTC) + dt.timedelta(days=1))
     holder, extender = open_session(), open_session()
 
-    await hold_publication_lock(holder)
+    await hold_publication_lock(holder, refuse_while_paused=True)
     blocked, task = await is_blocked(
         extend_embargo(
             extender,
@@ -302,3 +302,25 @@ async def test_extending_an_embargo_waits_for_an_open_publication(
     await asyncio.wait_for(task, timeout=5)
 
     assert blocked is True
+
+
+async def test_a_pause_still_allows_moving_an_embargo_later_and_nothing_sooner(
+    session, isac_ctx, make_validated
+):
+    """Extension moves content later, the safe direction: an editor who paused
+    because embargoed content is at risk must be able to push it out."""
+    from aivs_server.services.embargo import extend_embargo  # noqa: PLC0415 - one test
+    from aivs_server.services.publication import PublicationPausedError  # noqa: PLC0415
+
+    held, other = await make_validated("held"), await make_validated("other")
+    for submission_id in (held, other):
+        await _embargoed(session, submission_id, NOW + dt.timedelta(days=1))
+    await _pause(session)
+
+    extended = await extend_embargo(
+        session, isac_ctx, submission_id=held, release_at=NOW + dt.timedelta(days=7), now=NOW
+    )
+    with pytest.raises(PublicationPausedError):
+        await release_embargo_now(session, isac_ctx, submission_id=other, now=NOW)
+
+    assert extended.status is EmbargoStatus.EXTENDED

@@ -259,7 +259,7 @@ async def distribute_submission(
     commit, so that the whole batch lands atomically. See the module docstring.
     """
     # Before the clock is read: see services.publication.
-    await hold_publication_lock(session)
+    await hold_publication_lock(session, refuse_while_paused=True)
     now = now or dt.datetime.now(dt.UTC)
 
     if submission.state is not SubmissionState.VALIDATED:

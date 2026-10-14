@@ -1,0 +1,17 @@
+Mutation M691: a version two submissions carry is listed once per arrival
+Re-applies: R-C4 (review of fb88ef6) -- DISTINCT over (modified, date_added)
+
+Expect red: packages/aivs-server/tests/taxii_conformance/test_taxii_endpoints.py::test_a_version_distributed_twice_is_listed_once_at_its_first_date_added
+
+diff --git a/packages/aivs-server/src/aivs_server/taxii/queries.py b/packages/aivs-server/src/aivs_server/taxii/queries.py
+--- a/packages/aivs-server/src/aivs_server/taxii/queries.py
++++ b/packages/aivs-server/src/aivs_server/taxii/queries.py
+@@ -241,7 +241,7 @@ def build_version_listing_query(
+     first_arrival = (
+         select(visible.c.modified, visible.c.date_added, visible.c.seq)
+         .where(visible.c.stix_id == stix_id)
+-        .distinct(visible.c.modified)
++        .distinct(visible.c.modified, visible.c.date_added)
+         .order_by(visible.c.modified, visible.c.date_added, visible.c.seq)
+         .subquery("first_arrival")
+     )

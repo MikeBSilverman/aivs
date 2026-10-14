@@ -1,0 +1,16 @@
+Mutation M695: at ingest a vendor is a party through circles the submitter cannot read
+Re-applies: R-C5 (review of fb88ef6) -- _vendor_party_acknowledges's global vendors_in_case
+
+Expect red: packages/aivs-server/tests/unit/test_disclosure_split.py::test_a_vendor_placed_only_where_the_member_cannot_read_gives_the_answer_none_gives
+
+diff --git a/packages/aivs-server/src/aivs_server/services/disclosure.py b/packages/aivs-server/src/aivs_server/services/disclosure.py
+--- a/packages/aivs-server/src/aivs_server/services/disclosure.py
++++ b/packages/aivs-server/src/aivs_server/services/disclosure.py
+@@ -177,7 +177,6 @@ async def _vendor_party_acknowledges(
+     )
+     if scope.visible_to is not None:
+         caller_reads = distribution_visibility_clause(scope.visible_to, scope.now)
+-        vendors_in_case = vendors_in_case.where(caller_reads)
+         agreeing = agreeing.join(Distribution, Distribution.stix_object_id == StixObject.id).where(
+             caller_reads
+         )

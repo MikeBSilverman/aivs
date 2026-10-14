@@ -1,0 +1,16 @@
+Mutation M692: added_after is applied before versions collapse, so a re-arrival lists a held version again
+Re-applies: R-C4 (review of fb88ef6) -- the filter on each distribution row
+
+Expect red: packages/aivs-server/tests/taxii_conformance/test_taxii_endpoints.py::test_a_version_distributed_twice_is_listed_once_at_its_first_date_added
+
+diff --git a/packages/aivs-server/src/aivs_server/taxii/queries.py b/packages/aivs-server/src/aivs_server/taxii/queries.py
+--- a/packages/aivs-server/src/aivs_server/taxii/queries.py
++++ b/packages/aivs-server/src/aivs_server/taxii/queries.py
+@@ -241,6 +241,7 @@ def build_version_listing_query(
+     first_arrival = (
+         select(visible.c.modified, visible.c.date_added, visible.c.seq)
+         .where(visible.c.stix_id == stix_id)
++        .where(visible.c.date_added > added_after if added_after is not None else literal(True))
+         .distinct(visible.c.modified)
+         .order_by(visible.c.modified, visible.c.date_added, visible.c.seq)
+         .subquery("first_arrival")

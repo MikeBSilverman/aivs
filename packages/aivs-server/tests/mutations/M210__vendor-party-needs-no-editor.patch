@@ -1,16 +1,16 @@
 Mutation M210: any vendor's agreeing opinion counts, placed in the case or not
-Re-applies: Phase E slice 2 (T6) -- the guard's absence
+Re-applies: Phase E slice 2 (T6) -- the guard's absence; rewritten for c5e2df6
 
 Expect red: packages/aivs-server/tests/unit/test_disclosure_split.py::test_a_vendor_opinion_without_the_editor_placing_the_vendor_does_not_count
 
 diff --git a/packages/aivs-server/src/aivs_server/services/disclosure.py b/packages/aivs-server/src/aivs_server/services/disclosure.py
 --- a/packages/aivs-server/src/aivs_server/services/disclosure.py
 +++ b/packages/aivs-server/src/aivs_server/services/disclosure.py
-@@ -151,6 +151,7 @@
+@@ -164,6 +164,7 @@ async def _vendor_party_acknowledges(
              StixObject.stix_id == stix_id,
          )
      )
 +    vendors_in_case = select(Organization.id).where(Organization.org_type == OrgType.VENDOR)
-     agreeing = await session.scalar(
+     agreeing = (
          select(StixObject.id)
          .join(Submission, Submission.id == StixObject.submission_id)

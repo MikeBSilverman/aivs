@@ -1,0 +1,17 @@
+Mutation M690: the versions listing is ordered by modified, so added_after = Date-Added-Last skips a version
+Re-applies: R-C4 (review of fb88ef6) -- build_version_listing_query as it was
+
+Expect red: packages/aivs-server/tests/taxii_conformance/test_taxii_endpoints.py::test_paging_versions_by_added_after_skips_no_version
+Expect red: packages/aivs-server/tests/taxii_conformance/test_taxii_endpoints.py::test_paging_versions_by_next_skips_no_version
+
+diff --git a/packages/aivs-server/src/aivs_server/taxii/queries.py b/packages/aivs-server/src/aivs_server/taxii/queries.py
+--- a/packages/aivs-server/src/aivs_server/taxii/queries.py
++++ b/packages/aivs-server/src/aivs_server/taxii/queries.py
+@@ -257,6 +257,6 @@ def build_version_listing_query(
+             tuple_(first_arrival.c.date_added, first_arrival.c.seq)
+             > tuple_(literal(cursor.date_added), literal(cursor.seq))
+         )
+-    return query.order_by(first_arrival.c.date_added.asc(), first_arrival.c.seq.asc()).limit(
++    return query.order_by(first_arrival.c.modified.asc()).limit(
+         limit + 1
+     )

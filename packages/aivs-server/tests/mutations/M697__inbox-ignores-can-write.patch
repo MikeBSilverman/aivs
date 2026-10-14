@@ -1,0 +1,17 @@
+Mutation M697: a contributor may POST to a collection that takes no writes
+Re-applies: T-C3 (review of fb88ef6) -- the guard's collection half deleted
+
+Expect red: packages/aivs-server/tests/unit/test_taxii_inbox.py::test_a_contributor_is_refused_with_taxiis_403_where_the_collection_takes_no_writes
+
+diff --git a/packages/aivs-server/src/aivs_server/taxii/router.py b/packages/aivs-server/src/aivs_server/taxii/router.py
+--- a/packages/aivs-server/src/aivs_server/taxii/router.py
++++ b/packages/aivs-server/src/aivs_server/taxii/router.py
+@@ -643,7 +643,7 @@ async def add_objects(
+     for what a POST becomes.
+     """
+     collection, circle, _intervals = await _load_readable_collection(session, ctx, collection_id)
+-    if not (collection.can_write and can_submit_to_circle(ctx, circle.id)):
++    if not can_submit_to_circle(ctx, circle.id):
+         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not writable")
+     # After authorization, so a caller who may not write learns nothing more
+     # from a wrong media type than from a right one.

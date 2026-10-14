@@ -1,0 +1,21 @@
+Mutation M696: the collection listing offers can_read=false collections that then 404
+Re-applies: R-P5 (review of fb88ef6) -- list_collections's own filter
+
+Expect red: packages/aivs-server/tests/taxii_conformance/test_taxii_endpoints.py::test_a_collection_that_cannot_be_read_is_not_listed
+
+diff --git a/packages/aivs-server/src/aivs_server/taxii/router.py b/packages/aivs-server/src/aivs_server/taxii/router.py
+--- a/packages/aivs-server/src/aivs_server/taxii/router.py
++++ b/packages/aivs-server/src/aivs_server/taxii/router.py
+@@ -242,7 +242,11 @@ async def list_collections(
+             await session.execute(
+                 select(TaxiiCollection)
+                 .join(Circle, Circle.id == TaxiiCollection.circle_id)
+-                .where(TaxiiCollection.circle_id.in_(circle_ids), *_served_collection())
++                .where(
++                    TaxiiCollection.circle_id.in_(circle_ids),
++                    TaxiiCollection.is_active.is_(True),
++                    Circle.is_active.is_(True),
++                )
+                 .order_by(TaxiiCollection.title)
+             )
+         )

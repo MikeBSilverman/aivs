@@ -221,7 +221,7 @@ Expected:
 
 ```json
 {
-  "title": "Meridian FS-ISAC AIVS",
+  "title": "Example Financial ISAC",
   "description": "Pre-CVE AI vulnerability sharing for member firms.",
   "default": "https://aivs.example.org/taxii2/aivs/",
   "api_roots": ["https://aivs.example.org/taxii2/aivs/"]

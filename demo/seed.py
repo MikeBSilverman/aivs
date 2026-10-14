@@ -57,7 +57,7 @@ DEFAULT_DATABASE_URL = os.environ.get(
 )
 
 #: The fictional community.
-ISAC = ("global-fs-isac", "Global Financial Services ISAC", OrgType.ADMIN)
+ISAC = ("example-isac", "Example Financial ISAC", OrgType.ADMIN)
 MEMBERS = [
     ("meridian-global", "Meridian Global Bank", OrgType.GSIB),
     ("atlantic-clearing", "Atlantic Clearing Corporation", OrgType.SECTION9),

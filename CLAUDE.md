@@ -87,7 +87,8 @@ uv run coverage report --fail-under=93 --include='*/aivs_server/auth/*,*/aivs_se
 gitleaks dir . --config .gitleaks.toml    # before any commit that adds files
 ```
 
-`azure-pipelines.yml` runs the same set in the same order. Fast checks first, so
+`.github/workflows/ci.yml` runs the same set in the same order, plus zizmor over
+the workflows and gitleaks over the full history. Fast checks first, so
 a formatting mistake fails in a minute rather than after the full suite.
 
 **Audit the lockfile, not the installed environment.** The gate was
@@ -505,8 +506,17 @@ The application never receives a private key. `register_certificate` takes a
 certificate and derives the fingerprint itself — a caller-supplied fingerprint
 that did not match would bind an identity to material nobody holds.
 
-Credentials for Azure DevOps live outside the repository (`~/.git-credentials-aivs`,
-mode 0600); the remote URL carries no token.
+The repository is public on GitHub (`MikeBSilverman/aivs`), authenticated
+through `gh`; no token is in a remote URL or in the repository. The old Azure
+DevOps remote is kept as `azure`, read-only, until it is retired.
+
+**Workflows run with this repository's token, so they are code with
+privileges.** Never `pull_request_target`: it runs a fork's code with the
+base repository's token. Every action is pinned to a commit SHA with its
+version in a comment (Dependabot rewrites both), every container image by
+digest, `persist-credentials: false` on every checkout, `permissions:
+contents: read` as the floor and restated per job, and no `curl | sh`
+installer. zizmor runs in CI to hold the line.
 
 ---
 

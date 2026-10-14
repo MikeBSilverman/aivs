@@ -27,7 +27,7 @@ decision belongs to the ISAC.** If identity is delegated to the member's IdP,
 the ISAC's ability to cut off a lapsed, suspended or expelled member depends on
 that member disabling their own accounts — which is precisely the party with the
 least incentive to do it promptly, and no obligation the ISAC can enforce on a
-timescale that matters. This is how FS-ISAC runs it, and the reasoning
+timescale that matters. This is how large ISACs run it, and the reasoning
 generalises to any ISAC.
 
 So the ISAC holds both tenants:
@@ -137,7 +137,7 @@ federated login, at which point the link is written and never re-derived.
 available on the staff issuer.**
 
 This is the feature, not a convenience on the side of it. An ISAC's membership
-operation is already automated from the directory outward — at FS-ISAC, adding a
+operation is already automated from the directory outward — at a large ISAC, adding a
 user to the right AD group is the single action, and entitlements flow from it.
 Every downstream system that requires its own separate account creation step
 becomes the one that is perpetually out of date: people who left months ago

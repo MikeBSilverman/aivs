@@ -23,7 +23,7 @@ import sys
 from pathlib import Path
 
 SUPPLIER = "Aequora"
-PROJECT_URL = "https://dev.azure.com/mikesilverman/AIVulnSharing"
+PROJECT_URL = "https://github.com/MikeBSilverman/aivs"
 
 
 def main() -> int:

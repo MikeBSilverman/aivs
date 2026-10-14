@@ -481,7 +481,7 @@ Minimum production environment:
 
 ```bash
 AIVS_ENVIRONMENT=production            # anything but `dev` gets the strict posture
-AIVS_INSTANCE_NAME="Meridian FS-ISAC AIVS"
+AIVS_INSTANCE_NAME="Example Financial ISAC"
 AIVS_PUBLIC_BASE_URL=https://aivs.example.org
 AIVS_DATABASE_URL=postgresql+psycopg://aivs_app:...@db:5432/aivs
 AIVS_PROXY_SHARED_SECRET=<32+ chars>
@@ -513,9 +513,9 @@ otherwise silent failures.
 
 ```bash
 # 0. Create the CA, on an air-gapped machine (§3.2)
-deploy/ca/init-ca.sh --org "Meridian FS-ISAC" \
-  --root-cn "Meridian FS-ISAC AIVS Root CA" \
-  --intermediate-cn "Meridian FS-ISAC AIVS Issuing CA"
+deploy/ca/init-ca.sh --org "Example Financial ISAC" \
+  --root-cn "Example Financial ISAC AIVS Root CA" \
+  --intermediate-cn "Example Financial ISAC AIVS Issuing CA"
 # then move private/root/root.key to offline media
 
 # 1. Configuration

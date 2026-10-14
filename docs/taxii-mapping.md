@@ -185,7 +185,7 @@ hiding data" reports. A client that wants history must ask for it.
 
 ```json
 {
-  "title": "Meridian FS-ISAC AIVS",
+  "title": "Example Financial ISAC",
   "description": "Pre-CVE AI vulnerability sharing for member firms.",
   "contact": "aivs-ops@example.org",
   "default": "https://aivs.example.org/taxii2/aivs/",

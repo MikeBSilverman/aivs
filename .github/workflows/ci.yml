@@ -1,0 +1,206 @@
+name: CI
+
+# The CLAUDE.md section 2 gates, in the same order: fast checks first, so a
+# formatting mistake fails in a minute rather than after the full suite. Then
+# the image: built, shown to refuse an empty configuration, and SBOM'd twice
+# (the Python runtime from the lockfile, and the image including its OS layer).
+#
+# Public repository, so minutes are not metered and every push and pull
+# request runs everything. `pull_request`, never `pull_request_target`: a
+# fork's code must never run with this repository's token or secrets. There
+# are no secrets here to run with -- the test key-encryption key is minted
+# inside the job.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# The floor. Each job restates what it needs, so widening one is a visible,
+# local edit rather than something every job inherits.
+permissions:
+  contents: read
+
+concurrency:
+  # The event is in the key, so a push to main never cancels a pull request's
+  # run or the other way round.
+  group: ci-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.12"
+  UV_VERSION: "0.11.16"
+  AIVS_TEST_DATABASE_URL: postgresql+psycopg://aivs:aivs@localhost:5432/aivs_test
+  AIVS_MIGRATION_DATABASE_URL: postgresql+psycopg://aivs:aivs@localhost:5432/aivs_dev
+
+jobs:
+  verify:
+    name: Lint, types, security, tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    services:
+      postgres:
+        # Pinned by digest: a tag can move under a reviewed pipeline. The
+        # credentials are the throwaway pair this job's own database uses.
+        image: postgres:16-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
+        env:
+          POSTGRES_USER: aivs
+          POSTGRES_PASSWORD: aivs
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U aivs"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Third-party tools run below; none of them needs the token.
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Install dependencies (locked)
+        run: uv sync --frozen
+
+      - name: Format
+        run: uv run ruff format --check .
+
+      - name: Lint
+        run: uv run ruff check --output-format=github .
+
+      - name: Types (strict)
+        run: >-
+          uv run mypy packages/aivs-schemas/src packages/aivs-server/src
+          packages/aivs-client/src
+
+      - name: Static security analysis
+        run: uv run bandit -c pyproject.toml -r packages/aivs-server/src packages/aivs-schemas/src packages/aivs-client/src
+
+      - name: Pattern-based SAST
+        run: >-
+          uvx semgrep==1.173.0 scan --config p/python --config p/owasp-top-ten
+          --exclude-rule generic.nginx.security.request-host-used.request-host-used
+          --no-git-ignore --metrics=off --error packages/ demo/ scripts/ deploy/
+
+      - name: Workflow security (zizmor)
+        # These workflows are code that runs with this repository's token.
+        run: uvx zizmor==1.30.1 --min-severity medium .github/workflows
+
+      - name: Dependency advisories
+        run: |
+          set -euo pipefail
+          uv export --no-emit-workspace --format requirements-txt -o "$RUNNER_TEMP/audit.txt"
+          uv run pip-audit --strict --requirement "$RUNNER_TEMP/audit.txt"
+
+      - name: Shell script checks
+        run: |
+          set -euo pipefail
+          for script in deploy/ca/*.sh scripts/*.sh; do bash -n "$script"; done
+          shellcheck -S warning deploy/ca/*.sh scripts/*.sh
+
+      - name: Prepare databases
+        env:
+          PGPASSWORD: aivs
+        run: |
+          set -euo pipefail
+          psql -h localhost -U aivs -d postgres -c "CREATE DATABASE aivs_test;" -c "CREATE DATABASE aivs_dev;"
+
+      - name: Migrations apply with no drift
+        run: |
+          set -euo pipefail
+          # Minted here, mode 0600, never a stored secret: the migration reads
+          # the key file the way a deployment outside dev must.
+          umask 077
+          python3 -c 'import base64, os; print(base64.b64encode(os.urandom(32)).decode())' > "$RUNNER_TEMP/kek"
+          export AIVS_SECRET_ENCRYPTION_KEY_FILE="$RUNNER_TEMP/kek"
+          export AIVS_DATABASE_URL="$AIVS_MIGRATION_DATABASE_URL"
+          uv run alembic -c packages/aivs-server/alembic.ini upgrade head
+          uv run alembic -c packages/aivs-server/alembic.ini check
+
+      - name: Tests
+        run: >-
+          uv run pytest -q --cov=aivs_server --cov=aivs_schemas --cov=aivs_client
+          --cov-report=term-missing
+
+      - name: Security-critical modules coverage
+        run: >-
+          uv run coverage report --fail-under=93
+          --include='*/aivs_server/auth/*,*/aivs_server/services/distribution.py,*/aivs_server/services/embargo.py,*/aivs_server/services/publication.py,*/aivs_server/taxii/queries.py'
+
+  secrets:
+    name: Secret scan (full history)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: gitleaks
+        # The image by digest, run directly: the gitleaks action needs a licence
+        # key for organisations and a token it does not need here.
+        run: >-
+          docker run --rm -v "$PWD:/repo"
+          ghcr.io/gitleaks/gitleaks@sha256:cdbb7c955abce02001a9f6c9f602fb195b7fadc1e812065883f695d1eeaba854
+          git /repo --config /repo/.gitleaks.toml --no-banner --redact
+
+  image:
+    name: Image, fail-closed check and SBOMs
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Build the server image
+        run: docker build -f packages/aivs-server/Dockerfile -t "aivs-server:${GITHUB_SHA}" .
+
+      - name: Image fails closed without configuration
+        run: |
+          set -euo pipefail
+          if docker run --rm "aivs-server:${GITHUB_SHA}" python -m aivs_server.config; then
+            echo "ERROR: server accepted an empty configuration" >&2
+            exit 1
+          fi
+          echo "confirmed: refuses to start unconfigured"
+
+      - name: SBOM (Python runtime, from the lockfile)
+        run: ./scripts/generate-sbom.sh "$RUNNER_TEMP/sbom"
+
+      - name: SBOM (container image, including the OS layer)
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          image: aivs-server:${{ github.sha }}
+          format: cyclonedx-json
+          output-file: ${{ runner.temp }}/sbom/aivs-server-image-sbom.cdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sbom
+          path: ${{ runner.temp }}/sbom
+          if-no-files-found: error

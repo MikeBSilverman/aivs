@@ -1,0 +1,33 @@
+version: 2
+updates:
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    # A cooldown before adopting a brand-new release: if a maintainer account
+    # is compromised, the window in which a malicious version is pulled in
+    # automatically is what hurts, and most are yanked within days. Security
+    # updates for published advisories are a separate mechanism, not delayed.
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
+    groups:
+      python-minor:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    # Actions are pinned to commit SHAs; Dependabot rewrites the SHA and the
+    # version comment together.
+    cooldown:
+      default-days: 7
+
+  - package-ecosystem: docker
+    directory: /packages/aivs-server
+    schedule:
+      interval: monthly
+    cooldown:
+      default-days: 7

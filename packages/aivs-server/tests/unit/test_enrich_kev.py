@@ -169,8 +169,9 @@ def test_the_version_is_filed_at_the_records_tlp(script):
 async def test_the_version_the_script_builds_is_validated_by_an_editor(
     client, session, script, isac, isac_org, make_org, make_cert, make_circle, join_circle
 ):
+    """Built on a record as validation leaves it, review stamped, as every real one is."""
     circle = await make_circle("kev")
-    record = isac_record(isac_org.stix_identity_id)
+    record = validated(isac_record(isac_org.stix_identity_id))
     await seed(session, isac_org, record, circle=circle)
     automation = await make_org("isac-automation", org_type=OrgType.AUTOMATION)
     pem, _ = await make_cert(automation)
@@ -185,9 +186,9 @@ async def test_the_version_the_script_builds_is_validated_by_an_editor(
         tlp=script.tlp_of(record).value,
     )
     assert filed.status_code == 201, filed.text
-    validated = await submit_and_validate(client, pem, filed.json()["id"], editor)
+    review = await submit_and_validate(client, pem, filed.json()["id"], editor)
 
-    assert validated.status_code == 200, validated.text
+    assert review.status_code == 200, review.text
     submission = await session.get(Submission, uuid.UUID(filed.json()["id"]))
     await session.refresh(submission)
     assert submission.source is SubmissionSource.SYSTEM, "so the AI gate applied"

@@ -3,23 +3,24 @@ Re-applies: Phase E slice 4 (SF-48) -- the ownership check's absence on the post
 
 Expect red: packages/aivs-server/tests/unit/test_post_moderation.py::test_a_note_reusing_another_firms_id_waits_without_being_told_whose
 
-diff --git a/packages/aivs-server/src/aivs_server/services/distribution.py b/packages/aivs-server/src/aivs_server/services/distribution.py
---- a/packages/aivs-server/src/aivs_server/services/distribution.py
-+++ b/packages/aivs-server/src/aivs_server/services/distribution.py
-@@ -197,9 +197,6 @@ async def _refuse_content_problems(
-     """Owner-only versioning, the disclosure split and TLP inheritance, as they stand now."""
-     raws = [stored.raw for stored in objects]
-     for problem in (
--        await foreign_owned_versions_problem(
--            session, raws, owner_org_id=submission.submitter_org_id
--        ),
-         await contribution_problem(session, submission, raws, visible_to=None, now=now),
-     ):
-         if problem is not None:
+diff --git a/packages/aivs-server/src/aivs_server/services/content_rules.py b/packages/aivs-server/src/aivs_server/services/content_rules.py
+--- a/packages/aivs-server/src/aivs_server/services/content_rules.py
++++ b/packages/aivs-server/src/aivs_server/services/content_rules.py
+@@ -41,9 +41,7 @@ async def content_problem(
+ ) -> str | None:
+     """Why ``submission``'s ``objects`` may not become readable now, or ``None``."""
+     raws = list(objects)
+-    owned = await foreign_owned_versions_problem(
+-        session, raws, owner_org_id=submission.submitter_org_id
+-    )
++    owned = None
+     if owned is not None:
+         return owned
+     contribution = await contribution_problem(session, submission, raws, visible_to=None, now=now)
 diff --git a/packages/aivs-server/src/aivs_server/services/submissions.py b/packages/aivs-server/src/aivs_server/services/submissions.py
 --- a/packages/aivs-server/src/aivs_server/services/submissions.py
 +++ b/packages/aivs-server/src/aivs_server/services/submissions.py
-@@ -866,9 +866,6 @@ async def check_content_rules(session: AsyncSession, submission: Submission) ->
+@@ -869,9 +869,6 @@ async def check_content_rules(session: AsyncSession, submission: Submission) ->
      """
      raws = await _stored_raws(session, submission)
      for problem in (

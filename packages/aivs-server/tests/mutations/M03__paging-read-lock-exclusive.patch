@@ -9,12 +9,12 @@ differs from a shared one only to a second, concurrent reader.
 diff --git a/packages/aivs-server/src/aivs_server/services/publication.py b/packages/aivs-server/src/aivs_server/services/publication.py
 --- a/packages/aivs-server/src/aivs_server/services/publication.py
 +++ b/packages/aivs-server/src/aivs_server/services/publication.py
-@@ -105,7 +105,7 @@
-     read's transaction ends.
+@@ -124,7 +124,7 @@ async def wait_for_publications(session: AsyncSession) -> dt.datetime:
+     until the read's transaction ends.
      """
      await session.execute(
 -        text("SELECT pg_advisory_xact_lock_shared(:key)"), {"key": _PUBLICATION_LOCK_KEY}
 +        text("SELECT pg_advisory_xact_lock(:key)"), {"key": _PUBLICATION_LOCK_KEY}
      )
- 
+     return await database_now(session)
  

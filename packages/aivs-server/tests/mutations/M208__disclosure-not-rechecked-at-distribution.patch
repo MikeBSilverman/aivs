@@ -3,14 +3,15 @@ Re-applies: Phase E slice 2 (T6) -- the guard's absence
 
 Expect red: packages/aivs-server/tests/unit/test_disclosure_split.py::test_a_target_withdrawn_from_disclosure_after_validation_stops_the_distribution
 
-diff --git a/packages/aivs-server/src/aivs_server/services/distribution.py b/packages/aivs-server/src/aivs_server/services/distribution.py
---- a/packages/aivs-server/src/aivs_server/services/distribution.py
-+++ b/packages/aivs-server/src/aivs_server/services/distribution.py
-@@ -199,7 +199,6 @@
-         await foreign_owned_versions_problem(
-             session, raws, owner_org_id=submission.submitter_org_id
-         ),
--        await contribution_problem(session, submission, raws, visible_to=None, now=now),
-     ):
-         if problem is not None:
-             raise DistributionError(problem)
+diff --git a/packages/aivs-server/src/aivs_server/services/content_rules.py b/packages/aivs-server/src/aivs_server/services/content_rules.py
+--- a/packages/aivs-server/src/aivs_server/services/content_rules.py
++++ b/packages/aivs-server/src/aivs_server/services/content_rules.py
+@@ -46,7 +46,7 @@ async def content_problem(
+     )
+     if owned is not None:
+         return owned
+-    contribution = await contribution_problem(session, submission, raws, visible_to=None, now=now)
++    contribution = None
+     if contribution is not None:
+         return contribution
+     return await _foreign_identity_problem(session, submission, raws)

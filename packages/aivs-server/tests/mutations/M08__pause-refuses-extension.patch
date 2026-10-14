@@ -6,12 +6,12 @@ Expect red: packages/aivs-server/tests/unit/test_publication_guards.py::test_a_p
 diff --git a/packages/aivs-server/src/aivs_server/services/embargo.py b/packages/aivs-server/src/aivs_server/services/embargo.py
 --- a/packages/aivs-server/src/aivs_server/services/embargo.py
 +++ b/packages/aivs-server/src/aivs_server/services/embargo.py
-@@ -231,7 +231,7 @@
-     """
-     # Before the clock is read: the "already visible" test below compares
-     # against it. See services.publication.
--    await hold_publication_lock(session, refuse_while_paused=False)
-+    await hold_publication_lock(session, refuse_while_paused=True)
-     now = now or dt.datetime.now(dt.UTC)
+@@ -272,7 +272,7 @@ async def extend_embargo(
+     # "already visible" tests below compare against it, and a replica whose
+     # own clock lagged would find content members already hold still in the
+     # future, and move it back there. See services.publication.
+-    locked_at = await hold_publication_lock(session, refuse_while_paused=False)
++    locked_at = await hold_publication_lock(session, refuse_while_paused=True)
+     now = now or locked_at
      if release_at.tzinfo is None:
          msg = "release_at must be timezone-aware"

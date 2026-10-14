@@ -3,15 +3,15 @@ Re-applies: 99ef2a6 "Refuse identity objects that use another organisation's reg
 
 Expect red: packages/aivs-server/tests/unit/test_submission_workflow.py::test_distribution_refuses_an_identity_registered_after_ingest
 
-diff --git a/packages/aivs-server/src/aivs_server/services/distribution.py b/packages/aivs-server/src/aivs_server/services/distribution.py
---- a/packages/aivs-server/src/aivs_server/services/distribution.py
-+++ b/packages/aivs-server/src/aivs_server/services/distribution.py
-@@ -141,7 +141,7 @@
+diff --git a/packages/aivs-server/src/aivs_server/services/content_rules.py b/packages/aivs-server/src/aivs_server/services/content_rules.py
+--- a/packages/aivs-server/src/aivs_server/services/content_rules.py
++++ b/packages/aivs-server/src/aivs_server/services/content_rules.py
+@@ -59,7 +59,7 @@ async def _foreign_identity_problem(
      impersonated = await foreign_identity_ids(
-         session, (stored.raw for stored in objects), submitter_org_id=submission.submitter_org_id
+         session, objects, submitter_org_id=submission.submitter_org_id
      )
 -    if impersonated:
 +    if False:
-         msg = (
+         return (
              "identity objects may not use an identifier registered to another "
              f"organisation: {', '.join(impersonated)}"

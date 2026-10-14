@@ -6,12 +6,12 @@ Expect red: packages/aivs-server/tests/unit/test_publication_guards.py::test_a_d
 diff --git a/packages/aivs-server/src/aivs_server/services/distribution.py b/packages/aivs-server/src/aivs_server/services/distribution.py
 --- a/packages/aivs-server/src/aivs_server/services/distribution.py
 +++ b/packages/aivs-server/src/aivs_server/services/distribution.py
-@@ -276,7 +276,7 @@
+@@ -299,7 +299,7 @@ async def distribute_submission(
      # last object again on every poll. Never earlier than the next millisecond:
      # see earliest_publication_instant.
      earliest = earliest_publication_instant(now)
 -    requested = truncate_to_taxii_precision(release_at) if release_at else earliest
 +    requested = release_at if release_at else earliest
      date_added = max(requested, earliest)
- 
-     circles = await _resolve_target_circles(session, submission, circle_ids)
+     # Held past the earliest instant, not merely past `now`: every stamp is at
+     # least a millisecond ahead of `now`, and testing against `now` recorded

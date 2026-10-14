@@ -7,14 +7,13 @@ Expect red: packages/aivs-server/tests/unit/test_publication_guards.py::test_a_t
 diff --git a/packages/aivs-server/src/aivs_server/services/publication.py b/packages/aivs-server/src/aivs_server/services/publication.py
 --- a/packages/aivs-server/src/aivs_server/services/publication.py
 +++ b/packages/aivs-server/src/aivs_server/services/publication.py
-@@ -104,9 +104,7 @@
-     Returns once no publication is in flight, and holds off new ones until the
-     read's transaction ends.
+@@ -123,9 +123,6 @@ async def wait_for_publications(session: AsyncSession) -> dt.datetime:
+     "now". Returns once no publication is in flight, and holds off new ones
+     until the read's transaction ends.
      """
 -    await session.execute(
 -        text("SELECT pg_advisory_xact_lock_shared(:key)"), {"key": _PUBLICATION_LOCK_KEY}
 -    )
-+    return
+     return await database_now(session)
  
  
- def earliest_publication_instant(now: dt.datetime) -> dt.datetime:

@@ -6,12 +6,12 @@ Expect red: packages/aivs-server/tests/unit/test_publication_guards.py::test_a_p
 diff --git a/packages/aivs-server/src/aivs_server/services/embargo.py b/packages/aivs-server/src/aivs_server/services/embargo.py
 --- a/packages/aivs-server/src/aivs_server/services/embargo.py
 +++ b/packages/aivs-server/src/aivs_server/services/embargo.py
-@@ -126,7 +126,7 @@
-     Safe in the direction it moves. See the module docstring.
+@@ -157,7 +157,7 @@ async def release_embargo_now(
      """
-     # Before the clock is read: see services.publication.
--    await hold_publication_lock(session, refuse_while_paused=True)
-+    await hold_publication_lock(session, refuse_while_paused=False)
-     now = now or dt.datetime.now(dt.UTC)
+     # The lock first, and the clock is the database's, read under it: see
+     # services.publication. ``now`` is injectable for tests only.
+-    locked_at = await hold_publication_lock(session, refuse_while_paused=True)
++    locked_at = await hold_publication_lock(session, refuse_while_paused=False)
+     now = now or locked_at
      # The next millisecond, not this one. A released row keeps the `seq` it was
      # given when it was *distributed*, which is necessarily lower than that of

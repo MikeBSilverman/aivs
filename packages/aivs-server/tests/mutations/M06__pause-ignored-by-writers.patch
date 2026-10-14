@@ -7,12 +7,12 @@ Expect red: packages/aivs-server/tests/unit/test_publication_guards.py::test_a_p
 diff --git a/packages/aivs-server/src/aivs_server/services/publication.py b/packages/aivs-server/src/aivs_server/services/publication.py
 --- a/packages/aivs-server/src/aivs_server/services/publication.py
 +++ b/packages/aivs-server/src/aivs_server/services/publication.py
-@@ -92,7 +92,7 @@
+@@ -112,7 +112,7 @@ async def publication_paused(session: AsyncSession) -> bool:
      paused = await session.scalar(
          select(InstanceControl.distribution_paused).where(InstanceControl.id == 1)
      )
--    if paused:
-+    if False:
-         msg = "distribution is paused instance-wide"
-         raise PublicationPausedError(msg)
+-    return bool(paused)
++    return False
  
+ 
+ async def wait_for_publications(session: AsyncSession) -> dt.datetime:

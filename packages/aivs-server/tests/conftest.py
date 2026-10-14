@@ -278,6 +278,7 @@ async def _schema(engine: Any) -> AsyncIterator[None]:
     that the migrations and the models agree.
     """
     async with engine.begin() as connection:
+        await _refuse_to_wait_on_another_run(connection)
         await connection.run_sync(Base.metadata.drop_all)
         await connection.run_sync(Base.metadata.create_all)
         await connection.execute(text(_DENY_MUTATION_FUNCTION))
@@ -292,7 +293,21 @@ async def _schema(engine: Any) -> AsyncIterator[None]:
                 )
     yield
     async with engine.begin() as connection:
+        await _refuse_to_wait_on_another_run(connection)
         await connection.run_sync(Base.metadata.drop_all)
+
+
+async def _refuse_to_wait_on_another_run(connection: Any) -> None:
+    """Fail in seconds, naming the cause, rather than wait forever on another run.
+
+    The per-test TRUNCATE already had this. Schema setup and teardown did not,
+    so a second pytest process pointed at the same database (a helper session
+    that did not set AIVS_TEST_DATABASE_URL) queued a DROP TABLE behind a running
+    suite's open transaction, and both waited indefinitely; when the second
+    process was killed, its DROP stayed queued server-side and stalled the
+    first run anyway.
+    """
+    await connection.execute(text("SET LOCAL lock_timeout = '15s'"))
 
 
 _DENY_MUTATION_FUNCTION = """

@@ -538,6 +538,37 @@ async def test_a_backdated_release_time_is_refused(client, member, isac, circle)
     assert "backdated" in response.text
 
 
+@pytest.mark.requirement("SF-7")
+@pytest.mark.parametrize(
+    ("release_at", "reason"),
+    [
+        ("9999-12-31T23:59:00-01:00", "latest time an embargo can hold"),
+        ("9999-06-01T00:00:00+00:00", "must be before 9999-01-01"),
+    ],
+    ids=["past-pythons-range-in-utc", "at-the-hold-sentinel"],
+)
+async def test_a_release_time_past_the_latest_release_is_refused_at_distribution(
+    client, member, isac, circle, release_at, reason
+):
+    """Stored, the first could not be loaded back, failing every later read of
+    the embargo; the second would read to the sweeper as a hold, not a timer."""
+    _org, pem = await member()
+    _isac_org, isac_headers = isac
+    target, _collection = await circle()
+
+    created = await create_draft(client, pem)
+    await client.post(f"{API}/{created['id']}/submit", json={}, headers=proxy_headers(pem))
+    await client.post(f"{API}/{created['id']}/validate", json={}, headers=isac_headers)
+
+    response = await client.post(
+        f"{API}/{created['id']}/distribute",
+        json={"circle_ids": [str(target.id)], "release_at": release_at},
+        headers=isac_headers,
+    )
+    assert response.status_code == 409, response.text
+    assert reason in response.text
+
+
 async def test_redistributing_the_same_submission_reports_nothing_to_do(
     client, member, isac, circle
 ):

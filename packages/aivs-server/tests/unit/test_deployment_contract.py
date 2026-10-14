@@ -9,8 +9,10 @@ baked into the volume on first start.
 from __future__ import annotations
 
 import http.server
+import importlib.util
 import ipaddress
 import re
+import shlex
 import socket
 import threading
 from pathlib import Path
@@ -147,6 +149,214 @@ def test_the_collision_check_sees_the_shape_that_failed():
 
 
 def test_the_published_port_is_configurable_and_defaults_to_443():
-    ports = _compose("docker-compose.yml")["services"]["proxy"]["ports"]
+    [mapping] = _compose("docker-compose.yml")["services"]["proxy"]["ports"]
 
-    assert ports == ["${AIVS_BIND_ADDRESS:-0.0.0.0}:${AIVS_BIND_PORT:-443}:8443"]
+    assert mapping.endswith(":${AIVS_BIND_PORT:-443}:8443")
+
+
+def test_the_published_address_must_be_chosen():
+    """A default of every interface made the exposure decision for the operator;
+    the example env file leaves it empty so an unedited file stops compose."""
+    [mapping] = _compose("docker-compose.yml")["services"]["proxy"]["ports"]
+    example = (ROOT / "deploy/env.example").read_text(encoding="utf-8")
+
+    assert mapping.startswith("${AIVS_BIND_ADDRESS:?")
+    assert mapping.endswith(":${AIVS_BIND_PORT:-443}:8443")
+    assert re.search(r"^AIVS_BIND_ADDRESS=$", example, re.M)
+
+
+def test_the_allowlist_is_the_operators_file_and_must_exist():
+    """The example admits every RFC 1918 range, which behind a source-rewriting
+    load balancer is everyone; it was mounted by default."""
+    volumes = _compose("docker-compose.yml")["services"]["proxy"]["volumes"]
+    [allowlist] = [
+        v for v in volumes if isinstance(v, dict) and v["target"].endswith("allowlist.conf")
+    ]
+
+    assert allowlist["source"].startswith("${AIVS_NGINX_ALLOWLIST:?")
+    assert allowlist["bind"]["create_host_path"] is False
+    assert not any(isinstance(v, str) and "allowlist.conf.example:" in v for v in volumes)
+
+
+# ---------------------------------------------------------------------------
+# The application's database role (D-C1). The app connected as the image's
+# superuser, which owns every table and can drop the append-only triggers.
+# ---------------------------------------------------------------------------
+_APP_DSN = "postgresql+psycopg://${AIVS_DB_APP_USER:-aivs_app}:${AIVS_DB_APP_PASSWORD:?"
+
+
+@pytest.mark.requirement("NFR-S6")
+def test_the_app_connects_as_the_application_role_never_the_owner():
+    app_env = _compose("docker-compose.yml")["services"]["app"]["environment"]
+
+    assert app_env["AIVS_DATABASE_URL"].startswith(_APP_DSN)
+    assert not any("AIVS_DB_PASSWORD" in str(value) for value in app_env.values()), (
+        "the owner's password has no business in the app container"
+    )
+
+
+def test_migrations_run_as_the_owner_and_grant_the_same_role_the_app_uses():
+    """The pair: someone must hold the owner's password, and only for a migration."""
+    services = _compose("docker-compose.yml")["services"]
+    migrate = services["migrate"]
+
+    assert migrate["profiles"] == ["migrate"], "never started by a plain `up`"
+    assert migrate["environment"]["AIVS_MIGRATION_DATABASE_URL"].startswith(
+        "postgresql+psycopg://${AIVS_DB_USER:-aivs}:${AIVS_DB_PASSWORD:?"
+    )
+    assert migrate["environment"]["AIVS_APP_DB_ROLE"] == "${AIVS_DB_APP_USER:-aivs_app}"
+    assert migrate["command"] == ["alembic", "upgrade", "head"]
+
+
+def test_the_database_creates_the_application_role_on_first_start():
+    db = _compose("docker-compose.yml")["services"]["db"]
+    script = ROOT / "deploy/db/init/10-app-role.sh"
+
+    assert "./deploy/db/init:/docker-entrypoint-initdb.d:ro" in db["volumes"]
+    assert db["environment"]["AIVS_DB_APP_PASSWORD"].startswith("${AIVS_DB_APP_PASSWORD:?")
+    assert script.stat().st_mode & 0o111, "the entrypoint sources a non-executable script"
+    assert re.search(r"^AIVS_DB_APP_PASSWORD=$", (ROOT / "deploy/env.example").read_text(), re.M)
+
+
+def test_the_db_healthcheck_signs_in_as_the_application_role():
+    """pg_isready never authenticates, under a comment saying it checked the role."""
+    kind, command = _compose("docker-compose.yml")["services"]["db"]["healthcheck"]["test"]
+
+    assert kind == "CMD-SHELL"
+    assert "pg_isready" not in command
+    assert 'psql -h 127.0.0.1 -U "$$AIVS_DB_APP_USER"' in command
+    assert 'PGPASSWORD="$$AIVS_DB_APP_PASSWORD"' in command
+
+
+# ---------------------------------------------------------------------------
+# The documented commands run against the shipped stack (D-C2, D-C3). The
+# runbook told operators to run psql, alembic and the bootstrap on the host,
+# where neither the database (no published port, internal network) nor the
+# configuration is, and §7.4 ran `docker compose exec` without the env file,
+# which compose refuses before doing anything.
+# ---------------------------------------------------------------------------
+_COMMAND_DOCS = ("docs/operator-runbook.md", "docs/deployment-topology.md", "deploy/README.md")
+_PROJECTLESS_SUBCOMMANDS = {"version"}
+_SUBCOMMAND_OPTIONS_WITH_VALUES = {
+    "-e",
+    "--env",
+    "-u",
+    "--user",
+    "-w",
+    "--workdir",
+    "--wait-timeout",
+}
+_HOST_ONLY_TOOLS = {"python", "python3", "psql", "alembic", "uv", "pg_dump"}
+
+
+def _fenced_shell(text: str) -> list[str]:
+    return re.findall(r"```(?:bash|sh)\n(.*?)```", text, re.S)
+
+
+def _logical_lines(block: str) -> list[str]:
+    return [line.strip() for line in re.sub(r"\\\n", " ", block).splitlines() if line.strip()]
+
+
+def _compose_commands(name: str) -> list[str]:
+    """Every `docker compose` command in a doc's shell blocks, and in the
+    runbook's inline code too: there an inline command is an instruction, while
+    elsewhere `docker compose ps` in prose names a command without giving one."""
+    text = (ROOT / name).read_text(encoding="utf-8")
+    fenced = [line for block in _fenced_shell(text) for line in _logical_lines(block)]
+    inline = (
+        [" ".join(span.split()) for span in re.findall(r"`(docker compose [^`]+)`", text)]
+        if name == "docs/operator-runbook.md"
+        else []
+    )
+    commands = []
+    for line in [*fenced, *inline]:
+        start = line.find("docker compose")
+        if start != -1:
+            commands.append(line[start:])
+    return commands
+
+
+def _parse(command: str) -> tuple[list[str], str, list[str]]:
+    """(compose files, subcommand, the subcommand's arguments)."""
+    tokens = shlex.split(command.split("|", 1)[0].split("&&", 1)[0], comments=True)[2:]
+    files: list[str] = []
+    while tokens and tokens[0].startswith("-"):
+        option = tokens.pop(0)
+        value = tokens.pop(0)
+        if option == "-f":
+            files.append(value)
+    subcommand = tokens.pop(0)
+    return files or ["docker-compose.yml"], subcommand, tokens
+
+
+def _service_and_rest(arguments: list[str]) -> tuple[str, list[str]]:
+    remaining = list(arguments)
+    while remaining and remaining[0].startswith("-"):
+        option = remaining.pop(0)
+        if option in _SUBCOMMAND_OPTIONS_WITH_VALUES:
+            remaining.pop(0)
+    return remaining[0], remaining[1:]
+
+
+def _declared_flags(module: str) -> set[str]:
+    spec = importlib.util.find_spec(module)
+    assert spec is not None, f"{module} does not exist"
+    assert spec.origin, f"{module} has no source file"
+    source = Path(spec.origin).read_text(encoding="utf-8")
+    return set(re.findall(r'add_argument\(\s*"(--[a-z-]+)"', source))
+
+
+def _problems_with(command: str) -> list[str]:
+    files, subcommand, arguments = _parse(command)
+    if subcommand in _PROJECTLESS_SUBCOMMANDS:
+        return []
+    problems = []
+    if "--env-file deploy/.env" not in command:
+        problems.append(f"no --env-file deploy/.env: {command}")
+    if subcommand not in {"exec", "run"}:
+        return problems
+    services = {name for f in files for name in _compose(f)["services"]}
+    service, rest = _service_and_rest(arguments)
+    if service not in services:
+        problems.append(f"no service {service!r} in {files}: {command}")
+    if rest[:2] == ["python", "-m"]:
+        flags = {token for token in rest[3:] if token.startswith("--")}
+        problems.extend(
+            f"{rest[2]} has no {flag}: {command}"
+            for flag in sorted(flags - _declared_flags(rest[2]))
+        )
+    return problems
+
+
+@pytest.mark.parametrize("doc", _COMMAND_DOCS)
+def test_every_documented_compose_command_names_the_env_file_and_real_targets(doc: str):
+    commands = _compose_commands(doc)
+    assert commands, f"found no compose commands in {doc}; has the parser broken?"
+
+    assert [problem for command in commands for problem in _problems_with(command)] == []
+
+
+def test_the_command_check_sees_the_shapes_that_failed():
+    """The defects the review found, fed to the checker one at a time."""
+    compose = "docker compose --env-file deploy/.env"
+    rewrap = "exec app python -m aivs_server.rewrap_secrets"
+    assert _problems_with(f"docker compose {rewrap}") == [
+        f"no --env-file deploy/.env: docker compose {rewrap}"
+    ]
+    assert _problems_with(f"{compose} exec appx python -m aivs_server.config") != []
+    assert _problems_with(f"{compose} {rewrap} --apply") == []
+    assert _problems_with(f"{compose} {rewrap} --aply") != []
+
+
+def test_the_runbook_runs_nothing_against_the_stack_from_the_host():
+    """psql, alembic and the application's modules run in a container, where the
+    database and the configuration are; on the host neither is reachable."""
+    runbook = (ROOT / "docs/operator-runbook.md").read_text(encoding="utf-8")
+    host_commands = [
+        line
+        for block in _fenced_shell(runbook)
+        for line in _logical_lines(block)
+        if line.split()[0] in _HOST_ONLY_TOOLS
+    ]
+
+    assert host_commands == []

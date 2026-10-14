@@ -24,31 +24,67 @@ Do these in order. Steps 1–3 are one-time and cannot be sensibly reordered.
 
 ### 1.1 Verify configuration and the append-only enforcement
 
+Every command here runs inside the stack's containers, from the directory that
+holds `docker-compose.yml`. The database has no published port and sits on an
+internal network, so nothing on the host can reach it directly, and the app's
+configuration lives in its container, not your shell. `--env-file deploy/.env`
+goes on every compose command (deploy/README.md §3 says why).
+
 ```bash
-python -m aivs_server.config
+docker compose --env-file deploy/.env exec app python -m aivs_server.config
 # → configuration OK for environment=production
 ```
 
-Then verify that the append-only triggers actually applied. This is not
-ceremonial: the grants in migration `c185fd428721` only take effect when
-`AIVS_APP_DB_ROLE` was set at migration time, and a silent omission voids the
-evidentiary guarantee the whole product rests on.
+Then verify that the append-only enforcement holds, and holds against the role
+the application actually uses. This is not ceremonial: a superuser or the
+tables' owner can drop the triggers, so the guarantee rests on the application
+being neither, and the shipped stack once ran as both without anything saying
+so.
+
+As the owner, in the database container:
 
 ```bash
-psql -c "SELECT tgname FROM pg_trigger
-         WHERE tgrelid = 'audit_log'::regclass AND NOT tgisinternal;"
-# → audit_log_deny_update, audit_log_deny_delete, audit_log_deny_truncate
-
-psql -U aivs_app -c "DELETE FROM audit_log WHERE id = 1;"
-# → ERROR: table audit_log is append-only; DELETE is not permitted
+docker compose --env-file deploy/.env exec -T db sh -c \
+  'PGPASSWORD="$POSTGRES_PASSWORD" psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At' <<'SQL'
+SELECT tgname FROM pg_trigger
+ WHERE tgrelid IN ('audit_log'::regclass, 'submission_transitions'::regclass)
+   AND NOT tgisinternal ORDER BY 1;
+SELECT rolsuper FROM pg_roles WHERE rolname = 'aivs_app';
+SELECT DISTINCT tableowner FROM pg_tables
+ WHERE tablename IN ('audit_log', 'submission_transitions');
+SELECT DISTINCT usename FROM pg_stat_activity
+ WHERE datname = current_database() AND backend_type = 'client backend'
+   AND application_name <> 'psql';
+SQL
+# → the six *_deny_update / *_deny_delete / *_deny_truncate triggers
+# → f            aivs_app is not a superuser
+# → aivs         the owner owns the tables, never aivs_app
+# → aivs_app     the only role the running application is connected as
 ```
 
-Repeat for `submission_transitions`. Confirm also that `aivs_app` is not a
-superuser and does not own these tables:
+As the application role, the same check the application would meet:
 
 ```bash
-psql -c "SELECT rolsuper FROM pg_roles WHERE rolname = 'aivs_app';"   # → f
-psql -c "SELECT tableowner FROM pg_tables WHERE tablename = 'audit_log';"  # ≠ aivs_app
+docker compose --env-file deploy/.env exec -T db sh -c \
+  'PGPASSWORD="$AIVS_DB_APP_PASSWORD" psql -h 127.0.0.1 -U "$AIVS_DB_APP_USER" -d "$POSTGRES_DB" -At' <<'SQL'
+DELETE FROM audit_log WHERE id = 1;
+DELETE FROM submission_transitions WHERE id = 1;
+SQL
+# → ERROR:  permission denied for table audit_log
+# → ERROR:  permission denied for table submission_transitions
+```
+
+"Permission denied" is the grant refusing, before the trigger is reached. If you
+see `table audit_log is append-only` instead, the trigger caught it but the role
+holds the privilege: re-run the migrate service (`docker compose --env-file
+deploy/.env run --rm migrate`), which grants the application role and refuses
+one that is a superuser or owns the tables. A database initialised before the
+application role existed needs the role created first:
+
+```bash
+docker compose --env-file deploy/.env exec -T db /docker-entrypoint-initdb.d/10-app-role.sh
+docker compose --env-file deploy/.env run --rm migrate
+docker compose --env-file deploy/.env up -d
 ```
 
 If any of this fails, stop and fix it. Everything downstream assumes it.
@@ -78,22 +114,34 @@ of failure for distributing time-sensitive warnings.
 
 On a fresh instance nobody can enrol an organisation or create an operator --
 those are ISAC powers, and they need a signed-in human. The first of each comes
-from the bootstrap command, run on the host with the application's environment:
+from the bootstrap command, run in the app container, where the application's
+configuration is. Issue the ISAC its own client certificate first
+(`deploy/ca/issue-client.sh --org-slug example-isac --org "Example ISAC"`,
+which writes `deploy/ca/out/clients/example-isac/example-isac.crt`). The app
+container does not mount `deploy/ca/out` -- it holds private keys -- so the
+certificate goes in on stdin, then the bootstrap reads it from there:
 
 ```bash
-python -m aivs_server.bootstrap_operator \
+docker compose --env-file deploy/.env exec -T app sh -c 'cat > /tmp/isac.crt' \
+    < deploy/ca/out/clients/example-isac/example-isac.crt
+docker compose --env-file deploy/.env exec app python -m aivs_server.bootstrap_operator \
     --org-slug example-isac --org-name "Example ISAC" \
     --email ops@example-isac.org --name "Ops Lead" \
     --role system_admin --role isac_editor --role isac_membership \
-    --certificate deploy/ca/out/clients/example-isac/client.crt
+    --certificate /tmp/isac.crt
 ```
+
+`exec` without `-T` gives the command a terminal, which the password prompt
+needs. `/tmp` in the app container is a private tmpfs that goes with the
+container.
 
 It creates the ISAC's organisation if none exists, registers the certificate
 (which must be signed by the issuing CA), and creates the operator. The password
 is prompted for, never passed on the command line. The TOTP provisioning URI is
 printed **once** -- scan it, then clear the terminal. For each further ISAC
 operator, until operator management exists in the portal, run it again without
-`--org-name` and with `--additional`. Once a system admin exists it refuses to
+`--org-name` and with `--additional`, and without `--certificate` once the ISAC's
+certificate is registered (the same certificate cannot be registered twice). Once a system admin exists it refuses to
 run without that flag, and every run raises the `operator_bootstrapped`
 detection (§9.1): whoever holds the host can mint an editor this way, so the ISAC
 is told each time it happens. It refuses a member organisation and a second ISAC
@@ -459,7 +507,8 @@ is organisational, not technical.
 3. Verify the append-only triggers survived the restore (§1.1). A dump/restore
    cycle does not necessarily carry triggers and grants — check, do not assume.
 4. Verify the sealed secrets open under the configured key:
-   `python -m aivs_server.rewrap_secrets` reports `unopenable=0`. A database
+   `docker compose --env-file deploy/.env exec app python -m aivs_server.rewrap_secrets`
+   reports `unopenable=0`. A database
    restored beside the wrong environment's key looks entirely healthy until the
    first sign-in, and then fails as if the operator's code were wrong.
 5. Verify `distributions.date_added` values for pending embargoes are intact.
@@ -568,11 +617,16 @@ environment, so do not set `AIVS_SECRET_ENCRYPTION_KEY` or
 
    Everything continues to work at this point: existing rows open under the
    previous key, new writes seal under the new one.
-3. Re-seal what is still on the old key:
+3. Re-seal what is still on the old key, with the same files as step 2 (without
+   `--env-file`, compose cannot interpolate the file and refuses to run):
 
    ```bash
-   docker compose exec app python -m aivs_server.rewrap_secrets            # report
-   docker compose exec app python -m aivs_server.rewrap_secrets --apply    # re-seal
+   docker compose --env-file deploy/.env \
+     -f docker-compose.yml -f docker-compose.rotation.yml \
+     exec app python -m aivs_server.rewrap_secrets            # report
+   docker compose --env-file deploy/.env \
+     -f docker-compose.yml -f docker-compose.rotation.yml \
+     exec app python -m aivs_server.rewrap_secrets --apply    # re-seal
    ```
 
 4. Re-run the report. **Only when it shows `stale=0` and `unopenable=0`**, start
@@ -835,10 +889,13 @@ the platform, so alert on the collector's side when the stream goes quiet.
   host and left it.
 - **A too-wide `AIVS_TRUSTED_PROXY_CIDRS`** throws away half of the B3 boundary
   control. It should be a `/32`.
-- **Migrating without `AIVS_APP_DB_ROLE`** silently skips the grant half of the
-  append-only enforcement. The triggers still apply; the grants do not.
-- **Running the app as a database superuser** voids the append-only guarantee
-  entirely, and nothing will tell you.
+- **Migrating without `AIVS_APP_DB_ROLE`** leaves the application role with no
+  privileges at all, or with whatever an older run left. The shipped `migrate`
+  service always sets it; a migration run any other way must too.
+- **Running the app as a database superuser or as the tables' owner** voids the
+  append-only guarantee entirely, and the application will not tell you. The
+  shipped stack connects as `AIVS_DB_APP_USER`, the migrate step refuses to
+  grant to a role that is either, and §1.1 checks what is actually connected.
 - **Distributing to a wider circle than intended** cannot be undone.
 - **Deleting a circle** with distributed content will fail on a `RESTRICT`
   foreign key. Deactivate instead. The failure is the schema working correctly.

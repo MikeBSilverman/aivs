@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 # cheerfully propose dropping the entire schema.
 from aivs_server.db import models  # noqa: F401
 from aivs_server.db.base import Base
+from aivs_server.db.grants import APP_ROLE_ENV_VAR, grant_app_role
 
 config = context.config
 
@@ -79,6 +80,12 @@ def do_run_migrations(connection: Connection) -> None:
     )
     with context.begin_transaction():
         context.run_migrations()
+        # In the same transaction, and on every run rather than in one
+        # revision: the grants then cover whatever this run created, and a
+        # role named late is put right by the next upgrade. See db/grants.py.
+        app_role = os.environ.get(APP_ROLE_ENV_VAR, "").strip()
+        if app_role:
+            grant_app_role(connection, app_role)
 
 
 async def run_async_migrations() -> None:

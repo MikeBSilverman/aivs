@@ -197,19 +197,21 @@ deploy/ca/init-ca.sh --org "Your ISAC" \
 $EDITOR .env
 uv run python -m aivs_server.config     # → configuration OK for environment=...
 
-# Schema. Naming the app's database role applies the append-only grants.
+# Schema, migrating as the database owner. Naming the app's role (a login that
+# is not a superuser and owns nothing) grants it what the app needs and refuses
+# one that could drop the append-only triggers. The app connects as that role.
 AIVS_APP_DB_ROLE=aivs_app \
   uv run alembic -c packages/aivs-server/alembic.ini upgrade head
 
-# Verify the append-only enforcement actually took. Do not skip this: the
-# evidentiary guarantee the product rests on can silently fail to apply.
+# Verify the append-only enforcement actually took, as the app's role. Do not
+# skip this: the evidentiary guarantee the product rests on can silently fail.
 psql -U aivs_app -c "DELETE FROM audit_log WHERE id = 1;"
-#   expected: ERROR: table audit_log is append-only; DELETE is not permitted
+#   expected: ERROR: permission denied for table audit_log
 
-# Run
-docker compose up -d          # nginx + app + postgres
-# or, application only, behind your own proxy:
+# Run, application only, behind your own proxy:
 uv run aivs-server
+# or the whole stack (nginx + app + postgres), which does all of the above in
+# containers: deploy/README.md section 3.
 ```
 
 Then follow [`docs/operator-runbook.md`](docs/operator-runbook.md) §1 to create

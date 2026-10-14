@@ -1,14 +1,14 @@
 # =============================================================================
 # Network-layer allowlist for the AIVS edge listener.
 #
-# Copy to deploy/nginx/allowlist.conf, edit for your deployment, and point the
-# proxy's bind mount at it in docker-compose.yml. The file shipped here is
-# mounted by default so that a fresh checkout starts, but a production ISAC
-# deployment MUST replace it -- see "Choosing a mode" below.
+# Copy to deploy/nginx/allowlist.conf, edit for your deployment, and name it in
+# deploy/.env. Nothing is mounted by default: compose refuses to start until
+# AIVS_NGINX_ALLOWLIST names a file, so choosing a mode (below) is a step
+# nobody can skip.
 #
 #   cp deploy/nginx/allowlist.conf.example deploy/nginx/allowlist.conf
-#   # then in docker-compose.yml change the proxy mount to:
-#   #   ./deploy/nginx/allowlist.conf:/etc/nginx/allowlist.conf:ro
+#   # then in deploy/.env:
+#   #   AIVS_NGINX_ALLOWLIST=/opt/aivs/deploy/nginx/allowlist.conf
 #
 # WHAT THIS IS AND IS NOT
 #
@@ -84,10 +84,11 @@
 # THE DEFAULT SHIPPED BELOW
 # ---------------------------------------------------------------------------
 #
-# Private and overlay ranges only. This is a deliberate middle ground: a fresh
-# checkout works for local and VPN-fronted deployments, and a deployment
-# exposed directly to the internet is blocked until an operator makes a
-# conscious decision. It is NOT a production allowlist for Mode B.
+# Private and overlay ranges only: right for local and VPN-fronted deployments,
+# and what the end-to-end harness (scripts/e2e.sh) uses. It is NOT a production
+# allowlist for Mode B, and behind a load balancer that rewrites source
+# addresses (SNAT) every client arrives from a private address, so it admits
+# everyone. That is why it is an example and not a default.
 # =============================================================================
 
 # WireGuard overlay used by deploy/wireguard/wg0.conf.example.

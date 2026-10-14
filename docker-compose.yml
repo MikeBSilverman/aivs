@@ -12,7 +12,9 @@
 #      secrets. deploy/.env is git-ignored (the .env pattern in .gitignore).
 #   2. deploy/ca/init-ca.sh --org "Your ISAC"
 #      deploy/ca/server-cert.sh --hostname aivs.your-isac.example
-#   3. docker compose --env-file deploy/.env up -d
+#   3. docker compose --env-file deploy/.env up -d db
+#      docker compose --env-file deploy/.env run --rm migrate
+#   4. docker compose --env-file deploy/.env up -d
 #
 # THE --env-file FLAG IS NOT OPTIONAL. Compose reads variables from a `.env`
 # beside this file by default, which does not exist here; without --env-file
@@ -111,14 +113,16 @@ services:
 
     # THE ONLY PUBLISHED PORT IN THE STACK.
     #
-    # Host 443 -> container 8443. AIVS_BIND_ADDRESS defaults to all interfaces;
-    # set it to the host's WireGuard overlay address to make AIVS unreachable
-    # from the public internet entirely, which is the recommended topology (see
-    # deploy/wireguard/ and deploy/nginx/allowlist.conf.example).
+    # Host 443 -> container 8443. AIVS_BIND_ADDRESS has no default: which
+    # interface faces members is a decision, and a default of every interface
+    # made it for the operator. The recommended answer is the host's WireGuard
+    # overlay address, which makes AIVS unreachable from the public internet
+    # entirely (see deploy/wireguard/ and deploy/nginx/allowlist.conf.example);
+    # 0.0.0.0 is still available, written down in deploy/.env.
     # AIVS_BIND_PORT exists for hosts where 443 is already taken; members dial
     # whatever it is, so AIVS_PUBLIC_BASE_URL must carry it when it is not 443.
     ports:
-      - "${AIVS_BIND_ADDRESS:-0.0.0.0}:${AIVS_BIND_PORT:-443}:8443"
+      - "${AIVS_BIND_ADDRESS:?set AIVS_BIND_ADDRESS in deploy/.env (the overlay address, or 0.0.0.0 deliberately)}:${AIVS_BIND_PORT:-443}:8443"
 
     environment:
       # Consumed by deploy/nginx/templates/10-proxy-auth.conf.template at
@@ -143,11 +147,18 @@ services:
       - ./deploy/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./deploy/nginx/snippets:/etc/nginx/snippets:ro
       - ./deploy/nginx/templates:/etc/nginx/templates:ro
-      # The shipped example allows private and overlay ranges only. Change this
-      # source path to ./deploy/nginx/allowlist.conf once you have written your
-      # own; the file is mounted unconditionally so that a missing allowlist is
-      # a start-up failure rather than an absent control nobody notices.
-      - ./deploy/nginx/allowlist.conf.example:/etc/nginx/allowlist.conf:ro
+      # The network allowlist is the operator's own file, named in deploy/.env.
+      # It used to be the shipped example, which admits every RFC 1918 range:
+      # behind a load balancer that rewrites source addresses (SNAT), that is
+      # everyone. Naming a file is required, and create_host_path is off, so a
+      # missing allowlist is a start-up failure rather than an absent control
+      # nobody notices, and Docker cannot quietly mount an empty directory.
+      - type: bind
+        source: ${AIVS_NGINX_ALLOWLIST:?set AIVS_NGINX_ALLOWLIST in deploy/.env to the ABSOLUTE path of your allowlist (deploy/nginx/allowlist.conf.example explains the choices)}
+        target: /etc/nginx/allowlist.conf
+        read_only: true
+        bind:
+          create_host_path: false
       # CA material: the trust anchor, the server certificate and its key.
       # Read-only, so a compromised proxy cannot alter the set of CAs it trusts.
       - ca_material:/etc/nginx/ca:ro
@@ -225,10 +236,16 @@ services:
       AIVS_PUBLIC_BASE_URL: ${AIVS_PUBLIC_BASE_URL:?set AIVS_PUBLIC_BASE_URL in deploy/.env (must be https)}
 
       # -- Database ---------------------------------------------------------
+      # As the APPLICATION role, never the owner. The owner (AIVS_DB_USER) is
+      # the image's superuser and owns every table, so it can drop the
+      # append-only triggers; the app role can do neither, and the migrate
+      # service below refuses to grant to one that could. The owner's password
+      # is not in this container at all.
+      #
       # The password is URL-encoded into a DSN, so it must be URL-safe: generate
       # it with `openssl rand -base64 36 | tr '+/' '-_'` or use hex. A raw '@'
       # or '/' in the password silently truncates the host or the database name.
-      AIVS_DATABASE_URL: postgresql+psycopg://${AIVS_DB_USER:-aivs}:${AIVS_DB_PASSWORD:?set AIVS_DB_PASSWORD in deploy/.env}@db:5432/${AIVS_DB_NAME:-aivs}
+      AIVS_DATABASE_URL: postgresql+psycopg://${AIVS_DB_APP_USER:-aivs_app}:${AIVS_DB_APP_PASSWORD:?set AIVS_DB_APP_PASSWORD in deploy/.env}@db:5432/${AIVS_DB_NAME:-aivs}
 
       # -- Trust boundary ---------------------------------------------------
       AIVS_PROXY_SHARED_SECRET: ${AIVS_PROXY_SHARED_SECRET:?set AIVS_PROXY_SHARED_SECRET in deploy/.env (>= 32 chars)}
@@ -268,14 +285,19 @@ services:
 
     volumes:
       # The key-encryption key, as one read-only file (see the environment
-      # block above for why a file).
-      - type: bind
+      # block above for why a file). Anchored: the migrate service mounts the
+      # same file, because migration a1c7e2b93d45 seals with it.
+      - &kek-mount
+        type: bind
         source: ${AIVS_SECRET_ENCRYPTION_KEY_PATH:?set AIVS_SECRET_ENCRYPTION_KEY_PATH in deploy/.env to the ABSOLUTE path of a 0600 key file}
         target: /run/aivs/secret-encryption-key
         read_only: true
       # The issuing CA's *certificate* only, as one read-only file. The proxy
       # mounts the whole CA output directory; the application must not, because
-      # that directory is where init-ca.sh writes the issuing key.
+      # that directory holds private keys: the proxy's server key
+      # (out/nginx/server.key) and any member key issue-client.sh generated in
+      # its fallback mode (out/clients/<slug>/<slug>.key). The issuing CA's own
+      # key is outside it, in deploy/ca/private/, and is mounted nowhere.
       - type: bind
         source: ${AIVS_CA_DIR:?set AIVS_CA_DIR in deploy/.env to the ABSOLUTE path of deploy/ca/out}/intermediate/intermediate.crt
         target: /etc/aivs/issuing-ca.pem
@@ -321,6 +343,40 @@ services:
           memory: 256M
 
   # ===========================================================================
+  # Schema migrations, run on demand as the OWNER role:
+  #
+  #   docker compose --env-file deploy/.env run --rm migrate
+  #
+  # The `migrate` profile keeps it out of `up`. It is the only container that
+  # holds the owner's password, and it exists for the seconds a migration
+  # takes. After migrating, it grants the application role (AIVS_APP_DB_ROLE)
+  # what it needs and nothing more, and refuses a role that is a superuser,
+  # owns the tables, or is a member of their owner (aivs_server.db.grants).
+  # Run it after every upgrade of the image; it is idempotent.
+  # ===========================================================================
+  migrate:
+    <<: *hardening
+    profiles: ["migrate"]
+    image: ${AIVS_APP_IMAGE:-aivs-server:local}
+    user: "10001:10001"
+    restart: "no"
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      AIVS_MIGRATION_DATABASE_URL: postgresql+psycopg://${AIVS_DB_USER:-aivs}:${AIVS_DB_PASSWORD:?set AIVS_DB_PASSWORD in deploy/.env}@db:5432/${AIVS_DB_NAME:-aivs}
+      AIVS_APP_DB_ROLE: ${AIVS_DB_APP_USER:-aivs_app}
+      AIVS_SECRET_ENCRYPTION_KEY_FILE: /run/aivs/secret-encryption-key
+      AIVS_SECRET_ENCRYPTION_ALGORITHM: ${AIVS_SECRET_ENCRYPTION_ALGORITHM:-aes-256-gcm}
+    volumes:
+      - *kek-mount
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,uid=10001,gid=10001,mode=0700
+    networks:
+      - data
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # ===========================================================================
   # Database.
   #
   # No published port and only on the `data` network, which is internal: true.
@@ -341,9 +397,16 @@ services:
     user: "70:70"
 
     environment:
+      # The OWNER: a superuser, which owns every table and runs migrations.
+      # The application never connects as it.
       POSTGRES_USER: ${AIVS_DB_USER:-aivs}
       POSTGRES_PASSWORD: ${AIVS_DB_PASSWORD:?set AIVS_DB_PASSWORD in deploy/.env}
       POSTGRES_DB: ${AIVS_DB_NAME:-aivs}
+      # The APPLICATION role, created on first start by deploy/db/init/ and
+      # used by the healthcheck below. Read by those scripts only; postgres
+      # itself ignores them.
+      AIVS_DB_APP_USER: ${AIVS_DB_APP_USER:-aivs_app}
+      AIVS_DB_APP_PASSWORD: ${AIVS_DB_APP_PASSWORD:?set AIVS_DB_APP_PASSWORD in deploy/.env}
       # --data-checksums detects silent corruption in the audit log, which is
       # append-only and therefore has no other way of noticing.
       # scram-sha-256 rather than the historical md5: md5 password verifiers are
@@ -393,6 +456,9 @@ services:
 
     volumes:
       - pgdata:/var/lib/postgresql/data
+      # Run once, when the data directory is first initialised: creates the
+      # application role. Read-only, like every other piece of configuration.
+      - ./deploy/db/init:/docker-entrypoint-initdb.d:ro
 
     # Writable paths under a read-only root filesystem.
     # /run/postgresql is where the unix socket goes. In the alpine image
@@ -406,10 +472,18 @@ services:
       - data
 
     healthcheck:
-      # Over the local socket, as the application's own role and database, so
-      # this fails if the role or database is missing rather than merely if the
-      # postmaster is up.
-      test: ["CMD-SHELL", "pg_isready -q -U \"${AIVS_DB_USER:-aivs}\" -d \"${AIVS_DB_NAME:-aivs}\""]
+      # Signs in as the application's own role, to its database, and runs a
+      # query -- so this fails if that role, its password or the database is
+      # wrong, not merely if the postmaster is up. It used to be pg_isready,
+      # which never authenticates, under a comment claiming it did.
+      #
+      # Over TCP to 127.0.0.1 rather than the socket: during first-start
+      # initialisation the image runs a temporary server on the socket alone,
+      # and a socket check could report healthy before the init scripts ran.
+      # `$$` defers expansion to the container, which holds these variables,
+      # so the password is not written a second time into the healthcheck's
+      # own definition.
+      test: ["CMD-SHELL", "PGPASSWORD=\"$$AIVS_DB_APP_PASSWORD\" psql -h 127.0.0.1 -U \"$$AIVS_DB_APP_USER\" -d \"$$POSTGRES_DB\" -qAtc 'SELECT 1' >/dev/null"]
       interval: 10s
       timeout: 5s
       retries: 5

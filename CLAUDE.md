@@ -720,6 +720,19 @@ protections prove the fixture, not the migration. `tests/migrations/` migrates
 a scratch database to head and asks Postgres what exists; any protection that
 lives only in a migration gets an assertion there.
 
+**The application role is granted by the migration step, and "append-only"
+means "carries the deny trigger".** The shipped stack connected the app as the
+Postgres image's superuser, which owns every table and can drop the triggers,
+while three docs promised a non-superuser role; nothing created one. Now
+`aivs_server.db.grants` runs after every `alembic upgrade` (in `env.py`, same
+transaction), grants `AIVS_APP_DB_ROLE` DML on every table, strips update,
+delete and truncate from each table with an `aivs_deny_mutation` trigger, and
+refuses a role that is a superuser, an owner or a member of one. A new
+append-only table gets that trigger or the app can rewrite it. Test a role's
+confinement by connecting as it and attempting the write, and match
+"permission denied" rather than "append-only": both are SQLSTATE 42501, and
+only the message shows which layer refused.
+
 ---
 
 ## 8. Code structure

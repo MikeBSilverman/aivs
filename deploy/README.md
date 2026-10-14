@@ -96,6 +96,13 @@ $EDITOR deploy/.env
 #    - AIVS_PROXY_SHARED_SECRET   openssl rand -base64 48
 #    - AIVS_SESSION_SECRET        openssl rand -base64 48
 #    - AIVS_DB_PASSWORD           openssl rand -base64 36 | tr '+/' '-_'   (URL-safe!)
+#                                 the OWNER's: migrations only, never the app
+#    - AIVS_DB_APP_PASSWORD       the same way, a different value: the role the
+#                                 application connects as (not a superuser,
+#                                 owns nothing -- see env.example, Database)
+#    - AIVS_BIND_ADDRESS          no default: the overlay address, or 0.0.0.0
+#                                 as a deliberate choice
+#    - AIVS_NGINX_ALLOWLIST       ABSOLUTE path to your allowlist (step 6)
 #    - AIVS_CA_DIR                ABSOLUTE path to deploy/ca/out
 #    - AIVS_PUBLIC_BASE_URL       exactly what members will dial, https://
 #    - AIVS_BIND_PORT             only if 443 is taken; then the base URL carries it
@@ -118,24 +125,31 @@ deploy/ca/server-cert.sh --hostname aivs.example-isac.org
 sudo chown 101:101 deploy/ca/out/nginx/server.key
 sudo chmod 0400 deploy/ca/out/nginx/server.key
 
-# 6. Network allowlist. The shipped default permits private and overlay ranges
-#    only; a publicly reachable deployment must replace it. See §5.
+# 6. Network allowlist. There is no default: compose refuses to start until
+#    AIVS_NGINX_ALLOWLIST names a file. The example's ranges (every RFC 1918
+#    block) admit everyone behind a load balancer that rewrites source
+#    addresses; write the one your topology needs. See §5.
 cp deploy/nginx/allowlist.conf.example deploy/nginx/allowlist.conf
 $EDITOR deploy/nginx/allowlist.conf
-#    then point the proxy's mount at it in docker-compose.yml:
-#      ./deploy/nginx/allowlist.conf:/etc/nginx/allowlist.conf:ro
+#    then in deploy/.env:
+#      AIVS_NGINX_ALLOWLIST=/opt/aivs/deploy/nginx/allowlist.conf
 
 # 7. Build and start the database only, then apply migrations. Running
 #    migrations before the app serves traffic avoids a window where handlers
-#    query a schema that does not exist yet.
+#    query a schema that does not exist yet. The database creates the
+#    application role on first start (deploy/db/init/); the migrate service
+#    runs as the owner and grants that role what the app needs, and refuses
+#    one that could drop the audit log's append-only triggers.
 docker compose --env-file deploy/.env build app
-docker compose --env-file deploy/.env up -d db
-docker compose --env-file deploy/.env run --rm app alembic upgrade head
+docker compose --env-file deploy/.env up -d --wait db
+docker compose --env-file deploy/.env run --rm migrate
 
 # 8. Start the whole stack.
 docker compose --env-file deploy/.env up -d
 
-# 9. Verify. All three services must report healthy.
+# 9. Verify. All three services must report healthy. Then run the append-only
+#    checks in docs/operator-runbook.md §1.1: they show which role the app is
+#    actually connected as, and that it cannot change the audit log.
 docker compose --env-file deploy/.env ps
 ```
 
@@ -377,17 +391,19 @@ internal health listener. Nothing derives one from the others.
 docker compose --env-file deploy/.env ps
 ```
 
-- **app** — runs `python -m aivs_server.config`, which constructs `Settings`
-  and therefore exercises every validator including
-  `validate_production_posture`. A container running with a dev bypass enabled,
-  or a malformed CIDR, reports unhealthy rather than quietly serving. It does
-  not touch the database — that is the db service's own check.
+- **app** — runs `python -m aivs_server.healthcheck`, which constructs
+  `Settings` and therefore exercises every validator including
+  `validate_production_posture`, then asks `/readyz` on loopback. A container
+  running with a dev bypass enabled, or a malformed CIDR, reports unhealthy
+  rather than quietly serving, and so does one that cannot reach its database.
 - **proxy** — `GET /healthz` on an internal listener that requires no client
   certificate and is restricted to loopback and the backend subnet. It answers
   from nginx itself, so a slow database does not roll the proxy's health state
   and get a healthy proxy restarted during a database blip.
-- **db** — `pg_isready` as the application's own role and database, so it fails
-  if the role or database is missing, not merely if the postmaster is up.
+- **db** — signs in as the application role over TCP and runs `SELECT 1`, so
+  it fails if that role, its password or the database is wrong, not merely if
+  the postmaster is up. (It was `pg_isready`, which does not authenticate, under
+  a comment saying it checked the role.)
 
 ### Logs
 
@@ -423,9 +439,15 @@ disk and take the database down.
 ```bash
 git pull
 docker compose --env-file deploy/.env build app
-docker compose --env-file deploy/.env run --rm app alembic upgrade head
+docker compose --env-file deploy/.env run --rm migrate
 docker compose --env-file deploy/.env up -d
 ```
+
+A database initialised before the application role existed (the app connected
+as the owner) needs the role created once, before that migrate run:
+`docker compose --env-file deploy/.env exec -T db /docker-entrypoint-initdb.d/10-app-role.sh`,
+with `AIVS_DB_APP_PASSWORD` added to `deploy/.env`. Then run the checks in
+`docs/operator-runbook.md` §1.1.
 
 For a deployment under third-party risk review, pin base images by digest — see
 `AIVS_PROXY_IMAGE`, `AIVS_DB_IMAGE`, `AIVS_APP_IMAGE` in `deploy/env.example`
@@ -443,8 +465,9 @@ on the command line. If you find a host with it in `COMPOSE_FILE` or in a
 systemd unit, treat that as an incident.
 
 The application's own `validate_production_posture` is the backstop: it refuses
-to construct a production `Settings` with any of those flags set, so the
-override also has to declare `AIVS_ENVIRONMENT=dev` to work at all.
+to construct `Settings` with any of those flags set in any environment but
+`dev`, so the override also has to declare `AIVS_ENVIRONMENT=dev` to work at
+all.
 
 ---
 
@@ -455,8 +478,8 @@ override also has to declare `AIVS_ENVIRONMENT=dev` to work at all.
 2. `deploy/ca/private/root/` does not exist on the host — the root key is
    offline.
 3. `ls -l deploy/.env` shows `0600`, and `git status` shows it untracked.
-4. `deploy/nginx/allowlist.conf` reflects the current membership list, and the
-   proxy mount points at it rather than at the shipped `.example`.
+4. The file `AIVS_NGINX_ALLOWLIST` names reflects the current membership list,
+   and is not the shipped `.example`.
 5. The proxy's access log shows real source addresses, not a bridge gateway.
 6. Every fingerprint registered in AIVS corresponds to a certificate in
    `deploy/ca/index.txt` with status `V`, and every `V` entry corresponds to a

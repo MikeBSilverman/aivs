@@ -117,6 +117,14 @@ make_root_signed_client() {
 
 random_secret() { openssl rand -hex 32; }
 
+make_allowlist() {
+    # The shipped example, as an operator's own file: compose requires one to
+    # be named. Not secret, and nginx (uid 101) must read it through the bind
+    # mount, hence world-readable despite the umask.
+    cp "${REPO}/deploy/nginx/allowlist.conf.example" "${WORK}/allowlist.conf"
+    chmod 0644 "${WORK}/allowlist.conf"
+}
+
 make_env() {
     mkdir -p "${WORK}/secrets"
     openssl rand -base64 32 > "${WORK}/secrets/secret-encryption-key"
@@ -126,6 +134,7 @@ AIVS_INSTANCE_NAME=E2E Test ISAC
 AIVS_PUBLIC_BASE_URL=https://localhost:${PORT}
 AIVS_BIND_ADDRESS=127.0.0.1
 AIVS_BIND_PORT=${PORT}
+AIVS_NGINX_ALLOWLIST=${WORK}/allowlist.conf
 AIVS_LOG_LEVEL=INFO
 AIVS_CA_DIR=${WORK}/ca/out
 AIVS_PROXY_SHARED_SECRET=$(random_secret)
@@ -134,6 +143,8 @@ AIVS_SECRET_ENCRYPTION_KEY_PATH=${WORK}/secrets/secret-encryption-key
 AIVS_DB_USER=aivs
 AIVS_DB_NAME=aivs
 AIVS_DB_PASSWORD=$(random_secret)
+AIVS_DB_APP_USER=aivs_app
+AIVS_DB_APP_PASSWORD=$(random_secret)
 EOF
     chmod 0600 "${WORK}/.env"
 }
@@ -149,8 +160,10 @@ hand_files_to_container_users() {
 start_stack() {
     log "building and starting the stack (project ${PROJECT})"
     compose build app
-    compose up -d db
-    compose run --rm app alembic upgrade head
+    compose up -d --wait --wait-timeout 300 db
+    # As the owner, granting the app role; the app never holds the owner's
+    # password (docker-compose.yml, the migrate service).
+    compose run --rm migrate
     compose up -d --wait --wait-timeout 300
 }
 
@@ -218,6 +231,7 @@ up() {
     chmod 0700 "${WORK}"
     make_ca
     make_root_signed_client
+    make_allowlist
     make_env
     hand_files_to_container_users
     start_stack

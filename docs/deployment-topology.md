@@ -305,8 +305,36 @@ the instant they exist rather than briefly world-readable.
 
 | Mode | Root CA private key | Issuing CA private key |
 | --- | --- | --- |
-| Self-hosted | ISAC, offline (§3.2) | ISAC — HSM, cloud KMS, or an encrypted key on the AIVS host with a passphrase not stored beside it |
-| Aequora-managed | **ISAC, offline** — Aequora never holds the root | Aequora, in a cloud KMS or HSM, under an issuing CA the ISAC's root signed |
+| Self-hosted | ISAC, offline (§3.2) | ISAC, on the AIVS host: as shipped, an unencrypted file (below) |
+| Aequora-managed | **ISAC, offline** — Aequora never holds the root | Aequora, under an issuing CA the ISAC's root signed. A cloud KMS or HSM is the managed service's design, not something the shipped scripts do |
+
+**What the shipped tooling does with the issuing key.** `init-ca.sh` writes
+`deploy/ca/private/intermediate.key` **unencrypted**, mode `0600` in a `0700`
+directory, and `issue-client.sh`, `server-cert.sh` and `revoke.sh` sign with it
+as that file. None of them supports an HSM, a KMS or a passphrase. The
+reasoning is in `init-ca.sh`: issuance and the CRL refresh run unattended, and a
+passphrase stored on the same host to make that possible protects nothing. The
+controls that actually apply are the file mode, the directory mode, that the
+key is mounted into no container (the app mounts only the issuing
+*certificate*), and the offline root's ability to revoke the intermediate.
+
+**If your risk review requires more**, it is the operator's work, outside the
+scripts:
+
+- **A passphrase.** Encrypt the key in place
+  (`openssl pkey -in private/intermediate.key -aes256 -out private/intermediate.key.enc`,
+  then replace the original and shred it). `openssl ca` then asks for the
+  passphrase each time a script signs, so issuance and the CRL refresh stop
+  being unattended: a scheduled `revoke.sh --gencrl-only` has to become a
+  person running it inside the CRL's lifetime, or members' CRL checks fail
+  closed. Keep the passphrase off the host, or it protects nothing.
+- **An HSM or KMS.** Generate the issuing key in the device, have the offline
+  root sign its CSR with the `v3_intermediate_ca` profile from
+  `deploy/ca/openssl.cnf`, and sign member and server certificates and CRLs
+  with the device's signer (for OpenSSL 3, a PKCS#11 provider), using the same
+  profiles (`v3_client_cert`, `v3_server_cert`) and the same CA database so
+  revocation stays consistent. The scripts do not drive this today; the
+  application needs nothing but the issuing certificate either way.
 
 In managed mode the ISAC signs a delegated issuing CA for Aequora and retains the
 root. That gives the ISAC an exit: revoke the issuing CA, stand up a new one, and
@@ -472,7 +500,9 @@ in every authorization predicate.
 ### PKI and secrets
 
 - Root CA generated and stored offline (§3.2).
-- Issuing CA in an HSM or KMS.
+- The issuing CA key. As shipped, an unencrypted `0600` file on the AIVS host
+  (`deploy/ca/private/intermediate.key`); §3.1 says what an HSM, KMS or
+  passphrase takes, because the scripts support none of them.
 - `AIVS_PROXY_SHARED_SECRET` — ≥ 32 characters, validated at startup.
 - `AIVS_SESSION_SECRET` — ≥ 32 characters, validated at startup.
 - The key-encryption key, as a **file** (`AIVS_SECRET_ENCRYPTION_KEY_FILE`; under
@@ -486,10 +516,18 @@ in every authorization predicate.
   **Back it up separately from the database.** Held together, they are one
   artefact with no encryption at rest; lost entirely, every operator re-enrols
   their second factor and every member re-registers their webhook.
-- Database credentials for a **non-superuser role that does not own
-  `audit_log` or `submission_transitions`**. Set `AIVS_APP_DB_ROLE` to that role
-  name when running the append-only migration so it receives `INSERT, SELECT`
-  and nothing more.
+- Two database roles. The **owner** (`AIVS_DB_USER`, the image's superuser)
+  owns the tables and runs migrations; the **application role**
+  (`AIVS_DB_APP_USER`, default `aivs_app`) is a plain login that is not a
+  superuser, owns nothing and is not a member of the owner, and is all the
+  application connects as. The shipped stack creates it on first start
+  (`deploy/db/init/10-app-role.sh`), and the `migrate` service grants it
+  `SELECT, INSERT, UPDATE, DELETE` on ordinary tables and only `INSERT, SELECT`
+  on `audit_log` and `submission_transitions`, on every run
+  (`aivs_server.db.grants`, through `AIVS_APP_DB_ROLE`). It refuses a role that
+  could drop the append-only triggers. Outside compose, do the same: create the
+  role, migrate as the owner with `AIVS_APP_DB_ROLE` set, connect the app as the
+  role.
 
 ### People and process
 
@@ -513,7 +551,7 @@ Minimum production environment:
 AIVS_ENVIRONMENT=production            # anything but `dev` gets the strict posture
 AIVS_INSTANCE_NAME="Example Financial ISAC"
 AIVS_PUBLIC_BASE_URL=https://aivs.example.org
-AIVS_DATABASE_URL=postgresql+psycopg://aivs_app:...@db:5432/aivs
+AIVS_DATABASE_URL=postgresql+psycopg://aivs_app:...@db:5432/aivs   # the app role, never the owner
 AIVS_PROXY_SHARED_SECRET=<32+ chars>
 AIVS_SESSION_SECRET=<32+ chars>
 AIVS_SECRET_ENCRYPTION_KEY_FILE=/run/aivs/secret-encryption-key   # 0600, never the env form
@@ -527,10 +565,14 @@ AIVS_LOG_LEVEL=INFO
 `/32`. It is the peer-address half of the B3 boundary control; a `/16` there
 throws away most of its value.
 
-Verify before cutting traffic over:
+Under compose, these are set in `docker-compose.yml` from `deploy/.env`, and
+the database URL is built from `AIVS_DB_APP_USER` and `AIVS_DB_APP_PASSWORD`.
+Verify before cutting traffic over, in the app container, which is where the
+configuration is:
 
 ```bash
-python -m aivs_server.config       # "configuration OK for environment=production"
+docker compose --env-file deploy/.env exec app python -m aivs_server.config
+# configuration OK for environment=production
 ```
 
 `extra="forbid"` means a typo'd `AIVS_*` variable prevents startup rather than
@@ -540,6 +582,10 @@ otherwise silent failures.
 ---
 
 ## 5. Bringing an instance up
+
+[`deploy/README.md`](../deploy/README.md) §3 is the full sequence, and
+`scripts/e2e.sh up` runs it against a throwaway CA on every change to the
+deployment files. In outline, from the directory holding `docker-compose.yml`:
 
 ```bash
 # 0. Create the CA, on an air-gapped machine (§3.2)
@@ -553,23 +599,27 @@ cp deploy/env.example deploy/.env && chmod 0600 deploy/.env
 $EDITOR deploy/.env
 docker compose --env-file deploy/.env config -q   # interpolation and syntax
 
-# 2. Schema, with the app role named so the append-only grants apply
-AIVS_APP_DB_ROLE=aivs_app \
-  uv run alembic -c packages/aivs-server/alembic.ini upgrade head
+# 2. The database, which creates the application role on first start
+docker compose --env-file deploy/.env build app
+docker compose --env-file deploy/.env up -d --wait db
 
-# 3. Verify the append-only enforcement actually took
-psql -c "\d+ audit_log" | grep -i trigger
-psql -U aivs_app -c "DELETE FROM audit_log WHERE id = 1;"
-#   expected: ERROR: table audit_log is append-only; DELETE is not permitted
+# 3. Schema, as the owner, granting the application role
+docker compose --env-file deploy/.env run --rm migrate
 
 # 4. Start
-docker compose --env-file deploy/.env up -d
+docker compose --env-file deploy/.env up -d --wait
 ```
 
-Step 3 is not optional. The append-only guarantee is the evidentiary basis of the
-whole product, and it is the kind of thing that silently fails to apply — the
-grants only happen when `AIVS_APP_DB_ROLE` was set at migration time. **Verify
-it, do not assume it.**
+Then verify the append-only enforcement against the role the application is
+actually connected as: [`operator-runbook.md`](operator-runbook.md) §1.1. It is
+not optional. The guarantee is the evidentiary basis of the whole product, and
+it held only on paper while the shipped stack connected the application as the
+database superuser: the triggers were there, and the role they had to stop
+could drop them. **Verify it, do not assume it.**
+
+The database has no published port and sits on an `internal` network, so the
+checks run inside the containers (`docker compose ... exec`), not from the
+host.
 
 Then follow [`operator-runbook.md`](operator-runbook.md) §1 for first-run:
 creating the ISAC's own `admin` organization, the first `system_admin`, and the
@@ -625,7 +675,7 @@ The table remains what to alert on in the ISAC's monitoring.
 | Embargo sweeper liveness | Not a correctness risk — release is gated on `date_added <= now` in SQL — but a dead sweeper means members are not being **notified**. | Alert after 3 missed intervals. |
 | Submissions sitting in `submitted` | The ISAC review queue is the human checkpoint; a backlog is a product failure, not just an ops one. | > 48 h. |
 | Webhook `consecutive_failures` | A member's ingest is broken and they may not know. | ≥ 3. |
-| Distribution query latency | The keyset index `(circle_id, date_added, id)` must match the query's `ORDER BY`; a divergence turns every poll into a sequential scan. | p99 > 500 ms. |
+| Distribution query latency | The keyset index `(circle_id, date_added, seq)` must match the query's `ORDER BY`; a divergence turns every poll into a sequential scan. | p99 > 500 ms. |
 
 ---
 

@@ -1,0 +1,17 @@
+Mutation M909: a NUL in a member's statement reaches the database
+Re-applies: unbounded statement text
+
+Expect red: packages/aivs-server/tests/unit/test_vex.py::test_unbounded_or_unstorable_input_is_refused_as_the_members_mistake[nul]
+
+diff --git a/packages/aivs-server/src/aivs_server/api/contributions.py b/packages/aivs-server/src/aivs_server/api/contributions.py
+--- a/packages/aivs-server/src/aivs_server/api/contributions.py
++++ b/packages/aivs-server/src/aivs_server/api/contributions.py
+@@ -93,7 +93,7 @@ class ContributionOut(BaseModel):
+ #: Prose a member writes for itself and its regulator: multi-line, bounded, and
+ #: free of NUL, which PostgreSQL refuses in text and would otherwise turn a
+ #: member's typo into a server error.
+-_Statement = Annotated[str, Field(min_length=1, max_length=2000, pattern=r"^[^\x00]+$")]
++_Statement = Annotated[str, Field(min_length=1, max_length=2000)]
+ #: One line per product: a PURL, a CPE, or a name.
+ _Product = Annotated[str, Field(min_length=1, max_length=200, pattern=r"^[^\x00-\x1f\x7f]+$")]
+ 

@@ -1,0 +1,17 @@
+Mutation M902: the migration adds no check that an affected posture says what is done
+Re-applies: a model-only protection, as CLAUDE.md section 7 warns
+
+Expect red: packages/aivs-server/tests/migrations/test_migrated_schema.py::test_the_migrated_schema_refuses_a_posture_vex_would_reject[affected]
+
+diff --git a/packages/aivs-server/alembic/versions/20261014_1236_d48d5088d63b_posture_is_a_vex_statement.py b/packages/aivs-server/alembic/versions/20261014_1236_d48d5088d63b_posture_is_a_vex_statement.py
+--- a/packages/aivs-server/alembic/versions/20261014_1236_d48d5088d63b_posture_is_a_vex_statement.py
++++ b/packages/aivs-server/alembic/versions/20261014_1236_d48d5088d63b_posture_is_a_vex_statement.py
+@@ -83,7 +83,7 @@ def upgrade() -> None:
+     op.create_check_constraint(
+         op.f("ck_org_postures_affected_says_what_is_done"),
+         "org_postures",
+-        "status <> 'affected' OR action_statement IS NOT NULL",
++        "TRUE",
+     )
+     op.create_check_constraint(
+         op.f("ck_org_postures_justification_only_when_not_affected"),

@@ -1,0 +1,17 @@
+Mutation M907: a posture export leaves no audit row
+Re-applies: the export route before Phase H's detection
+
+Expect red: packages/aivs-server/tests/abuse/test_sharing_abuse.py::test_a_stolen_certificate_taking_the_posture_list_is_noticed_without_the_list
+
+diff --git a/packages/aivs-server/src/aivs_server/api/contributions.py b/packages/aivs-server/src/aivs_server/api/contributions.py
+--- a/packages/aivs-server/src/aivs_server/api/contributions.py
++++ b/packages/aivs-server/src/aivs_server/api/contributions.py
+@@ -254,7 +254,7 @@ async def export_postures(ctx: AuthenticatedContext, session: SessionDep) -> dic
+     # the ISAC's, and a count of postures is a fact about the firm's exposure.
+     await record(
+         session,
+-        action=AuditAction.POSTURE_EXPORTED,
++        action=AuditAction.POSTURE_RECORDED,
+         ctx=ctx,
+         resource_type="posture",
+         resource_id=str(ctx.org_id),

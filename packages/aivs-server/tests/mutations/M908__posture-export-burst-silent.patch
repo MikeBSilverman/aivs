@@ -1,0 +1,17 @@
+Mutation M908: repeated posture exports raise nothing
+Re-applies: the detection rule's absence
+
+Expect red: packages/aivs-server/tests/abuse/test_sharing_abuse.py::test_a_stolen_certificate_taking_the_posture_list_is_noticed_without_the_list
+
+diff --git a/packages/aivs-server/src/aivs_server/services/detections.py b/packages/aivs-server/src/aivs_server/services/detections.py
+--- a/packages/aivs-server/src/aivs_server/services/detections.py
++++ b/packages/aivs-server/src/aivs_server/services/detections.py
+@@ -203,7 +203,7 @@ async def _posture_export_burst(
+     """
+     bursts = await _audit_bursts(
+         session,
+-        action=AuditAction.POSTURE_EXPORTED,
++        action=AuditAction.POSTURE_RECORDED,
+         group_by=AuditLog.org_id,
+         since=now - window,
+         threshold=threshold,

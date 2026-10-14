@@ -1,0 +1,16 @@
+Mutation M905: the OpenVEX export carries the member's evidence note
+Re-applies: an export that serialises the whole row
+
+Expect red: packages/aivs-server/tests/unit/test_vex.py::test_the_export_leaves_out_what_vex_has_no_field_for
+
+diff --git a/packages/aivs-server/src/aivs_server/services/vex_export.py b/packages/aivs-server/src/aivs_server/services/vex_export.py
+--- a/packages/aivs-server/src/aivs_server/services/vex_export.py
++++ b/packages/aivs-server/src/aivs_server/services/vex_export.py
+@@ -66,6 +66,7 @@ def _statement(row: OrgPosture, cve_ids: Mapping[str, str], slug: str) -> dict[s
+         "justification": row.justification.value if row.justification else None,
+         "impact_statement": row.impact_statement,
+         "action_statement": row.action_statement,
++        "evidence_note": row.evidence_note,
+     }
+     statement.update({key: value for key, value in optional.items() if value})
+     return statement

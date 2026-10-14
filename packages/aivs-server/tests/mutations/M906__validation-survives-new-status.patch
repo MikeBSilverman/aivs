@@ -1,0 +1,17 @@
+Mutation M906: a validation of one status is kept when the status changes
+Re-applies: validated_at written only when validated
+
+Expect red: packages/aivs-server/tests/unit/test_vex.py::test_a_new_status_voids_the_validation_of_the_old_one
+
+diff --git a/packages/aivs-server/src/aivs_server/services/posture.py b/packages/aivs-server/src/aivs_server/services/posture.py
+--- a/packages/aivs-server/src/aivs_server/services/posture.py
++++ b/packages/aivs-server/src/aivs_server/services/posture.py
+@@ -151,8 +151,6 @@ def _apply(row: OrgPosture, statement: VexStatement, *, now: dt.datetime) -> Non
+     """
+     if statement.validated:
+         row.validated_at = now
+-    elif row.status is not statement.status:
+-        row.validated_at = None
+     row.status = statement.status
+     row.justification = statement.justification
+     row.impact_statement = statement.impact_statement

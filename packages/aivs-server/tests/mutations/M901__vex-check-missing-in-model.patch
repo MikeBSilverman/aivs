@@ -1,0 +1,17 @@
+Mutation M901: the schema holds no check that an affected posture says what is done
+Re-applies: org_postures before Phase H
+
+Expect red: packages/aivs-server/tests/unit/test_vex.py::test_the_database_refuses_a_row_vex_would_reject[affected-without-action]
+
+diff --git a/packages/aivs-server/src/aivs_server/db/models.py b/packages/aivs-server/src/aivs_server/db/models.py
+--- a/packages/aivs-server/src/aivs_server/db/models.py
++++ b/packages/aivs-server/src/aivs_server/db/models.py
+@@ -1062,7 +1062,7 @@ class OrgPosture(Base):
+             name="not_affected_says_why",
+         ),
+         CheckConstraint(
+-            "status <> 'affected' OR action_statement IS NOT NULL",
++            "TRUE",
+             name="affected_says_what_is_done",
+         ),
+     )

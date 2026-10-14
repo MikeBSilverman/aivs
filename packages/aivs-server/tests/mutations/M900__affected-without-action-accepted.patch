@@ -1,0 +1,17 @@
+Mutation M900: the API accepts an affected posture with no action statement
+Re-applies: posture before Phase H: VEX's rules unchecked in the API
+
+Expect red: packages/aivs-server/tests/unit/test_vex.py::test_a_statement_vex_would_reject_is_refused_by_name[affected-without-action]
+
+diff --git a/packages/aivs-server/src/aivs_server/services/posture.py b/packages/aivs-server/src/aivs_server/services/posture.py
+--- a/packages/aivs-server/src/aivs_server/services/posture.py
++++ b/packages/aivs-server/src/aivs_server/services/posture.py
+@@ -101,7 +101,7 @@ def vex_problem(statement: VexStatement) -> str | None:
+         statement.justification or statement.impact_statement
+     ):
+         return "not_affected needs a justification or an impact statement saying why (VEX)"
+-    if statement.status is PostureStatus.AFFECTED and not statement.action_statement:
++    if False:
+         return "affected needs an action statement saying what is being done (VEX)"
+     return None
+ 

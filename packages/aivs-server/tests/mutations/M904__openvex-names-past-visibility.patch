@@ -1,0 +1,16 @@
+Mutation M904: the export names a vulnerability by a CVE the member can no longer see
+Re-applies: the name lookup without the caller's visibility
+
+Expect red: packages/aivs-server/tests/unit/test_vex.py::test_a_vulnerability_the_member_can_no_longer_see_is_named_by_its_id_only
+
+diff --git a/packages/aivs-server/src/aivs_server/services/vex_export.py b/packages/aivs-server/src/aivs_server/services/vex_export.py
+--- a/packages/aivs-server/src/aivs_server/services/vex_export.py
++++ b/packages/aivs-server/src/aivs_server/services/vex_export.py
+@@ -85,7 +85,6 @@ async def _visible_cve_ids(
+         .where(
+             StixObject.stix_id.in_(wanted),
+             StixObject.cve_id.is_not(None),
+-            distribution_visibility_clause(ctx, now),
+         )
+         .order_by(StixObject.stix_id, StixObject.modified.desc())
+         .distinct(StixObject.stix_id)

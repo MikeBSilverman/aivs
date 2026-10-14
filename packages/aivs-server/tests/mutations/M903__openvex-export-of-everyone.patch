@@ -1,0 +1,17 @@
+Mutation M903: the OpenVEX export carries every organisation's postures
+Re-applies: an export that reads the table, not the caller's rows
+
+Expect red: packages/aivs-server/tests/unit/test_vex.py::test_the_export_is_the_callers_own_and_nobody_elses
+
+diff --git a/packages/aivs-server/src/aivs_server/services/vex_export.py b/packages/aivs-server/src/aivs_server/services/vex_export.py
+--- a/packages/aivs-server/src/aivs_server/services/vex_export.py
++++ b/packages/aivs-server/src/aivs_server/services/vex_export.py
+@@ -97,7 +97,7 @@ async def openvex_document(
+     session: AsyncSession, ctx: AuthContext, *, now: dt.datetime
+ ) -> dict[str, Any]:
+     """The caller's organisation's postures, as one OpenVEX 0.2.0 document."""
+-    rows = await own_postures(session, ctx)
++    rows = list((await session.execute(select(OrgPosture))).scalars().all())
+     organisation = await session.get(Organization, ctx.org_id)
+     author = organisation.name if organisation else ctx.org_slug
+     cve_ids = await _visible_cve_ids(session, ctx, (row.vulnerability_stix_id for row in rows), now)

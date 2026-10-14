@@ -156,6 +156,17 @@ def _refuse_unsafe_additions(
         raise CircleMembershipError(msg)
 
 
+async def _lock_circle(session: AsyncSession, circle_id: uuid.UUID) -> None:
+    """Serialise every membership change to one circle.
+
+    Add, remove and reconcile each read the open intervals and then write. Run
+    side by side they interleaved: an add reported "already belonged" for a
+    member just removed, a joined_at repair landed on an interval just closed,
+    and two reconciles inserted the same rule row, the second failing as a 500.
+    """
+    await session.execute(select(Circle.id).where(Circle.id == circle_id).with_for_update())
+
+
 async def add_circle_members(
     session: AsyncSession,
     ctx: AuthContext,
@@ -187,6 +198,7 @@ async def add_circle_members(
     then and cannot be closed before it starts.
     """
     _refuse_unsafe_additions(organisations, joined_at, now)
+    await _lock_circle(session, circle.id)
     existing = await _open_memberships(session, circle.id)
 
     added: list[uuid.UUID] = []
@@ -237,6 +249,7 @@ async def remove_circle_member(
     gap stays unreadable while the earlier interval's content does not vanish.
     Recorded as an operator's act, which the rule will not undo.
     """
+    await _lock_circle(session, circle_id)
     membership = (
         await session.execute(
             select(CircleMembership)
@@ -363,6 +376,7 @@ async def reconcile_circle(
 
     Does not commit. The caller owns the transaction.
     """
+    await _lock_circle(session, circle.id)
     if not circle.auto_member_org_types:
         return ReconcileResult()
     now = now or dt.datetime.now(dt.UTC)

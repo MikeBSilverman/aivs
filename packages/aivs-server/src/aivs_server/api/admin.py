@@ -258,7 +258,9 @@ async def revoke_certificate(
     the MVP needs no OCSP responder: the check is one indexed lookup on the
     authentication path.
     """
-    row = await session.get(ClientCertificate, certificate_id)
+    # Locked: two concurrent revocations otherwise both read active and both
+    # write a revocation audit row.
+    row = await session.get(ClientCertificate, certificate_id, with_for_update=True)
     # Absent and forbidden collapse to the same answer, as everywhere else that
     # is addressable by id. Answering 404 for an unknown certificate and 403 for
     # another organisation's turned this endpoint into an existence oracle over

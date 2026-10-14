@@ -223,12 +223,15 @@ matter operationally:
 - **The application publishes no host port.** The compose file declares no port
   mapping for the app service. If you can reach the app directly, the deployment
   is wrong.
-- **The application refuses to start in production with a dev bypass enabled.**
+- **The application refuses to start outside `dev` with a dev bypass enabled.**
+  Staging and every other environment are held to the same posture as
+  production; only the literal `dev` is exempt.
   `Settings.validate_production_posture()` rejects
   `dev_trust_unauthenticated_proxy`, `dev_expose_error_detail`,
   `dev_allow_private_webhook_targets`, an empty `trusted_proxy_cidrs`, a
-  non-HTTPS `public_base_url`, and `log_level=DEBUG`. `AIVS_ENVIRONMENT` defaults
-  to `production`, so forgetting it fails safe.
+  non-HTTPS `public_base_url`, and `log_level=DEBUG`, among others (the full
+  list is in `threat-model.md`). `AIVS_ENVIRONMENT` defaults to `production`, so
+  forgetting it fails safe.
 
 ---
 

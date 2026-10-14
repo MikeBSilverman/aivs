@@ -458,11 +458,15 @@ is frozen, and is constructed exactly once per process.
   security config are silent failures — the process refuses to start instead.
 - Secrets are `SecretStr`, so an accidental `repr`, log line, or error page
   prints `**********`. There is deliberately no `.env` support in production.
-- `validate_production_posture()` refuses to construct a production `Settings`
-  with `dev_trust_unauthenticated_proxy`, `dev_expose_error_detail`,
-  `dev_allow_private_webhook_targets`, an empty `trusted_proxy_cidrs`, a
-  non-HTTPS `public_base_url`, or `log_level = DEBUG` (which may record request
-  bodies).
+- `validate_production_posture()` refuses to construct `Settings` for any
+  environment but `dev` (staging included: it is exempted by allow-list, never
+  enforced for `production` alone) with `dev_trust_unauthenticated_proxy`,
+  `dev_expose_error_detail`, `dev_allow_private_webhook_targets`, an empty or
+  `/0` `trusted_proxy_cidrs`, renamed identity headers, a non-HTTPS
+  `public_base_url`, `log_level = DEBUG` (which may record request bodies),
+  inverted page sizes, a key-encryption key from the environment or not in a
+  `0600` file, no pinned issuing CA, or one value for both the session secret
+  and the proxy secret.
 - `python -m aivs_server.config` validates configuration and prints a redacted
   summary — usable as a container healthcheck or a pre-cutover check.
 
@@ -477,8 +481,8 @@ is frozen, and is constructed exactly once per process.
 
 Webhook URLs are constrained to `https://` by a database check constraint, and
 delivery is SSRF-guarded: private and loopback targets are refused unless
-`dev_allow_private_webhook_targets` is set, which production refuses to start
-with.
+`dev_allow_private_webhook_targets` is set, which the application refuses to
+start with in any environment but `dev`.
 
 ---
 

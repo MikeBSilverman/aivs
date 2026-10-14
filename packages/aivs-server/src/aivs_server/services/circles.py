@@ -327,6 +327,10 @@ async def add_circle_members(
     added: list[uuid.UUID] = []
     roles: dict[str, str] = {}
     repaired: list[uuid.UUID] = []
+    # What each repair replaced: the audit row is the only record of the start
+    # an organisation had, so recording only the new one would lose the access
+    # it was granted or denied before (review L2-P5).
+    replaced: dict[str, str] = {}
     for org in organisations:
         current = existing.get(org.id)
         if current is None:
@@ -339,6 +343,7 @@ async def add_circle_members(
             roles[str(org.id)] = joins_as.value
             added.append(org.id)
         elif joined_at is not None and current.joined_at != joined_at:
+            replaced[str(org.id)] = current.joined_at.astimezone(dt.UTC).isoformat()
             current.joined_at = joined_at
             repaired.append(org.id)
 
@@ -352,6 +357,7 @@ async def add_circle_members(
             details={
                 "org_ids": [str(org_id) for org_id in added],
                 "joined_at_repaired": [str(org_id) for org_id in repaired],
+                "joined_at_replaced": replaced,
                 "roles": roles,
                 "backdated_to": joined_at.isoformat() if joined_at else None,
             },

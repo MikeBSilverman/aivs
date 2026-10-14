@@ -1,0 +1,17 @@
+Mutation M894: a joined_at repair's audit row omits the start it replaced
+Re-applies: add_circle_members before review L2-P5
+
+Expect red: packages/aivs-server/tests/unit/test_membership_intervals.py::test_a_repairs_audit_row_records_the_start_it_replaced
+
+diff --git a/packages/aivs-server/src/aivs_server/services/circles.py b/packages/aivs-server/src/aivs_server/services/circles.py
+index c981685..f00022a 100644
+--- a/packages/aivs-server/src/aivs_server/services/circles.py
++++ b/packages/aivs-server/src/aivs_server/services/circles.py
+@@ -343,7 +343,6 @@ async def add_circle_members(
+             roles[str(org.id)] = joins_as.value
+             added.append(org.id)
+         elif joined_at is not None and current.joined_at != joined_at:
+-            replaced[str(org.id)] = current.joined_at.astimezone(dt.UTC).isoformat()
+             current.joined_at = joined_at
+             repaired.append(org.id)
+ 

@@ -16,7 +16,8 @@ import pytest
 from sqlalchemy import select
 
 from aivs_schemas.enums import OrgType
-from aivs_server.db.models import CircleMembership
+from aivs_server.audit.log import AuditAction
+from aivs_server.db.models import AuditLog, CircleMembership
 from tests.conftest import proxy_headers
 
 pytestmark = pytest.mark.db
@@ -128,6 +129,34 @@ async def test_joined_at_repairs_an_existing_member(
     assert response.status_code in (200, 201, 204)
     await session.refresh(membership)
     assert membership.joined_at == restored_to
+
+
+async def test_a_repairs_audit_row_records_the_start_it_replaced(
+    client, isac_headers, make_org, make_circle, join_circle, session
+):
+    """The audit row is the only record of the start a membership had before a
+    repair moved it; recording only the new value lost what access the firm had."""
+    circle = await make_circle("section9")
+    member = await make_org("restored")
+    started = dt.datetime(2026, 9, 1, tzinfo=dt.UTC)
+    await join_circle(member, circle, joined_at=started)
+    restored_to = dt.datetime(2024, 1, 1, tzinfo=dt.UTC)
+
+    response = await client.post(
+        f"{API}/circles/{circle.id}/members",
+        json={"org_ids": [str(member.id)], "joined_at": restored_to.isoformat()},
+        headers=isac_headers,
+    )
+
+    assert response.status_code in (200, 201, 204)
+    details = await session.scalar(
+        select(AuditLog.details)
+        .where(AuditLog.action == AuditAction.CIRCLE_MEMBER_ADDED)
+        .order_by(AuditLog.id.desc())
+        .limit(1)
+    )
+    assert details["joined_at_replaced"] == {str(member.id): started.isoformat()}
+    assert details["backdated_to"] == restored_to.isoformat()
 
 
 async def _rejoined(session, circle, member) -> tuple[dt.datetime, dt.datetime]:

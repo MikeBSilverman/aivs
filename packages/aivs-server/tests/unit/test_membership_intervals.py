@@ -10,10 +10,12 @@ broken.
 from __future__ import annotations
 
 import datetime as dt
+import uuid
 
 import pytest
 from sqlalchemy import select
 
+from aivs_schemas.enums import OrgType
 from aivs_server.db.models import CircleMembership
 from tests.conftest import proxy_headers
 
@@ -246,3 +248,95 @@ async def test_a_departed_member_rejoins_from_now_not_from_a_backdated_start(
 
     assert backdated.status_code == 409, backdated.text
     assert from_now.status_code in (200, 201, 204)
+
+
+@pytest.mark.requirement("SF-43")
+async def test_an_embargo_is_read_by_whoever_belongs_when_it_is_released(
+    client, isac_headers, make_org, make_cert, make_circle, make_collection, join_circle, publish
+):
+    """Membership is tested at release, not at distribution (R-P6).
+
+    Embargoed content is addressed to the circle as it stands when it becomes
+    readable. One organisation outside the circle at distribution and inside at
+    release reads it, as any member that joined during the embargo does; one
+    inside at distribution that left before release does not, even once it is
+    back, because it was out when the content went live.
+    """
+    circle = await make_circle("coordination")
+    collection = await make_collection(circle)
+    submitter = await make_org("submitter-bank", org_type=OrgType.GSIB)
+    submitter_pem, _ = await make_cert(submitter)
+    await join_circle(submitter, circle)
+    joiner = await make_org("joins-during-embargo", org_type=OrgType.GSIB)
+    joiner_pem, _ = await make_cert(joiner)
+    leaver = await make_org("leaves-during-embargo", org_type=OrgType.GSIB)
+    leaver_pem, _ = await make_cert(leaver)
+    await join_circle(leaver, circle)
+    await publish(submitter, circle, name="before", date_added=dt.datetime.now(dt.UTC) - DAY)
+    submission_id = await _distribute_held(client, circle, submitter_pem, isac_headers)
+
+    left = await client.delete(
+        f"{API}/circles/{circle.id}/members/{leaver.id}", headers=isac_headers
+    )
+    joined = await _add(client, circle, joiner, isac_headers)
+    released = await client.post(
+        f"{API}/submissions/{submission_id}/embargo/release", json={}, headers=isac_headers
+    )
+    back = await _add(client, circle, leaver, isac_headers)
+
+    assert (left.status_code, joined.status_code, back.status_code) == (204, 204, 204)
+    assert released.status_code == 200, released.text
+    assert await _objects(client, collection, joiner_pem) == {"Held finding"}
+    assert await _objects(client, collection, leaver_pem) == {"before"}
+
+
+async def _add(client, circle, org, isac_headers):
+    return await client.post(
+        f"{API}/circles/{circle.id}/members",
+        json={"org_ids": [str(org.id)]},
+        headers=isac_headers,
+    )
+
+
+async def _distribute_held(client, circle, submitter_pem, isac_headers) -> str:
+    """File, validate and distribute one finding, held three days out."""
+    stamp = "2026-08-01T00:00:00.000Z"
+    created = await client.post(
+        f"{API}/submissions",
+        json={
+            "title": "Held until Friday",
+            "discovery_scope": "ai_system",
+            "tlp": "amber",
+            "bundle": {
+                "type": "bundle",
+                "id": f"bundle--{uuid.uuid4()}",
+                "objects": [
+                    {
+                        "type": "vulnerability",
+                        "spec_version": "2.1",
+                        "id": f"vulnerability--{uuid.uuid4()}",
+                        "created": stamp,
+                        "modified": stamp,
+                        "name": "Held finding",
+                    }
+                ],
+            },
+        },
+        headers=proxy_headers(submitter_pem),
+    )
+    assert created.status_code == 201, created.text
+    submission_id = created.json()["id"]
+    await client.post(
+        f"{API}/submissions/{submission_id}/submit", json={}, headers=proxy_headers(submitter_pem)
+    )
+    await client.post(f"{API}/submissions/{submission_id}/validate", json={}, headers=isac_headers)
+    distributed = await client.post(
+        f"{API}/submissions/{submission_id}/distribute",
+        json={
+            "circle_ids": [str(circle.id)],
+            "release_at": (dt.datetime.now(dt.UTC) + 3 * DAY).isoformat(),
+        },
+        headers=isac_headers,
+    )
+    assert distributed.status_code == 200, distributed.text
+    return submission_id

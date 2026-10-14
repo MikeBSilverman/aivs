@@ -314,8 +314,19 @@ class CircleMembership(TimestampMixin, Base):
     role: Mapped[CircleRole] = mapped_column(
         pg_enum(CircleRole, "circle_role"), nullable=False, default=CircleRole.MEMBER
     )
-    #: When this organisation's access to the circle begins. Content distributed
-    #: before it is not readable by them -- see ``visible_content_clause``.
+    #: When this organisation's access to the circle begins. Content that
+    #: *became readable* before it -- whose ``date_added`` is earlier -- is not
+    #: readable by them; see ``visible_content_clause``.
+    #:
+    #: That is the release, not the distribution: an embargoed row's
+    #: ``date_added`` is its release instant. Deliberately. Content is
+    #: addressed to the circle as it stands when it goes live, the moment it
+    #: becomes anyone's to read. Testing at distribution instead would deny it
+    #: to a vendor added to a coordination circle during the embargo -- the
+    #: party the embargo was waiting for -- and, once it rejoined, hand a firm
+    #: removed during the embargo content that first became readable while it
+    #: was out. An organisation outside at distribution and back before release
+    #: reads it, like any other member who joined during the embargo.
     #:
     #: Deliberately a column of its own rather than a reading of ``created_at``.
     #: This one is load-bearing for authorization, and it is settable: an

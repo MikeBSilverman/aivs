@@ -75,24 +75,22 @@ class DistributionError(ValueError):
 class DistributionResult:
     """What a distribution actually did."""
 
-    __slots__ = ("circles", "date_added", "rows_skipped", "rows_written")
+    __slots__ = ("circles", "date_added", "embargoed", "rows_skipped", "rows_written")
 
     def __init__(
         self,
         *,
         circles: list[uuid.UUID],
         date_added: dt.datetime,
+        embargoed: bool,
         rows_written: int,
         rows_skipped: int,
     ) -> None:
         self.circles = circles
         self.date_added = date_added
+        self.embargoed = embargoed
         self.rows_written = rows_written
         self.rows_skipped = rows_skipped
-
-    @property
-    def embargoed(self) -> bool:
-        return self.date_added > dt.datetime.now(dt.UTC)
 
 
 async def _isac_identity(session: AsyncSession) -> str | None:
@@ -321,6 +319,11 @@ async def distribute_submission(
     earliest = earliest_publication_instant(now)
     requested = truncate_to_taxii_precision(release_at) if release_at else earliest
     date_added = max(requested, earliest)
+    # Held past the earliest instant, not merely past `now`: every stamp is at
+    # least a millisecond ahead of `now`, and testing against `now` recorded
+    # every immediate distribution as an embargo, which the sweeper then
+    # "released" and announced to every member a second time.
+    embargoed = date_added > earliest
 
     circles = await _resolve_target_circles(session, submission, circle_ids)
     found = {circle.id for circle in circles}
@@ -379,7 +382,7 @@ async def distribute_submission(
             )
             rows_written += 1
 
-    if date_added > now:
+    if embargoed:
         # A future visibility timestamp is an embargo; record it so the operator
         # console and the audit trail can say so. The record is bookkeeping --
         # the timestamp above is what actually holds the content back.
@@ -409,7 +412,7 @@ async def distribute_submission(
             "rows_written": rows_written,
             "rows_skipped": rows_skipped,
             "date_added": date_added.isoformat(),
-            "embargoed": date_added > now,
+            "embargoed": embargoed,
             "anonymous": submission.distribute_anonymously,
         },
     )
@@ -417,6 +420,7 @@ async def distribute_submission(
     return DistributionResult(
         circles=[circle.id for circle in circles],
         date_added=date_added,
+        embargoed=embargoed,
         rows_written=rows_written,
         rows_skipped=rows_skipped,
     )

@@ -21,7 +21,8 @@ from sqlalchemy import select
 
 from aivs_schemas.enums import EmbargoStatus, OrgStatus, OrgType, SubmissionState
 from aivs_server.auth.context import AuthContext, AuthMethod
-from aivs_server.db.models import Distribution, Embargo
+from aivs_server.db.models import Distribution, Embargo, Submission
+from aivs_server.services.distribution import distribute_submission
 from aivs_server.services.embargo import (
     EmbargoError,
     extend_embargo,
@@ -354,3 +355,48 @@ def test_the_submission_state_machine_is_unaffected_by_embargo():
     would make "distributed" mean two different things.
     """
     assert SubmissionState.DISTRIBUTED.value == "distributed"
+
+
+# ---------------------------------------------------------------------------
+# What counts as an embargo
+# ---------------------------------------------------------------------------
+async def test_an_immediate_distribution_is_not_an_embargo(
+    session, isac_ctx, make_validated, make_circle
+):
+    """Stamped a millisecond ahead (earliest_publication_instant), which is not a hold.
+
+    Every immediate distribution was recorded as a pending embargo due one
+    millisecond later. The sweeper then "released" it, wrote an
+    ``embargo.released`` row for something never held, and queued every
+    member's visibility notification a second time; the detail view showed an
+    embargo on everything.
+    """
+    circle = await make_circle("sector")
+    submission = await session.get(Submission, await make_validated("immediate"))
+
+    result = await distribute_submission(session, isac_ctx, submission, circle_ids=[circle.id])
+    await session.commit()
+
+    assert result.embargoed is False
+    assert (await session.execute(select(Embargo))).scalar_one_or_none() is None
+    assert await sweep_due_embargoes(session) == 0
+
+
+async def test_a_distribution_held_past_the_next_millisecond_is_an_embargo(
+    session, isac_ctx, make_validated, make_circle
+):
+    circle = await make_circle("sector")
+    submission = await session.get(Submission, await make_validated("held"))
+
+    result = await distribute_submission(
+        session,
+        isac_ctx,
+        submission,
+        circle_ids=[circle.id],
+        release_at=dt.datetime.now(dt.UTC) + dt.timedelta(minutes=1),
+    )
+    await session.commit()
+
+    assert result.embargoed is True
+    embargo = (await session.execute(select(Embargo))).scalar_one()
+    assert embargo.release_at == result.date_added

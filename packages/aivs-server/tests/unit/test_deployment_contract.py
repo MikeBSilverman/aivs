@@ -360,3 +360,32 @@ def test_the_runbook_runs_nothing_against_the_stack_from_the_host():
     ]
 
     assert host_commands == []
+
+
+def _curl_commands(text: str) -> list[str]:
+    """Each ``curl`` invocation in a document, with its continuation lines joined."""
+    joined = re.sub(r"\\\s*\n\s*", " ", text)
+    return [line.strip() for line in joined.splitlines() if re.search(r"(^|\s)curl\s", line)]
+
+
+@pytest.mark.parametrize("doc", _COMMAND_DOCS)
+def test_every_documented_curl_that_sends_a_body_says_it_is_json(doc: str):
+    """FastAPI reads a body as JSON only when told: curl -d sends form encoding.
+
+    The incident pause in section 7.5 -- the first step of instance-compromise
+    response -- answered 422 as written.
+    """
+    text = (ROOT / doc).read_text(encoding="utf-8")
+    sending = [cmd for cmd in _curl_commands(text) if re.search(r"\s(-d|--data\S*)\s", cmd)]
+
+    missing = [cmd for cmd in sending if "application/json" not in cmd]
+    assert missing == []
+
+
+def test_the_runbook_never_has_an_operator_set_a_status_column_by_hand():
+    """A hand edit skips the one writer that knows every state, the sessions it
+    should end and the audit row it should write -- and the app role cannot
+    make it."""
+    runbook = (ROOT / "docs/operator-runbook.md").read_text(encoding="utf-8")
+
+    assert not re.search(r"`(client_certificates|organizations)\.status\s*=", runbook)

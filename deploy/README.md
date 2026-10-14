@@ -104,6 +104,7 @@ $EDITOR deploy/.env
 #                                 as a deliberate choice
 #    - AIVS_NGINX_ALLOWLIST       ABSOLUTE path to your allowlist (step 6)
 #    - AIVS_CA_DIR                ABSOLUTE path to deploy/ca/out
+#    - AIVS_SECRET_ENCRYPTION_KEY_PATH  ABSOLUTE path to the key file (step 5)
 #    - AIVS_PUBLIC_BASE_URL       exactly what members will dial, https://
 #    - AIVS_BIND_PORT             only if 443 is taken; then the base URL carries it
 
@@ -124,6 +125,15 @@ deploy/ca/server-cert.sh --hostname aivs.example-isac.org
 #    so gid 101 on the host is whatever that host already assigns it.
 sudo chown 101:101 deploy/ca/out/nginx/server.key
 sudo chmod 0400 deploy/ca/out/nginx/server.key
+#    The key-encryption key: a file, never the environment (the application
+#    refuses that form outside dev), 0600 and owned by the app's uid 10001.
+#    Back it up apart from the database: without it no sealed secret opens.
+sudo install -d -m 0700 /srv/aivs/secrets
+openssl rand -base64 32 | sudo tee /srv/aivs/secrets/secret-encryption-key >/dev/null
+sudo chmod 0600 /srv/aivs/secrets/secret-encryption-key
+sudo chown 10001:10001 /srv/aivs/secrets/secret-encryption-key
+#    then in deploy/.env:
+#      AIVS_SECRET_ENCRYPTION_KEY_PATH=/srv/aivs/secrets/secret-encryption-key
 
 # 6. Network allowlist. There is no default: compose refuses to start until
 #    AIVS_NGINX_ALLOWLIST names a file. The example's ranges (every RFC 1918
@@ -285,10 +295,21 @@ Member certificates are valid one year, the proxy certificate 397 days
 the public limit keeps the rotation habit alive). There is no automatic
 renewal. Put both in the operational calendar.
 
-Renewal is a fresh `issue-client.sh` run into a new directory, registering the
-new fingerprint in AIVS, and revoking the old certificate once the member has
-cut over. AIVS can hold two fingerprints for one organisation during the
-overlap.
+`issue-client.sh` refuses to overwrite a slug's existing certificate, which is
+still live until it is revoked. So renewal moves the old one aside first:
+
+```bash
+mv deploy/ca/out/clients/meridian-global deploy/ca/out/clients/meridian-global.2026
+# Fallback mode only (the CA generated the member's key): keep the old key too.
+mv deploy/ca/private/clients/meridian-global deploy/ca/private/clients/meridian-global.2026
+deploy/ca/issue-client.sh --org-slug meridian-global ...   # as at enrolment
+```
+
+Register the new certificate in AIVS (`POST /api/v1/orgs/{id}/certificates`);
+AIVS holds both fingerprints for one organisation during the overlap. Once the
+member has cut over, revoke the old one in AIVS (runbook §7.3, step 1) and in
+the CA, by path, since `--org-slug` now names the new one:
+`deploy/ca/revoke.sh --cert deploy/ca/out/clients/meridian-global.2026/meridian-global.crt --reason superseded`.
 
 ### Revocation
 
@@ -479,8 +500,10 @@ all.
 
 ## 7. What a reviewer should check first
 
-1. `docker compose --env-file deploy/.env config | grep -A2 'app:' | grep ports`
-   returns nothing. The application must have no published port.
+1. `docker compose --env-file deploy/.env config --format json | jq '.services.app.ports'`
+   prints `null`. The application must have no published port. (A `grep`
+   over the YAML cannot show this: the rendered keys are sorted, so `ports`
+   is never near `app:`.)
 2. `deploy/ca/private/root/` does not exist on the host — the root key is
    offline.
 3. `ls -l deploy/.env` shows `0600`, and `git status` shows it untracked.

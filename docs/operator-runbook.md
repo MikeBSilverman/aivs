@@ -49,17 +49,18 @@ docker compose --env-file deploy/.env exec -T db sh -c \
 SELECT tgname FROM pg_trigger
  WHERE tgrelid IN ('audit_log'::regclass, 'submission_transitions'::regclass)
    AND NOT tgisinternal ORDER BY 1;
-SELECT rolsuper FROM pg_roles WHERE rolname = 'aivs_app';
 SELECT DISTINCT tableowner FROM pg_tables
  WHERE tablename IN ('audit_log', 'submission_transitions');
-SELECT DISTINCT usename FROM pg_stat_activity
- WHERE datname = current_database() AND backend_type = 'client backend'
-   AND application_name <> 'psql';
+SELECT DISTINCT a.usename || ' superuser=' || r.rolsuper
+  FROM pg_stat_activity a JOIN pg_roles r ON r.rolname = a.usename
+ WHERE a.datname = current_database() AND a.backend_type = 'client backend'
+   AND a.application_name <> 'psql';
 SQL
 # → the six *_deny_update / *_deny_delete / *_deny_truncate triggers
-# → f            aivs_app is not a superuser
-# → aivs         the owner owns the tables, never aivs_app
-# → aivs_app     the only role the running application is connected as
+# → aivs                      the owner owns the tables, never the app's role
+# → aivs_app superuser=false  the only role the running application is
+#                             connected as (your AIVS_DB_APP_USER), and it
+#                             is not a superuser
 ```
 
 As the application role, the same check the application would meet:
@@ -603,18 +604,23 @@ the record of what the member was sent, and its name stays on them.
 
 ### 7.3 Suspected certificate compromise
 
-1. Revoke in the **database**: `client_certificates.status = revoked`, with
-   `revoked_at` and `revoked_reason` set (a check constraint requires the
-   timestamp). This is what stops access, and it is effective on the member's
-   **next request** — no CRL propagation delay. Then record it in the CA:
-   `deploy/ca/revoke.sh --org-slug meridian-global --reason keyCompromise`.
-   The CRL matters for relying parties outside AIVS; the database flip is what
-   matters here. Do the database flip first.
+1. Revoke it through the application, as membership staff:
+   `POST /api/v1/certificates/{certificate_id}/revoke` (or the portal's
+   organisation page). It takes effect on the holder's **next request** -- no
+   CRL propagation delay -- and it also ends every portal session bound to that
+   certificate and writes the `cert.revoked` audit row, which a hand edit of
+   `client_certificates` does neither of (and the app's database role could
+   not make it anyway). Then record it in the CA:
+   `deploy/ca/revoke.sh --cert <path to that certificate> --reason keyCompromise`.
+   The CRL matters for relying parties outside AIVS; the revocation in the
+   application is what matters here. Do it first.
 2. Query the audit log for everything that fingerprint did. `actor_id` on an
    mTLS-authenticated row **is** the certificate fingerprint.
 3. Determine what was retrieved: `acknowledgments` filtered by that org.
-4. Consider `organizations.status = suspended` while investigating — it takes
-   effect on their next request and stops everything, not just that certificate.
+4. If more than one certificate may be in the wrong hands, or you cannot tell,
+   quarantine the organisation (§7.2): it revokes every certificate and session
+   at once, and reconnection needs fresh credentials. Do not set the status in
+   the database: `change_org_status` is the one writer that knows every state.
 5. Issue a replacement once the member has generated a fresh key.
 
 ### 7.4 Rotating the secret-encryption key, or changing its algorithm
@@ -695,6 +701,7 @@ GSIBs.
 
    ```bash
    curl --cert ... --key ... -H "Authorization: Bearer $SESSION" \
+        -H 'Content-Type: application/json' \
         -X POST https://<instance>/api/v1/instance/distribution/pause \
         -d '{"reason": "suspected compromise, INC-<n>"}'
    ```

@@ -182,9 +182,12 @@ RUN rm -rf /usr/local/lib/python3.12/site-packages/pip \
 # the braces.
 COPY --from=build --chown=root:root /opt/aivs/venv /opt/aivs/venv
 
-# Alembic migrations. Shipped in the image so that `docker compose run --rm app
-# alembic upgrade head` uses exactly the revisions that match this build,
-# rather than whatever is checked out on the host. alembic.ini's
+# Alembic migrations. Shipped in the image so that the `migrate` service
+# (`docker compose --env-file deploy/.env run --rm migrate`) uses exactly the
+# revisions that match this build, rather than whatever is checked out on the
+# host. Never through `run app`: that is the application's role, which owns
+# nothing and cannot migrate, and it would skip the grants the migrate service
+# applies afterwards. alembic.ini's
 # `script_location = %(here)s/alembic` resolves to /app/alembic here.
 WORKDIR /app
 COPY --chown=root:root packages/aivs-server/alembic.ini /app/alembic.ini
@@ -214,15 +217,12 @@ USER 10001:10001
 # header-derived identity safe.
 EXPOSE 8000
 
-# `python -m aivs_server.config` constructs the Settings object, which means it
-# exercises every validator including validate_production_posture, and exits
-# non-zero with a redacted message if anything is wrong. Using it as the
-# healthcheck means a container running with a dev bypass enabled in production,
-# or a malformed CIDR, is reported unhealthy instead of quietly serving.
-#
-# start-period covers first start; the check itself neither opens a socket nor
-# touches the database, so it stays honest about configuration and says nothing
-# about the database -- which is what the db service's own healthcheck is for.
+# `python -m aivs_server.healthcheck` validates the Settings -- every
+# validator, validate_production_posture included, so a dev bypass in
+# production or a malformed CIDR fails here -- and then asks this process's
+# /readyz on loopback, which answers 200 only when the database is reachable
+# as a role that is neither a superuser nor the tables' owner. start-period
+# covers first start.
 HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
     CMD ["python", "-m", "aivs_server.healthcheck"]
 

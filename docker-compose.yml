@@ -347,9 +347,10 @@ services:
   #
   #   docker compose --env-file deploy/.env run --rm migrate
   #
-  # The `migrate` profile keeps it out of `up`. It is the only container that
-  # holds the owner's password, and it exists for the seconds a migration
-  # takes. After migrating, it grants the application role (AIVS_APP_DB_ROLE)
+  # The `migrate` profile keeps it out of `up`. Of the application's
+  # containers it is the only one that holds the owner's password (the db
+  # service holds it too, as POSTGRES_PASSWORD, to create the role), and it
+  # exists for the seconds a migration takes. After migrating, it grants the application role (AIVS_APP_DB_ROLE)
   # what it needs and nothing more, and refuses a role that is a superuser,
   # owns the tables, or is a member of their owner (aivs_server.db.grants).
   # Run it after every upgrade of the image; it is idempotent.

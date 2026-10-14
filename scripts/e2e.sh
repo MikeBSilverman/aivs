@@ -150,7 +150,7 @@ EOF
 }
 
 hand_files_to_container_users() {
-    # deploy/README.md section 3 step 5 does this with sudo. The daemon is root
+    # deploy/README.md section 3 step 5 does both with sudo. The daemon is root
     # already, so a throwaway container does it without asking for a password.
     docker run --rm --user 0:0 --entrypoint sh -v "${WORK}:/w" "${PROXY_IMAGE}" -c '
         chown 101:101 /w/ca/out/nginx/server.key && chmod 0400 /w/ca/out/nginx/server.key &&

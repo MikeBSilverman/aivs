@@ -28,8 +28,9 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from aivs_schemas.enums import SubmissionState, is_transition_allowed
+from aivs_schemas.enums import ACCEPTED_DISCOVERY_SCOPES, SubmissionState, is_transition_allowed
 from aivs_schemas.extension.builders import AIVS_EXTENSION_ID, validate_bundle
+from aivs_schemas.models import DISCOVERY_SCOPE_REFUSAL
 from aivs_server.audit.log import AuditAction, record
 from aivs_server.auth.context import AuthContext
 from aivs_server.auth.policy import PolicyDeniedError, can_transition_submission, require
@@ -436,6 +437,18 @@ async def replace_submission_objects(
     return len(rows)
 
 
+def _require_accepted_scope(discovery_scope: Any) -> None:
+    """Refuse a scope that may not be filed, in the request models' own words.
+
+    The request models refuse first on every surface that has one; this is the
+    check every writer passes through, so a caller that skips the models -- a
+    script, a future inbox -- cannot store a reserved scope either.
+    """
+    if discovery_scope not in ACCEPTED_DISCOVERY_SCOPES:
+        msg = f"discovery_scope: {DISCOVERY_SCOPE_REFUSAL}"
+        raise SubmissionError(msg)
+
+
 async def create_submission(
     session: AsyncSession,
     ctx: AuthContext,
@@ -458,6 +471,7 @@ async def create_submission(
     request body: a member must not be able to file content in another firm's
     name.
     """
+    _require_accepted_scope(discovery_scope)
     submission = Submission(
         submitter_org_id=ctx.org_id,
         created_by_operator_id=ctx.operator_id,
@@ -520,6 +534,8 @@ async def update_submission(
     if submission.submitter_org_id != ctx.org_id:
         denial = "submission_not_owned"
         raise PolicyDeniedError(denial)
+    if "discovery_scope" in changes:
+        _require_accepted_scope(changes["discovery_scope"])
 
     bundle = changes.pop("bundle", None)
     for field, value in changes.items():

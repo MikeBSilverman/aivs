@@ -277,6 +277,7 @@ async def test_the_sweeper_leaves_pending_embargoes_alone(session, embargoed):
     assert row.status is EmbargoStatus.PENDING
 
 
+@pytest.mark.requirement("NFR-A3")
 async def test_content_becomes_visible_without_the_sweeper_running(client, session, embargoed):
     """The property the whole split exists for.
 

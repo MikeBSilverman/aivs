@@ -23,10 +23,12 @@ from pathlib import Path
 import pytest
 from alembic import command
 from alembic.config import Config
+from sqlalchemy import Enum as SAEnum
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import DBAPIError
 
+from aivs_server.db.models import Base
 from tests.conftest import TEST_DATABASE_URL, TEST_SECRET_KEY_FILE
 
 pytestmark = [pytest.mark.db, pytest.mark.slow]
@@ -84,6 +86,7 @@ def _scalars(url: str, sql: str, **params: str) -> set[str]:
         engine.dispose()
 
 
+@pytest.mark.requirement("SF-43")
 def test_membership_intervals_cannot_overlap(migrated_url: str):
     constraints = _scalars(
         migrated_url,
@@ -137,6 +140,7 @@ def seeded_url(migrated_url: str) -> str:
     "statement",
     ["UPDATE {table} SET id = id", "DELETE FROM {table}", "TRUNCATE {table} CASCADE"],
 )
+@pytest.mark.requirement("NFR-S6")
 def test_append_only_tables_refuse_to_change_and_still_accept_inserts(
     seeded_url: str, table: str, statement: str
 ):
@@ -166,3 +170,51 @@ def test_one_hosting_isac_and_rule_eligibility_exist_in_the_migrated_schema(migr
     )
     assert "uq_organizations_one_admin" in indexes
     assert any("rule_admits_eligible_types" in name for name in checks), checks
+
+
+def _declared_enum_labels() -> dict[str, set[str]]:
+    """Every native enum type the models declare, with the labels it stores."""
+    return {
+        column.type.name: set(column.type.enums)
+        for table in Base.metadata.tables.values()
+        for column in table.columns
+        if isinstance(column.type, SAEnum) and column.type.name
+    }
+
+
+def _migrated_enum_labels(url: str) -> dict[str, set[str]]:
+    engine = create_engine(url)
+    try:
+        with engine.connect() as connection:
+            rows = connection.execute(
+                text(
+                    "SELECT t.typname, e.enumlabel FROM pg_type t "
+                    "JOIN pg_enum e ON e.enumtypid = t.oid"
+                )
+            ).all()
+    finally:
+        engine.dispose()
+    labels: dict[str, set[str]] = {}
+    for type_name, label in rows:
+        labels.setdefault(type_name, set()).add(label)
+    return labels
+
+
+@pytest.mark.requirement("NFR-M2")
+def test_every_enum_type_holds_exactly_the_labels_its_python_enum_declares(migrated_url: str):
+    """``alembic check`` compares neither enum types nor their labels.
+
+    The suite builds its types from the Python enums with ``create_all``, so a
+    value added to a ``StrEnum`` without its ``ALTER TYPE ... ADD VALUE``
+    migration passes every test and fails in production on the first write --
+    and a migration adding a value the code no longer declares is invisible too.
+    """
+    migrated = _migrated_enum_labels(migrated_url)
+    declared = _declared_enum_labels()
+
+    mismatched = {
+        name: {"declared": sorted(labels), "migrated": sorted(migrated.get(name, set()))}
+        for name, labels in declared.items()
+        if migrated.get(name) != labels
+    }
+    assert not mismatched, mismatched

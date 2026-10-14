@@ -398,6 +398,7 @@ async def test_a_queued_notification_starts_undelivered(
     assert queued.next_attempt_at is None, "due immediately"
 
 
+@pytest.mark.requirement("SF-61")
 async def test_a_former_member_is_not_notified_and_a_current_one_is(
     client, isac, make_circle, make_collection, make_org, make_cert, subscriber, session, secret_box
 ):

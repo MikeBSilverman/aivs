@@ -83,6 +83,7 @@ async def test_a_member_org_admin_cannot_see_it(client, make_org, make_cert, mak
     assert (await client.get(STATUS, headers=proxy_headers(pem))).status_code == 403
 
 
+@pytest.mark.requirement("NFR-O6")
 async def test_every_component_readyz_reports_is_on_the_page(client, open_status):
     now = dt.datetime.now(dt.UTC)
     HEARTBEATS.register("embargo_sweeper", dt.timedelta(seconds=30), now=now)

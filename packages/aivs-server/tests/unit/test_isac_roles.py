@@ -76,6 +76,8 @@ async def isac_person(isac_org, make_cert, make_operator, human_headers):
 # ---------------------------------------------------------------------------
 # A certificate is not a person
 # ---------------------------------------------------------------------------
+@pytest.mark.requirement("SF-42")
+@pytest.mark.requirement("NFR-S9")
 async def test_the_admin_certificate_alone_cannot_validate(client, submitted, isac_person):
     person, pem = isac_person
     editor = await person(OperatorRole.ISAC_EDITOR)
@@ -90,6 +92,7 @@ async def test_the_admin_certificate_alone_cannot_validate(client, submitted, is
     assert accepted.status_code == 200
 
 
+@pytest.mark.requirement("SF-42")
 async def test_the_admin_certificate_alone_cannot_enrol(client, isac_person):
     person, pem = isac_person
     membership = await person(OperatorRole.ISAC_MEMBERSHIP)
@@ -105,6 +108,7 @@ async def test_the_admin_certificate_alone_cannot_enrol(client, isac_person):
 # ---------------------------------------------------------------------------
 # Each role reaches its own verbs and no others
 # ---------------------------------------------------------------------------
+@pytest.mark.requirement("SF-64")
 async def test_an_isac_analyst_sees_a_submission_but_cannot_validate_it(
     client, submitted, isac_person
 ):
@@ -120,6 +124,7 @@ async def test_an_isac_analyst_sees_a_submission_but_cannot_validate_it(
     assert validated.status_code == 403
 
 
+@pytest.mark.requirement("SF-42")
 async def test_membership_staff_enrol_but_never_see_what_members_filed(
     client, submitted, isac_person
 ):
@@ -137,6 +142,7 @@ async def test_membership_staff_enrol_but_never_see_what_members_filed(
     assert looked.status_code == 404
 
 
+@pytest.mark.requirement("NFR-S9")
 async def test_system_admin_runs_the_instance_and_holds_no_editorial_verb(
     client, submitted, isac_person
 ):
@@ -195,6 +201,7 @@ async def test_a_bearer_is_bound_to_the_certificate_it_was_issued_over(
     assert accepted.status_code == 200
 
 
+@pytest.mark.requirement("NFR-S2")
 async def test_a_signed_out_session_stops_working_as_a_bearer(
     client, submitted, isac_person, session
 ):

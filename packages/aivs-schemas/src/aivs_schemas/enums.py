@@ -18,6 +18,7 @@ from types import MappingProxyType
 from typing import Final
 
 __all__ = [
+    "ACCEPTED_DISCOVERY_SCOPES",
     "SUBMISSION_TRANSITIONS",
     "TERMINAL_SUBMISSION_STATES",
     "TLP",
@@ -174,14 +175,37 @@ class DiscoveryScope(StrEnum):
     """What the submitter's relationship to the affected system is.
 
     This is the control that keeps AIVS clear of the coordinated-disclosure
-    consent problem: v1 accepts findings in the submitter's own products and
-    estate, and findings about AI systems generally -- not undisclosed
-    vulnerabilities in uninvolved third parties' software.
+    consent problem. Only :data:`ACCEPTED_DISCOVERY_SCOPES` may be filed today:
+    findings in the submitter's own products and estate, and findings about AI
+    systems generally -- not undisclosed vulnerabilities in uninvolved third
+    parties' software.
+
+    ``DISCLOSED_THIRD_PARTY`` (defence intelligence on a vulnerability that is
+    already public) and ``COORDINATED_DISCLOSURE`` (a pre-disclosure finding
+    whose vendor is a party to the case) are reserved. Whether either is legal
+    depends on the *target* vulnerability's current state -- is it public, has
+    the vendor acknowledged it -- and until the canonical vulnerability exists
+    (Phase E) the only evidence available is the submitter's own bundle, which
+    is checking the property against the request that asserts it. They are
+    storage values now so the Postgres type does not have to change in the
+    same release as the rule that admits them.
     """
 
     OWN_PRODUCT = "own_product"
     OWN_ESTATE = "own_estate"
     AI_SYSTEM = "ai_system"
+    DISCLOSED_THIRD_PARTY = "disclosed_third_party"
+    COORDINATED_DISCLOSURE = "coordinated_disclosure"
+
+
+#: The scopes a submission may be filed under. Every ingest surface -- API,
+#: portal, bundle validation, the submission service -- admits these and
+#: nothing else, and refuses a reserved scope exactly as it refuses a value it
+#: has never heard of: a distinct refusal would advertise a capability that
+#: does not exist yet.
+ACCEPTED_DISCOVERY_SCOPES: Final[frozenset[DiscoveryScope]] = frozenset(
+    {DiscoveryScope.OWN_PRODUCT, DiscoveryScope.OWN_ESTATE, DiscoveryScope.AI_SYSTEM}
+)
 
 
 class EmbargoPolicy(StrEnum):

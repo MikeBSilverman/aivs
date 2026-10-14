@@ -35,6 +35,7 @@ async def _objects(client, collection, pem) -> set[str]:
     return {item["name"] for item in response.json().get("objects", [])}
 
 
+@pytest.mark.requirement("SF-43")
 async def test_a_rejoining_member_reads_both_intervals_and_not_the_gap(
     client, make_org, make_cert, make_circle, make_collection, publish, session
 ):
@@ -68,6 +69,7 @@ async def test_a_rejoining_member_reads_both_intervals_and_not_the_gap(
     assert await _objects(client, collection, pem) == {"first interval", "second interval"}
 
 
+@pytest.mark.requirement("NFR-S2")
 async def test_a_member_that_has_left_reads_nothing(
     client, make_org, make_cert, make_circle, make_collection, publish, session, join_circle
 ):

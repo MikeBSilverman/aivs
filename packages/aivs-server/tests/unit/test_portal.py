@@ -296,6 +296,7 @@ async def test_an_analyst_can_file_a_finding(client, analyst, session):
     assert count == 1
 
 
+@pytest.mark.requirement("NFR-O2")
 async def test_a_malformed_bundle_is_reported_on_the_form(client, analyst):
     """The submitter sees what to fix, on the page they were already on."""
     _org, operator, secret, pem = analyst
@@ -688,6 +689,7 @@ async def test_an_over_long_field_returns_the_form_not_a_500(
     assert (await session.scalar(select(func.count()).select_from(Submission))) == 0
 
 
+@pytest.mark.requirement("NFR-O2")
 async def test_content_the_database_refuses_returns_the_form_not_a_500(
     client, analyst, monkeypatch
 ):

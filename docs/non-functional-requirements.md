@@ -1,0 +1,36 @@
+# Non-functional requirements
+
+Each row is a property of the running system that a test proves today. The
+rules are those of [`security-requirements.md`](security-requirements.md):
+a row lands with its test, every id is applied as a `requirement` marker on
+at least one collected test, every marker names a row, and
+`tests/test_requirements_pinned.py` checks both directions.
+
+The build plan sets targets for one instance at about 250 organisations,
+5,000 vulnerabilities and 50,000 STIX objects a year. A row whose plan entry
+is measured by a CI gate rather than a test (dependency auditing, complexity
+limits) is not listed here: the gate is its own record, in CLAUDE.md §2.
+Where a row's full requirement spans phases, the row states the part that is
+pinned today and names the phase that extends it.
+
+| Id | Requirement | Pinned by | Since |
+| --- | --- | --- | --- |
+| NFR-S1 | Every HTTP route refuses an unauthenticated caller, except a listed set of three probes; the route walker is held to a floor so it cannot pass by finding nothing; the portal refuses by redirecting to sign-in; and walking submission ids yields no existence oracle. WebSocket routes join the matrix in phase J. | `authz_matrix/test_authz_matrix.py`, `abuse/test_platform_abuse.py` | A |
+| NFR-S2 | Revocation takes effect on the next request: a revoked certificate, a suspended or quarantined organisation, a signed-out session, a revoked certificate's portal sessions, and a closed membership interval. Grants (I) and delegations (K) join when they exist. | `unit/test_auth_mtls.py`, `unit/test_sessions.py`, `unit/test_isac_roles.py`, `unit/test_quarantine.py`, `unit/test_membership_intervals.py`, `authz_matrix/test_authz_matrix.py` | A |
+| NFR-S5 | No content reaches the logs: the access log records each request once, structured, without its query string, and a failure to open a sealed secret logs neither the secret nor its ciphertext. | `unit/test_access_log.py`, `unit/test_secretbox.py` | A |
+| NFR-S6 | The audit log and submission transitions are append-only: update, delete and truncate are refused by trigger, in the fixture schema and in the migrated one. Document tables (I) join when they exist. | `unit/test_append_only.py`, `migrations/test_migrated_schema.py` | A |
+| NFR-S7 | Outside dev, the key-encryption key is read from a file that only its owner can read, never from the environment, and a rotation's previous key is held to the same rule. | `unit/test_key_file.py` | A |
+| NFR-S9 | Editorial verbs are human-only: `system_admin` runs the instance and holds none, and the ISAC's machine certificate alone cannot validate. | `unit/test_isac_roles.py` | A |
+| NFR-S10 | Every table declares a data class in `data-inventory.md`, from a defined set, and no listed table is missing from the schema. Deletion of a departed member's operational data lands in phase H. | `unit/test_data_inventory.py` | A |
+| NFR-S12 | Platform abuse is detectable: a detection finding is raised once per window, audited, and emitted as OCSF and CEF to the ISAC only; the failure-burst, bulk-retrieval, reveal and degraded-component rules each have a test that raises them; and the pause switch refuses distribution until released. A raise/no-raise pair for every rule is the target, not yet the state. | `unit/test_detections.py`, `unit/test_pause_distribution.py` | A |
+| NFR-S13 | Logs and alerts reach the ISAC's own monitoring without custom work: every service in the stack is forwarded over syslog, forwarding insists on TLS, and a detection line carries OCSF and CEF through the production formatter. Security sightings as STIX and a cursor-polled audit API land in phase H. | `unit/test_log_forwarding.py` | A |
+| NFR-S14 | Post-quantum readiness, the parts that exist: the proxy offers hybrid ML-KEM key exchange first, and every sealed value names its algorithm, so an unknown one is refused rather than guessed. The CBOM lands with the release tooling. | `unit/test_proxy_config.py`, `unit/test_secretbox.py` | A |
+| NFR-A3 | A stopped background job delays and never leaks or loses: embargoed content becomes visible at its time whether or not the sweeper runs, and a failing scheduled run is recorded while the loop keeps going. | `unit/test_embargo.py`, `unit/test_background.py` | A |
+| NFR-O2 | An operator-caused failure has a visible outcome: a malformed bundle and content the database refuses return the filing form with a 400, never a bare 500 or a silent success. Workflow verbs refused by policy (a TLP floor, a pause) are not yet pinned here. | `unit/test_portal.py` | A |
+| NFR-O3 | `/readyz` reports every component by name with its state and reason, and a degraded component is named without failing the liveness probe. | `unit/test_detections.py` | A |
+| NFR-O5 | A component that degrades raises an alert, and `/metrics` reports each component and the queue backlogs. | `unit/test_detections.py` | A |
+| NFR-O6 | Every component `/readyz` reports appears on the admin status page. | `unit/test_status_page.py` | A |
+| NFR-D3 | A circle's TLP floor is enforced at distribution. The MSSP ceiling (K) and document grants (I) join when they exist. | `unit/test_submission_workflow.py` | A |
+| NFR-I1 | The TAXII 2.1 surface conforms to the specification, and every object in an inbound bundle is validated, not only the ones the server reads. | `taxii_conformance/`, `aivs-schemas` `test_extension_validation.py` | A |
+| NFR-M2 | One description per thing, each pinned to the other: the extension's JSON Schema and its `stix2` registration agree on properties, required properties and enumerated values; the accepted discovery scopes agree with the schema; and every Postgres enum type in the migrated schema holds exactly the labels of the Python enum it stores. Index columns against `raw` join in phase E. | `aivs-schemas` `test_extension_validation.py`, `migrations/test_migrated_schema.py` | D |
+| NFR-M3 | Every row in this document and in `security-requirements.md` is pinned by at least one collected, unskipped test, and every pin names a row. | `test_requirements_pinned.py` | D |

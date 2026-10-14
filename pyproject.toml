@@ -224,6 +224,7 @@ markers = [
     "authz: authorization matrix test -- the deny-by-default proof",
     "conformance: TAXII 2.1 / STIX 2.1 specification conformance test",
     "abuse: an adversary's sequence of requests, asserting the step at which it is noticed or refused",
+    "requirement(id): pins a row of docs/security-requirements.md or docs/non-functional-requirements.md; checked both ways by tests/test_requirements_pinned.py",
 ]
 filterwarnings = [
     "error",                     # warnings are failures; we do not accumulate debt

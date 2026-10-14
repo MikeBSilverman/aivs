@@ -1,0 +1,29 @@
+# Security requirements
+
+Each row is a security property the system holds today, together with the
+tests that prove it. A row lands in the same commit as its test, never
+before: a requirement listed without a test reads as enforced and is not
+(CLAUDE.md §5, "A flag that is stored and displayed must be enforced").
+
+Every id here is applied as a `requirement` marker on at least one collected
+test, and every marker names a row here.
+`tests/test_requirements_pinned.py` checks both directions, so deleting or
+skipping the last test that pins a row fails the suite. That check is NFR-M3
+in [`non-functional-requirements.md`](non-functional-requirements.md).
+
+Ids come from the build plan's security findings and are stable. They are not
+contiguous, because a row lands only with its phase. Where a row's full
+resolution spans phases, the row states the part that is pinned today and
+names the phase that extends it.
+
+| Id | Requirement | Why | Pinned by | Since |
+| --- | --- | --- | --- | --- |
+| SF-10 | Publication order equals commit order. A second distribution, an early embargo release, and a read that issues a paging cursor each wait for a publication still in flight. | A cursor issued past a batch that commits later skips that batch for good: a warning the member never receives. | `unit/test_publication_lock.py` | A |
+| SF-24 | A bundle is accepted whole or not at all. One object that fails validation, including on its discovery scope, refuses every object in the bundle. | A partly stored bundle distributes objects whose context was refused, and the submitter cannot tell which half reached the circle. | `unit/test_disclosure_scopes.py` | D |
+| SF-42 | Editorial control is human-only. The ISAC's machine certificate alone neither validates nor enrols, and membership staff never read what members filed. | A machine identity that can distribute is a key whose theft publishes to every member, and the host holds the CA that issues it. | `unit/test_isac_roles.py` | A |
+| SF-43 | Circle membership is a set of intervals. A rejoining member reads both of its intervals and nothing distributed in the gap, and intervals cannot overlap, in the fixture schema and in the migrated one. | A single join time handed a rejoining member everything distributed while it was out. | `unit/test_membership_intervals.py`, `migrations/test_migrated_schema.py` | A |
+| SF-44 | Naming an anonymous submitter is its own audited editorial action, with a reason, distinct from routine review. | Without it, every ISAC reader saw the identity in an ordinary read, and the anonymity promise depended on nobody looking. | `unit/test_submission_workflow.py` | A |
+| SF-61 | A released embargo notifies the circle's current members only, never an organisation that has left. | Notifications were bounded by join time alone, so a former member was told that content it could no longer see existed. | `unit/test_notifications.py` | A |
+| SF-63 | Pausing distribution withholds everything not already visible, including an embargo that comes due during the pause, until the pause is released. | The first pause blocked new stamps only; an embargo stamped beforehand still became visible mid-incident. | `unit/test_pause_distribution.py` | A |
+| SF-64 | The `isac_analyst` role reads submissions in order to prepare them and holds no editorial verb. | Every ISAC staff member able to push RED is one more person whose compromise publishes it. | `unit/test_isac_roles.py` | A |
+| SF-71 | The committed proxy configuration offers the hybrid post-quantum group `X25519MLKEM768` first, with a classical fallback after it, and the default proxy image is built on an OpenSSL that implements ML-KEM. The live negotiated-group check lands with the end-to-end tier. | TLS traffic carrying embargoed intelligence, recorded today, is readable once a quantum adversary exists; key exchange is the part that cannot be fixed retroactively. | `unit/test_proxy_config.py` | A |

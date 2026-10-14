@@ -21,6 +21,8 @@ from aivs_server.taxii.filters import (
     parse_filters,
 )
 
+pytestmark = pytest.mark.requirement("NFR-I1")
+
 LIMITS = {"default_limit": 100, "max_limit": 500}
 
 

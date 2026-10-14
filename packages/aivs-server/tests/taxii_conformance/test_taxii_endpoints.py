@@ -24,7 +24,7 @@ from aivs_schemas.enums import AckType, CircleRole
 from aivs_server.db.models import Acknowledgment
 from tests.conftest import proxy_headers
 
-pytestmark = [pytest.mark.db, pytest.mark.conformance]
+pytestmark = [pytest.mark.db, pytest.mark.conformance, pytest.mark.requirement("NFR-I1")]
 
 TAXII_MEDIA_TYPE = "application/taxii+json;version=2.1"
 

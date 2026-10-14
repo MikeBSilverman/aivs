@@ -25,7 +25,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import ValidationError
 from sqlalchemy import func, select
 
-from aivs_schemas.enums import TLP, CertStatus, DiscoveryScope, OrgStatus, SubmissionState
+from aivs_schemas.enums import TLP, CertStatus, OrgStatus, SubmissionState
 from aivs_schemas.models import SubmissionCreate
 from aivs_server.audit.log import AuditAction, account_reference, record_independently
 from aivs_server.auth.context import AuthContext
@@ -767,14 +767,19 @@ async def submit_finding(
     # about what a legal submission is. They did: the form carried no length
     # bounds, an over-long title reached the database, and the member got an
     # opaque 500 instead of their form back (finding #7).
+    # The scope goes to the model as the string the form sent. Converting it to
+    # the enum first refused an unknown value with the enum's message and let a
+    # reserved one through to the model's, so the form told the two apart.
     try:
-        payload = SubmissionCreate(
-            title=title,
-            summary=summary or None,
-            tlp=TLP(tlp),
-            discovery_scope=DiscoveryScope(discovery_scope),
-            distribute_anonymously=bool(distribute_anonymously),
-            bundle=parsed,
+        payload = SubmissionCreate.model_validate(
+            {
+                "title": title,
+                "summary": summary or None,
+                "tlp": TLP(tlp),
+                "discovery_scope": discovery_scope,
+                "distribute_anonymously": bool(distribute_anonymously),
+                "bundle": parsed,
+            }
         )
     except ValidationError as exc:
         return failure(_first_validation_message(exc))

@@ -124,6 +124,7 @@ def test_a_legacy_base64_value_does_not_open_and_says_so(box, caplog):
     assert "not in a recognised format" in caplog.text
 
 
+@pytest.mark.requirement("NFR-S5")
 def test_a_failure_never_logs_the_secret_or_its_ciphertext(box, caplog):
     """Over the records' fields, not caplog.text: everything here is logged
     through ``extra=``, which caplog.text omits (CLAUDE.md section 2)."""
@@ -319,6 +320,7 @@ def test_more_than_one_algorithm_is_registered():
 
 
 @pytest.mark.parametrize("name", ALGORITHM_NAMES)
+@pytest.mark.requirement("NFR-S14")
 def test_every_algorithm_names_itself_in_its_ciphertext(name):
     """The header, not the configuration, says how a value was written."""
     algorithm = algorithm_by_name(name)
@@ -375,6 +377,7 @@ def test_an_algorithm_and_key_change_together_is_still_readable():
     assert rotating.needs_rewrap(sealed_before) is True
 
 
+@pytest.mark.requirement("NFR-S14")
 def test_a_value_from_an_unknown_algorithm_is_refused_not_guessed(box, caplog):
     """A rollback past an algorithm we no longer implement must say so."""
     subject = uuid.uuid4()

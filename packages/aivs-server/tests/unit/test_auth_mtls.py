@@ -97,6 +97,7 @@ async def test_unregistered_certificate_is_rejected(client, ca):
     assert response.status_code == 401
 
 
+@pytest.mark.requirement("NFR-S2")
 async def test_revoked_certificate_is_rejected(client, make_org, make_cert):
     """Revocation takes effect immediately, with no CRL or OCSP round trip."""
     org = await make_org("meridian-global")

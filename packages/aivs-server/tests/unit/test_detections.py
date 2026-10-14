@@ -42,6 +42,7 @@ def _fresh_heartbeats():
     HEARTBEATS.clear()
 
 
+@pytest.mark.requirement("NFR-S12")
 async def test_an_address_over_the_threshold_raises_and_one_under_does_not(session):
     session.add_all(
         [_audit(AuditAction.AUTH_FAILURE, source_ip="203.0.113.9") for _ in range(3)]
@@ -58,6 +59,7 @@ async def test_an_address_over_the_threshold_raises_and_one_under_does_not(sessi
     ]
 
 
+@pytest.mark.requirement("NFR-S12")
 async def test_repeated_login_failures_against_one_account_raise(session):
     session.add_all(
         [_audit(AuditAction.LOGIN_FAILURE, details={"account": "acct-a"}) for _ in range(3)]
@@ -72,6 +74,7 @@ async def test_repeated_login_failures_against_one_account_raise(session):
     assert [f.subject for f in raised] == ["acct-a"]
 
 
+@pytest.mark.requirement("NFR-S12")
 async def test_one_organisation_retrieving_far_more_than_members_do_raises(session, make_org):
     scraper = await make_org("scraper", org_type=OrgType.GSIB)
     normal = await make_org("normal", org_type=OrgType.GSIB)
@@ -109,6 +112,7 @@ async def test_one_organisation_retrieving_far_more_than_members_do_raises(sessi
     assert [f.subject for f in raised] == [str(scraper.id)]
 
 
+@pytest.mark.requirement("NFR-S12")
 async def test_every_reveal_raises_and_old_ones_do_not(session):
     session.add_all(
         [
@@ -129,6 +133,8 @@ async def test_every_reveal_raises_and_old_ones_do_not(session):
     assert [f.details["resource"] for f in raised] == ["sub-recent"]
 
 
+@pytest.mark.requirement("NFR-S12")
+@pytest.mark.requirement("NFR-O5")
 async def test_a_degraded_component_raises_and_a_healthy_one_does_not(session):
     HEARTBEATS.register("stalled", dt.timedelta(seconds=30), now=NOW - dt.timedelta(minutes=10))
     HEARTBEATS.register("healthy", dt.timedelta(seconds=30), now=NOW - dt.timedelta(minutes=10))
@@ -141,6 +147,7 @@ async def test_a_degraded_component_raises_and_a_healthy_one_does_not(session):
     assert [f.subject for f in raised] == ["stalled"]
 
 
+@pytest.mark.requirement("NFR-S12")
 async def test_a_finding_raises_once_per_window_and_again_after_it(session):
     """An alert that repeats every minute for the length of its window is one
     people learn to ignore."""
@@ -171,6 +178,7 @@ async def test_a_finding_raises_once_per_window_and_again_after_it(session):
     assert len(later) == 1
 
 
+@pytest.mark.requirement("NFR-S12")
 async def test_a_finding_is_audited_logged_as_ocsf_and_cef_and_sent_to_the_isac_only(
     session, make_org, secret_box, caplog
 ):
@@ -221,6 +229,7 @@ async def test_a_finding_is_audited_logged_as_ocsf_and_cef_and_sent_to_the_isac_
 # ---------------------------------------------------------------------------
 # Health reporting
 # ---------------------------------------------------------------------------
+@pytest.mark.requirement("NFR-O3")
 def test_component_states_starting_ok_and_degraded():
     beats = Heartbeats()
     interval = dt.timedelta(seconds=30)
@@ -239,6 +248,7 @@ def test_component_states_starting_ok_and_degraded():
     assert "must not appear" not in states["failing"].reason, "error types, never messages"
 
 
+@pytest.mark.requirement("NFR-O5")
 def test_metrics_report_each_component_and_the_backlogs():
     beats = Heartbeats()
     beats.register("embargo_sweeper", dt.timedelta(seconds=30), now=NOW)
@@ -251,6 +261,7 @@ def test_metrics_report_each_component_and_the_backlogs():
     assert "aivs_embargoes_pending 2" in text
 
 
+@pytest.mark.requirement("NFR-O3")
 async def test_readyz_names_a_degraded_component_without_failing_the_probe(client):
     """Degraded background work keeps the instance serving; it is reported by
     name, so "up" and "every part working" are never the same answer. Times are

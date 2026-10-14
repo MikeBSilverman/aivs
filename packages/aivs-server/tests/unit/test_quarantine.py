@@ -33,6 +33,7 @@ async def member_in_circle(make_org, make_cert, make_circle, make_collection, jo
     return org, pem, circle, collection
 
 
+@pytest.mark.requirement("NFR-S2")
 async def test_quarantine_refuses_the_members_credentials_and_keeps_its_membership(
     client, isac, member_in_circle, session
 ):

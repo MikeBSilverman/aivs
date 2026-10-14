@@ -10,6 +10,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import pytest
+
 from aivs_server.db import models  # noqa: F401 - registers every table on Base.metadata
 from aivs_server.db.base import Base
 
@@ -22,6 +24,7 @@ def _declared() -> dict[str, str]:
     return {m["table"]: m["cls"] for m in _ROW.finditer(INVENTORY.read_text(encoding="utf-8"))}
 
 
+@pytest.mark.requirement("NFR-S10")
 def test_every_mapped_table_is_classified_and_nothing_else_is():
     declared = _declared()
     mapped = set(Base.metadata.tables)
@@ -30,6 +33,7 @@ def test_every_mapped_table_is_classified_and_nothing_else_is():
     assert set(declared) - mapped == set(), "classified tables that no longer exist"
 
 
+@pytest.mark.requirement("NFR-S10")
 def test_every_class_used_is_one_the_inventory_defines():
     used = set(_declared().values())
     assert used <= CLASSES, f"undefined classes: {used - CLASSES}"

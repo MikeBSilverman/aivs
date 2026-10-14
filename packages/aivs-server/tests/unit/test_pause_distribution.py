@@ -41,6 +41,7 @@ async def _names(client, collection, pem) -> set[str]:
     return {item["name"] for item in response.json().get("objects", [])}
 
 
+@pytest.mark.requirement("SF-63")
 async def test_pausing_withholds_everything_until_resumed(client, isac, reader, publish):
     _isac_org, isac_headers = isac
     pem, org, circle, collection = reader
@@ -73,6 +74,7 @@ async def _wait_until(moment: dt.datetime) -> None:
         await asyncio.sleep(delay)
 
 
+@pytest.mark.requirement("NFR-S12")
 async def test_distribution_is_refused_while_paused_and_works_after(
     client, isac, make_org, make_cert, make_circle, make_collection
 ):

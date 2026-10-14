@@ -18,6 +18,7 @@ from tests.conftest import proxy_headers
 pytestmark = pytest.mark.db
 
 
+@pytest.mark.requirement("NFR-S5")
 async def test_each_request_is_logged_once_with_status_and_without_its_query(
     client, make_org, make_cert, caplog
 ):

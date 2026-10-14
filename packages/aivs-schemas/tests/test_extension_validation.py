@@ -12,7 +12,12 @@ import datetime as dt
 
 import pytest
 
-from aivs_schemas.enums import AIDiscoveryMethod, CVEStatus, DiscoveryScope
+from aivs_schemas.enums import (
+    ACCEPTED_DISCOVERY_SCOPES,
+    AIDiscoveryMethod,
+    CVEStatus,
+    DiscoveryScope,
+)
 from aivs_schemas.extension.builders import (
     AIVS_EXTENSION_ID,
     ALLOWED_EXTENSION_IDS,
@@ -233,11 +238,24 @@ def test_cvss_score_requires_its_vector():
         validate_stix_object(wrap(body))
 
 
-@pytest.mark.parametrize("missing", ["ai_discovery_method", "discovery_scope", "cve_status"])
+@pytest.mark.parametrize("missing", ["discovery_scope", "cve_status"])
 def test_required_properties_are_enforced(missing):
     body = {key: value for key, value in VALID_BODY.items() if key != missing}
     with pytest.raises(ExtensionValidationError):
         validate_stix_object(wrap(body))
+
+
+def test_a_finding_without_an_ai_discovery_method_is_accepted():
+    """Optional: a contribution about a vulnerability no AI system found has no
+    method to state, and a required value would force the submitter to invent one."""
+    body = {key: value for key, value in VALID_BODY.items() if key != "ai_discovery_method"}
+
+    validate_stix_object(wrap(body))
+
+
+def test_an_ai_discovery_method_that_is_present_must_still_be_a_known_one():
+    with pytest.raises(ExtensionValidationError):
+        validate_stix_object(wrap({**VALID_BODY, "ai_discovery_method": "intuition"}))
 
 
 def test_discovery_scope_is_constrained_to_the_v1_content_policy():
@@ -254,9 +272,34 @@ def test_discovery_scope_is_constrained_to_the_v1_content_policy():
     }
 
 
+@pytest.mark.parametrize("scope", sorted(ACCEPTED_DISCOVERY_SCOPES))
+def test_a_bundle_declaring_an_accepted_scope_is_accepted(scope):
+    validate_stix_object(wrap({**VALID_BODY, "discovery_scope": scope.value}))
+
+
+@pytest.mark.parametrize(
+    "reserved", sorted(set(DiscoveryScope) - ACCEPTED_DISCOVERY_SCOPES), ids=str
+)
+def test_a_bundle_declaring_a_reserved_scope_is_refused_as_an_unknown_one_is(reserved):
+    """The reserved scopes are storage values only until Phase E admits them.
+
+    Refused with the message an unheard-of value gets, the value itself aside, so
+    the refusal does not advertise which values the server already knows.
+    """
+    with pytest.raises(ExtensionValidationError) as refused:
+        validate_stix_object(wrap({**VALID_BODY, "discovery_scope": reserved.value}))
+    with pytest.raises(ExtensionValidationError) as unknown:
+        validate_stix_object(wrap({**VALID_BODY, "discovery_scope": "never_heard_of_it"}))
+
+    assert str(refused.value).replace(reserved.value, "<value>") == str(unknown.value).replace(
+        "never_heard_of_it", "<value>"
+    )
+
+
 # ---------------------------------------------------------------------------
 # The two descriptions of the extension must agree
 # ---------------------------------------------------------------------------
+@pytest.mark.requirement("NFR-M2")
 def test_stix2_registration_and_json_schema_describe_the_same_properties():
     """Regression: the reserved sealed_payload fields were in one and not the other.
 
@@ -274,6 +317,37 @@ def test_stix2_registration_and_json_schema_describe_the_same_properties():
     )
 
 
+@pytest.mark.requirement("NFR-M2")
+def test_stix2_registration_and_json_schema_require_the_same_properties():
+    """``ai_discovery_method`` became optional in both; one alone would accept in
+    one validator what the other refuses."""
+    schema_required = set(extension_json_schema()["required"]) - {"extension_type"}
+    stix2_required = {
+        name
+        for name, prop in AivsPreCveExtension._properties.items()
+        if prop.required and name != "extension_type"
+    }
+    assert schema_required == stix2_required
+
+
+@pytest.mark.requirement("NFR-M2")
+def test_stix2_registration_and_json_schema_enumerate_the_same_values():
+    schema_props = extension_json_schema()["properties"]
+    for name, prop in AivsPreCveExtension._properties.items():
+        allowed = getattr(prop, "allowed", None)
+        if allowed is None or name == "extension_type":
+            continue
+        assert set(allowed) == set(schema_props[name]["enum"]), name
+
+
+@pytest.mark.requirement("NFR-M2")
+def test_the_extension_admits_exactly_the_accepted_scopes():
+    """The second description of the accepted set: the schema file is static JSON,
+    so it is pinned to the Python set that every other surface reads."""
+    schema_scopes = set(extension_json_schema()["properties"]["discovery_scope"]["enum"])
+    assert schema_scopes == {scope.value for scope in ACCEPTED_DISCOVERY_SCOPES}
+
+
 def test_extension_definition_id_matches_the_code_constant():
     """`extension_definition_sdo` raises on divergence, so this asserts the
     loader succeeds at all -- the identity check itself lives in the loader."""
@@ -287,6 +361,7 @@ def test_extension_definition_is_a_property_extension():
 # ---------------------------------------------------------------------------
 # Bundle validation
 # ---------------------------------------------------------------------------
+@pytest.mark.requirement("NFR-I1")
 def test_every_object_in_a_bundle_is_validated():
     """An object nobody looked at still reaches every member of the circle."""
     bundle = {

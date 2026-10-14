@@ -45,7 +45,12 @@ from stix2.properties import (
     StringProperty,
 )
 
-from aivs_schemas.enums import AIDiscoveryMethod, CVEStatus, DiscoveryScope
+from aivs_schemas.enums import (
+    ACCEPTED_DISCOVERY_SCOPES,
+    AIDiscoveryMethod,
+    CVEStatus,
+    DiscoveryScope,
+)
 from aivs_schemas.tlp import (
     LEGACY_TLP10_MARKING_IDS,
     TLP20_EXTENSION_DEFINITION_ID,
@@ -150,10 +155,9 @@ class UnknownExtensionError(ValueError):
     AIVS_EXTENSION_ID,
     [
         ("aivs_schema_version", StringProperty(required=True)),
-        (
-            "ai_discovery_method",
-            EnumProperty(allowed=[m.value for m in AIDiscoveryMethod], required=True),
-        ),
+        # Optional: a contribution about a vulnerability that no AI system
+        # found has no method to state, and a required value would force one.
+        ("ai_discovery_method", EnumProperty(allowed=[m.value for m in AIDiscoveryMethod])),
         ("ai_model_name", StringProperty()),
         ("ai_harness_name", StringProperty()),
         ("ai_harness_version", StringProperty()),
@@ -161,7 +165,13 @@ class UnknownExtensionError(ValueError):
         ("ai_reproduction_available", BooleanProperty()),
         (
             "discovery_scope",
-            EnumProperty(allowed=[s.value for s in DiscoveryScope], required=True),
+            # The accepted scopes, not every member of the enum: the reserved
+            # values are storage only, and a bundle declaring one is refused
+            # exactly as an unknown value is.
+            EnumProperty(
+                allowed=[s.value for s in DiscoveryScope if s in ACCEPTED_DISCOVERY_SCOPES],
+                required=True,
+            ),
         ),
         ("affected_products", ListProperty(DictionaryProperty(spec_version="2.1"), required=True)),
         ("cvss_v4_vector", StringProperty()),
@@ -406,10 +416,10 @@ def validate_bundle(bundle: Mapping[str, Any]) -> int:
 
 def build_extension_body(
     *,
-    ai_discovery_method: AIDiscoveryMethod,
     discovery_scope: DiscoveryScope,
     cve_status: CVEStatus,
     affected_products: Sequence[Mapping[str, str]],
+    ai_discovery_method: AIDiscoveryMethod | None = None,
     ai_model_name: str | None = None,
     ai_harness_name: str | None = None,
     ai_harness_version: str | None = None,
@@ -435,13 +445,13 @@ def build_extension_body(
     body: dict[str, Any] = {
         "extension_type": "property-extension",
         "aivs_schema_version": _CURRENT_SCHEMA_VERSION,
-        "ai_discovery_method": ai_discovery_method.value,
         "discovery_scope": discovery_scope.value,
         "cve_status": cve_status.value,
         "affected_products": [dict(product) for product in affected_products],
     }
 
     optional: dict[str, Any] = {
+        "ai_discovery_method": ai_discovery_method.value if ai_discovery_method else None,
         "ai_model_name": ai_model_name,
         "ai_harness_name": ai_harness_name,
         "ai_harness_version": ai_harness_version,

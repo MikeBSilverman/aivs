@@ -55,6 +55,7 @@ async def seeded_audit_row(session):
 
 
 @pytest.mark.parametrize("table", APPEND_ONLY_TABLES)
+@pytest.mark.requirement("NFR-S6")
 async def test_update_is_refused(session, table, seeded_audit_row):
     """Rewriting history is refused, not merely discouraged."""
     column = MUTABLE_COLUMN[table]
@@ -64,6 +65,7 @@ async def test_update_is_refused(session, table, seeded_audit_row):
 
 
 @pytest.mark.parametrize("table", APPEND_ONLY_TABLES)
+@pytest.mark.requirement("NFR-S6")
 async def test_delete_is_refused(session, table, seeded_audit_row):
     with pytest.raises(DBAPIError, match=REFUSAL):
         await session.execute(text(f"DELETE FROM {table}"))  # noqa: S608
@@ -71,6 +73,7 @@ async def test_delete_is_refused(session, table, seeded_audit_row):
 
 
 @pytest.mark.parametrize("table", APPEND_ONLY_TABLES)
+@pytest.mark.requirement("NFR-S6")
 async def test_truncate_is_refused(session, table, seeded_audit_row):
     with pytest.raises(DBAPIError, match=REFUSAL):
         await session.execute(text(f"TRUNCATE {table}"))
@@ -118,6 +121,7 @@ async def test_the_protection_survives_a_refused_attempt(session, seeded_audit_r
 
 
 @pytest.mark.parametrize("table", APPEND_ONLY_TABLES)
+@pytest.mark.requirement("NFR-S6")
 async def test_every_protected_table_carries_all_three_triggers(session, table):
     """Guards the test schema against drifting from the migration.
 

@@ -133,6 +133,7 @@ async def test_a_forged_client_address_is_not_believed(client, session, ca):
     assert len(raised) == 1, "still noticed, against the real peer"
 
 
+@pytest.mark.requirement("NFR-S1")
 async def test_walking_submission_ids_is_noticed_without_becoming_an_oracle(
     client, session, make_org, make_cert
 ):

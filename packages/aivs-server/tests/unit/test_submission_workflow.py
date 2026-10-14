@@ -349,6 +349,7 @@ async def test_a_naive_release_time_is_refused(client, member, isac, circle):
     assert response.status_code == 400
 
 
+@pytest.mark.requirement("NFR-D3")
 async def test_tlp_floor_is_enforced_per_circle(client, member, isac, circle):
     """A circle's minimum restrictiveness is a commitment to its members."""
     _org, pem = await member()
@@ -868,6 +869,7 @@ async def test_a_member_may_carry_its_own_identity(client, member):
     assert response.status_code == 201
 
 
+@pytest.mark.requirement("SF-44")
 async def test_revealing_an_anonymous_submitter_is_an_audited_editorial_act(
     client, member, isac, session, make_org, make_cert, make_operator, human_headers
 ):

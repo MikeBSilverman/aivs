@@ -12,6 +12,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import pytest
+
 HYBRID_GROUP = "X25519MLKEM768"
 
 
@@ -21,6 +23,8 @@ def _directive(conf: str, name: str) -> list[str]:
     return match.group(1).split(":")
 
 
+@pytest.mark.requirement("SF-71")
+@pytest.mark.requirement("NFR-S14")
 def test_the_hybrid_post_quantum_group_is_offered_first_with_a_classical_fallback(
     repo_root: Path,
 ):
@@ -32,6 +36,7 @@ def test_the_hybrid_post_quantum_group_is_offered_first_with_a_classical_fallbac
     assert "X25519" in groups[1:], "a classical fallback must remain"
 
 
+@pytest.mark.requirement("SF-71")
 def test_the_default_proxy_image_is_built_with_an_openssl_that_has_ml_kem(repo_root: Path):
     """nginx-unprivileged 1.27-alpine is built with OpenSSL 3.3, which has no
     ML-KEM: the configuration above would silently fall back to classical key

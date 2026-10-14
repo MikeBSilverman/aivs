@@ -12,6 +12,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
+import pytest
 import yaml
 
 from aivs_server.logging_config import JsonFormatter
@@ -45,6 +46,7 @@ def _load(path: Path) -> dict[str, Any]:
     return yaml.load(path.read_text(encoding="utf-8"), Loader=_ComposeLoader)  # noqa: S506 - SafeLoader subclass
 
 
+@pytest.mark.requirement("NFR-S13")
 def test_every_service_in_the_stack_is_forwarded():
     """A service added to the base file without forwarding is a blind spot."""
     base_services = set(_load(BASE)["services"])
@@ -55,6 +57,7 @@ def test_every_service_in_the_stack_is_forwarded():
         assert service["logging"]["driver"] == "syslog", name
 
 
+@pytest.mark.requirement("NFR-S13")
 def test_forwarding_replaces_the_local_policy_and_insists_on_tls():
     """Merged instead of replaced, json-file's options reach the syslog driver
     and the container refuses to start."""
@@ -70,6 +73,7 @@ def test_forwarding_replaces_the_local_policy_and_insists_on_tls():
     assert options["mode"] == "non-blocking", "a collector outage must not stop the platform"
 
 
+@pytest.mark.requirement("NFR-S13")
 def test_a_detection_line_carries_ocsf_and_cef_through_the_production_formatter():
     record = logging.LogRecord(
         "aivs_server.security", logging.WARNING, __file__, 1, "3 refused authentications", (), None

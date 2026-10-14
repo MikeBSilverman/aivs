@@ -42,6 +42,7 @@ async def _distribute(
     await distribute_submission(session, ctx, submission, circle_ids=[circle_id])
 
 
+@pytest.mark.requirement("SF-10")
 async def test_a_second_distribution_waits_for_the_first_to_commit(
     open_session, isac_ctx, make_validated, make_circle
 ):
@@ -86,6 +87,7 @@ async def test_a_distribution_proceeds_when_none_is_in_flight(
     await task
 
 
+@pytest.mark.requirement("SF-10")
 async def test_a_paging_read_waits_for_an_open_publication(
     open_session, isac_ctx, make_validated, make_circle
 ):
@@ -112,6 +114,7 @@ async def test_a_paging_read_proceeds_when_nothing_is_in_flight(open_session):
     await task
 
 
+@pytest.mark.requirement("SF-10")
 async def test_an_early_embargo_release_waits_for_an_open_publication(
     open_session, isac_ctx, make_validated, make_circle, session
 ):

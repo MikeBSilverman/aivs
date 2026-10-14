@@ -10,6 +10,8 @@ from __future__ import annotations
 import asyncio
 import datetime as dt
 
+import pytest
+
 from aivs_server.main import background_components
 from aivs_server.observability import Heartbeats, run_periodically
 
@@ -24,6 +26,7 @@ def test_the_process_runs_the_three_unattended_jobs_at_their_configured_interval
     }
 
 
+@pytest.mark.requirement("NFR-A3")
 async def test_a_failing_run_is_recorded_and_the_loop_keeps_going():
     beats = Heartbeats()
     calls = 0

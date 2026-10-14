@@ -129,6 +129,7 @@ def concrete(path: str) -> str:
     return path
 
 
+@pytest.mark.requirement("NFR-S1")
 def test_the_walker_actually_finds_the_routes(app):
     """Guard the guard.
 
@@ -165,6 +166,7 @@ def test_the_walker_actually_finds_the_routes(app):
         assert expected in paths, f"{expected} missing from the walk"
 
 
+@pytest.mark.requirement("NFR-S1")
 async def test_every_route_requires_authentication(app):
     """No route answers without a client certificate, except the listed few."""
     transport = ASGITransport(app=app, client=("127.0.0.1", 0))
@@ -181,6 +183,7 @@ async def test_every_route_requires_authentication(app):
     )
 
 
+@pytest.mark.requirement("NFR-S1")
 async def test_public_routes_are_exactly_the_intended_set(app):
     """The public set is EXACTLY `EXPECTED_PUBLIC` -- both directions.
 
@@ -224,6 +227,7 @@ async def test_the_health_probes_actually_answer(client):
     assert readiness.json()["database"] == "ok"
 
 
+@pytest.mark.requirement("NFR-S2")
 async def test_a_valid_certificate_from_a_suspended_org_reaches_nothing(app, make_org, make_cert):
     """Suspension is a single field change that closes the whole surface."""
     org = await make_org("suspended-firm", status=OrgStatus.SUSPENDED)
@@ -314,6 +318,7 @@ async def test_forged_proxy_secret_reaches_nothing(app, make_org, make_cert):
 # ---------------------------------------------------------------------------
 # The portal surface
 # ---------------------------------------------------------------------------
+@pytest.mark.requirement("NFR-S1")
 async def test_no_portal_route_serves_content_without_a_session(app):
     """The portal refuses differently, but it does refuse.
 

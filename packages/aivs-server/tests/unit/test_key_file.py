@@ -36,6 +36,7 @@ def _settings(**overrides: object) -> Settings:
     return Settings(**(base | overrides))  # type: ignore[arg-type]
 
 
+@pytest.mark.requirement("NFR-S7")
 def test_outside_dev_the_environment_form_is_refused_and_the_file_accepted():
     with pytest.raises(ValidationError, match="secret_encryption_key_file"):
         _settings(secret_encryption_key=TEST_SECRET_KEY)
@@ -48,6 +49,7 @@ def test_dev_may_still_use_the_environment():
     assert _settings(environment="dev", secret_encryption_key=TEST_SECRET_KEY)
 
 
+@pytest.mark.requirement("NFR-S7")
 def test_a_key_file_others_can_read_is_refused(tmp_path: Path):
     readable = tmp_path / "readable-key"
     readable.write_text(TEST_SECRET_KEY, encoding="utf-8")
@@ -70,6 +72,7 @@ def test_setting_both_forms_is_refused_not_resolved():
         )
 
 
+@pytest.mark.requirement("NFR-S7")
 def test_a_rotations_previous_key_is_held_to_the_same_rule(tmp_path: Path):
     """It still opens every row not yet re-wrapped."""
     previous = tmp_path / "previous-key"

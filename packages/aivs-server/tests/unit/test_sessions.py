@@ -288,6 +288,7 @@ async def test_a_session_cookie_is_useless_with_no_certificate(session, settings
         await resolve_session(session, settings, token=established.token, cert_fingerprint=None)
 
 
+@pytest.mark.requirement("NFR-S2")
 async def test_revoking_the_certificate_ends_the_humans_sessions(session, settings, operator_setup):
     """Revocation locks out people, not only machines.
 
@@ -399,6 +400,7 @@ async def test_an_idle_session_is_refused(session, settings, operator_setup):
     assert caught.value.reason == "session_idle_timeout"
 
 
+@pytest.mark.requirement("NFR-S2")
 async def test_logout_revokes_the_session(session, settings, operator_setup):
     _org, operator, _secret, certificate, _pem = operator_setup
     established = await establish_session(

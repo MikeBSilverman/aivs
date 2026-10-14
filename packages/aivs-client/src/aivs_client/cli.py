@@ -31,7 +31,10 @@ from aivs_client.transport import AivsError, NativeClient, TaxiiClient, build_ht
 
 app = typer.Typer(
     name="aivs",
-    help="Reference client for an AIVS pre-CVE vulnerability sharing instance.",
+    help=(
+        "Reference client for an AIVS instance: vulnerability intelligence for an ISAC "
+        "and its members, from pre-CVE early warning onward."
+    ),
     no_args_is_help=True,
     add_completion=False,
 )

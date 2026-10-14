@@ -87,10 +87,22 @@ def test_development_may_still_use_bypasses():
 
 
 def test_hardened_environment_starts_when_configured_safely():
-    """The interlock must not be so broad that a correct deployment cannot start."""
+    """The interlock must not be so broad that a correct deployment cannot start.
+
+    The two secrets here differ, which is the pair of the test below."""
     settings = Settings(**_settings(environment="staging"))
     assert settings.environment == "staging"
     assert settings.dev_trust_unauthenticated_proxy is False
+    assert settings.session_secret != settings.proxy_shared_secret
+
+
+@pytest.mark.parametrize("environment", ["production", "staging"])
+def test_hardened_environments_refuse_one_value_for_both_secrets(environment):
+    """The proxy secret is a bearer token held by nginx as well; the session
+    secret signs every operator's session. Reused, a disclosure of the proxy's
+    rendered config (or the env file line copied twice) forges sessions."""
+    with pytest.raises(ValidationError, match="session_secret \\(must differ"):
+        Settings(**_settings(environment=environment, session_secret=TEST_PROXY_SECRET))
 
 
 # ---------------------------------------------------------------------------

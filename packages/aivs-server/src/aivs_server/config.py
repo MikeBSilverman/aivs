@@ -495,6 +495,7 @@ class Settings(BaseSettings):
             *self._proxy_trust_violations(),
             *self._output_violations(),
             *self._key_and_identity_violations(),
+            *self._secret_reuse_violations(),
         ]
         if violations:
             msg = (
@@ -556,6 +557,19 @@ class Settings(BaseSettings):
             # asks for a limit gets capped at the smaller.
             violations.append("taxii_default_page_size (must not exceed taxii_max_page_size)")
         return violations
+
+    def _secret_reuse_violations(self) -> list[str]:
+        """Two secrets with different holders must not be one value.
+
+        The proxy secret is also held by nginx, rendered into its config; the
+        session secret signs every operator's session and every CSRF token.
+        One value for both turns a disclosure of the proxy's config into forged
+        operator sessions. The env file's comment asked for different values and
+        nothing checked.
+        """
+        if self.session_secret.get_secret_value() == self.proxy_shared_secret.get_secret_value():
+            return ["session_secret (must differ from proxy_shared_secret)"]
+        return []
 
     def _key_and_identity_violations(self) -> list[str]:
         """Where the keys come from, and what anchors member identity."""

@@ -1,7 +1,10 @@
 Mutation M11: a closed membership interval still grants reads after the member left
 Re-applies: f4d2920 "Make circle membership an interval, so status changes never cost history"
 
-Expect red: packages/aivs-server/tests/unit/test_membership_intervals.py::test_a_member_that_has_left_reads_nothing
+Not claimed: test_membership_intervals.py::test_a_member_that_has_left_reads_
+nothing. A former member has no open interval, so the collection already
+answers 404 before this clause is read; that test pins the open-interval rule
+in the auth context, and only a rejoiner reaches the left_at bound.
 Expect red: packages/aivs-server/tests/unit/test_membership_intervals.py::test_a_rejoining_member_reads_both_intervals_and_not_the_gap
 
 diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs-server/src/aivs_server/auth/policy.py

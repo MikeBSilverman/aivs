@@ -96,6 +96,10 @@ class AuthContext:
     #: Present only for portal sessions.
     operator_id: uuid.UUID | None = None
     operator_roles: frozenset[OperatorRole] = frozenset()
+    #: When the operator's access ends (``operators.role_expires_at``); set for
+    #: an auditor. The session refuses past it; policy checks it again with the
+    #: caller's ``now``, so a long request cannot outlive it either.
+    role_expires_at: dt.datetime | None = None
 
     #: Correlates this request across the audit log and application logs.
     request_id: str = ""

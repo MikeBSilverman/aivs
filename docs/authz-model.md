@@ -251,7 +251,7 @@ caller's org belongs to, at the role shown.
 | **Acknowledgments** |
 | Record `acknowledged` / `actioned` [^ack] | N | own org | own org | own org | N | N |
 | **Audit log** |
-| Read the audit log | N | N | N | N | not yet built³ | N |
+| Read the audit log and receipts | N | N | N | N | `auditor` only³ | N |
 | Modify the audit log | N | N | N | N | **N — database-enforced** | **N — database-enforced** |
 
 ¹ `can_transition_submission` grants `submitted` to `is_submitter` only. A system
@@ -259,8 +259,12 @@ administrator does not submit on a member's behalf; if the ISAC itself is the
 submitter (its own org submitted the content) it qualifies as `is_submitter` on
 that submission like any other org.
 
-³ The plan's `auditor` role; until it exists there is no audit read route, and
-this table said `Y` for one that did not exist.
+³ `policy.can_read_audit`: an operator holding `auditor` alone, before its
+`role_expires_at`; the whole instance at the ISAC, its own organisation's rows
+at a member (`audit_scope`). No other role reads the trail, and an auditor
+reads nothing else. Its reads are recorded (`audit.read`) and, by design,
+not served back by the stream; `auditor_bulk_read` watches them. This table
+once said `Y` here for a route that did not exist.
 
 ² `can_manage_org` requires `is_isac_membership(ctx)` or `is_org_admin(ctx)`, and
 `is_org_admin` tests `ORG_ADMIN in ctx.operator_roles`. A machine identity has
@@ -433,6 +437,8 @@ which it versions (KEV status) and cannot reach through a circle.
 | submission record | ✓ | ✓ | ✓ | 404 | 404 | 404 | ✓ | ✓ | 404 | 404 |
 | readiness | ✓ | ✓ | ✓ | ✓ | 404 | 404 | ✓ | ✓ | 404 | 404 |
 | vulnerability page | sign in | ✓ | ✓ | sign in | sign in | sign in | ✓ | ✓ | 404 | 404 |
+| evidence pack | ✓ | ✓ | ✓ | ✓ | 404 | 404 | 404 | 404 | 404 | 404 |
+| audit read | 403 | 403 | 403 | 403 | 403 | 403 | 403 | 403 | 403 | 403 |
 | telemetry | ✓ | ✓ | ✓ | 404 | 404 | 404 | 404 | 404 | 404 | 404 |
 | receipt record | 404 | 404 | 404 | 404 | 404 | 404 | ✓ | ✓ | 404 | 404 |
 | priority | 403 | 403 | 403 | 404 | 404 | 404 | 403 | ✓ | 404 | 404 |
@@ -480,8 +486,18 @@ The matrix does not claim:
   clause test.
 - visibility within content a caller may read.
 - audit content.
-- any principal that does not exist yet. The auditor, researcher and government
-  organisations, and delegated providers are listed in `principals.py` with the phase that adds them, and are not faked.
+- any principal that does not exist yet. The researcher and government
+  organisations, and delegated providers, are listed in `principals.py` with the phase that adds them, and are not faked.
+
+**The auditors** (`ISAC auditor session`, `member auditor session`) are not
+columns either: their row is a rule (`_auditor` in the matrix). On `audit read`
+they are allowed, within their scope (the instance at the ISAC, their own
+organisation at a member). Everywhere else, API and portal alike, they get 403
+at the door (`auth.deps` and the portal's session refuse an auditor before any
+route runs), so no handler that reads a firm's records by organisation is ever
+reached. Signing out is the one portal action an auditor takes. The first run
+of that row, before the door refused it, found an auditor reading its firm's
+submissions, postures and OpenVEX export through routes that ask no policy.
 
 **The member SSO session** is not a column of the table, because its row is
 derived from one (`_sso_member` in the matrix). On every portal route it gets

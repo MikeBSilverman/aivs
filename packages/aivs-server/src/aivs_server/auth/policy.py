@@ -32,6 +32,7 @@ from typing import TYPE_CHECKING, Final
 from sqlalchemy import ColumnElement, and_, exists, false, or_, true
 
 from aivs_schemas.enums import (
+    CIRCLE_ELIGIBLE_ORG_TYPES,
     TLP,
     VISIBLE_SUBMISSION_STATES,
     CircleRole,
@@ -53,16 +54,19 @@ Intervals = tuple[MembershipInterval, ...]
 
 __all__ = [
     "PolicyDeniedError",
+    "audit_scope",
     "can_acknowledge_own_submission",
     "can_administer_circle",
     "can_assign_submission",
     "can_change_embargo",
     "can_confirm_proxy_filing",
+    "can_hold_evidence_pack",
     "can_manage_org",
     "can_manage_own_webhooks",
     "can_offboard_org",
     "can_pause_distribution",
     "can_quarantine_org",
+    "can_read_audit",
     "can_read_circle",
     "can_read_isac_records",
     "can_read_own_lead_time",
@@ -81,6 +85,7 @@ __all__ = [
     "can_view_submission_receipts",
     "distribution_visibility_clause",
     "is_active",
+    "is_auditor",
     "is_isac_editor",
     "is_isac_membership",
     "is_isac_staff",
@@ -134,13 +139,63 @@ def require(allowed: bool, reason: str) -> None:
 # Baseline predicates
 # ---------------------------------------------------------------------------
 def is_active(ctx: AuthContext) -> bool:
-    """Return whether the caller's organisation is permitted to transact at all.
+    """Return whether the caller is permitted to transact at all.
 
     Checked first by every other predicate in this module. A ``PENDING`` org has
     enrolled but not been activated; a ``SUSPENDED`` org has been switched off.
     Neither may read or write anything.
+
+    An auditor's session transacts nothing either. It reads the audit trail
+    through :func:`can_read_audit`, which does not come through here, and
+    every other predicate refuses it at this first check. A member firm's
+    content is readable by its people because they are the firm's; an auditor
+    is the firm's too, and refusing it here rather than in each predicate is
+    what makes "never content" true of predicates written later.
     """
-    return ctx.org_status is OrgStatus.ACTIVE
+    return ctx.org_status is OrgStatus.ACTIVE and OperatorRole.AUDITOR not in ctx.operator_roles
+
+
+def is_auditor(ctx: AuthContext) -> bool:
+    """A signed-in auditor: a session that reads the audit trail and nothing else."""
+    return OperatorRole.AUDITOR in ctx.operator_roles
+
+
+def can_read_audit(ctx: AuthContext, now: dt.datetime) -> bool:
+    """May the caller read the audit trail and receipts (within :func:`audit_scope`)?
+
+    A signed-in auditor of an active organisation, before its access ends. The
+    end is checked here against the caller's ``now`` as well as at session
+    resolution, so a request cannot outlive it.
+    """
+    return (
+        ctx.org_status is OrgStatus.ACTIVE
+        and ctx.operator_id is not None
+        and OperatorRole.AUDITOR in ctx.operator_roles
+        and ctx.role_expires_at is not None
+        and now < ctx.role_expires_at
+    )
+
+
+def can_hold_evidence_pack(ctx: AuthContext) -> bool:
+    """May the caller's organisation draw its own evidence pack?
+
+    The organisations that read by circle membership, other than the ISAC: the
+    pack is a member's record of its own conduct, for its own regulator. The
+    ISAC already holds the receipts it is built from, and an automation or a
+    researcher reads nothing.
+    """
+    return is_active(ctx) and ctx.org_type in CIRCLE_ELIGIBLE_ORG_TYPES - {OrgType.ADMIN}
+
+
+def audit_scope(ctx: AuthContext) -> uuid.UUID | None:
+    """The organisation an auditor reads, or ``None`` for the whole instance.
+
+    The ISAC's auditor reads the instance; a member's auditor reads its own
+    organisation's records and nothing that names another.
+    """
+    if ctx.org_type is OrgType.ADMIN:
+        return None
+    return ctx.org_id
 
 
 def _isac_human(ctx: AuthContext, role: OperatorRole) -> bool:

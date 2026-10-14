@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Evidence pack &middot; {{ instance_name }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <h1>Evidence pack</h1>
+  <p>{{ pack.organization.name }} &middot; <span class="mono">{{ pack.vulnerability }}</span></p>
+</div>
+
+<div class="card">
+  <table>
+    <tbody>
+      <tr><th>Drawn</th><td class="mono">{{ pack.generated_at }}</td></tr>
+      <tr><th>Format</th><td class="mono">{{ pack.format }}</td></tr>
+      <tr><th>SHA-256</th><td class="mono">{{ sha256 }}</td></tr>
+    </tbody>
+  </table>
+  <p class="muted small">
+    The hash is of this pack's JSON (<code>GET /api/v1/evidence-pack</code>), and is
+    recorded in the platform's audit trail when the pack is drawn.
+  </p>
+</div>
+
+<div class="card">
+  <h2>What reached your firm, and when each was in force</h2>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Object</th><th>Version</th><th>Reached you</th><th>In force until</th><th>Reviewed by the ISAC</th></tr>
+      </thead>
+      <tbody>
+        {% for version in pack.versions %}
+          <tr>
+            <td class="mono">{{ version.type }}<br>{{ version.stix_id }}</td>
+            <td class="mono">{{ version.modified }}</td>
+            <td class="mono">{{ version.reached_us_at }}</td>
+            <td class="mono">{{ version.in_force_until or "now" }}</td>
+            <td class="mono">{{ version.isac_reviewed_at or "" }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Your firm's receipts</h2>
+  {% if pack.receipts %}
+    <table>
+      <tbody>
+        {% for receipt in pack.receipts %}
+          <tr><td class="mono">{{ receipt.at }}</td><td>{{ receipt.type }}</td><td>{{ receipt.via }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <div class="empty">No receipts yet.</div>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Your firm's status</h2>
+  {% if pack.posture %}
+    <table>
+      <tbody>
+        <tr><th>Status</th><td>{{ pack.posture.status }}</td></tr>
+        {% if pack.posture.justification %}<tr><th>Why not affected</th><td>{{ pack.posture.justification|replace('_', ' ') }}</td></tr>{% endif %}
+        {% if pack.posture.action_statement %}<tr><th>What your firm is doing</th><td>{{ pack.posture.action_statement }}</td></tr>{% endif %}
+        {% if pack.posture.impact_statement %}<tr><th>Impact</th><td>{{ pack.posture.impact_statement }}</td></tr>{% endif %}
+        <tr><th>Detection deployed</th><td>{{ "yes" if pack.posture.detection_deployed else "no" }}</td></tr>
+        <tr><th>Last confirmed</th><td class="mono">{{ pack.posture.validated_at or "never" }}</td></tr>
+        <tr><th>Last changed</th><td class="mono">{{ pack.posture.updated_at }}</td></tr>
+      </tbody>
+    </table>
+    <p class="muted small">Only the current status is kept; earlier ones are not recorded.</p>
+  {% else %}
+    <div class="empty">Not recorded.</div>
+  {% endif %}
+</div>
+{% endblock %}

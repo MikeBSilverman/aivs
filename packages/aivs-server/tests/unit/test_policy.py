@@ -525,7 +525,10 @@ def test_isac_roles_on_a_non_session_context_confer_nothing(predicate):
     """
     from aivs_server.auth import policy  # noqa: PLC0415 - name-addressed predicates
 
-    every_role = frozenset(OperatorRole)
+    # Every role a staff member can hold together. An auditor holds its role
+    # alone (ck_operators_auditor_alone_and_expiring), and holding it closes
+    # every predicate here, so it cannot be among the roles that would grant.
+    every_role = frozenset(OperatorRole) - {OperatorRole.AUDITOR}
 
     def context(method: AuthMethod) -> AuthContext:
         return AuthContext(

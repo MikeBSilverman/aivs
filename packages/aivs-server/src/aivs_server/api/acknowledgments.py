@@ -26,18 +26,15 @@ import uuid
 
 from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import func, select
-from sqlalchemy.exc import IntegrityError
 
-from aivs_schemas.enums import AckType, AckVia
+from aivs_schemas.enums import AckVia
 from aivs_schemas.models import AcknowledgmentCreate, AcknowledgmentOut, ReceiptOut
-from aivs_server.audit.log import AuditAction, record
 from aivs_server.auth.deps import AuthenticatedContext, SessionDep
 from aivs_server.auth.policy import (
-    can_acknowledge_own_submission,
     can_view_submission_receipts,
-    require,
 )
 from aivs_server.db.models import Acknowledgment, Organization
+from aivs_server.services.acknowledgments import AssertionNotFoundError, assert_receipt
 from aivs_server.services.submissions import load_submission
 
 __all__ = ["router"]
@@ -65,77 +62,19 @@ async def acknowledge(
     submission = await load_submission(session, payload.submission_id, for_update=False)
     if submission is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Submission not found")
-
-    # A member may acknowledge only content that has actually been distributed to
-    # them. Acknowledging a draft they cannot see would be evidence of nothing,
-    # and permitting it by id would leak that the id exists.
-    visible = await session.scalar(
-        select(func.count())
-        .select_from(Acknowledgment)
-        .where(
-            Acknowledgment.submission_id == submission.id,
-            Acknowledgment.org_id == ctx.org_id,
-            Acknowledgment.ack_type == AckType.RETRIEVED,
-        )
-    )
-    if submission.submitter_org_id == ctx.org_id:
-        # 403, not 404: the submitter knows the submission exists.
-        require(can_acknowledge_own_submission(ctx), "acknowledge_own_submission")
-    elif not visible:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Submission not found")
-
-    now = dt.datetime.now(dt.UTC)
-    acknowledgment = Acknowledgment(
-        org_id=ctx.org_id,
-        submission_id=submission.id,
-        ack_type=payload.ack_type,
-        via=AckVia.API,
-        actor_ref=ctx.actor_id,
-        note=payload.note,
-        # Deduplicated per day, like retrieval receipts.
-        #
-        # An earlier version left this null so that explicit assertions would be
-        # freely repeatable. PostgreSQL treats nulls as distinct in a unique
-        # constraint, so that made the constraint inert and let one member write
-        # unbounded rows into two tables that have no delete path -- inflating
-        # the occurrence counts in the submitter's own receipts view, which is
-        # the artefact this data exists to be trusted as.
-        #
-        # One `acknowledged` and one `actioned` per organisation per submission
-        # per day still records the timeline that matters ("when did they first
-        # say they had acted"), without letting the record be padded.
-        dedupe_day=now.date(),
-    )
-    session.add(acknowledgment)
-
-    await record(
-        session,
-        action=AuditAction.ACK_RECORDED,
-        ctx=ctx,
-        resource_type="submission",
-        resource_id=str(submission.id),
-        details={"ack_type": payload.ack_type.value},
-    )
     try:
-        await session.commit()
-    except IntegrityError:
-        # Already asserted today. Idempotent rather than an error: a collector
-        # retrying after a timeout should not see a failure for something it
-        # successfully recorded.
-        await session.rollback()
-        return (
-            await session.execute(
-                select(Acknowledgment).where(
-                    Acknowledgment.org_id == ctx.org_id,
-                    Acknowledgment.submission_id == submission.id,
-                    Acknowledgment.ack_type == payload.ack_type,
-                    Acknowledgment.dedupe_day == now.date(),
-                )
-            )
-        ).scalar_one()
-
-    await session.refresh(acknowledgment)
-    return acknowledgment
+        return await assert_receipt(
+            session,
+            ctx,
+            submission,
+            ack_type=payload.ack_type,
+            via=AckVia.API,
+            note=payload.note,
+            now=dt.datetime.now(dt.UTC),
+        )
+    except AssertionNotFoundError:
+        # Never delivered to the caller: the same answer as an absent id.
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Submission not found") from None
 
 
 @router.get("/submissions/{submission_id}/receipts", response_model=list[ReceiptOut])

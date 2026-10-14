@@ -8,6 +8,7 @@ the organisation is allowed to hold -- live in one place.
 
 from __future__ import annotations
 
+import datetime as dt
 import uuid
 from collections.abc import Iterable
 
@@ -50,6 +51,8 @@ async def create_operator(
     password: str,
     roles: Iterable[OperatorRole],
     secret_box: SecretBox,
+    role_expires_at: dt.datetime | None,
+    now: dt.datetime,
 ) -> tuple[Operator, str]:
     """Create an operator. Returns it and the TOTP seed, to be shown exactly once.
 
@@ -67,6 +70,7 @@ async def create_operator(
         # and an inert grant reads as real to anyone auditing who holds what.
         msg = "org_admin is a member firm's role; the hosting ISAC uses its own roles"
         raise OperatorError(msg)
+    _require_auditor_terms(held, role_expires_at, now)
     misplaced = held & ISAC_ONLY_ROLES
     if misplaced and organisation.org_type is not OrgType.ADMIN:
         msg = (
@@ -88,6 +92,7 @@ async def create_operator(
             seed, purpose=SecretPurpose.TOTP, subject=operator_id
         ),
         is_active=True,
+        role_expires_at=role_expires_at,
     )
     session.add(operator)
     await record(
@@ -99,6 +104,33 @@ async def create_operator(
         resource_id=str(operator_id),
         # Roles, not the email: the audit log is immutable, and a person's
         # address in it could never be removed when they leave.
-        details={"roles": sorted(role.value for role in held)},
+        details={
+            "roles": sorted(role.value for role in held),
+            # An auditor's end date: when the engagement recorded here stops.
+            **({"role_expires_at": role_expires_at.isoformat()} if role_expires_at else {}),
+        },
     )
     return operator, seed
+
+
+def _require_auditor_terms(
+    held: frozenset[OperatorRole], role_expires_at: dt.datetime | None, now: dt.datetime
+) -> None:
+    """An auditor holds that role alone, until a stated time; nobody else has an end date.
+
+    Alone, because an auditor who can also edit or administer is reviewing its
+    own actions. Expiring, because an engagement ends and a reader of the whole
+    audit trail who outlives it is the access nobody remembers to remove. The
+    database refuses both too (``ck_operators_auditor_alone_and_expiring``);
+    this says why in words.
+    """
+    is_auditor = OperatorRole.AUDITOR in held
+    if is_auditor and held != {OperatorRole.AUDITOR}:
+        msg = "an auditor holds no other role"
+        raise OperatorError(msg)
+    if is_auditor and (role_expires_at is None or role_expires_at <= now):
+        msg = "an auditor needs an end date in the future"
+        raise OperatorError(msg)
+    if not is_auditor and role_expires_at is not None:
+        msg = "only an auditor's access has an end date"
+        raise OperatorError(msg)

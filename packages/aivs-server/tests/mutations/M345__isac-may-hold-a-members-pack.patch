@@ -1,0 +1,17 @@
+Mutation M345: the ISAC may draw a member's evidence pack
+Re-applies: (T10, uncommitted) "The member evidence pack and the actioned click"
+
+Expect red: packages/aivs-server/tests/unit/test_vulnerability_page.py::test_the_isac_is_refused_a_members_pack_as_an_unknown_one_is
+
+diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs-server/src/aivs_server/auth/policy.py
+--- a/packages/aivs-server/src/aivs_server/auth/policy.py
++++ b/packages/aivs-server/src/aivs_server/auth/policy.py
+@@ -183,7 +183,7 @@
+     ISAC already holds the receipts it is built from, and an automation or a
+     researcher reads nothing.
+     """
+-    return is_active(ctx) and ctx.org_type in CIRCLE_ELIGIBLE_ORG_TYPES - {OrgType.ADMIN}
++    return is_active(ctx) and ctx.org_type in CIRCLE_ELIGIBLE_ORG_TYPES
+ 
+ 
+ def audit_scope(ctx: AuthContext) -> uuid.UUID | None:

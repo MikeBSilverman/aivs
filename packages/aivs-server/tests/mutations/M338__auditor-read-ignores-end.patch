@@ -1,0 +1,16 @@
+Mutation M338: an auditor reads past the end of its access within a request
+Re-applies: (T10, uncommitted) "The auditor role and the audit stream"
+
+Expect red: packages/aivs-server/tests/unit/test_auditor.py::test_an_auditor_reads_until_its_access_ends_and_not_at_or_after
+
+diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs-server/src/aivs_server/auth/policy.py
+--- a/packages/aivs-server/src/aivs_server/auth/policy.py
++++ b/packages/aivs-server/src/aivs_server/auth/policy.py
+@@ -171,7 +171,6 @@
+         and ctx.operator_id is not None
+         and OperatorRole.AUDITOR in ctx.operator_roles
+         and ctx.role_expires_at is not None
+-        and now < ctx.role_expires_at
+     )
+ 
+ 

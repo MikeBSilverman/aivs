@@ -156,6 +156,8 @@ async def authenticate_operator(
         raise SessionRejectedError("unknown_operator")
     if not operator.is_active:
         raise SessionRejectedError("operator_inactive")
+    if _access_ended(operator, now):
+        raise SessionRejectedError("operator_access_ended")
     if operator.locked_until is not None and operator.locked_until > now:
         raise SessionRejectedError("operator_locked")
     if operator.org_id != org_id:
@@ -295,7 +297,7 @@ async def resolve_session(
     row = await _load_live_session(session, settings, token=token, now=now)
     _check_certificate_binding(row, cert_fingerprint)
     await _check_bound_certificate(session, row, now=now)
-    operator = await _load_active_operator(session, row)
+    operator = await _load_active_operator(session, row, now=now)
     organization = await _load_active_organization(session, row)
 
     circles = await load_circle_grants(session, organization.id)
@@ -313,6 +315,7 @@ async def resolve_session(
         cert_fingerprint=row.cert_fingerprint,
         operator_id=operator.id,
         operator_roles=frozenset(operator.roles),
+        role_expires_at=operator.role_expires_at,
         request_id=request_id,
         source_ip=source_ip,
     )
@@ -385,11 +388,20 @@ async def _check_bound_certificate(
         raise SessionRejectedError("session_certificate_expired")
 
 
-async def _load_active_operator(session: AsyncSession, row: PortalSession) -> Operator:
+async def _load_active_operator(
+    session: AsyncSession, row: PortalSession, *, now: dt.datetime
+) -> Operator:
     operator = await session.get(Operator, row.operator_id)
     if operator is None or not operator.is_active:
         raise SessionRejectedError("operator_inactive")
+    if _access_ended(operator, now):
+        raise SessionRejectedError("operator_access_ended")
     return operator
+
+
+def _access_ended(operator: Operator, now: dt.datetime) -> bool:
+    """Past ``role_expires_at``: an auditor's engagement is over."""
+    return operator.role_expires_at is not None and operator.role_expires_at <= now
 
 
 async def _load_active_organization(session: AsyncSession, row: PortalSession) -> Organization:
@@ -481,7 +493,7 @@ async def resolve_sso_session(
     """
     row = await _load_live_session(session, settings, token=token, now=now)
     _check_sso_binding(row, settings, device_cookie, now)
-    operator = await _load_active_operator(session, row)
+    operator = await _load_active_operator(session, row, now=now)
     if (operator.federated_issuer, operator.federated_subject) != (row.idp_issuer, row.idp_subject):
         raise SessionRejectedError("sso_identity_changed")
     organization = await _load_active_organization(session, row)

@@ -880,6 +880,9 @@ Each finding is raised **once per rule window** and goes three ways:
 | `not_found_burst` | One organisation gets 50 "not found" answers in 10 min | Someone is walking identifiers. Ask the member whether a misconfigured client explains it. If not, treat it as §7.3. |
 | `contribution_flood` | One organisation goes past its hourly allowance for contributions published without review (TAXII inbox posts included) | A script or a stolen certificate behind a session. Check what it filed in the review queue, then treat as §7.3 if the member didn't do it. |
 | `posture_export_burst` | One organisation exports its postures 20 times in 1 h | The export is the firm's whole list of where it is affected. Ask the member whether a collector explains it. If not, treat it as §7.3: the alert names the firm, never a statement. |
+| `evidence_pack_burst` | One organisation draws 20 evidence packs in 1 h | Each pack is the firm's record of what reached it and what it did; many together are its response history. Ask the member whether an audit explains it. If not, treat it as §7.3. The alert names the firm, never a vulnerability. |
+| `auditor_bulk_read` | One auditor is served 20,000 audit or receipt events in 1 h | A SIEM catching up after an outage does this once. Otherwise someone is reading which firms attend to which threats: confirm with the auditor's engagement contact, and if nobody explains it, revoke the auditor's sessions and end its access. |
+| `auditor_outside_audit` | An auditor's session is refused 5 times in 30 min outside the audit read | An auditor's tooling reads two endpoints. A session trying content routes is someone exploring with an auditor's credential: revoke its sessions and ask the auditor's firm. |
 | `first_distribution_to_circle` | An operator distributes to a circle they have never distributed to before | The checker's look: confirm the circle was the intended audience. |
 | `anonymity_reveal` | Any reveal of an anonymous submitter | Confirm the reveal was expected and that its recorded reason holds up. |
 | `distribution_paused` | Distribution paused instance-wide | Confirm someone on the incident bridge did it. |
@@ -1002,6 +1005,38 @@ STARTTLS with the relay's certificate verified is always required; there is
 no setting to relax it. A message the relay refuses is retried with backoff,
 up to `AIVS_EMAIL_MAX_ATTEMPTS`, and keeps its last error in
 `email_deliveries.error`; the status page does not show it yet.
+### 9.6 An auditor, and the audit stream your SIEM polls
+
+An auditor reads the audit trail and receipts and nothing else (SF-78). At the
+ISAC it reads the whole instance; a member's auditor would read only its own
+organisation's rows, but no path creates one yet. Create the ISAC's auditor
+from the host, with the date the engagement ends; the role is held alone, and
+the database refuses an auditor without an end date:
+
+```bash
+docker compose --env-file deploy/.env exec app python -m aivs_server.bootstrap_operator \
+    --org-slug <isac> --additional \
+    --email auditor@firm.example --name "External auditor" \
+    --role auditor --role-expires-at 2027-03-31T00:00:00+00:00
+```
+
+Like every operator created this way, it raises `operator_bootstrapped`.
+After the end date its sessions are refused (`operator_access_ended`).
+
+The stream is `GET /api/v1/audit/events` and `GET /api/v1/audit/receipts`,
+read with the auditor's session as a bearer token. Each page returns a
+`cursor`; pass it back to continue. Polling with the last cursor returns only
+what has committed since, in commit order. Each event's `hash` chains to the
+one before, across pages, so a gap or an edit between two exports shows. The
+stream waits behind the oldest transaction still running anywhere on the
+database cluster. A cursor that stops moving while the trail is being written
+means a connection is sitting in an open transaction; find it in
+`pg_stat_activity` (`state = 'idle in transaction'`).
+
+Each page served is recorded as `audit.read`, and those rows are left out of
+the stream, so a poller that reads until a page comes back empty gets there.
+They stay in the log: the `auditor_bulk_read` rule counts them, and an export
+of `audit_log` taken from the database shows them.
 
 ## 10. Things that will bite you
 

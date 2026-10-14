@@ -116,6 +116,7 @@ async def test_the_bootstrap_on_a_live_instance_needs_an_explicit_flag_and_is_re
             password=TEST_OPERATOR_PASSWORD,
             roles=[OperatorRole.SYSTEM_ADMIN],
             certificate_pem=None,
+            role_expires_at=None,
             additional=additional,
         )
 

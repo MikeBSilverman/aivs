@@ -52,6 +52,13 @@ class RouteClass(enum.StrEnum):
     READINESS = "readiness"
     #: The vulnerability page: whoever can see the vulnerability; others 404.
     VULNERABILITY_PAGE = "vulnerability page"
+    #: A member's evidence pack, and its "we've acted" assertion: an
+    #: organisation that reads by membership and can see the vulnerability;
+    #: everyone else 404, the ISAC included.
+    EVIDENCE_PACK = "evidence pack"
+    #: The audit trail and receipts streams: an auditor only; everyone else
+    #: 403, before the request is examined.
+    AUDIT_READ = "audit read"
     #: Telemetry on a submission: its submitter only; everyone else 404, the
     #: ISAC included (it has the receipts; a count to the wrong reader is a
     #: disclosure of who engaged).
@@ -358,6 +365,30 @@ ROUTES: tuple[RouteCase, ...] = (
         RouteClass.VULNERABILITY_PAGE,
         lambda world: (f"/portal/vulnerabilities?id={world.object_stix_id}", None),
         is_portal=True,
+    ),
+    RouteCase(
+        "GET",
+        "/api/v1/evidence-pack",
+        RouteClass.EVIDENCE_PACK,
+        lambda world: (f"{API}/evidence-pack?vulnerability={world.object_stix_id}", None),
+    ),
+    RouteCase(
+        "GET",
+        "/portal/vulnerabilities/evidence-pack",
+        RouteClass.EVIDENCE_PACK,
+        lambda world: (f"/portal/vulnerabilities/evidence-pack?id={world.object_stix_id}", None),
+        is_portal=True,
+    ),
+    RouteCase(
+        "POST",
+        "/portal/vulnerabilities/actioned",
+        RouteClass.EVIDENCE_PACK,
+        lambda world: ("/portal/vulnerabilities/actioned", {"vulnerability": world.object_stix_id}),
+        is_portal=True,
+    ),
+    RouteCase("GET", "/api/v1/audit/events", RouteClass.AUDIT_READ, _fixed(f"{API}/audit/events")),
+    RouteCase(
+        "GET", "/api/v1/audit/receipts", RouteClass.AUDIT_READ, _fixed(f"{API}/audit/receipts")
     ),
     RouteCase(
         "POST",
@@ -891,7 +922,7 @@ ROUTES: tuple[RouteCase, ...] = (
 #: not a total, so one surface vanishing from the walk cannot hide behind another
 #: growing. Raise a floor when a surface grows; lowering one is a decision.
 SURFACE_FLOORS: dict[str, int] = {
-    "/api/v1": 43,
+    "/api/v1": 46,
     "/taxii2": 10,
     "/portal/admin": 10,
     "/portal": 22,

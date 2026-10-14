@@ -35,7 +35,7 @@ from aivs_server.auth.deps import (
     resolve_request_sso_session,
 )
 from aivs_server.auth.passwords import constant_time_equals
-from aivs_server.auth.policy import can_view_instance_status, is_isac_staff
+from aivs_server.auth.policy import can_view_instance_status, is_auditor, is_isac_staff, require
 from aivs_server.auth.sessions import SessionRejectedError
 from aivs_server.config import Settings
 from aivs_server.db.models import Operator
@@ -43,6 +43,7 @@ from aivs_server.db.models import Operator
 __all__ = [
     "LOGIN_FAILED",
     "TEMPLATES",
+    "any_session",
     "base_context",
     "current_session",
     "operator_name",
@@ -67,7 +68,21 @@ LOGIN_FAILED = "Those credentials were not accepted."
 async def current_session(
     request: Request, settings: Settings, session: SessionDep
 ) -> tuple[AuthContext, str]:
-    """Resolve the signed-in person, or send them to sign in.
+    """Resolve the signed-in person for a portal page, or send them to sign in.
+
+    An auditor has no portal page -- its read is the API's audit stream -- so
+    its session is refused here, as ``auth.deps`` refuses it on every other
+    API route. Signing out is the one portal action it takes (:func:`any_session`).
+    """
+    resolved = await any_session(request, settings, session)
+    require(not is_auditor(resolved[0]), "auditor_outside_audit")
+    return resolved
+
+
+async def any_session(
+    request: Request, settings: Settings, session: SessionDep
+) -> tuple[AuthContext, str]:
+    """Resolve the signed-in person, whatever they may do, or send them to sign in.
 
     The request decides which kind of session it may resume. One that carries
     a client certificate resumes only a certificate-bound session; one with no

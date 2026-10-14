@@ -29,6 +29,7 @@ from aivs_server.auth.mtls import (
     client_address,
     extract_client_certificate,
 )
+from aivs_server.auth.policy import is_auditor, require
 from aivs_server.auth.sessions import SessionRejectedError, resolve_session, resolve_sso_session
 from aivs_server.config import Settings, get_settings
 from aivs_server.db.engine import get_session
@@ -229,6 +230,23 @@ async def get_auth_context(
     """
     ctx = await _resolve_auth_context(request, settings, session)
     request.state.auth_context = ctx
+    # An auditor's session reaches the audit read (``AuditorContext``) and
+    # nothing else: refused here, at the door, every other route is closed to
+    # it by construction, including the ones that read the firm's own records
+    # by organisation without asking policy. Permit-only, so a route written
+    # later is closed to it too.
+    require(not is_auditor(ctx), "auditor_outside_audit")
+    return ctx
+
+
+async def get_auditor_context(
+    request: Request,
+    settings: SettingsDep,
+    session: SessionDep,
+) -> AuthContext:
+    """The caller, for the audit read alone, which then asks ``policy.can_read_audit``."""
+    ctx = await _resolve_auth_context(request, settings, session)
+    request.state.auth_context = ctx
     return ctx
 
 
@@ -311,6 +329,7 @@ async def _resolve_auth_context(
 #: declare it, and the authorization matrix test asserts that the set of such
 #: endpoints is exactly the intended one.
 AuthenticatedContext = Annotated[AuthContext, Depends(get_auth_context)]
+AuditorContext = Annotated[AuthContext, Depends(get_auditor_context)]
 
 
 def _role_rank(role: CircleRole) -> int:

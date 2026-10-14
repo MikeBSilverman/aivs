@@ -278,14 +278,23 @@ Built, except where a line says otherwise:
   (`org_postures`) arrived in phase E with the posture click; phase H made it
   a full VEX statement, with VEX's rules held by the database, and an OpenVEX
   export of the member's own rows (`/api/v1/postures/openvex`, SF-70). What VEX
-  has no field for stays out of the export. Still to build here: the one
-  click from the advisory that also writes the `actioned` receipt, as an
-  explicit choice of the member's (a receipt derived from the status would
-  tell the ISAC the status), once portal reads leave a retrieval receipt.
-- **The member evidence pack**: receipts, posture, validation and the
-  advisory version in force at each instant, content-hashed.
-- **An `auditor` role** with an expiry, reading audit and receipts within
-  its scope, never content.
+  has no field for stays out of the export. "We've acted on this" is a click
+  of its own on the vulnerability page, writing an `actioned` receipt for what
+  reached the firm there; setting a posture writes none, because a receipt
+  that followed the status would tell the ISAC the status (SF-79).
+- **The member evidence pack** (built, SF-79): for one vulnerability, every
+  version of the advisory and its related objects as they reached the firm,
+  each with the interval it was in force and the ISAC's review stamp; the
+  firm's own receipts; its posture as a VEX statement with when it last
+  confirmed it. Content-hashed, the hash recorded in the audit trail; JSON at
+  `GET /api/v1/evidence-pack?vulnerability=`, printable from the page. The
+  member's alone: the ISAC gets the 404 an unknown vulnerability gets.
+- **The `auditor` role** (built, SF-78): held alone and until a required end
+  date; reads the audit trail and receipts, the instance's at the ISAC and its
+  own organisation's at a member, as a cursor stream a SIEM can poll, in
+  commit order and hash-chained across pages; refused at the door everywhere
+  else, so never content. Its own reads are logged (`audit.read`) and left out
+  of the stream, which a poller could otherwise never drain.
 - **Offboarding** (built, SF-72) deletes every operational row the data
   inventory gives the organisation (postures, webhooks, portal sessions, TAXII
   inbox statuses), keeps evidence and content, ends its credentials, closes

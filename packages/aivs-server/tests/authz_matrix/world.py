@@ -113,7 +113,11 @@ def inbox_note(public_stix_id: str) -> dict[str, Any]:
 async def _session_credentials(
     f: Factories, org: Organization, pem: str, roles: tuple[Any, ...]
 ) -> Credentials:
-    operator, _seed = await f.make_operator(org, roles=roles)
+    # An auditor exists only with an end date (ck_operators_auditor_alone_and_expiring).
+    expires = (
+        dt.datetime.now(dt.UTC) + dt.timedelta(days=30) if OperatorRole.AUDITOR in roles else None
+    )
+    operator, _seed = await f.make_operator(org, roles=roles, role_expires_at=expires)
     # Every session principal carries the one stored reading preference, at the
     # depth that shows the most, so the whole matrix is the proof that it
     # confers nothing: a route that granted more to a reader with a preference

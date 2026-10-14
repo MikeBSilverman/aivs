@@ -95,6 +95,8 @@ _PUBLIC_PATHS = [
     "/portal/vulnerabilities",
     "/portal/vulnerabilities/contributions",
     "/portal/vulnerabilities/posture",
+    "/portal/vulnerabilities/actioned",
+    "/portal/vulnerabilities/evidence-pack",
     "/portal/logout",
     "/portal/static/theme.css",
     "/portal/sso/login",

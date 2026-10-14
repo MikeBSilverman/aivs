@@ -1,0 +1,19 @@
+Mutation M340: a member's auditor reads the whole instance's trail
+Re-applies: (T10, uncommitted) "The auditor role and the audit stream"
+
+Expect red: packages/aivs-server/tests/unit/test_auditor.py::test_a_members_auditor_reads_only_its_own_organisations_rows
+
+diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs-server/src/aivs_server/auth/policy.py
+--- a/packages/aivs-server/src/aivs_server/auth/policy.py
++++ b/packages/aivs-server/src/aivs_server/auth/policy.py
+@@ -192,9 +192,7 @@
+     The ISAC's auditor reads the instance; a member's auditor reads its own
+     organisation's records and nothing that names another.
+     """
+-    if ctx.org_type is OrgType.ADMIN:
+-        return None
+-    return ctx.org_id
++    return None
+ 
+ 
+ def _isac_human(ctx: AuthContext, role: OperatorRole) -> bool:

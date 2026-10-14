@@ -220,6 +220,102 @@ async def _posture_export_burst(
     ]
 
 
+async def _evidence_pack_burst(
+    session: AsyncSession, now: dt.datetime, window: dt.timedelta, threshold: int
+) -> list[Finding]:
+    """One organisation drawing evidence packs over and over.
+
+    A pack is the firm's record of what reached it and what it did, for one
+    vulnerability; drawn across many, it is the firm's response history. A
+    compliance officer draws a few at a time. The alert names the organisation
+    and the count, never a vulnerability.
+    """
+    bursts = await _audit_bursts(
+        session,
+        action=AuditAction.EVIDENCE_PACK_DRAWN,
+        group_by=AuditLog.org_id,
+        since=now - window,
+        threshold=threshold,
+    )
+    return [
+        Finding(
+            rule="evidence_pack_burst",
+            severity="medium",
+            subject=org_id,
+            summary=f"{count} evidence packs drawn by one organisation in {window}",
+            count=count,
+        )
+        for org_id, count in bursts
+    ]
+
+
+async def _auditor_bulk_read(
+    session: AsyncSession, now: dt.datetime, window: dt.timedelta, threshold: int
+) -> list[Finding]:
+    """One auditor reading a large part of the trail in a short time.
+
+    A SIEM catching up after an outage does this once; a stolen auditor
+    session does it to learn which firms attend to which threats, which the
+    receipts stream says outright. Counted in events served, not requests.
+    """
+    served = func.sum(AuditLog.details["count"].as_integer())
+    rows = (
+        await session.execute(
+            select(AuditLog.actor_id, served)
+            .where(
+                AuditLog.action == AuditAction.AUDIT_READ,
+                AuditLog.at >= now - window,
+                AuditLog.actor_id.is_not(None),
+            )
+            .group_by(AuditLog.actor_id)
+            .having(served >= threshold)
+        )
+    ).all()
+    return [
+        Finding(
+            rule="auditor_bulk_read",
+            severity="medium",
+            subject=str(actor_id),
+            summary=f"one auditor was served {total} audit events in {window}",
+            count=int(total),
+        )
+        for actor_id, total in rows
+    ]
+
+
+async def _auditor_outside_audit(
+    session: AsyncSession, now: dt.datetime, window: dt.timedelta, threshold: int
+) -> list[Finding]:
+    """An auditor's session refused, again and again, at routes it may not use.
+
+    An auditor's tooling reads two endpoints. A session trying content routes
+    is someone exploring with an auditor's credential.
+    """
+    rows = (
+        await session.execute(
+            select(AuditLog.actor_id, func.count())
+            .where(
+                AuditLog.action == AuditAction.ACCESS_DENIED,
+                AuditLog.details["reason"].astext == "auditor_outside_audit",
+                AuditLog.at >= now - window,
+                AuditLog.actor_id.is_not(None),
+            )
+            .group_by(AuditLog.actor_id)
+            .having(func.count() >= threshold)
+        )
+    ).all()
+    return [
+        Finding(
+            rule="auditor_outside_audit",
+            severity="high",
+            subject=str(actor_id),
+            summary=f"an auditor's session was refused {count} times outside the audit read",
+            count=int(count),
+        )
+        for actor_id, count in rows
+    ]
+
+
 async def _contribution_flood(
     session: AsyncSession, now: dt.datetime, window: dt.timedelta, threshold: int
 ) -> list[Finding]:
@@ -426,6 +522,9 @@ RULES: Final[tuple[Rule, ...]] = (
     Rule("not_found_burst", "medium", dt.timedelta(minutes=10), 50, _not_found_burst),
     Rule("contribution_flood", "medium", dt.timedelta(hours=1), 1, _contribution_flood),
     Rule("posture_export_burst", "high", dt.timedelta(hours=1), 20, _posture_export_burst),
+    Rule("evidence_pack_burst", "medium", dt.timedelta(hours=1), 20, _evidence_pack_burst),
+    Rule("auditor_bulk_read", "medium", dt.timedelta(hours=1), 20000, _auditor_bulk_read),
+    Rule("auditor_outside_audit", "high", dt.timedelta(minutes=30), 5, _auditor_outside_audit),
     Rule(
         "first_distribution_to_circle",
         "medium",

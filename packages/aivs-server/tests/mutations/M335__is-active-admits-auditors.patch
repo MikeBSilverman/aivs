@@ -1,0 +1,17 @@
+Mutation M335: every policy predicate admits an auditor as one of its firm's people
+Re-applies: (T10, uncommitted) "The auditor role and the audit stream"
+
+Expect red: packages/aivs-server/tests/unit/test_auditor.py::test_policy_refuses_an_auditor_what_its_firms_people_may_do
+
+diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs-server/src/aivs_server/auth/policy.py
+--- a/packages/aivs-server/src/aivs_server/auth/policy.py
++++ b/packages/aivs-server/src/aivs_server/auth/policy.py
+@@ -151,7 +151,7 @@
+     is the firm's too, and refusing it here rather than in each predicate is
+     what makes "never content" true of predicates written later.
+     """
+-    return ctx.org_status is OrgStatus.ACTIVE and OperatorRole.AUDITOR not in ctx.operator_roles
++    return ctx.org_status is OrgStatus.ACTIVE
+ 
+ 
+ def is_auditor(ctx: AuthContext) -> bool:

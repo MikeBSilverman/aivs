@@ -73,6 +73,7 @@ from aivs_server.notify.events import queue_visibility_notifications
 from aivs_server.portal.shared import (
     LOGIN_FAILED,
     TEMPLATES,
+    any_session,
     base_context,
     current_session,
     operator_name,
@@ -293,7 +294,8 @@ async def logout(
     protection incidental, resting on a cookie attribute rather than on the check
     every sibling route performs.
     """
-    ctx, csrf_hash = await current_session(request, settings, session)
+    # Any session may end itself, an auditor's included.
+    ctx, csrf_hash = await any_session(request, settings, session)
     require_csrf(csrf_token, csrf_hash)
 
     token = request.cookies.get(settings.session_cookie_name)

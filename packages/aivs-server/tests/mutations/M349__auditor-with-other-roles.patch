@@ -1,0 +1,18 @@
+Mutation M349: an auditor may also hold the roles whose actions it reviews
+Re-applies: (T10, uncommitted) "The auditor role and the audit stream"
+
+Expect red: packages/aivs-server/tests/unit/test_auditor.py::test_an_auditor_is_created_alone_and_expiring[roles0-expires0-no other role]
+
+diff --git a/packages/aivs-server/src/aivs_server/services/operators.py b/packages/aivs-server/src/aivs_server/services/operators.py
+--- a/packages/aivs-server/src/aivs_server/services/operators.py
++++ b/packages/aivs-server/src/aivs_server/services/operators.py
+@@ -125,9 +125,6 @@
+     this says why in words.
+     """
+     is_auditor = OperatorRole.AUDITOR in held
+-    if is_auditor and held != {OperatorRole.AUDITOR}:
+-        msg = "an auditor holds no other role"
+-        raise OperatorError(msg)
+     if is_auditor and (role_expires_at is None or role_expires_at <= now):
+         msg = "an auditor needs an end date in the future"
+         raise OperatorError(msg)

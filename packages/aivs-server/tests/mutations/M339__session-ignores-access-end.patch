@@ -1,0 +1,17 @@
+Mutation M339: a session outlives the auditor's end date
+Re-applies: (T10, uncommitted) "The auditor role and the audit stream"
+
+Expect red: packages/aivs-server/tests/unit/test_auditor.py::test_a_session_outliving_the_auditors_access_is_refused
+
+diff --git a/packages/aivs-server/src/aivs_server/auth/sessions.py b/packages/aivs-server/src/aivs_server/auth/sessions.py
+--- a/packages/aivs-server/src/aivs_server/auth/sessions.py
++++ b/packages/aivs-server/src/aivs_server/auth/sessions.py
+@@ -394,8 +394,6 @@
+     operator = await session.get(Operator, row.operator_id)
+     if operator is None or not operator.is_active:
+         raise SessionRejectedError("operator_inactive")
+-    if _access_ended(operator, now):
+-        raise SessionRejectedError("operator_access_ended")
+     return operator
+ 
+ 

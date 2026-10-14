@@ -33,8 +33,10 @@ from fastapi.staticfiles import StaticFiles
 from aivs_server.api import (
     acknowledgments,
     admin,
+    audit,
     connection_health,
     contributions,
+    evidence,
     exports,
     isac_records,
     lead_time,
@@ -288,6 +290,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(telemetry.router)
     app.include_router(submissions.router)
     app.include_router(acknowledgments.router)
+    app.include_router(audit.router)
+    app.include_router(evidence.router)
     app.include_router(vulnerabilities.router)
     app.include_router(triage.router)
     app.include_router(admin.router)

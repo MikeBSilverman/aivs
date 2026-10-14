@@ -100,6 +100,10 @@ __all__ = [
 _SHA256_HEX = "^[0-9a-f]{64}$"
 
 
+#: The current transaction's id as a bigint, for ``xact_id`` columns.
+_CURRENT_XACT_ID = "(pg_current_xact_id())::text::bigint"
+
+
 class Organization(TimestampMixin, Base):
     """A member firm, or the hosting ISAC itself (``org_type == ADMIN``)."""
 
@@ -240,6 +244,13 @@ class Operator(TimestampMixin, Base):
     default_depth: Mapped[ReadingDepth | None] = mapped_column(
         pg_enum(ReadingDepth, "reading_depth"), nullable=True
     )
+    #: When this operator's access ends. Required for an auditor, who is
+    #: engaged for a review rather than employed to operate; checked at every
+    #: session resolution and by ``policy.can_read_audit`` against the
+    #: caller's ``now``.
+    role_expires_at: Mapped[dt.datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     organization: Mapped[Organization] = relationship(back_populates="operators")
 
@@ -250,6 +261,12 @@ class Operator(TimestampMixin, Base):
         CheckConstraint(
             "(federated_issuer IS NULL) = (federated_subject IS NULL)",
             name="federated_identity_complete",
+        ),
+        # An auditor holds that role alone, and never without an end date.
+        CheckConstraint(
+            "NOT ('auditor' = ANY (roles)) "
+            "OR (cardinality(roles) = 1 AND role_expires_at IS NOT NULL)",
+            name="auditor_alone_and_expiring",
         ),
     )
 
@@ -827,6 +844,15 @@ class Acknowledgment(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now(), index=True
     )
 
+    #: The writing transaction's id. The receipts stream (``services.audit_stream``)
+    #: pages on ``(xact_id, id)`` and serves only rows below the oldest
+    #: transaction still running: ``id`` alone comes from a sequence, so a
+    #: transaction holding a lower id can commit after a reader has passed it,
+    #: and the row would never be delivered (CLAUDE.md section 5, keyset).
+    xact_id: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, server_default=text(_CURRENT_XACT_ID)
+    )
+
     __table_args__ = (
         # `via` is part of the key: a portal read on a day the member's TAXII
         # client already polled is a different fact (a person looked), and
@@ -840,6 +866,7 @@ class Acknowledgment(Base):
             name="uq_acknowledgments_daily_dedupe",
         ),
         Index("ix_acknowledgments_submission_org", "submission_id", "org_id"),
+        Index("ix_acknowledgments_stream", "xact_id", "id"),
     )
 
 
@@ -1190,6 +1217,14 @@ class AuditLog(Base):
     request_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     source_ip: Mapped[str | None] = mapped_column(INET, nullable=True)
     details: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    #: The writing transaction's id. The audit stream (``services.audit_stream``)
+    #: pages on ``(xact_id, id)`` and serves only rows below the oldest
+    #: transaction still running: ``id`` alone comes from a sequence, so a
+    #: transaction holding a lower id can commit after a reader has passed it,
+    #: and the row would never be delivered (CLAUDE.md section 5, keyset).
+    xact_id: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, server_default=text(_CURRENT_XACT_ID)
+    )
 
     __table_args__ = (
         CheckConstraint(
@@ -1198,6 +1233,7 @@ class AuditLog(Base):
         ),
         CheckConstraint("outcome IN ('success', 'failure', 'denied')", name="outcome_valid"),
         Index("ix_audit_log_org_at", "org_id", "at"),
+        Index("ix_audit_log_stream", "xact_id", "id"),
     )
 
 

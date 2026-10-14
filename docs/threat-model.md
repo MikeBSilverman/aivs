@@ -449,6 +449,27 @@ email is opt-in per member (R18).
 
 ---
 
+## Cross-cutting: reading the record (Phase H)
+
+Phase H adds two reads of records rather than content: an auditor's stream of
+the audit trail and receipts, and a member's evidence pack. Neither carries
+intelligence, but the receipts stream says which firms attend to which
+threats, and a firm's packs are its response history, so both are worth
+taking with a stolen credential (`tests/abuse/test_audit_abuse.py` drives the
+sequences):
+
+| What they try | What stops it |
+| --- | --- |
+| A stolen auditor session reads content, or the firm's own records through routes that read by organisation. | An auditor's session is refused with 403 at the door, on the API and the portal, for every route but the audit read; repeated refusals raise `auditor_outside_audit` (SF-78). |
+| A stolen auditor session pulls the whole receipts trail. | The read is authorised and audited as an act, with the count served; `auditor_bulk_read` raises past 20,000 events an hour from one auditor (SF-78). |
+| An auditor's credential outlives the engagement it was issued for. | `role_expires_at` is required for an auditor, held alone, and refused at every session resolution and again per request (SF-78). |
+| A member's auditor reads other firms' activity through its own rows' `details`. | A member's auditor sees only rows recorded against its own organisation, and of their `details` only an allow-list of keys that describe its own action (SF-78). |
+| A SIEM misses an event because a transaction committed after its cursor passed. | The stream pages on the writing transaction and serves only below the oldest one still running, so a late row is served late rather than skipped (SF-78). |
+| A SIEM polling until a page comes back empty never finishes, because each read it makes is recorded and served back on the next poll. | The stream leaves `audit.read` rows out for every reader, so neither one poller nor two feed themselves; the rows stay in the log and `auditor_bulk_read` reviews them (SF-78). Found when the suite hung once nothing else on the cluster held the horizon back. |
+| The ISAC, or another member, draws a member's evidence pack. | A pack is built for the caller's own organisation only, from what reached it, and the ISAC is refused with the body an unknown vulnerability gets (SF-79). |
+| A stolen member credential harvests the firm's evidence packs. | Each draw is audited with the pack's hash; `evidence_pack_burst` raises when one organisation draws 20 in an hour (SF-79). |
+| A posture change tells the ISAC the status through a receipt. | "We've acted" is a separate, explicit click; setting a posture writes no receipt (SF-79). |
+
 ## Consolidated residual risk register
 
 | # | Residual risk | Severity | Owner |
@@ -469,6 +490,9 @@ email is opt-in per member (R18).
 | R16 | The ISAC's member IdP tenant is in the trusted base for AMBER content: a compromised tenant, or a sign-on policy that the IdP misreports in `amr`, signs anyone in as a member person. | Medium | Hosting ISAC — tenant administration, phishing-resistant factors |
 | R17 | An export, once downloaded or printed, is beyond recall: an indicator revoked or expired afterwards stays in a member's block list until the member honours the pack's `valid_until` column. | Low | Member firms; packs carry `valid_until` on every row |
 | R18 | A member's digest relay learns how many items of each marking it received and when, and the affected products below RED. | Low | Member firms opt in per organisation; the ISAC names the relay as a subprocessor |
+| R19 | The audit stream waits behind the oldest running transaction on the whole database cluster: a connection left idle in a transaction stalls the SIEM's feed (it never skips). | Low | Hosting ISAC — runbook §9.6; monitor for idle-in-transaction connections |
+| R20 | A posture is kept as its current statement only, so an evidence pack shows the posture now and when it last changed, not its history. | Low | Member — draw and keep packs at the points a regulator will ask about |
+| R21 | A member's auditor role is enforced but cannot yet be created: operators are created only from the host for the ISAC. | Low | Lands with member operator management (Phase L) |
 | R11 | Webhook SSRF residual via DNS rebinding. | Low | Resolve-and-pin; egress policy |
 | R12 | A member firm can poison the corpus with plausible false findings. | Low–Medium | Reviewer judgement |
 

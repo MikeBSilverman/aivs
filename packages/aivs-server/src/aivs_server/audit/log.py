@@ -167,6 +167,8 @@ class AuditAction:
     # Content access
     OBJECTS_RETRIEVED = "taxii.objects_retrieved"
     EXPORT_RETRIEVED = "export.retrieved"
+    AUDIT_READ = "audit.read"
+    EVIDENCE_PACK_DRAWN = "evidence_pack.drawn"
     ACK_RECORDED = "ack.recorded"
 
     # Webhooks

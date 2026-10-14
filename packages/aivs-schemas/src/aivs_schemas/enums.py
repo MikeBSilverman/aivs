@@ -162,6 +162,12 @@ class OperatorRole(StrEnum):
     * ``SYSTEM_ADMIN`` -- runs the instance: operators and settings. Lost the
       editorial verbs it used to hold.
 
+    And ``AUDITOR``, at either: reads the audit trail and receipts -- the whole
+    instance's at the ISAC, its own organisation's at a member -- and nothing
+    else, never content. Held alone and only until
+    ``operators.role_expires_at``: an auditor is engaged for a review, and an
+    auditor who also holds the roles under review is auditing itself.
+
     A small ISAC gives one person several of these; a larger one keeps them
     apart. That is the ISAC's decision, made when it assigns roles. Every one
     of them requires a human session -- see ``auth.policy``, the only place a
@@ -174,6 +180,7 @@ class OperatorRole(StrEnum):
     ISAC_ANALYST = "isac_analyst"
     ISAC_EDITOR = "isac_editor"
     ISAC_MEMBERSHIP = "isac_membership"
+    AUDITOR = "auditor"
 
 
 class CertStatus(StrEnum):

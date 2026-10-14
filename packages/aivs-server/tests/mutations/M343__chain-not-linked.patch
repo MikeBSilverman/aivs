@@ -1,0 +1,17 @@
+Mutation M343: each event is hashed against the page's start instead of the event before, so dropping a row breaks nothing
+Re-applies: (T10, uncommitted) "The auditor role and the audit stream"
+
+Expect red: packages/aivs-server/tests/unit/test_auditor.py::test_the_hash_chain_runs_across_pages_and_breaks_on_an_edit
+
+diff --git a/packages/aivs-server/src/aivs_server/services/audit_stream.py b/packages/aivs-server/src/aivs_server/services/audit_stream.py
+--- a/packages/aivs-server/src/aivs_server/services/audit_stream.py
++++ b/packages/aivs-server/src/aivs_server/services/audit_stream.py
+@@ -196,7 +196,7 @@
+     events = []
+     for row in rows:
+         event = render(row)
+-        chain = _link(chain, event)
++        chain = _link(start.chain, event)
+         events.append({**event, "hash": chain})
+     if not rows:
+         return Page(events=[], cursor=start)

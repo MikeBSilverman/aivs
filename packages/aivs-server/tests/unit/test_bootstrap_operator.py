@@ -9,6 +9,8 @@ an AEAD envelope bound to the operator's own id.
 
 from __future__ import annotations
 
+import datetime as dt
+
 import pyotp
 import pytest
 from cryptography.hazmat.primitives import serialization
@@ -47,6 +49,7 @@ async def test_a_fresh_instance_gets_an_isac_a_certificate_and_an_operator_who_c
         password=TEST_OPERATOR_PASSWORD,
         roles=EDITOR_AND_ADMIN,
         certificate_pem=pem,
+        role_expires_at=None,
         additional=False,
     )
 
@@ -84,6 +87,7 @@ async def test_it_refuses_a_member_organisation_and_accepts_the_isacs_own(
             password=TEST_OPERATOR_PASSWORD,
             roles=[OperatorRole.ANALYST],
             certificate_pem=None,
+            role_expires_at=None,
             additional=False,
         )
     await session.rollback()
@@ -98,6 +102,7 @@ async def test_it_refuses_a_member_organisation_and_accepts_the_isacs_own(
         password=TEST_OPERATOR_PASSWORD,
         roles=[OperatorRole.ISAC_EDITOR],
         certificate_pem=None,
+        role_expires_at=None,
         additional=False,
     )
     assert result.organisation_id == isac.id
@@ -118,6 +123,7 @@ async def test_it_refuses_a_second_isac_organisation(session, settings, make_org
             password=TEST_OPERATOR_PASSWORD,
             roles=[OperatorRole.SYSTEM_ADMIN],
             certificate_pem=None,
+            role_expires_at=None,
             additional=False,
         )
 
@@ -137,6 +143,7 @@ async def test_a_forged_certificate_refuses_the_whole_bootstrap(session, setting
             password=TEST_OPERATOR_PASSWORD,
             roles=[OperatorRole.SYSTEM_ADMIN],
             certificate_pem=forged_pem,
+            role_expires_at=None,
             additional=False,
         )
     await session.rollback()
@@ -159,6 +166,8 @@ async def test_org_admin_is_refused_at_the_hosting_isac(session, secret_box, mak
             password=TEST_OPERATOR_PASSWORD,
             roles=[OperatorRole.ORG_ADMIN],
             secret_box=secret_box,
+            role_expires_at=None,
+            now=dt.datetime.now(dt.UTC),
         )
 
 
@@ -178,6 +187,8 @@ async def test_isac_roles_are_refused_at_a_member_firm_and_member_roles_are_not(
             password=TEST_OPERATOR_PASSWORD,
             roles=[OperatorRole.ISAC_EDITOR],
             secret_box=secret_box,
+            role_expires_at=None,
+            now=dt.datetime.now(dt.UTC),
         )
 
     operator, _seed = await create_operator(
@@ -189,6 +200,8 @@ async def test_isac_roles_are_refused_at_a_member_firm_and_member_roles_are_not(
         password=TEST_OPERATOR_PASSWORD,
         roles=[OperatorRole.ORG_ADMIN],
         secret_box=secret_box,
+        role_expires_at=None,
+        now=dt.datetime.now(dt.UTC),
     )
     assert operator.roles == [OperatorRole.ORG_ADMIN]
 
@@ -205,6 +218,7 @@ async def test_the_audit_record_names_roles_not_the_person(session, settings):
         password=TEST_OPERATOR_PASSWORD,
         roles=[OperatorRole.SYSTEM_ADMIN],
         certificate_pem=None,
+        role_expires_at=None,
         additional=False,
     )
     rows = (await session.execute(select(AuditLog))).scalars().all()
@@ -225,6 +239,7 @@ async def _bootstrap_with(session, settings, *, email: str, pem: str | None, add
         password=TEST_OPERATOR_PASSWORD,
         roles=[OperatorRole.SYSTEM_ADMIN],
         certificate_pem=pem,
+        role_expires_at=None,
         additional=additional,
     )
 

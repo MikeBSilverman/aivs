@@ -1,0 +1,16 @@
+Mutation M347: an assertion repeated on a day another channel also asserted reads two rows and fails
+Re-applies: (T10, uncommitted) "The member evidence pack and the actioned click"
+
+Expect red: packages/aivs-server/tests/unit/test_vulnerability_page.py::test_an_api_retry_on_a_day_the_portal_also_asserted_is_idempotent
+
+diff --git a/packages/aivs-server/src/aivs_server/services/acknowledgments.py b/packages/aivs-server/src/aivs_server/services/acknowledgments.py
+--- a/packages/aivs-server/src/aivs_server/services/acknowledgments.py
++++ b/packages/aivs-server/src/aivs_server/services/acknowledgments.py
+@@ -144,7 +144,6 @@
+                 Acknowledgment.org_id == org_id,
+                 Acknowledgment.submission_id == submission_id,
+                 Acknowledgment.ack_type == ack_type,
+-                Acknowledgment.via == via,
+                 Acknowledgment.dedupe_day == now.date(),
+             )
+         )

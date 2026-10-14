@@ -1,0 +1,17 @@
+Mutation M350: the evidence-pack rule counts per person, so a stolen certificate's draws, each from a fresh session, are never added up
+Re-applies: (T10, uncommitted) "The member evidence pack and the actioned click"
+
+Expect red: packages/aivs-server/tests/abuse/test_audit_abuse.py::test_a_stolen_member_credential_harvesting_evidence_packs_is_noticed
+
+diff --git a/packages/aivs-server/src/aivs_server/services/detections.py b/packages/aivs-server/src/aivs_server/services/detections.py
+--- a/packages/aivs-server/src/aivs_server/services/detections.py
++++ b/packages/aivs-server/src/aivs_server/services/detections.py
+@@ -233,7 +233,7 @@
+     bursts = await _audit_bursts(
+         session,
+         action=AuditAction.EVIDENCE_PACK_DRAWN,
+-        group_by=AuditLog.org_id,
++        group_by=AuditLog.actor_id,
+         since=now - window,
+         threshold=threshold,
+     )

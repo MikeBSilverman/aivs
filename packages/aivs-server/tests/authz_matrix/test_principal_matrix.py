@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import enum
 import json
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -113,6 +113,8 @@ EXPECTED: Mapping[RouteClass, Mapping[Principal, Outcome]] = {
     RouteClass.READINESS: _allow(
         *_MEMBER, P.PEER_MACHINE, P.ISAC_ANALYST, P.ISAC_EDITOR, otherwise=N
     ),
+    RouteClass.EVIDENCE_PACK: _allow(*_MEMBER, P.PEER_MACHINE, otherwise=N),
+    RouteClass.AUDIT_READ: _allow(otherwise=F),
     RouteClass.VULNERABILITY_PAGE: {
         **_allow(*_MEMBER, P.ISAC_ANALYST, P.ISAC_EDITOR, otherwise=N),
         **dict.fromkeys(CERTIFICATE_ONLY, S),
@@ -224,13 +226,29 @@ def expected(principal: Principal, route: RouteCase) -> Outcome:
         return A
     if route.route_class is RouteClass.SSO_SIGN_IN:
         return SSO_SIGN_IN_ROUTES[route.key] if principal is P.SSO_MEMBER else N
-    if principal is P.SSO_MEMBER:
-        return _sso_member(route)
+    derived = _DERIVED_ROWS.get(principal)
+    if derived is not None:
+        return derived(route)
     if principal in REFUSED_AT_THE_DOOR:
         return S if route.is_portal else U
     if route.is_portal and principal in CERTIFICATE_ONLY:
         return S
     return EXPECTED[route.route_class][principal]
+
+
+#: An auditor's session passes the door and holds nothing but the audit read.
+AUDITORS: frozenset[Principal] = frozenset({P.ISAC_AUDITOR, P.MEMBER_AUDITOR})
+
+
+def _auditor(route: RouteCase) -> Outcome:
+    """An auditor, at the ISAC or a member: the audit read, and 403 at every other door.
+
+    Refused by ``auth.deps`` and the portal's session before any route runs,
+    so nothing reaches a handler that reads the firm's records by organisation
+    (its own submissions, postures, the OpenVEX export) -- which ``is_active``
+    alone did not close, and the first run of this row found.
+    """
+    return A if route.route_class is RouteClass.AUDIT_READ else F
 
 
 def _sso_member(route: RouteCase) -> Outcome:
@@ -456,3 +474,11 @@ def test_the_documented_table_is_the_asserted_one():
         for route_class in EXPECTED
     }
     assert documented == asserted
+
+
+#: Principals whose row is derived from a rule rather than listed in EXPECTED.
+_DERIVED_ROWS: Mapping[Principal, Callable[[RouteCase], Outcome]] = {
+    P.SSO_MEMBER: _sso_member,
+    P.ISAC_AUDITOR: _auditor,
+    P.MEMBER_AUDITOR: _auditor,
+}

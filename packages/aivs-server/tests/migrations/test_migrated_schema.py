@@ -403,3 +403,40 @@ def test_every_enum_type_holds_exactly_the_labels_its_python_enum_declares(migra
         if migrated.get(name) != labels
     }
     assert not mismatched, mismatched
+
+
+@pytest.mark.requirement("SF-78")
+@pytest.mark.parametrize(
+    ("roles", "expires_in_days"),
+    [("{auditor}", None), ("{auditor,isac_editor}", 1)],
+    ids=["no-end-date", "with-another-role"],
+)
+def test_the_migrated_schema_refuses_an_auditor_without_its_terms(
+    migrated_url: str, roles: str, expires_in_days: int | None
+):
+    """Attempted, not looked up: the migration's constraint, not the model's."""
+    org_id = "00000000-0000-4000-8000-000000000501"
+    engine = create_engine(migrated_url)
+    try:
+        with engine.connect() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO organizations "
+                    "(id, name, slug, org_type, status, stix_identity_id) "
+                    "VALUES (:id, 'Audited', 'audited-firm', 'gsib', 'active', :identity)"
+                ),
+                {"id": org_id, "identity": f"identity--{org_id}"},
+            )
+            with pytest.raises(DBAPIError, match="auditor_alone_and_expiring"):
+                connection.execute(
+                    text(
+                        "INSERT INTO operators (org_id, email, display_name, roles, "
+                        "role_expires_at, totp_secret_encrypted, is_active, failed_login_count) "
+                        "VALUES (:org, 'a@audited.test', 'A', CAST(:roles AS operator_role[]), "
+                        "now() + make_interval(days => CAST(:days AS integer)), '', true, 0)"
+                    ),
+                    {"org": org_id, "roles": roles, "days": expires_in_days},
+                )
+            connection.rollback()
+    finally:
+        engine.dispose()

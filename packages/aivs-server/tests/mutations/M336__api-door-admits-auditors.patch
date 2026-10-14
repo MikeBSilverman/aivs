@@ -1,0 +1,17 @@
+Mutation M336: the API admits an auditor's session to every route, and routes that read by organisation serve it its firm's records
+Re-applies: (T10, uncommitted) "The auditor role and the audit stream"
+
+Expect red: packages/aivs-server/tests/unit/test_auditor.py::test_an_auditor_cannot_read_its_firms_own_postures
+Expect red: packages/aivs-server/tests/authz_matrix/test_principal_matrix.py::test_each_principal_gets_exactly_its_row[member_auditor]
+
+diff --git a/packages/aivs-server/src/aivs_server/auth/deps.py b/packages/aivs-server/src/aivs_server/auth/deps.py
+--- a/packages/aivs-server/src/aivs_server/auth/deps.py
++++ b/packages/aivs-server/src/aivs_server/auth/deps.py
+@@ -235,7 +235,6 @@
+     # it by construction, including the ones that read the firm's own records
+     # by organisation without asking policy. Permit-only, so a route written
+     # later is closed to it too.
+-    require(not is_auditor(ctx), "auditor_outside_audit")
+     return ctx
+ 
+ 

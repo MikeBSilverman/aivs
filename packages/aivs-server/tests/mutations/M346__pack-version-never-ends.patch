@@ -1,0 +1,17 @@
+Mutation M346: a superseded version reads as still in force in the pack
+Re-applies: (T10, uncommitted) "The member evidence pack and the actioned click"
+
+Expect red: packages/aivs-server/tests/unit/test_vulnerability_page.py::test_a_superseding_version_ends_the_one_before_it_in_the_pack
+
+diff --git a/packages/aivs-server/src/aivs_server/services/evidence_pack.py b/packages/aivs-server/src/aivs_server/services/evidence_pack.py
+--- a/packages/aivs-server/src/aivs_server/services/evidence_pack.py
++++ b/packages/aivs-server/src/aivs_server/services/evidence_pack.py
+@@ -133,7 +133,7 @@
+     for index, current in enumerate(ordered):
+         following = ordered[index + 1] if index + 1 < len(ordered) else None
+         if following is not None and following["stix_id"] == current["stix_id"]:
+-            current["in_force_until"] = following["reached_us_at"]
++            current["in_force_until"] = None
+         else:
+             current["in_force_until"] = None
+     return ordered

@@ -724,6 +724,7 @@ async def make_operator(session: AsyncSession, secret_box: SecretBox):
         *,
         roles: tuple[OperatorRole, ...] = (OperatorRole.ANALYST,),
         email: str | None = None,
+        role_expires_at: dt.datetime | None = None,
     ) -> tuple[models.Operator, str]:
         seed = pyotp.random_base32()
         # Explicit id: the seal is bound to it, and the column default is not
@@ -740,6 +741,7 @@ async def make_operator(session: AsyncSession, secret_box: SecretBox):
                 seed, purpose=SecretPurpose.TOTP, subject=operator_id
             ),
             is_active=True,
+            role_expires_at=role_expires_at,
         )
         session.add(operator)
         await session.commit()

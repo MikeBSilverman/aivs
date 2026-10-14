@@ -6,11 +6,11 @@ Expect red: packages/aivs-server/tests/unit/test_refusal_audit.py::test_a_forbid
 diff --git a/packages/aivs-server/src/aivs_server/auth/deps.py b/packages/aivs-server/src/aivs_server/auth/deps.py
 --- a/packages/aivs-server/src/aivs_server/auth/deps.py
 +++ b/packages/aivs-server/src/aivs_server/auth/deps.py
-@@ -154,7 +154,6 @@
+@@ -229,7 +229,6 @@
      not be reviewed.
      """
      ctx = await _resolve_auth_context(request, settings, session)
 -    request.state.auth_context = ctx
-     return ctx
- 
- 
+     # An auditor's session reaches the audit read (``AuditorContext``) and
+     # nothing else: refused here, at the door, every other route is closed to
+     # it by construction, including the ones that read the firm's own records

@@ -1,0 +1,16 @@
+Mutation M342: the stream serves rows above the oldest running transaction, so one committing late behind the cursor is skipped
+Re-applies: (T10, uncommitted) "The auditor role and the audit stream"
+
+Expect red: packages/aivs-server/tests/unit/test_auditor.py::test_a_row_committing_late_with_a_lower_id_is_served_not_skipped
+
+diff --git a/packages/aivs-server/src/aivs_server/services/audit_stream.py b/packages/aivs-server/src/aivs_server/services/audit_stream.py
+--- a/packages/aivs-server/src/aivs_server/services/audit_stream.py
++++ b/packages/aivs-server/src/aivs_server/services/audit_stream.py
+@@ -179,7 +179,6 @@
+     query = (
+         select(model)
+         .where(
+-            model.xact_id < horizon,
+             tuple_(model.xact_id, model.id)
+             > tuple_(literal(after.xact_id), literal(after_key, type_=model.id.type)),
+         )

@@ -1,0 +1,17 @@
+Mutation M348: "we've acted" asserts about the firm's own filings, which only ISAC staff may
+Re-applies: (T10, uncommitted) "The member evidence pack and the actioned click"
+
+Expect red: packages/aivs-server/tests/authz_matrix/test_principal_matrix.py::test_each_principal_gets_exactly_its_row[member_analyst]
+
+diff --git a/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py b/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py
+--- a/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py
++++ b/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py
+@@ -389,7 +389,7 @@
+         submission = await load_submission(session, submission_id, for_update=False)
+         # A firm does not act on its own warning; that is the ISAC's record
+         # of the submitter, and only ISAC staff assert about their own.
+-        if submission is None or submission.submitter_org_id == ctx.org_id:
++        if submission is None:
+             continue
+         await assert_receipt(
+             session,

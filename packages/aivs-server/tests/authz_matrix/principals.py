@@ -33,6 +33,8 @@ class Principal(enum.StrEnum):
     #: A member's analyst signed in through the ISAC's IdP over ordinary TLS:
     #: no certificate, bound to its IdP subject and a device cookie.
     SSO_MEMBER = "member SSO session"
+    ISAC_AUDITOR = "ISAC auditor session"
+    MEMBER_AUDITOR = "member auditor session"
 
 
 #: Principals the plan names that have no implementation yet. They are listed,
@@ -40,7 +42,6 @@ class Principal(enum.StrEnum):
 #: fixture, and the row it filled would read as a guarantee. Each is added to
 #: :class:`Principal`, with its expected row, in the phase that builds it.
 PLANNED_PRINCIPALS: dict[str, str] = {
-    "ISAC auditor session": "added with Phase H",
     "researcher organisation": "added with Phase E",
     "government organisation": "added with Phase E",
     "approved delegated provider (MSSP)": "added with Phase K",
@@ -71,6 +72,8 @@ SESSION_ROLES: dict[Principal, tuple[str, OperatorRole]] = {
     Principal.ISAC_EDITOR: ("isac", OperatorRole.ISAC_EDITOR),
     Principal.ISAC_MEMBERSHIP: ("isac", OperatorRole.ISAC_MEMBERSHIP),
     Principal.SYSTEM_ADMIN: ("isac", OperatorRole.SYSTEM_ADMIN),
+    Principal.ISAC_AUDITOR: ("isac", OperatorRole.AUDITOR),
+    Principal.MEMBER_AUDITOR: ("member", OperatorRole.AUDITOR),
 }
 
 #: Certificate-only principals: the organisation whose certificate they present.

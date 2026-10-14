@@ -1,0 +1,19 @@
+Mutation M337: the portal admits an auditor's session to every page
+Re-applies: (T10, uncommitted) "The auditor role and the audit stream"
+
+Expect red: packages/aivs-server/tests/authz_matrix/test_principal_matrix.py::test_each_principal_gets_exactly_its_row[isac_auditor]
+
+diff --git a/packages/aivs-server/src/aivs_server/portal/shared.py b/packages/aivs-server/src/aivs_server/portal/shared.py
+--- a/packages/aivs-server/src/aivs_server/portal/shared.py
++++ b/packages/aivs-server/src/aivs_server/portal/shared.py
+@@ -74,9 +74,7 @@
+     its session is refused here, as ``auth.deps`` refuses it on every other
+     API route. Signing out is the one portal action it takes (:func:`any_session`).
+     """
+-    resolved = await any_session(request, settings, session)
+-    require(not is_auditor(resolved[0]), "auditor_outside_audit")
+-    return resolved
++    return await any_session(request, settings, session)
+ 
+ 
+ async def any_session(

@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import datetime as dt
 import getpass
 import logging
 import sys
@@ -165,6 +166,7 @@ async def bootstrap(
     display_name: str,
     password: str,
     roles: list[OperatorRole],
+    role_expires_at: dt.datetime | None,
     certificate_pem: str | None,
     additional: bool,
 ) -> BootstrapResult:
@@ -207,6 +209,8 @@ async def bootstrap(
         password=password,
         roles=roles,
         secret_box=SecretBox.from_settings(settings),
+        role_expires_at=role_expires_at,
+        now=await database_now(session),
     )
     await record(
         session,
@@ -257,6 +261,11 @@ def _parse_args() -> argparse.Namespace:  # pragma: no cover - operational helpe
         choices=[role.value for role in OperatorRole],
         help="repeatable",
     )
+    parser.add_argument(
+        "--role-expires-at",
+        type=dt.datetime.fromisoformat,
+        help="when an auditor's access ends (ISO 8601 with offset); required for --role auditor",
+    )
     parser.add_argument("--certificate", help="PEM client certificate to register for the ISAC")
     parser.add_argument(
         "--additional",
@@ -285,6 +294,7 @@ def _main() -> int:  # pragma: no cover - operational helper
                 display_name=args.name,
                 password=_read_password(),
                 roles=[OperatorRole(role) for role in args.role],
+                role_expires_at=args.role_expires_at,
                 certificate_pem=certificate_pem,
                 additional=args.additional,
             )

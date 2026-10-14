@@ -1,0 +1,17 @@
+Mutation M351: the auditor rule matches a reason the door never writes, so it never raises
+Re-applies: (T10, uncommitted) "The auditor role and the audit stream"
+
+Expect red: packages/aivs-server/tests/abuse/test_audit_abuse.py::test_a_stolen_auditor_session_exploring_content_routes_is_refused_and_noticed
+
+diff --git a/packages/aivs-server/src/aivs_server/services/detections.py b/packages/aivs-server/src/aivs_server/services/detections.py
+--- a/packages/aivs-server/src/aivs_server/services/detections.py
++++ b/packages/aivs-server/src/aivs_server/services/detections.py
+@@ -296,7 +296,7 @@
+             select(AuditLog.actor_id, func.count())
+             .where(
+                 AuditLog.action == AuditAction.ACCESS_DENIED,
+-                AuditLog.details["reason"].astext == "auditor_outside_audit",
++                AuditLog.details["reason"].astext == "auditor_outside",
+                 AuditLog.at >= now - window,
+                 AuditLog.actor_id.is_not(None),
+             )

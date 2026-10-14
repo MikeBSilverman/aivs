@@ -6,13 +6,20 @@ Expect red: packages/aivs-server/tests/unit/test_posture.py::test_two_first_writ
 diff --git a/packages/aivs-server/src/aivs_server/services/posture.py b/packages/aivs-server/src/aivs_server/services/posture.py
 --- a/packages/aivs-server/src/aivs_server/services/posture.py
 +++ b/packages/aivs-server/src/aivs_server/services/posture.py
-@@ -95,12 +95,7 @@ async def _own_row_locked(
+@@ -171,19 +171,7 @@ async def _own_row_locked(
      ``uq_org_postures_org_vuln`` and answer 500. Inserting with ``ON CONFLICT
      DO NOTHING`` lets the loser fall through to the winner's row instead.
      """
 -    await session.execute(
 -        insert(OrgPosture)
--        .values(org_id=ctx.org_id, vulnerability_stix_id=vulnerability_id, status=status)
+-        .values(
+-            org_id=ctx.org_id,
+-            vulnerability_stix_id=vulnerability_id,
+-            status=statement.status,
+-            justification=statement.justification,
+-            impact_statement=statement.impact_statement,
+-            action_statement=statement.action_statement,
+-        )
 -        .on_conflict_do_nothing(index_elements=["org_id", "vulnerability_stix_id"])
 -    )
 -    return (
@@ -20,7 +27,7 @@ diff --git a/packages/aivs-server/src/aivs_server/services/posture.py b/packages
          await session.execute(
              select(OrgPosture)
              .where(
-@@ -108,9 +103,12 @@ async def _own_row_locked(
+@@ -191,9 +179,12 @@ async def _own_row_locked(
                  OrgPosture.vulnerability_stix_id == vulnerability_id,
              )
              .with_for_update()

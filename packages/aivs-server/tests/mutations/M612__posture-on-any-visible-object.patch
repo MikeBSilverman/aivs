@@ -6,7 +6,7 @@ Expect red: packages/aivs-server/tests/unit/test_posture.py::test_a_posture_is_o
 diff --git a/packages/aivs-server/src/aivs_server/services/posture.py b/packages/aivs-server/src/aivs_server/services/posture.py
 --- a/packages/aivs-server/src/aivs_server/services/posture.py
 +++ b/packages/aivs-server/src/aivs_server/services/posture.py
-@@ -64,8 +64,6 @@ async def record_posture(
+@@ -119,8 +119,6 @@ async def record_posture(
      now: dt.datetime,
  ) -> OrgPosture:
      """Set the caller's own posture on a vulnerability it can see."""
@@ -14,4 +14,4 @@ diff --git a/packages/aivs-server/src/aivs_server/services/posture.py b/packages
 -        raise TargetNotFoundError(vulnerability_id)
      if await resolve_target(session, ctx, vulnerability_id, now=now) is None:
          raise TargetNotFoundError(vulnerability_id)
- 
+     problem = vex_problem(statement)

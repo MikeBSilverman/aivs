@@ -1,0 +1,17 @@
+Mutation M51: an object's modified is stored at microseconds while the wire advertises milliseconds, so match[version] matches nothing
+Re-applies: a1236f8 "Resolve findings from the sharded security review and OWASP 2025 assessment"
+
+Expect red: packages/aivs-server/tests/unit/test_version_precision.py::test_the_advertised_version_finds_the_object[2026-08-01T00:00:00.123456Z-2026-08-01T00:00:00.123Z]
+
+diff --git a/packages/aivs-server/src/aivs_server/services/submissions.py b/packages/aivs-server/src/aivs_server/services/submissions.py
+--- a/packages/aivs-server/src/aivs_server/services/submissions.py
++++ b/packages/aivs-server/src/aivs_server/services/submissions.py
+@@ -108,7 +108,7 @@
+         # not a ValueError, so it reached the catch-all as a server fault.
+         msg = f"object {stix_id} has a '{field}' outside the representable range: {value!r}"
+         raise SubmissionError(msg) from exc
+-    return truncate_to_taxii_precision(in_utc)
++    return in_utc
+ 
+ 
+ def _extract_indexed_fields(obj: dict[str, Any]) -> dict[str, Any]:

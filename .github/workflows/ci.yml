@@ -104,10 +104,14 @@ jobs:
           uv run pip-audit --strict --requirement "$RUNNER_TEMP/audit.txt"
 
       - name: Shell script checks
+        # Every script in the tree, not a list of directories: a glob of
+        # deploy/ca and scripts silently missed deploy/db/init and demo.
         run: |
           set -euo pipefail
-          for script in deploy/ca/*.sh scripts/*.sh; do bash -n "$script"; done
-          shellcheck -S warning deploy/ca/*.sh scripts/*.sh
+          find . -name '*.sh' -not -path './.venv/*' -not -path './.git/*' -print0 \
+            | xargs -0 -n1 bash -n
+          find . -name '*.sh' -not -path './.venv/*' -not -path './.git/*' -print0 \
+            | xargs -0 shellcheck -S warning
 
       - name: Prepare databases
         env:

@@ -81,6 +81,9 @@ uvx semgrep==1.173.0 scan --config p/python --config p/owasp-top-ten \
   --no-git-ignore --metrics=off --error packages/ demo/ scripts/ deploy/
 uv export --no-emit-workspace --format requirements-txt -o /tmp/audit.txt
 uv run pip-audit --strict --requirement /tmp/audit.txt
+find . -name '*.sh' -not -path './.venv/*' -not -path './.git/*' -print0 | xargs -0 -n1 bash -n
+find . -name '*.sh' -not -path './.venv/*' -not -path './.git/*' -print0 \
+  | xargs -0 uvx --from shellcheck-py==0.11.0.1 shellcheck -S warning   # CI: the runner's shellcheck
 uv run alembic -c packages/aivs-server/alembic.ini check     # no model/migration drift
 uv run pytest -q --cov=aivs_server --cov=aivs_schemas --cov=aivs_client
 uv run coverage report --fail-under=93 --include='*/aivs_server/auth/*,*/aivs_server/services/distribution.py,*/aivs_server/services/embargo.py,*/aivs_server/services/publication.py,*/aivs_server/taxii/queries.py'
@@ -108,6 +111,13 @@ output, so two releases can be diffed to see precisely which dependency moved.
 CI also scans the built image with syft, because a Python-environment scan
 cannot see the Debian base layer and that layer is most of what a member firm's
 scanner will flag. Neither document subsumes the other; publish both.
+
+**The shell gate finds its scripts; it does not list them.** CI's shellcheck
+step globbed `deploy/ca/*.sh scripts/*.sh`, so `deploy/db/init/10-app-role.sh`
+(which the database container runs on its first start) and
+`demo/scenario.sh` were never checked, while the step reported green. A
+`find` over the tree, not `git ls-files`, so a local run covers a script not yet
+committed (the semgrep lesson below).
 
 **Semgrep defaults to git-tracked files only.** Run locally over a working tree
 with new files in it, it skips exactly the code you just wrote and reports

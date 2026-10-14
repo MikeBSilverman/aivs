@@ -29,6 +29,7 @@ from aivs_server.db.models import (
     Organization,
     PortalSession,
 )
+from aivs_server.services.circles import reconcile_circles_for_org
 
 __all__ = [
     "QuarantineError",
@@ -138,6 +139,12 @@ async def _has_fresh_certificate(session: AsyncSession, organisation: Organizati
     "Any active one" was not enough: a registration committing while the
     quarantine's revoking UPDATE ran stayed active, and would have counted as
     fresh although it was registered on the compromised side of the line.
+
+    Both sides are the application's clock, read under the organisation's row
+    lock (``register_certificate`` stamps ``created_at`` with its ``now``).
+    Comparing the database's transaction start with the application's clock
+    let a registration's stamp land on either side of the quarantine it
+    raced.
     """
     found = await session.scalar(
         select(ClientCertificate.id)
@@ -149,6 +156,31 @@ async def _has_fresh_certificate(session: AsyncSession, organisation: Organizati
         .limit(1)
     )
     return found is not None
+
+
+async def _revoke_older_than_the_quarantine(
+    session: AsyncSession, organisation: Organization, now: dt.datetime
+) -> int:
+    """Revoke every active certificate not registered after the quarantine began.
+
+    Quarantine revokes only what exists when it runs. Anything active and older
+    was registered on the compromised side of the line, by whatever path, and
+    reconnection must not return it to service with the organisation.
+    """
+    revoked = await session.execute(
+        update(ClientCertificate)
+        .where(
+            ClientCertificate.org_id == organisation.id,
+            ClientCertificate.status == CertStatus.ACTIVE,
+            ClientCertificate.created_at <= organisation.quarantined_at,
+        )
+        .values(
+            status=CertStatus.REVOKED,
+            revoked_at=now,
+            revoked_reason="registered before the quarantine",
+        )
+    )
+    return int(revoked.rowcount or 0)  # type: ignore[attr-defined]
 
 
 async def _close_the_gap(
@@ -207,7 +239,10 @@ async def reconnect_org(
     reason: str,
     now: dt.datetime,
 ) -> None:
-    """Return a quarantined organisation to service. Does not commit."""
+    """Return a quarantined organisation to service. Does not commit.
+
+    The caller loaded ``organisation`` with ``load_org_for_update``.
+    """
     if organisation.status is not OrgStatus.QUARANTINED:
         msg = "this organisation is not quarantined"
         raise QuarantineError(msg)
@@ -218,12 +253,18 @@ async def reconnect_org(
             "connect -- or, if one were reinstated, on credentials that may be compromised"
         )
         raise QuarantineError(msg)
+    stale = await _revoke_older_than_the_quarantine(session, organisation, now)
     if backlog is QuarantineBacklog.NEW_INTERVAL:
         await _close_the_gap(session, organisation, now)
 
     quarantined_at = organisation.quarantined_at
     organisation.status = OrgStatus.ACTIVE
     organisation.quarantined_at = None
+    # Flushed first: autoflush is off, and the rules must see the status and
+    # any interval reopened above. Reconnection writes ``active`` as surely as
+    # activation does, so a rule written during the quarantine applies now.
+    await session.flush()
+    touched = await reconcile_circles_for_org(session, ctx, organisation=organisation)
     await record(
         session,
         action=AuditAction.ORG_RECONNECTED,
@@ -234,5 +275,7 @@ async def reconnect_org(
             "reason": reason,
             "backlog": backlog.value,
             "quarantined_at": quarantined_at.isoformat() if quarantined_at else None,
+            "stale_certificates_revoked": stale,
+            "circles_reconciled": [str(circle_id) for circle_id in touched],
         },
     )

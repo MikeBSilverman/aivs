@@ -507,7 +507,9 @@ itself, depending on `AIVS_DETECTION_QUARANTINE_POLICY` (§9.1).
 
 Reconnecting is yours alone: `POST /api/v1/orgs/{id}/reconnect`. It refuses
 until the member has a freshly registered certificate -- the old ones stay
-revoked. `"backlog": "deliver"` (the default) lets the member receive what was
+revoked, and any still active from before the quarantine is revoked then.
+Membership staff register the fresh one; the member's own admin cannot while
+it is quarantined. Reconnection reconciles circle rules, as activation does. `"backlog": "deliver"` (the default) lets the member receive what was
 shared while it was out; `"new_interval"` withholds it, for an incident whose
 nature means the gap must not reach them. Earlier content is kept either way.
 Tell the member which you chose and why; a self-quarantine is also something

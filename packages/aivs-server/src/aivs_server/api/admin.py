@@ -224,7 +224,8 @@ async def register_certificate(
     require(can_manage_org(ctx, org_id), "certificate_register")
 
     # Locked: quarantine revokes every certificate, and a registration committing
-    # beside it must land wholly before or wholly after.
+    # beside it must land wholly before or wholly after. The service re-decides
+    # who may register against the status read under the lock.
     organization = await load_org_for_update(session, org_id)
     if organization is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Organisation not found")

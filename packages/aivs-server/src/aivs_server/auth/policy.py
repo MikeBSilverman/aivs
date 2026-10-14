@@ -42,7 +42,7 @@ from aivs_schemas.enums import (
     is_transition_allowed,
 )
 from aivs_server.auth.context import AuthContext, AuthMethod, MembershipInterval
-from aivs_server.db.models import Distribution, InstanceControl, Submission
+from aivs_server.db.models import Distribution, InstanceControl, Organization, Submission
 
 if TYPE_CHECKING:  # pragma: no cover
     pass
@@ -63,6 +63,7 @@ __all__ = [
     "can_read_circle",
     "can_read_isac_records",
     "can_reconnect_org",
+    "can_register_certificate",
     "can_resume_distribution",
     "can_reveal_submitter",
     "can_review_submissions",
@@ -417,6 +418,22 @@ def can_manage_org(ctx: AuthContext, target_org_id: uuid.UUID) -> bool:
     if is_isac_membership(ctx):
         return True
     return is_org_admin(ctx) and target_org_id == ctx.org_id
+
+
+def can_register_certificate(ctx: AuthContext, organisation: Organization) -> bool:
+    """Bind a certificate to ``organisation``, decided on its row read under the lock.
+
+    ``can_manage_org`` is decided on the caller's context, resolved before the
+    row lock. A member's admin whose registration waited on a quarantine
+    therefore inserted an ACTIVE certificate the quarantine never saw. So a
+    member's own admin may register only while its organisation is active.
+    ISAC membership staff may register whatever the status: enrolment
+    registers before activation, and reconnection requires a certificate
+    registered during the quarantine.
+    """
+    if is_isac_membership(ctx):
+        return True
+    return can_manage_org(ctx, organisation.id) and organisation.status is OrgStatus.ACTIVE
 
 
 # ---------------------------------------------------------------------------

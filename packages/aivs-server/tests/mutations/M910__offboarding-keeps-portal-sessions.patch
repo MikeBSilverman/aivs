@@ -1,0 +1,17 @@
+Mutation M910: offboarding leaves the member's portal sessions and TAXII statuses
+Re-applies: deleting only the tables someone remembered
+
+Expect red: packages/aivs-server/tests/unit/test_offboarding.py::test_every_operational_row_of_the_member_is_deleted
+
+diff --git a/packages/aivs-server/src/aivs_server/services/offboarding.py b/packages/aivs-server/src/aivs_server/services/offboarding.py
+--- a/packages/aivs-server/src/aivs_server/services/offboarding.py
++++ b/packages/aivs-server/src/aivs_server/services/offboarding.py
+@@ -113,7 +113,7 @@ async def _close_memberships(
+ 
+ async def _delete_operational(session: AsyncSession, organisation: Organization) -> str:
+     """Delete the member's own operational data. Returns what happened to its postures."""
+-    for table in (Webhook, PortalSession, TaxiiStatus):
++    for table in (Webhook,):
+         await session.execute(delete(table).where(table.org_id == organisation.id))
+     if organisation.legal_hold_since is not None:
+         return "retained under legal hold"

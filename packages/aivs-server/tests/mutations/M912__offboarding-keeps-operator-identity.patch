@@ -1,0 +1,17 @@
+Mutation M912: offboarded operators keep their email and name
+Re-applies: deactivation without pseudonymisation
+
+Expect red: packages/aivs-server/tests/unit/test_offboarding.py::test_its_people_are_pseudonymised_and_their_ids_kept
+
+diff --git a/packages/aivs-server/src/aivs_server/services/offboarding.py b/packages/aivs-server/src/aivs_server/services/offboarding.py
+--- a/packages/aivs-server/src/aivs_server/services/offboarding.py
++++ b/packages/aivs-server/src/aivs_server/services/offboarding.py
+@@ -76,8 +76,6 @@ async def _pseudonymise_operators(session: AsyncSession, org_id: uuid.UUID) -> i
+     ).scalars()
+     count = 0
+     for operator in operators:
+-        operator.email = f"offboarded-{operator.id}@offboarded.invalid"
+-        operator.display_name = "Offboarded operator"
+         operator.password_hash = _UNUSABLE_HASH
+         operator.totp_secret_encrypted = None
+         operator.totp_enrolled_at = None

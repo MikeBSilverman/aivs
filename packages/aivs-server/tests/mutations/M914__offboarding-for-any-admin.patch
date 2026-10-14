@@ -1,0 +1,18 @@
+Mutation M914: a member's own admin may offboard
+Re-applies: offboarding gated as organisation administration
+
+Expect red: packages/aivs-server/tests/unit/test_offboarding.py::test_a_members_own_admin_cannot_offboard_or_hold[offboard]
+Expect red: packages/aivs-server/tests/abuse/test_platform_abuse.py::test_a_stolen_membership_session_offboarding_a_member_is_alerted_at_once
+
+diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs-server/src/aivs_server/auth/policy.py
+--- a/packages/aivs-server/src/aivs_server/auth/policy.py
++++ b/packages/aivs-server/src/aivs_server/auth/policy.py
+@@ -474,7 +474,7 @@ def can_offboard_org(ctx: AuthContext) -> bool:
+     anyone who notices may press it, but offboarding deletes what the member
+     keeps operationally and pseudonymises its people, and nothing reverses it.
+     """
+-    return is_isac_membership(ctx)
++    return is_isac_membership(ctx) or is_org_admin(ctx)
+ 
+ 
+ def can_set_legal_hold(ctx: AuthContext) -> bool:

@@ -1,0 +1,17 @@
+Mutation M917: lifting a hold on an offboarded organisation keeps its postures
+Re-applies: a hold that, once lifted, leaves what offboarding owed
+
+Expect red: packages/aivs-server/tests/unit/test_offboarding.py::test_a_legal_hold_keeps_the_postures_until_it_is_lifted
+
+diff --git a/packages/aivs-server/src/aivs_server/services/offboarding.py b/packages/aivs-server/src/aivs_server/services/offboarding.py
+--- a/packages/aivs-server/src/aivs_server/services/offboarding.py
++++ b/packages/aivs-server/src/aivs_server/services/offboarding.py
+@@ -200,7 +200,7 @@ async def lift_legal_hold(
+     organisation.legal_hold_since = None
+     organisation.legal_hold_reason = None
+     postures = "kept: the organisation is still a member"
+-    if organisation.status is OrgStatus.OFFBOARDED:
++    if False:
+         await session.execute(delete(OrgPosture).where(OrgPosture.org_id == organisation.id))
+         postures = "deleted"
+     await record(

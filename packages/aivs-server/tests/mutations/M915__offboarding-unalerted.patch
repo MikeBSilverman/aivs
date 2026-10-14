@@ -1,0 +1,17 @@
+Mutation M915: an offboarding raises no alert
+Re-applies: the detection rule's absence
+
+Expect red: packages/aivs-server/tests/abuse/test_platform_abuse.py::test_a_stolen_membership_session_offboarding_a_member_is_alerted_at_once
+
+diff --git a/packages/aivs-server/src/aivs_server/services/detections.py b/packages/aivs-server/src/aivs_server/services/detections.py
+--- a/packages/aivs-server/src/aivs_server/services/detections.py
++++ b/packages/aivs-server/src/aivs_server/services/detections.py
+@@ -476,7 +476,7 @@ RULES: Final[tuple[Rule, ...]] = (
+         1,
+         _every_occurrence(
+             "org_offboarded",
+-            AuditAction.ORG_OFFBOARDED,
++            AuditAction.ORG_QUARANTINED,
+             "high",
+             "an organisation was offboarded: credentials ended, postures deleted unless held",
+         ),

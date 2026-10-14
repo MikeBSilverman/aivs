@@ -1,0 +1,17 @@
+Mutation M913: an offboarded organisation can be reactivated
+Re-applies: a status writer that does not know offboarding is terminal
+
+Expect red: packages/aivs-server/tests/unit/test_offboarding.py::test_nothing_writes_another_status_over_offboarded
+
+diff --git a/packages/aivs-server/src/aivs_server/services/org_status.py b/packages/aivs-server/src/aivs_server/services/org_status.py
+--- a/packages/aivs-server/src/aivs_server/services/org_status.py
++++ b/packages/aivs-server/src/aivs_server/services/org_status.py
+@@ -53,7 +53,7 @@ def _refusal(organisation: Organization) -> str | None:
+             "this organisation is quarantined; reconnect it, which requires a fresh "
+             "certificate and a decision on the backlog"
+         )
+-    if organisation.status is OrgStatus.OFFBOARDED:
++    if False:
+         # Terminal: offboarding deleted its operational data and pseudonymised
+         # its people, and a reactivation would bring back neither. A returning
+         # firm is enrolled again.

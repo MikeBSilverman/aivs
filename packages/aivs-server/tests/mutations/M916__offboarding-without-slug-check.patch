@@ -1,0 +1,17 @@
+Mutation M916: offboarding does not check the typed slug
+Re-applies: an irreversible act addressed by an id alone
+
+Expect red: packages/aivs-server/tests/unit/test_offboarding.py::test_a_mistyped_slug_offboards_nothing
+
+diff --git a/packages/aivs-server/src/aivs_server/api/admin.py b/packages/aivs-server/src/aivs_server/api/admin.py
+--- a/packages/aivs-server/src/aivs_server/api/admin.py
++++ b/packages/aivs-server/src/aivs_server/api/admin.py
+@@ -661,7 +661,7 @@ async def offboard(
+     organisation = await load_org_for_update(session, org_id)
+     if organisation is None:
+         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Organisation not found")
+-    if payload.confirm_slug != organisation.slug:
++    if False:
+         # Irreversible, addressed by an id that is easy to paste wrongly: the
+         # slug typed out is the check that the operator meant this one.
+         raise HTTPException(

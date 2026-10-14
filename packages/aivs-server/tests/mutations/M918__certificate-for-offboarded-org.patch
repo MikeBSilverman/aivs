@@ -1,0 +1,17 @@
+Mutation M918: membership staff can register a certificate to an offboarded organisation
+Re-applies: registration that does not know offboarding is terminal
+
+Expect red: packages/aivs-server/tests/unit/test_offboarding.py::test_nothing_writes_another_status_over_offboarded
+
+diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs-server/src/aivs_server/auth/policy.py
+--- a/packages/aivs-server/src/aivs_server/auth/policy.py
++++ b/packages/aivs-server/src/aivs_server/auth/policy.py
+@@ -434,8 +434,6 @@ def can_register_certificate(ctx: AuthContext, organisation: Organization) -> bo
+     registered during the quarantine. Nobody registers one to an offboarded
+     organisation: that status is terminal.
+     """
+-    if organisation.status is OrgStatus.OFFBOARDED:
+-        return False
+     if is_isac_membership(ctx):
+         return True
+     return can_manage_org(ctx, organisation.id) and organisation.status is OrgStatus.ACTIVE

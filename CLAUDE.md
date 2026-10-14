@@ -244,6 +244,12 @@ session's edits too, stage your hunk alone, by building the index copy from
 `HEAD` plus your change. Then verify the commit in a clean `git worktree` of
 `HEAD` before pushing.
 
+**Push the commit you verified, not the branch.** A worktree check of one
+commit followed by `git push origin main` pushed two more commits that had
+landed meanwhile, unverified. Push the SHA: `git push origin <sha>:main`. And
+gate the push on the test exit status itself: `pytest ...; git push` with `;`
+pushed after two failures.
+
 **Never point an analysis or review process at `aivs_test`.** A single read
 query that leaves its transaction open holds locks the suite needs. If a review
 needs database facts, give it its own database or have it compile SQL offline:

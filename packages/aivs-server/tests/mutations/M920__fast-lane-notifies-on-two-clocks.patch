@@ -1,0 +1,18 @@
+Mutation M920: a fast-lane publication notifies with a database instant against the app clock
+Re-applies: c6a00ab's visible_at=database_now with no now
+
+Expect red: packages/aivs-server/tests/unit/test_one_click.py::test_a_click_published_at_once_tells_the_circle_whatever_the_app_clock_says[behind]
+
+diff --git a/packages/aivs-server/src/aivs_server/services/contributions.py b/packages/aivs-server/src/aivs_server/services/contributions.py
+--- a/packages/aivs-server/src/aivs_server/services/contributions.py
++++ b/packages/aivs-server/src/aivs_server/services/contributions.py
+@@ -414,8 +414,7 @@ async def _validate_and_distribute(
+         session,
+         submission_id=submission.id,
+         circle_ids=targets,
+-        visible_at=result.date_added,
+-        now=result.date_added,
++        visible_at=await database_now(session),
+     )
+     await record(
+         session,

@@ -508,7 +508,8 @@ that did not match would bind an identity to material nobody holds.
 
 The repository is public on GitHub (`MikeBSilverman/aivs`), authenticated
 through `gh`; no token is in a remote URL or in the repository. The old Azure
-DevOps remote is kept as `azure`, read-only, until it is retired.
+DevOps remote is kept as `azure` and no longer pushed to; its pipeline was
+retired once GitHub Actions ran green.
 
 **Workflows run with this repository's token, so they are code with
 privileges.** Never `pull_request_target`: it runs a fork's code with the

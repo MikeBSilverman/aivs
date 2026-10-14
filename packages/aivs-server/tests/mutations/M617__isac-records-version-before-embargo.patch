@@ -1,0 +1,20 @@
+Mutation M617: a record whose newest version is embargoed is answered with the version before
+Re-applies: newest chosen among released versions only
+
+Expect red: packages/aivs-server/tests/unit/test_enrich_kev.py::test_a_record_whose_newest_version_is_embargoed_is_left_out
+
+diff --git a/packages/aivs-server/src/aivs_server/services/isac_records.py b/packages/aivs-server/src/aivs_server/services/isac_records.py
+--- a/packages/aivs-server/src/aivs_server/services/isac_records.py
++++ b/packages/aivs-server/src/aivs_server/services/isac_records.py
+@@ -33,7 +33,10 @@ __all__ = ["latest_isac_vulnerabilities"]
+ 
+ def _newest_isac_versions() -> Any:
+     """The id of the newest distributed, visible-state version of each ISAC vulnerability."""
+-    distributed = exists().where(Distribution.stix_object_id == StixObject.id)
++    distributed = exists().where(
++        Distribution.stix_object_id == StixObject.id,
++        Distribution.date_added <= dt.datetime.now(dt.UTC),
++    )
+     return (
+         select(StixObject.id)
+         .join(Submission, Submission.id == StixObject.submission_id)

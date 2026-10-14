@@ -1,0 +1,17 @@
+Mutation M613: the automation's read returns every vulnerability, whoever filed it
+Re-applies: the KEV script's created_by_ref selection, which matched anonymous member content
+
+Expect red: packages/aivs-server/tests/unit/test_enrich_kev.py::test_the_automation_reads_the_isacs_records_and_not_a_members_anonymous_one
+Expect red: packages/aivs-server/tests/unit/test_enrich_kev.py::test_run_files_a_kev_version_of_the_isacs_record_and_of_nothing_else
+
+diff --git a/packages/aivs-server/src/aivs_server/services/isac_records.py b/packages/aivs-server/src/aivs_server/services/isac_records.py
+--- a/packages/aivs-server/src/aivs_server/services/isac_records.py
++++ b/packages/aivs-server/src/aivs_server/services/isac_records.py
+@@ -39,7 +39,6 @@ def _newest_isac_versions() -> Any:
+         .join(Submission, Submission.id == StixObject.submission_id)
+         .where(
+             StixObject.type == "vulnerability",
+-            owner_key(Submission.submitter_org_id) == ISAC_OWNER,
+             Submission.state.in_(tuple(VISIBLE_SUBMISSION_STATES)),
+             distributed,
+         )

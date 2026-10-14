@@ -1,0 +1,17 @@
+Mutation M614: any active caller reads the ISAC's own records
+Re-applies: the guard's absence
+
+Expect red: packages/aivs-server/tests/unit/test_enrich_kev.py::test_nobody_but_the_automation_reads_them
+
+diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs-server/src/aivs_server/auth/policy.py
+--- a/packages/aivs-server/src/aivs_server/auth/policy.py
++++ b/packages/aivs-server/src/aivs_server/auth/policy.py
+@@ -470,7 +470,7 @@ def can_read_isac_records(ctx: AuthContext) -> bool:
+     """
+     return (
+         is_active(ctx)
+-        and ctx.org_type is OrgType.AUTOMATION
++        and ctx.org_type is not None
+         and ctx.auth_method is AuthMethod.MTLS
+         and ctx.operator_id is None
+     )

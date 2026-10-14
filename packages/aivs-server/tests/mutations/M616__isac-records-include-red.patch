@@ -1,0 +1,16 @@
+Mutation M616: the automation reads RED records
+Re-applies: the TLP bound's absence
+
+Expect red: packages/aivs-server/tests/unit/test_enrich_kev.py::test_a_red_record_is_not_read
+
+diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs-server/src/aivs_server/auth/policy.py
+--- a/packages/aivs-server/src/aivs_server/auth/policy.py
++++ b/packages/aivs-server/src/aivs_server/auth/policy.py
+@@ -489,7 +489,6 @@ def isac_record_read_clause(now: dt.datetime) -> ColumnElement[bool]:
+     return and_(
+         Distribution.date_added <= now,
+         Submission.state.in_(tuple(VISIBLE_SUBMISSION_STATES)),
+-        Submission.tlp != TLP.RED,
+         _distribution_not_paused(),
+     )
+ 

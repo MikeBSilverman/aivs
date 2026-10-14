@@ -380,9 +380,12 @@ ROUTES: tuple[RouteCase, ...] = (
     # ----- making members share -------------------------------------------
     RouteCase(
         "POST",
-        "/api/v1/objects/{stix_id}/contributions",
+        "/api/v1/contributions",
         RouteClass.CONTENT_RESPONSE,
-        lambda world: (f"{API}/objects/{world.object_stix_id}/contributions", {"kind": "seen"}),
+        lambda world: (
+            f"{API}/contributions",
+            {"target": world.object_stix_id, "kind": "seen"},
+        ),
     ),
     RouteCase(
         "PUT",

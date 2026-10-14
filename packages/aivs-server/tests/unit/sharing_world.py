@@ -109,5 +109,5 @@ async def build_sharing_world(session, isac, isac_org, **fixtures: Any) -> Shari
 
 async def one_click(client, headers: dict[str, str], target: str, kind: str = "seen"):
     return await client.post(
-        f"{API}/objects/{target}/contributions", json={"kind": kind}, headers=headers
+        f"{API}/contributions", json={"target": target, "kind": kind}, headers=headers
     )

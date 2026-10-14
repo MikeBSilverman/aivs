@@ -815,7 +815,11 @@ container, tagged with the container name:
 - **db**: Postgres's own log.
 
 None of it carries intelligence content: identifiers, counts, addresses and
-times. An MSP watching the ISAC is not a recipient of its intelligence.
+times. An MSP watching the ISAC is not a recipient of its intelligence. The
+identifiers in request paths are a submission's own id and, on a TAXII read
+by object, that object's id. A member's response to content -- a one-click or
+a posture -- carries the object in its body, never its path, so the stream
+does not say which firm responded to which object.
 
 The forwarder is non-blocking. A collector outage drops lines and never stops
 the platform, so alert on the collector's side when the stream goes quiet.

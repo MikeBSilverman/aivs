@@ -68,6 +68,10 @@ class _In(BaseModel):
 
 
 class ContributionIn(_In):
+    #: In the body, never the path: request lines are logged with the caller's
+    #: identity and forwarded off the platform, and "firm X sighted V at t" is
+    #: exactly what a member's click must not leave behind there (SF-66).
+    target: Annotated[str, Field(min_length=1, max_length=100)]
     kind: OneClick
 
 
@@ -135,13 +139,8 @@ def _present(submission: Any, ctx: Any) -> SubmissionOut:
 # ---------------------------------------------------------------------------
 # One click
 # ---------------------------------------------------------------------------
-@router.post(
-    "/objects/{stix_id}/contributions",
-    status_code=status.HTTP_201_CREATED,
-    response_model=ContributionOut,
-)
+@router.post("/contributions", status_code=status.HTTP_201_CREATED, response_model=ContributionOut)
 async def one_click(
-    stix_id: str,
     payload: ContributionIn,
     ctx: AuthenticatedContext,
     session: SessionDep,
@@ -155,7 +154,7 @@ async def one_click(
         submission = await contribute(
             session,
             ctx,
-            target_id=stix_id,
+            target_id=payload.target,
             kind=payload.kind,
             hourly_limit=settings.contribution_hourly_limit,
             now=dt.datetime.now(dt.UTC),

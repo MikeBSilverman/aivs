@@ -37,6 +37,7 @@ from aivs_server.db.models import (
     SubmissionTransition,
 )
 from aivs_server.services.contributions import NEEDS_AN_EDITOR, Target, fast_lane_problem
+from tests.authz_matrix.test_authz_matrix import walk_routes
 from tests.unit.contribution_world import LATER, STAMP, seed, vulnerability_raw
 from tests.unit.sharing_world import SharingWorld, build_sharing_world, one_click
 
@@ -633,3 +634,27 @@ async def test_the_rule_that_sent_a_click_to_review_is_kept_for_the_isac_and_log
         "created",
         NEEDS_AN_EDITOR,
     ]
+
+
+@pytest.mark.requirement("SF-66", "SF-70")
+def test_no_member_contribution_or_posture_route_carries_an_object_id_in_its_path(app):
+    """Request lines are logged with the caller's identity and leave the platform.
+
+    ``POST /objects/{id}/contributions`` put "firm X sighted, or tried, V at t"
+    in nginx's log and the app's access log, both forwarded to the ISAC's
+    collector; postures were moved off the same shape first. Only the ISAC's
+    posture summary may name an object in its path: the ISAC is the caller,
+    and the request says nothing of a member.
+    """
+    paths = {
+        path
+        for path, _method in walk_routes(app.routes)
+        if path.startswith("/api/v1/") and ("contribution" in path or "posture" in path)
+    }
+
+    member_paths = paths - {"/api/v1/vulnerabilities/{stix_id}/posture-summary"}
+    assert member_paths == {
+        "/api/v1/contributions",
+        "/api/v1/postures",
+        "/api/v1/postures/{posture_id}",
+    }

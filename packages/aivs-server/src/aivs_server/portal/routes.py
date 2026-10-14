@@ -285,13 +285,15 @@ async def logout(
     """
     ctx, csrf_hash = await current_session(request, settings, session)
     require_csrf(csrf_token, csrf_hash)
-    del ctx
 
     token = request.cookies.get(settings.session_cookie_name)
     if token:
         await revoke_session(session, token=token)
+        # The context names who signed out. Without it the row was anonymous,
+        # and a sign-out could not be tied to the operator or the firm.
         await record_independently(
             action=AuditAction.LOGOUT,
+            ctx=ctx,
             outcome="success",
             request_id=request.scope.get("aivs_request_id"),
             source_ip=request_source_ip(request, settings),

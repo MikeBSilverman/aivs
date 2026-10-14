@@ -22,6 +22,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import DataError
 
 from aivs_schemas.enums import OperatorRole, OrgType
+from aivs_server.audit.log import AuditAction
 from aivs_server.auth.passwords import generate_totp_secret, hash_password
 from aivs_server.auth.secretbox import SecretPurpose
 from aivs_server.db.models import (
@@ -239,6 +240,23 @@ async def test_signing_out_ends_the_session(client, analyst):
     after = await client.get("/portal/", headers=proxy_headers(pem))
     assert after.status_code == 303
     assert after.headers["location"] == "/portal/login"
+
+
+async def test_signing_out_names_who_signed_out(client, session, analyst):
+    """The audit row was anonymous: a sign-out could not be tied to anyone."""
+    org, operator, secret, pem = analyst
+    await sign_in(client, operator, secret, pem)
+
+    await client.post(
+        "/portal/logout",
+        data={"csrf_token": client.cookies.get("aivs_csrf", "")},
+        headers=proxy_headers(pem),
+    )
+
+    row = await session.scalar(select(AuditLog).where(AuditLog.action == AuditAction.LOGOUT))
+    assert row is not None
+    assert row.org_id == org.id
+    assert row.actor_id == str(operator.id)
 
 
 async def test_signing_out_is_not_reachable_by_a_get(client, analyst):

@@ -10,9 +10,10 @@ into the review queue, so each POST is an ordinary submission and nothing more:
   envelope says, so the AI gate applies at validate (SF-6);
 - **a contribution on public content.** An envelope carries no scope, so the
   inbox files ``disclosed_third_party``, and the disclosure split, TLP
-  inheritance and owner-only versioning apply as on any filing. A finding of
-  the member's own (a ``vulnerability``) is refused here: pre-CVE findings come
-  through the native API, which asks for a scope;
+  inheritance and owner-only versioning apply as on any filing. So a finding
+  of the member's own (a ``vulnerability``) is refused by the disclosure
+  split, as on any third-party filing: pre-CVE findings come through the
+  native API, which asks for a scope;
 - **the circle's floor.** An envelope carries no submission TLP either; the
   collection's circle floor is used, which the circle already requires;
 - **anonymous**, as every contribution is by default, which also refuses
@@ -63,12 +64,6 @@ def _objects_of(envelope: Any) -> list[dict[str, Any]]:
         raise SubmissionError(msg)
     if len(objects) > MAX_BUNDLE_OBJECTS:
         msg = f"an envelope may carry at most {MAX_BUNDLE_OBJECTS} objects"
-        raise SubmissionError(msg)
-    if any(isinstance(obj, dict) and obj.get("type") == "vulnerability" for obj in objects):
-        msg = (
-            "the inbox takes contributions on public vulnerabilities; file a finding of your "
-            "own through the native API, which records its discovery scope"
-        )
         raise SubmissionError(msg)
     return objects
 

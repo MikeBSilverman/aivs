@@ -204,7 +204,8 @@ async def disclosure_problem(
     if any(obj.get("type") == "vulnerability" for obj in listed):
         return (
             f"a {discovery_scope.value} contribution carries no vulnerability of its own; "
-            "it references the ISAC's record of one"
+            "it references the ISAC's record of one. File a finding of your own through "
+            "the native API, with the discovery scope that describes it"
         )
     targets = sorted(external_references_by_type(listed, "vulnerability"))
     if not targets:

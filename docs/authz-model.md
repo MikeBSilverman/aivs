@@ -222,7 +222,7 @@ caller's org belongs to, at the role shown.
 | Read circle content (TAXII objects, manifest) | N | circle: any role | circle: any role | circle: any role | circle: any role — **no bypass** | circle: any role — **no bypass** |
 | Contribute into a circle | N | circle: `contributor`/`circle_admin` | circle: `contributor`/`circle_admin` | circle: `contributor`/`circle_admin` | circle: as any member | circle: as any member |
 | Manage circle membership | N | N | N | N | `isac_membership` | N |
-| Create or delete a circle | N | N | N | N | `isac_editor` | N |
+| Create a circle (no path deletes one) | N | N | N | N | `isac_editor` | N |
 | **Submissions** |
 | Create a draft | N | Y (own org) | Y (own org) | Y (own org) | Y | Y |
 | View submission workflow record | N | own only | own only | own only | `isac_analyst`, `isac_editor` (all) | own only |
@@ -236,10 +236,13 @@ caller's org belongs to, at the role shown.
 | **Organizations and certificates** |
 | Enrol a new organization | N | N | N | N | `isac_membership` | N |
 | Change an org's `status` | N | N | N | N | `isac_membership` | N |
+| Quarantine an org | N | N | own org | N | `isac_membership`, `isac_editor`, `system_admin` | N |
+| Reconnect a quarantined org | N | N | N | N | `isac_membership`, `isac_editor` | N |
+| Offboard an org; set or lift a legal hold | N | N | N | N | `isac_membership` | N |
 | Register / revoke a certificate | N | N | own org | N² | `isac_membership` (any org) | N |
-| Manage operators | N | N | own org | N² | `system_admin` (any org) | N |
+| Create operators | N | N | N | N | N (the host's `bootstrap_operator` command only) | N |
 | **Embargoes** |
-| Set an embargo on own submission | N | own | own | own | Y | own |
+| Set an embargo (a release time, at distribution) | N | N | N | N | `isac_editor` | N |
 | Lift or extend an embargo | N | N | N | N | `isac_editor` | N |
 | **Acknowledgments** |
 | Record `acknowledged` / `actioned` [^ack] | N | own org | own org | own org | N | N |
@@ -295,7 +298,13 @@ rotation against the native API with the outgoing certificate.
 | `can_reveal_submitter(ctx)` | May they name an anonymous submitter? | `is_isac_editor(ctx)`. Requires a reason; audited as `anonymity.reveal` with the reason and without the identity. |
 | `can_view_submission_receipts(ctx)` | May they see, firm by firm, who retrieved it? | Active **and** `can_review_submissions`. Not the submitter: each receipt is the receiving member's record, which one member never produces to another (sharing agreement §9). The submitter reads k-suppressed telemetry instead; with the named rows as well, that suppression was decorative. |
 | `can_transition_submission(ctx, s, target)` | May they make this move? | The move must be legal in `SUBMISSION_TRANSITIONS` **and** the caller must hold the right to that specific target. |
-| `can_manage_org(ctx, target)` | May they administer this org? | Active **and** (system admin, or org admin over their own org). |
+| `can_manage_org(ctx, target)` | May they administer this org? | Active **and** (`isac_membership`, or a member firm's org admin over its own org; an org admin at the ISAC holds nothing). |
+| `can_register_certificate(ctx, org)` | May they bind a certificate to this org? | Decided on the org's row read under its lock: never an offboarded org; `isac_membership` whatever the status (enrolment and reconnection need it); a member's org admin only while its org is active. |
+| `can_quarantine_org(ctx, target)` | May they cut this org off? | `isac_membership`, `isac_editor` or `system_admin`; or the org's own org admin, for itself. |
+| `can_reconnect_org(ctx)` | May they return a quarantined org? | `isac_membership` or `isac_editor`; never the member itself. |
+| `can_offboard_org(ctx)`, `can_set_legal_hold(ctx)` | May they end a membership, or hold its data? | `isac_membership` only. |
+| `can_confirm_proxy_filing(ctx, s)` | May they confirm a filing made in their name? | A person at the submitting org, never its machine certificate. |
+| `can_read_isac_records(ctx)` | May they read the ISAC's own records outside any circle? | The automation organisation's machine certificate only. |
 | `distribution_visibility_clause(ctx, now)` | Which rows may they read? | The SQL predicate below. |
 
 `require(allowed, reason)` raises `PolicyDenied(reason)` — letting a router read

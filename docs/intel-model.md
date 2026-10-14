@@ -189,9 +189,12 @@ post, spends one hourly allowance per organisation, and a refusal raises
 `contribution_flood`. `revoke` is not built yet.
 
 **Telemetry back to the submitter**, computed from the rows the pipeline
-already writes: reach, retrieved, acknowledged and actioned counts, aggregate
-posture outcomes and opinion counts. Every number is suppressed below k
-organisations, and none is ever a list.
+already writes: reach, retrieved, acknowledged and actioned counts (built);
+aggregate posture outcomes and opinion counts are designed, and named to the
+submitter as coming rather than shown as zero. None is ever a list. A count is
+exact only when at least k organisations did the thing and at least k did not:
+reach is exact, so a count within k of it names the firms that did not act as
+surely as a small count names those that did.
 
 ### 3.2 Phase M: members sign in with SSO
 

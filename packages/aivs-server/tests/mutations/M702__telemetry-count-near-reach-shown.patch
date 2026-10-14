@@ -1,0 +1,18 @@
+Mutation M702: a count within k of reach is shown exactly
+Re-applies: telemetry suppressing only small counts, so reach minus a count names firms
+
+Expect red: packages/aivs-server/tests/unit/test_telemetry.py::test_reach_minus_a_count_is_never_below_k
+
+diff --git a/packages/aivs-server/src/aivs_server/services/telemetry.py b/packages/aivs-server/src/aivs_server/services/telemetry.py
+index c80bbb8..af0a21a 100644
+--- a/packages/aivs-server/src/aivs_server/services/telemetry.py
++++ b/packages/aivs-server/src/aivs_server/services/telemetry.py
+@@ -96,8 +96,6 @@ def _suppressed(value: int, *, reach: int) -> Count:
+         return Count(None, f"shown once at least {K_ANONYMITY} organisations could see it")
+     if value < K_ANONYMITY:
+         return Count(None, f"fewer than {K_ANONYMITY}")
+-    if reach - value < K_ANONYMITY:
+-        return Count(None, f"all but fewer than {K_ANONYMITY}")
+     return Count(value)
+ 
+ 

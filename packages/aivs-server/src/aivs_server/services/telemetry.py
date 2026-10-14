@@ -5,10 +5,21 @@ and acknowledgment is already a row; the submitter never saw any of it, which
 is why members stop posting. This turns those rows into counts for the
 submitter alone, with no analyst in the loop.
 
-Counts, never lists, and never a count small enough to point at someone:
+Counts, never lists, and never a count that points at someone -- directly or
+by subtraction:
 - fewer than K organisations could see it: every number is withheld;
-- otherwise zero and any count of at least K are exact, and one to K-1 reads
-  "fewer than K", which tells the submitter only that someone engaged.
+- otherwise a count is exact only when at least K organisations did the thing
+  *and* at least K did not. Reach is exact, so "6 could see it, 5 acted"
+  names the one that did not as surely as "1 acted" names the one that did;
+  and members can know a circle's roster, so an exact zero, or a count equal
+  to reach, states every firm's action. Such counts read "fewer than K" or
+  "all but fewer than K".
+Reach counts active organisations only: a suspended or quarantined one cannot
+read, and counting it would let K describe fewer than K possible readers.
+
+What this does not stop: reading the same count twice and seeing it move tells
+the submitter that *some* firm acted in between. Which one is not shown, and a
+live counter cannot avoid that much.
 
 Counters that depend on later phases (opinions on its content, posture
 outcomes, citations by an ISAC advisory) are named as not yet available rather
@@ -25,7 +36,7 @@ from typing import Any, Final
 from sqlalchemy import and_, distinct, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from aivs_schemas.enums import AckType, OrgType
+from aivs_schemas.enums import AckType, OrgStatus, OrgType
 from aivs_server.db.models import (
     Acknowledgment,
     CircleMembership,
@@ -83,17 +94,26 @@ class Telemetry:
 def _suppressed(value: int, *, reach: int) -> Count:
     if reach < K_ANONYMITY:
         return Count(None, f"shown once at least {K_ANONYMITY} organisations could see it")
-    if 0 < value < K_ANONYMITY:
+    if value < K_ANONYMITY:
         return Count(None, f"fewer than {K_ANONYMITY}")
+    if reach - value < K_ANONYMITY:
+        return Count(None, f"all but fewer than {K_ANONYMITY}")
     return Count(value)
 
 
+def _reach_count(reach: int) -> Count:
+    """Reach is exact from K: it says how many could see, not what any one did."""
+    if reach < K_ANONYMITY:
+        return Count(None, f"shown once at least {K_ANONYMITY} organisations could see it")
+    return Count(reach)
+
+
 def _is_counted(org_id: Any, submitter_org_id: uuid.UUID) -> Any:
-    """Organisations that count as reach: not the submitter, not the ISAC itself."""
-    return and_(
-        org_id != submitter_org_id,
-        org_id.in_(select(Organization.id).where(Organization.org_type != OrgType.ADMIN)),
+    """Organisations that count: active, not the submitter, not the ISAC itself."""
+    counted = select(Organization.id).where(
+        Organization.org_type != OrgType.ADMIN, Organization.status == OrgStatus.ACTIVE
     )
+    return and_(org_id != submitter_org_id, org_id.in_(counted))
 
 
 async def _reach(session: AsyncSession, submission: Submission) -> int:
@@ -143,7 +163,7 @@ async def submission_telemetry(session: AsyncSession, submission: Submission) ->
     return Telemetry(
         submission_id=submission.id,
         distributed=reach > 0 or submission.distributed_at is not None,
-        reach=_suppressed(reach, reach=reach),
+        reach=_reach_count(reach),
         retrieved=counts[AckType.RETRIEVED],
         acknowledged=counts[AckType.ACKNOWLEDGED],
         actioned=counts[AckType.ACTIONED],

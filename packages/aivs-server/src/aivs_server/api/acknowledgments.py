@@ -13,9 +13,10 @@ written only by the server, on actual delivery. Accepting it here would let a
 firm manufacture evidence of a delivery that never happened, which is precisely
 the record this table exists to be trustworthy about.
 
-**Receipts are visible to the submitter and the hosting ISAC, and to nobody
-else.** Which firms are paying attention to which threats is an inference other
-members must not be able to draw about each other.
+**Receipts are visible to the ISAC's reviewers, and to nobody else.** Which
+firms are paying attention to which threats is an inference members must not be
+able to draw about each other, and the submitter is a member: it gets
+k-suppressed telemetry (``services/telemetry.py``).
 """
 
 from __future__ import annotations

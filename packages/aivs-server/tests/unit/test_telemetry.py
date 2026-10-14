@@ -14,7 +14,7 @@ import uuid
 import pytest
 from sqlalchemy import select
 
-from aivs_schemas.enums import AckType, AckVia, OrgType
+from aivs_schemas.enums import AckType, AckVia, OrgStatus, OrgType
 from aivs_server.auth.secretbox import SecretPurpose
 from aivs_server.db.models import Acknowledgment, Webhook, WebhookDelivery
 from aivs_server.services.telemetry import (
@@ -71,22 +71,58 @@ async def test_below_k_every_number_is_withheld(session, shared):
 
 
 @pytest.mark.requirement("SF-15")
-async def test_at_k_zero_and_k_are_exact_and_between_reads_fewer_than_k(session, shared):
-    submission, submitter, _pem, readers, _c = await shared(K_ANONYMITY + 1)
+async def test_a_count_is_exact_only_when_k_did_and_k_did_not(session, shared):
+    """Complementary suppression: from both sides of the count, at least K.
+
+    Reach 10: five acknowledged and five did not, so 5 is exact. Two retrieved
+    (too few did), and nobody acted -- an exact zero would state every firm's
+    action to a submitter that knows the roster.
+    """
+    submission, submitter, _pem, readers, _c = await shared(2 * K_ANONYMITY)
     for reader in readers[:2]:
         await _receipt(session, reader, submission)
     for reader in readers[:K_ANONYMITY]:
         await _receipt(session, reader, submission, AckType.ACKNOWLEDGED)
-    # The submitter's own retrieval is not engagement with what it shared.
+    # The submitter's own action is not engagement with what it shared.
     await _receipt(session, submitter, submission, AckType.ACTIONED)
 
     telemetry = await submission_telemetry(session, submission)
 
-    assert telemetry.reach.value == K_ANONYMITY + 1, "the ISAC and the submitter are not reach"
-    assert (telemetry.retrieved.value, telemetry.retrieved.withheld) == (None, "fewer than 5")
+    assert telemetry.reach.value == 2 * K_ANONYMITY, "the ISAC and the submitter are not reach"
     assert telemetry.acknowledged.value == K_ANONYMITY
-    assert telemetry.actioned.value == 0
-    assert telemetry.later, "counters from later phases are named, not shown as zero"
+    assert (telemetry.retrieved.value, telemetry.retrieved.withheld) == (None, "fewer than 5")
+    assert (telemetry.actioned.value, telemetry.actioned.withheld) == (None, "fewer than 5")
+    assert telemetry.later, "counters not yet computed are named, not shown as zero"
+
+
+@pytest.mark.requirement("SF-15")
+async def test_reach_minus_a_count_is_never_below_k(session, shared):
+    """Reach 6 with 5 acknowledging would name the one firm that did not."""
+    submission, _s, _pem, readers, _c = await shared(K_ANONYMITY + 1)
+    for reader in readers[:K_ANONYMITY]:
+        await _receipt(session, reader, submission, AckType.ACKNOWLEDGED)
+
+    telemetry = await submission_telemetry(session, submission)
+
+    assert telemetry.reach.value == K_ANONYMITY + 1
+    assert telemetry.acknowledged.value is None
+    assert telemetry.acknowledged.withheld == "all but fewer than 5"
+
+
+@pytest.mark.requirement("SF-15")
+async def test_an_organisation_that_cannot_read_is_not_reach(session, shared):
+    """A suspended firm could not see it, so it must not make up the K.
+
+    The pair: the same circle with every reader active reaches K.
+    """
+    submission, _s, _pem, readers, _c = await shared(K_ANONYMITY)
+    assert (await submission_telemetry(session, submission)).reach.value == K_ANONYMITY
+
+    readers[0].status = OrgStatus.SUSPENDED
+    await session.commit()
+
+    telemetry = await submission_telemetry(session, submission)
+    assert telemetry.reach.value is None
 
 
 async def test_a_member_that_joined_after_release_is_not_reach(

@@ -81,7 +81,7 @@ class ContributionIn(_In):
     #: In the body, never the path: request lines are logged with the caller's
     #: identity and forwarded off the platform, and "firm X sighted V at t" is
     #: exactly what a member's click must not leave behind there (SF-66).
-    target: Annotated[str, Field(min_length=1, max_length=100)]
+    target: _ObjectId
     kind: OneClick
 
 
@@ -91,10 +91,17 @@ class ContributionOut(BaseModel):
     lane: str
 
 
+#: A STIX id as a member sends it: one line, no control characters. A NUL in
+#: it reached PostgreSQL as a server error rather than a 400 for the member.
+_ObjectId = Annotated[str, Field(min_length=1, max_length=100, pattern=r"^[^\x00-\x1f\x7f]+$")]
 #: Prose a member writes for itself and its regulator: multi-line, bounded, and
 #: free of NUL, which PostgreSQL refuses in text and would otherwise turn a
 #: member's typo into a server error.
-_Statement = Annotated[str, Field(min_length=1, max_length=2000, pattern=r"^[^\x00]+$")]
+_Statement = Annotated[
+    # At least one character that is not whitespace: VEX asks for a statement,
+    # and " " satisfied both the API and the database check.
+    str, Field(min_length=1, max_length=2000, pattern=r"^[^\x00]*[^\x00\s][^\x00]*$")
+]
 #: One line per product: a PURL, a CPE, or a name.
 _Product = Annotated[str, Field(min_length=1, max_length=200, pattern=r"^[^\x00-\x1f\x7f]+$")]
 
@@ -102,7 +109,7 @@ _Product = Annotated[str, Field(min_length=1, max_length=200, pattern=r"^[^\x00-
 class PostureIn(_In):
     #: In the body, never the path: request lines are logged with the caller's
     #: identity and forwarded off the platform (SF-70).
-    vulnerability: Annotated[str, Field(min_length=1, max_length=100)]
+    vulnerability: _ObjectId
     #: The one-click's default: never ``affected`` unless the member says so.
     status: PostureStatus = PostureStatus.UNDER_INVESTIGATION
     justification: VexJustification | None = None

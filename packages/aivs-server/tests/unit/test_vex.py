@@ -173,14 +173,29 @@ def test_the_rules_hold_as_pure_functions():
         {"status": "fixed", "products": ["pkg:pypi/agent@1.2"] * 51},
         {"status": "fixed", "products": ["two\nlines"]},
         {"status": "fixed", "evidence_note": "x" * 2001},
+        {"status": "affected", "action_statement": "   \n  "},
     ],
-    ids=["nul", "too-many-products", "multi-line-product", "note-too-long"],
+    ids=[
+        "nul",
+        "too-many-products",
+        "multi-line-product",
+        "note-too-long",
+        "blank-action",
+    ],
 )
 async def test_unbounded_or_unstorable_input_is_refused_as_the_members_mistake(
     client, session, world, body
 ):
     """A NUL reaches PostgreSQL as a server error; it is the member's typo, so 400."""
     response = await put(client, world.member.person, world.published, **body)
+
+    assert response.status_code == 400
+    assert await session.scalar(select(OrgPosture.id)) is None
+
+
+async def test_a_nul_in_the_vulnerability_id_is_the_members_400(client, session, world):
+    """It reached PostgreSQL in the lookup as a server error."""
+    response = await put(client, world.member.person, "vulnerability--\x00", status="fixed")
 
     assert response.status_code == 400
     assert await session.scalar(select(OrgPosture.id)) is None
@@ -217,6 +232,28 @@ async def test_a_new_status_voids_the_validation_of_the_old_one(client, world):
 
     assert changed.json()["validated_at"] is None
     assert kept.json()["validated_at"] is None
+
+
+async def test_a_changed_statement_voids_the_validation_of_the_old_one(client, world):
+    """Validated for one product, then widened to two: the second was never validated."""
+    await put(
+        client,
+        world.member.person,
+        world.published,
+        status="fixed",
+        products=["pkg:pypi/agent-gateway@2.4.1"],
+        validated=True,
+    )
+
+    widened = await put(
+        client,
+        world.member.person,
+        world.published,
+        status="fixed",
+        products=["pkg:pypi/agent-gateway@2.4.1", "pkg:pypi/agent-gateway@2.5.0"],
+    )
+
+    assert widened.json()["validated_at"] is None
 
 
 async def test_restating_the_same_status_keeps_its_validation(client, world):

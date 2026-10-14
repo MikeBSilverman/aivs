@@ -148,15 +148,38 @@ async def record_posture(
     return row
 
 
+def _statement_of(row: OrgPosture) -> tuple[object, ...]:
+    """What a validation vouches for: the VEX statement, not our own notes on it."""
+    return (
+        row.status,
+        row.justification,
+        row.impact_statement,
+        row.action_statement,
+        tuple(row.products or ()),
+    )
+
+
+def _statement_without_ours(statement: VexStatement) -> tuple[object, ...]:
+    return (
+        statement.status,
+        statement.justification,
+        statement.impact_statement,
+        statement.action_statement,
+        statement.products,
+    )
+
+
 def _apply(row: OrgPosture, statement: VexStatement, *, now: dt.datetime) -> None:
     """Write the statement onto the row.
 
-    A validation was of the statement as it stood: a new status voids it unless
-    the member validates again in the same write.
+    A validation was of the statement as it stood: any change to it -- status,
+    justification, either statement, the products -- voids the validation
+    unless the member validates again in the same write. A changed evidence
+    note or detection flag does not: they are ours, not the statement.
     """
     if statement.validated:
         row.validated_at = now
-    elif row.status is not statement.status:
+    elif _statement_of(row) != _statement_without_ours(statement):
         row.validated_at = None
     row.status = statement.status
     row.justification = statement.justification

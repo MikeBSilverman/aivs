@@ -44,7 +44,7 @@ from aivs_server.services.contributions import ContributionRateLimitedError
 from aivs_server.services.inbox import receive_envelope, status_of
 from aivs_server.services.publication import wait_for_publications
 from aivs_server.services.receipts import record_retrievals
-from aivs_server.services.submissions import SubmissionError
+from aivs_server.services.submissions import STORAGE_ERRORS, SubmissionError
 from aivs_server.taxii import resources
 from aivs_server.taxii.filters import FilterError, parse_filters
 from aivs_server.taxii.paging import Cursor, CursorError, decode_cursor, encode_cursor
@@ -674,6 +674,13 @@ async def add_objects(
         ) from None
     except INBOX_CLIENT_ERRORS as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except STORAGE_ERRORS as exc:
+        # A value the database refuses (a NUL, a string past its column) is the
+        # platform's malformed envelope, as on every other ingest path: a 400.
+        await session.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Envelope content rejected by storage"
+        ) from exc
     return _taxii_response(_status_payload(received), status_code=status.HTTP_202_ACCEPTED)
 
 

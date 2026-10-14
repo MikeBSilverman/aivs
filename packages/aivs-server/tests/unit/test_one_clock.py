@@ -19,7 +19,7 @@ from typing import Any
 import pytest
 from sqlalchemy import select, update
 
-from aivs_schemas.enums import OrgType
+from aivs_schemas.enums import OrgType, SubmissionState
 from aivs_server.api import admin as admin_api
 from aivs_server.db import models
 from aivs_server.db.clock import database_now
@@ -27,6 +27,7 @@ from aivs_server.portal import routes as portal_routes
 from aivs_server.services import circles as circles_service
 from aivs_server.services import distribution as distribution_service
 from aivs_server.services import embargo as embargo_service
+from aivs_server.services import submissions as submissions_service
 from aivs_server.services.circles import reconcile_circle
 from aivs_server.services.distribution import distribute_submission
 from aivs_server.services.embargo import (
@@ -35,6 +36,7 @@ from aivs_server.services.embargo import (
     release_embargo_now,
     sweep_due_embargoes,
 )
+from aivs_server.services.submissions import record_transition
 from aivs_server.taxii import router as taxii_router
 from tests.conftest import proxy_headers
 from tests.unit.test_portal import make_operator as make_portal_operator
@@ -401,3 +403,16 @@ async def test_quarantine_and_reconnection_stamp_the_database_clock(
     assert closed.left_at is not None
     assert close_to(closed.left_at, reference), "the gap began on the app's clock"
     assert close_to(reopened.joined_at, reference), "the new interval began on the app's clock"
+
+
+@pytest.mark.requirement("SF-66")
+async def test_distributed_at_is_stamped_on_the_database_clock(
+    session, monkeypatch, isac_ctx, make_validated, make_circle
+):
+    """The hourly allowance compares distributed_at with a database "now"."""
+    submission = await session.get(models.Submission, await make_validated("finding"))
+    skew_clock(monkeypatch, submissions_service, HOUR)
+
+    await record_transition(session, isac_ctx, submission, SubmissionState.DISTRIBUTED, reason=None)
+
+    assert close_to(submission.distributed_at, await database_now(session))

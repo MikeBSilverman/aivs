@@ -23,6 +23,7 @@ from aivs_schemas.enums import (
 )
 from aivs_server.audit.log import AuditAction
 from aivs_server.db.models import AuditLog, Submission, TaxiiStatus
+from tests.authz_matrix.world import inbox_note
 from tests.conftest import proxy_headers
 from tests.unit.contribution_world import STAMP
 from tests.unit.sharing_world import API, SharingWorld, build_sharing_world
@@ -293,3 +294,15 @@ async def test_posts_past_the_hourly_allowance_are_refused_and_the_refusal_is_ke
     assert refusal is not None
     assert refusal.org_id == world.member.org.id
     assert refusal.details["lane"] == "taxii_inbox"
+
+
+@pytest.mark.requirement("SF-69")
+async def test_an_envelope_the_database_cannot_store_is_the_platforms_400(client, session, world):
+    """A NUL reached PostgreSQL as a server error; every other ingest path answers 400."""
+    note = inbox_note(world.published)
+    note["content"] = "seen\u0000here"
+
+    response = await post(client, world, world.member.machine, [note])
+
+    assert response.status_code == 400
+    assert await _filed(session, world.member.org.id) == []

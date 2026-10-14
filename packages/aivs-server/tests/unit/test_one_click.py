@@ -714,3 +714,14 @@ async def test_a_click_published_at_once_tells_the_circle_whatever_the_app_clock
         .where(WebhookDelivery.webhook_id == hook_id)
     )
     assert queued == 1
+
+
+async def test_a_nul_in_the_target_is_the_members_400(client, world):
+    """It reached PostgreSQL in the lookup as a server error."""
+    response = await client.post(
+        "/api/v1/contributions",
+        json={"target": "vulnerability--\u0000", "kind": "seen"},
+        headers=world.member.person,
+    )
+
+    assert response.status_code == 400

@@ -839,7 +839,9 @@ async def record_transition(
     previous = submission.state
     submission.state = target
     if target is SubmissionState.DISTRIBUTED and submission.distributed_at is None:
-        submission.distributed_at = dt.datetime.now(dt.UTC)
+        # The database clock: the hourly allowance compares this with a
+        # database "now", and two clocks put the window off by their skew.
+        submission.distributed_at = await database_now(session)
 
     session.add(
         SubmissionTransition(

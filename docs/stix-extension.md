@@ -718,6 +718,7 @@ indexed as if it named something.
 | `action_type` | `config_change`, `credential_rotation`, `dependency_upgrade`, `compromise_assessment` | Ours |
 | `residual_risk` | Text | Ours |
 | `validation_check` | `{tool, query_or_command, expected_result}`, all three required | Ours: CSAF stops before verification |
+| `review_by` | A date, `YYYY-MM-DD`: the last day the action's claim is vouched for. From the day after, readiness reports its group `lapsed` ("not confirmed since"), never the opposite claim, and the guided view flags the step | Ours |
 
 ### `indicator`
 

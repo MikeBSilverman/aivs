@@ -21,12 +21,19 @@ pytestmark = pytest.mark.db
 
 NOW = dt.datetime(2026, 10, 14, 12, 0, tzinfo=dt.UTC)
 A, N, U = Availability.AVAILABLE, Availability.NONE_AVAILABLE, Availability.UNAVAILABLE
+L = Availability.LAPSED
+YESTERDAY, TODAY = "2026-10-13", "2026-10-14"
 API = "/api/v1/submissions"
 STAMP = "2026-08-01T00:00:00.000Z"
 
 
 def coa(
-    category: str, *, stix_id: str = "coa-1", modified: int = 0, revoked: bool = False
+    category: str,
+    *,
+    stix_id: str = "coa-1",
+    modified: int = 0,
+    revoked: bool = False,
+    review_by: str | None = None,
 ) -> ReadinessInput:
     return ReadinessInput(
         stix_id=stix_id,
@@ -34,6 +41,7 @@ def coa(
         stix_type="course-of-action",
         remediation_category=category,
         revoked=revoked,
+        review_by=review_by,
     )
 
 
@@ -71,6 +79,59 @@ def indicator(
     ],
 )
 def test_readiness_follows_the_rules(objects, expected):
+    assert assess(objects, NOW) == expected
+
+
+def _lapsed(**since: dt.date | None) -> dict[str, dt.date | None]:
+    return since
+
+
+@pytest.mark.requirement("SF-8")
+@pytest.mark.parametrize(
+    ("objects", "expected"),
+    [
+        # Vouched for through the whole of its review_by day.
+        ([coa("vendor_fix", review_by=TODAY)], Readiness(A, U, U, U)),
+        # A lapsed claim is stale, not reversed: neither "available" nor "none".
+        (
+            [coa("vendor_fix", review_by=YESTERDAY)],
+            Readiness(L, U, U, U, _lapsed(remediation=dt.date(2026, 10, 13))),
+        ),
+        (
+            [coa("none_available", review_by=YESTERDAY)],
+            Readiness(L, U, U, U, _lapsed(remediation=dt.date(2026, 10, 13))),
+        ),
+        (
+            [coa("workaround", review_by=YESTERDAY)],
+            Readiness(U, L, U, U, _lapsed(mitigation=dt.date(2026, 10, 13))),
+        ),
+        # A current claim answers the group, whichever way it points.
+        (
+            [coa("vendor_fix", review_by=YESTERDAY), coa("no_fix_planned", stix_id="coa-2")],
+            Readiness(N, U, U, U),
+        ),
+        (
+            [coa("none_available", review_by=YESTERDAY), coa("vendor_fix", stix_id="coa-2")],
+            Readiness(A, U, U, U),
+        ),
+        # The last day anyone vouched for one of the group's claims.
+        (
+            [
+                coa("vendor_fix", review_by="2026-09-01"),
+                coa("vendor_fix", stix_id="coa-2", review_by="2026-10-01"),
+            ],
+            Readiness(L, U, U, U, _lapsed(remediation=dt.date(2026, 10, 1))),
+        ),
+        # A date that is not one: lapsed, with no date to give.
+        (
+            [coa("vendor_fix", review_by="2026-13-45")],
+            Readiness(L, U, U, U, _lapsed(remediation=None)),
+        ),
+        # Knowing how to undo a fix is no claim, stale or not.
+        ([coa("rollback", review_by=YESTERDAY)], Readiness(U, U, U, U)),
+    ],
+)
+def test_a_claim_past_its_review_date_is_reported_stale_not_reversed(objects, expected):
     assert assess(objects, NOW) == expected
 
 
@@ -195,3 +256,53 @@ async def test_an_invisible_vulnerability_and_a_missing_one_answer_alike(
     )
     assert invisible.status_code == missing.status_code == malformed.status_code == 404
     assert invisible.content == missing.content == malformed.content
+
+
+# ---------------------------------------------------------------------------
+# A stale claim, through the pipeline
+# ---------------------------------------------------------------------------
+@pytest.mark.requirement("SF-8")
+async def test_a_fix_past_its_review_date_reaches_members_as_not_confirmed(
+    client, isac, make_org, make_cert, make_circle, join_circle
+):
+    """The vendor's own course of action, filed with a ``review_by`` long past,
+    as the extension carries it: the member is told the claim is stale and
+    since when -- not that a fix exists, and not that none does."""
+    _isac_org, isac_headers = isac
+    vendor = await make_org("stale-vendor")
+    vendor_pem, _ = await make_cert(vendor)
+    reader = await make_org("stale-reader")
+    reader_pem, _ = await make_cert(reader)
+    circle = await make_circle("stale-circle")
+    for org in (vendor, reader):
+        await join_circle(org, circle)
+    vulnerability = _sdo("vulnerability", name="Gateway auth bypass")
+    fix = _sdo(
+        "course-of-action",
+        name="Upgrade to 4.2.1",
+        extensions={
+            AIVS_INTEL_EXTENSION_ID: {
+                "extension_type": "property-extension",
+                "aivs_schema_version": "2.0",
+                "category": "vendor_fix",
+                "review_by": "2020-01-31",
+            }
+        },
+    )
+    mitigates = _sdo(
+        "relationship",
+        relationship_type="mitigates",
+        source_ref=fix["id"],
+        target_ref=vulnerability["id"],
+    )
+    await _share(client, vendor_pem, isac_headers, [vulnerability, fix, mitigates], [circle.id])
+
+    seen = await client.get(
+        f"/api/v1/vulnerabilities/readiness?id={vulnerability['id']}",
+        headers=proxy_headers(reader_pem),
+    )
+
+    assert seen.status_code == 200, seen.text
+    body = seen.json()
+    assert body["remediation"] == "lapsed"
+    assert body["not_confirmed_since"] == {"remediation": "2020-01-31"}

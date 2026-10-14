@@ -531,7 +531,7 @@
           }
         },
         "review_by": {
-          "description": "Ours. The date after which this course of action must be re-checked before anyone relies on it: a workaround that was right in March may not be in June. Past it, readiness reports the action unavailable.",
+          "description": "Ours. The date after which this course of action must be re-checked before anyone relies on it: a workaround that was right in March may not be in June. Past it, readiness reports its group lapsed: not confirmed since this date, rather than the opposite claim.",
           "type": "string",
           "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
         }

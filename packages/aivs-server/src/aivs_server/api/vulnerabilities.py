@@ -8,6 +8,7 @@ someone else may hold (SF-8).
 
 from __future__ import annotations
 
+import datetime as dt
 import re
 from typing import Annotated, Final
 
@@ -39,6 +40,10 @@ class ReadinessOut(BaseModel):
     mitigation: Availability
     detection: Availability
     validation: Availability
+    #: For each group that is ``lapsed``: the last day its claim was vouched
+    #: for (its ``review_by``), or null when that date was not a date. A
+    #: lapsed group is neither available nor stated none -- ask the ISAC.
+    not_confirmed_since: dict[str, dt.date | None]
 
 
 @router.get("/vulnerabilities/readiness", response_model=ReadinessOut)
@@ -47,7 +52,11 @@ async def readiness(
     session: SessionDep,
     stix_id: Annotated[str, Query(alias="id", max_length=100)],
 ) -> ReadinessOut:
-    """Remediation, mitigation, detection and validation: available, none, or unknown.
+    """Remediation, mitigation, detection and validation: available, none, lapsed, or unknown.
+
+    ``lapsed`` means a claim the caller can see -- a fix exists, or none does --
+    has passed its ``review_by`` and nobody has re-checked it since; it is not a
+    statement either way.
 
     A malformed id, an unknown id, and one the caller cannot see all answer the
     same 404, so the endpoint confirms nothing about what exists (SF-47). The
@@ -68,4 +77,5 @@ async def readiness(
         mitigation=found.mitigation,
         detection=found.detection,
         validation=found.validation,
+        not_confirmed_since=dict(found.not_confirmed_since),
     )

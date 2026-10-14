@@ -1,0 +1,18 @@
+Mutation M355: readiness_for never reads review_by from the stored rows, so the rule holds only for hand-built inputs
+Re-applies: H2-2 (reader against the writer's rows)
+
+Expect red: packages/aivs-server/tests/unit/test_readiness.py::test_a_fix_past_its_review_date_reaches_members_as_not_confirmed
+Expect red: packages/aivs-server/tests/unit/test_vulnerability_page.py::test_a_fix_past_its_review_date_reads_as_not_confirmed_never_as_no_fix
+
+diff --git a/packages/aivs-server/src/aivs_server/services/readiness.py b/packages/aivs-server/src/aivs_server/services/readiness.py
+--- a/packages/aivs-server/src/aivs_server/services/readiness.py
++++ b/packages/aivs-server/src/aivs_server/services/readiness.py
+@@ -247,7 +247,7 @@
+                 pattern_type=pattern_type,
+                 valid_until=valid_until,
+                 revoked=bool(revoked),
+-                review_by=stated_review_by({"extensions": extensions or {}}),
++                review_by=None,
+             )
+             for (
+                 stix_id,

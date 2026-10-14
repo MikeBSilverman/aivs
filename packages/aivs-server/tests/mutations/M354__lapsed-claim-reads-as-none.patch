@@ -1,0 +1,19 @@
+Mutation M354: a lapsed claim is reported unavailable, which states the opposite of what lapsed
+Re-applies: H2-2 (stale, not reversed)
+
+Expect red: packages/aivs-server/tests/unit/test_readiness.py::test_a_claim_past_its_review_date_is_reported_stale_not_reversed
+Expect red: packages/aivs-server/tests/unit/test_readiness.py::test_a_fix_past_its_review_date_reaches_members_as_not_confirmed
+Expect red: packages/aivs-server/tests/unit/test_vulnerability_page.py::test_a_fix_past_its_review_date_reads_as_not_confirmed_never_as_no_fix
+
+diff --git a/packages/aivs-server/src/aivs_server/services/readiness.py b/packages/aivs-server/src/aivs_server/services/readiness.py
+--- a/packages/aivs-server/src/aivs_server/services/readiness.py
++++ b/packages/aivs-server/src/aivs_server/services/readiness.py
+@@ -185,7 +185,7 @@
+     if group in stated_none:
+         return Availability.NONE_AVAILABLE
+     if group in lapsed:
+-        return Availability.LAPSED
++        return Availability.UNAVAILABLE
+     return Availability.UNAVAILABLE
+ 
+ 

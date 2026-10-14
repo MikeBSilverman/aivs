@@ -1,0 +1,19 @@
+Mutation M353: readiness never consults a course of action's review_by, so a stale claim is reported as current
+Re-applies: H2-2 (readiness reads review_by)
+
+Expect red: packages/aivs-server/tests/unit/test_readiness.py::test_a_claim_past_its_review_date_is_reported_stale_not_reversed
+Expect red: packages/aivs-server/tests/unit/test_readiness.py::test_a_fix_past_its_review_date_reaches_members_as_not_confirmed
+Expect red: packages/aivs-server/tests/unit/test_vulnerability_page.py::test_a_fix_past_its_review_date_reads_as_not_confirmed_never_as_no_fix
+
+diff --git a/packages/aivs-server/src/aivs_server/services/readiness.py b/packages/aivs-server/src/aivs_server/services/readiness.py
+--- a/packages/aivs-server/src/aivs_server/services/readiness.py
++++ b/packages/aivs-server/src/aivs_server/services/readiness.py
+@@ -127,7 +127,7 @@
+         if claim is None:
+             continue
+         group, claims = claim
+-        if review_lapsed(obj.review_by, now):
++        if False:
+             lapsed.setdefault(group, []).append(_review_date(obj.review_by))
+         else:
+             (available if claims == "available" else stated_none).add(group)

@@ -6,7 +6,7 @@ Expect red: packages/aivs-server/tests/unit/test_readiness.py::test_readiness_fo
 diff --git a/packages/aivs-server/src/aivs_server/services/readiness.py b/packages/aivs-server/src/aivs_server/services/readiness.py
 --- a/packages/aivs-server/src/aivs_server/services/readiness.py
 +++ b/packages/aivs-server/src/aivs_server/services/readiness.py
-@@ -132,7 +132,7 @@
+@@ -170,7 +170,7 @@
  
  
  def _is_current(obj: ReadinessInput, now: dt.datetime) -> bool:
@@ -14,4 +14,4 @@ diff --git a/packages/aivs-server/src/aivs_server/services/readiness.py b/packag
 +    return obj.pattern_type is not None and obj.valid_until is not None
  
  
- def _availability(group: str, available: set[str], stated_none: set[str]) -> Availability:
+ def _availability(

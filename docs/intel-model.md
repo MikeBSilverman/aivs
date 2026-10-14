@@ -77,7 +77,10 @@ The model the code holds now, as of phase D:
   `ssvc_exploitation`, `kev_listed`, `cwe_ids`. `services/indexing.py`
   names each column's reader.
 - **Readiness** (SF-8). For remediation, mitigation, detection and validation,
-  the value is `available`, `none_available` or `unavailable`. It is computed
+  the value is `available`, `none_available`, `lapsed` or `unavailable`.
+  `lapsed` is a claim either way whose `review_by` has passed; it is served
+  with the date (`not_confirmed_since`) and shown as "not confirmed since",
+  never as the opposite claim. It is computed
   per caller from the objects the caller can see, through relationships
   visible at both ends, using each object's latest visible version and
   skipping expired indicators and revoked objects. It is served at
@@ -190,10 +193,9 @@ phase:
 
   Each lands with its first reader, as CLAUDE.md §5 requires of any column.
 
-**Readiness and the vulnerability page exist (§2).** Still to come:
-excluding a course of action past its `review_by` date. That is phase F's
-indicator-freshness work, and needs a `review_by` property that no extension
-defines yet; `services/readiness.py`'s `_is_current` is where it plugs in.
+**Readiness and the vulnerability page exist (§2).** A course of action past
+its `review_by` date makes its group `lapsed`, through the same predicate the
+guided view uses (`guidance.review_lapsed`).
 
 **The vulnerability page is the case.** There is no `cases` table: assignee
 and priority are columns on `submissions`, and priority defaults from the SSVC
@@ -262,9 +264,8 @@ Built, except where a line says otherwise:
 - **"New since you last read"** is computed from the organisation's portal
   receipts, not stored.
 - **`review_by` on a course of action** is in the 2.0 extension, and the
-  guided view flags a step past it (`is_due_for_review`). *Readiness reporting
-  such an action unavailable waits for readiness, which calls the same
-  predicate.*
+  guided view flags a step past it (`is_due_for_review`). Readiness reports
+  the action's group `lapsed` through the same predicate (§2).
 
 ### 3.4 Phase H: posture and evidence
 

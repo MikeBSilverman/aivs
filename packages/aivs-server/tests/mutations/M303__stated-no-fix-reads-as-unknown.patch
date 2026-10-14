@@ -6,12 +6,12 @@ Expect red: packages/aivs-server/tests/unit/test_readiness.py::test_readiness_fo
 diff --git a/packages/aivs-server/src/aivs_server/services/readiness.py b/packages/aivs-server/src/aivs_server/services/readiness.py
 --- a/packages/aivs-server/src/aivs_server/services/readiness.py
 +++ b/packages/aivs-server/src/aivs_server/services/readiness.py
-@@ -109,7 +109,7 @@
-             group = _CATEGORY_GROUP.get(obj.remediation_category)
-             if group is not None:
-                 available.add(group)
--            elif obj.remediation_category in _NO_FIX:
-+            elif False:
-                 stated_none.add("remediation")
-         elif obj.stix_type == "indicator" and _is_current(obj, now):
-             available.add("detection")
+@@ -149,7 +149,7 @@
+     group = _CATEGORY_GROUP.get(obj.remediation_category)
+     if group is not None:
+         return group, "available"
+-    if obj.remediation_category in _NO_FIX:
++    if False:
+         return "remediation", "none"
+     return None
+ 

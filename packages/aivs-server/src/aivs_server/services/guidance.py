@@ -45,6 +45,8 @@ __all__ = [
     "is_due_for_review",
     "provenance",
     "resolve_depth",
+    "review_lapsed",
+    "stated_review_by",
 ]
 
 type StixObject = Mapping[str, Any]
@@ -239,16 +241,27 @@ def is_current_indicator(indicator: StixObject, now: dt.datetime) -> bool:
 
 
 def is_due_for_review(course_of_action: StixObject, now: dt.datetime) -> bool:
-    """Whether a course of action's ``review_by`` date has passed.
+    """Whether a course of action's ``review_by`` date has passed (:func:`review_lapsed`)."""
+    return review_lapsed(stated_review_by(course_of_action), now)
 
-    Past it, readiness must report the action unavailable: advice nobody has
-    re-checked since a date its author set is not advice anyone should be told
-    is available. A course of action with no ``review_by`` never falls due.
-    The date is a whole day in UTC, so the action is due from the start of the
-    day after it.
-    """
+
+def stated_review_by(course_of_action: StixObject) -> str | None:
+    """The ``review_by`` a course of action states, as written; None when it states none."""
     review_by = _intel(course_of_action).get("review_by")
-    if not isinstance(review_by, str):
+    return review_by if isinstance(review_by, str) else None
+
+
+def review_lapsed(review_by: str | None, now: dt.datetime) -> bool:
+    """Whether a ``review_by`` date has passed: the one rule, for this view and readiness.
+
+    Past it, the action's claim -- a fix exists, or none does -- is stale:
+    nobody has re-checked it since a date its author set, so neither view may
+    go on stating it (``readiness.Availability.LAPSED``). No ``review_by``
+    never lapses. The date is a whole day in UTC, so a claim lapses from the
+    start of the day after it; one that is not a date has lapsed, because
+    nobody can say when it was meant to be re-checked.
+    """
+    if review_by is None:
         return False
     try:
         last_day = dt.date.fromisoformat(review_by)

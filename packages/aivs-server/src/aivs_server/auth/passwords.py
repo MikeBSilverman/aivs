@@ -19,6 +19,7 @@ without a migration.
 
 from __future__ import annotations
 
+import datetime as dt
 import hmac
 import secrets
 from typing import Final
@@ -31,10 +32,10 @@ __all__ = [
     "MIN_PASSWORD_LENGTH",
     "generate_totp_secret",
     "hash_password",
+    "matching_totp_step",
     "needs_rehash",
     "totp_provisioning_uri",
     "verify_password",
-    "verify_totp",
 ]
 
 _hasher: Final[PasswordHasher] = PasswordHasher()
@@ -102,19 +103,28 @@ def totp_provisioning_uri(secret: str, *, operator_email: str, instance_name: st
     return pyotp.TOTP(secret).provisioning_uri(name=operator_email, issuer_name=instance_name)
 
 
-def verify_totp(secret: str | None, code: str) -> bool:
-    """Verify a TOTP code against a secret.
+def matching_totp_step(secret: str | None, code: str, *, now: dt.datetime) -> int | None:
+    """The time step a TOTP code was generated for, within the window, or ``None``.
 
-    Returns ``False`` for a missing secret rather than raising: an operator who
-    has not completed enrolment simply cannot pass the second factor, which is
-    the correct outcome and not an error condition.
+    The step rather than a yes or no, so the caller can refuse a code it has
+    already accepted (RFC 6238 section 5.2). A plain verify accepted the same
+    code for every login inside its 90-second window, so a code read over a
+    shoulder or from a phishing page could be replayed while it lasted.
+
+    ``None`` for a missing secret rather than an error: an operator who has not
+    completed enrolment simply cannot pass the second factor.
     """
     if not secret:
-        return False
+        return None
     candidate = code.strip().replace(" ", "")
     if not candidate.isdigit():
-        return False
-    return bool(pyotp.TOTP(secret).verify(candidate, valid_window=_TOTP_VALID_WINDOW))
+        return None
+    totp = pyotp.TOTP(secret)
+    current = totp.timecode(now)
+    for step in range(current - _TOTP_VALID_WINDOW, current + _TOTP_VALID_WINDOW + 1):
+        if pyotp.utils.strings_equal(totp.generate_otp(step), candidate):
+            return step
+    return None
 
 
 def generate_session_token() -> str:

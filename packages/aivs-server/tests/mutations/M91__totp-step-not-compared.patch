@@ -1,0 +1,20 @@
+Mutation M91: a valid code is accepted whatever step was last used
+Re-applies: single-use TOTP codes (T5, RFC 6238 section 5.2) -- the guard's absence, as it was before
+
+Expect red: packages/aivs-server/tests/unit/test_sessions.py::test_a_code_that_has_signed_in_is_refused_the_second_time
+Expect red: packages/aivs-server/tests/unit/test_sessions.py::test_an_earlier_windows_code_is_refused_once_a_later_one_has_signed_in
+
+diff --git a/packages/aivs-server/src/aivs_server/auth/sessions.py b/packages/aivs-server/src/aivs_server/auth/sessions.py
+--- a/packages/aivs-server/src/aivs_server/auth/sessions.py
++++ b/packages/aivs-server/src/aivs_server/auth/sessions.py
+@@ -180,9 +180,7 @@
+         )
+         raise SessionRejectedError("totp_seed_unavailable")
+     code_step = matching_totp_step(seed, totp_code, now=now)
+-    code_is_fresh = code_step is not None and (
+-        operator.last_totp_step is None or code_step > operator.last_totp_step
+-    )
++    code_is_fresh = code_step is not None
+ 
+     if not (password_ok and code_is_fresh):
+         operator.failed_login_count += 1

@@ -175,6 +175,11 @@ class Operator(TimestampMixin, Base):
     last_login_at: Mapped[dt.datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    #: The TOTP time step of the last code accepted at login. A code for this
+    #: step or an earlier one is refused, so each code signs in once (RFC 6238
+    #: section 5.2). Written in the login's own row-locked transaction, so two
+    #: concurrent logins with one code cannot both pass.
+    last_totp_step: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
 
     organization: Mapped[Organization] = relationship(back_populates="operators")
 

@@ -1,0 +1,17 @@
+Mutation M93: the login reads the operator without a row lock, so concurrent logins race
+Re-applies: single-use TOTP codes (T5, RFC 6238 section 5.2) -- the guard's absence, as it was before
+
+Expect red: packages/aivs-server/tests/unit/test_sessions.py::test_two_concurrent_logins_with_one_code_let_exactly_one_in
+
+diff --git a/packages/aivs-server/src/aivs_server/auth/sessions.py b/packages/aivs-server/src/aivs_server/auth/sessions.py
+--- a/packages/aivs-server/src/aivs_server/auth/sessions.py
++++ b/packages/aivs-server/src/aivs_server/auth/sessions.py
+@@ -141,7 +141,7 @@
+     # row, so there is nothing to deadlock against.
+     operator = (
+         await session.execute(
+-            select(Operator).where(Operator.email == normalised).with_for_update()
++            select(Operator).where(Operator.email == normalised)
+         )
+     ).scalar_one_or_none()
+ 

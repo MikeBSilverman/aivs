@@ -30,8 +30,8 @@ from aivs_server.auth.context import AuthMethod
 from aivs_server.auth.passwords import (
     generate_totp_secret,
     hash_password,
+    matching_totp_step,
     verify_password,
-    verify_totp,
 )
 from aivs_server.auth.secretbox import SecretBox, SecretPurpose
 from aivs_server.auth.sessions import (
@@ -473,12 +473,122 @@ def test_a_correct_password_verifies():
 @pytest.mark.parametrize("code", ["", "abcdef", "12345", None])
 def test_a_malformed_totp_code_is_refused(code):
     secret = generate_totp_secret()
-    assert verify_totp(secret, code or "") is False
+    assert matching_totp_step(secret, code or "", now=dt.datetime.now(dt.UTC)) is None
 
 
 def test_a_missing_totp_secret_never_verifies():
     """An operator part-way through enrolment cannot pass the second factor."""
-    assert verify_totp(None, "123456") is False
+    assert matching_totp_step(None, "123456", now=dt.datetime.now(dt.UTC)) is None
+
+
+def test_a_code_matches_the_step_it_was_generated_for_within_the_window():
+    secret = generate_totp_secret()
+    now = dt.datetime(2026, 10, 14, 12, 0, 15, tzinfo=dt.UTC)
+    totp = pyotp.TOTP(secret)
+    current = totp.timecode(now)
+
+    assert matching_totp_step(secret, totp.at(now), now=now) == current
+    assert matching_totp_step(secret, totp.at(now - STEP), now=now) == current - 1
+    assert matching_totp_step(secret, totp.at(now - 2 * STEP), now=now) is None
+
+
+# ---------------------------------------------------------------------------
+# Each code signs in once (RFC 6238 section 5.2)
+# ---------------------------------------------------------------------------
+STEP = dt.timedelta(seconds=30)
+LOGIN_AT = dt.datetime(2026, 10, 14, 12, 0, 15, tzinfo=dt.UTC)
+
+
+async def sign_in(session, secret_box, org, operator, code, *, now):
+    return await authenticate_operator(
+        session,
+        secret_box=secret_box,
+        email=operator.email,
+        password=PASSWORD,
+        totp_code=code,
+        org_id=org.id,
+        now=now,
+    )
+
+
+@pytest.mark.requirement("SF-73")
+async def test_a_code_that_has_signed_in_is_refused_the_second_time(
+    secret_box, session, operator_setup
+):
+    org, operator, secret, _cert, _pem = operator_setup
+    code = pyotp.TOTP(secret).at(LOGIN_AT)
+    await sign_in(session, secret_box, org, operator, code, now=LOGIN_AT)
+
+    with pytest.raises(SessionRejectedError) as caught:
+        await sign_in(
+            session, secret_box, org, operator, code, now=LOGIN_AT + dt.timedelta(seconds=5)
+        )
+
+    assert caught.value.reason == "totp_reused"
+
+
+@pytest.mark.requirement("SF-73")
+async def test_the_next_windows_code_signs_in_after_one_has(secret_box, session, operator_setup):
+    org, operator, secret, _cert, _pem = operator_setup
+    totp = pyotp.TOTP(secret)
+    await sign_in(session, secret_box, org, operator, totp.at(LOGIN_AT), now=LOGIN_AT)
+
+    later = LOGIN_AT + STEP
+    result = await sign_in(session, secret_box, org, operator, totp.at(later), now=later)
+
+    assert result.id == operator.id
+
+
+@pytest.mark.requirement("SF-73")
+async def test_an_earlier_windows_code_is_refused_once_a_later_one_has_signed_in(
+    secret_box, session, operator_setup
+):
+    """Both codes are inside the drift window; only the newer may be used."""
+    org, operator, secret, _cert, _pem = operator_setup
+    totp = pyotp.TOTP(secret)
+    await sign_in(session, secret_box, org, operator, totp.at(LOGIN_AT), now=LOGIN_AT)
+
+    with pytest.raises(SessionRejectedError) as caught:
+        await sign_in(session, secret_box, org, operator, totp.at(LOGIN_AT - STEP), now=LOGIN_AT)
+
+    assert caught.value.reason == "totp_reused"
+
+
+@pytest.mark.requirement("SF-73")
+async def test_a_replayed_code_counts_towards_the_lockout(secret_box, session, operator_setup):
+    org, operator, secret, _cert, _pem = operator_setup
+    code = pyotp.TOTP(secret).at(LOGIN_AT)
+    await sign_in(session, secret_box, org, operator, code, now=LOGIN_AT)
+
+    with pytest.raises(SessionRejectedError):
+        await sign_in(session, secret_box, org, operator, code, now=LOGIN_AT)
+
+    await session.refresh(operator)
+    assert operator.failed_login_count == 1
+
+
+@pytest.mark.requirement("SF-73")
+async def test_two_concurrent_logins_with_one_code_let_exactly_one_in(
+    engine, secret_box, session, operator_setup
+):
+    """The step is checked and recorded under the login's row lock, so the second
+    login waits for the first to commit and then reads the step it wrote. Each
+    attempt has its own session and transaction, as two portal requests would."""
+    org, operator, secret, _cert, _pem = operator_setup
+    code = pyotp.TOTP(secret).at(LOGIN_AT)
+    factory = async_sessionmaker(bind=engine, expire_on_commit=False, autoflush=False)
+
+    async def attempt() -> str:
+        async with factory() as own_session:
+            try:
+                await sign_in(own_session, secret_box, org, operator, code, now=LOGIN_AT)
+            except SessionRejectedError as rejected:
+                return rejected.reason
+            return "signed_in"
+
+    outcomes = await asyncio.gather(attempt(), attempt())
+
+    assert sorted(outcomes) == ["signed_in", "totp_reused"]
 
 
 async def test_concurrent_failures_all_count_against_the_lockout(

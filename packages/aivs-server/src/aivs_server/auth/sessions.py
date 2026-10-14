@@ -41,9 +41,9 @@ from aivs_server.auth.passwords import (
     constant_time_equals,
     generate_session_token,
     hash_password,
+    matching_totp_step,
     needs_rehash,
     verify_password,
-    verify_totp,
 )
 from aivs_server.auth.secretbox import SecretBox, SecretPurpose
 from aivs_server.config import Settings
@@ -179,19 +179,28 @@ async def authenticate_operator(
             extra={"operator_id": str(operator.id)},
         )
         raise SessionRejectedError("totp_seed_unavailable")
-    second_factor_ok = seed is not None and verify_totp(seed, totp_code)
+    code_step = matching_totp_step(seed, totp_code, now=now)
+    code_is_fresh = code_step is not None and (
+        operator.last_totp_step is None or code_step > operator.last_totp_step
+    )
 
-    if not (password_ok and second_factor_ok):
+    if not (password_ok and code_is_fresh):
         operator.failed_login_count += 1
         if operator.failed_login_count >= LOCKOUT_THRESHOLD:
             operator.locked_until = now + LOCKOUT_DURATION
             operator.failed_login_count = 0
         await session.commit()
-        raise SessionRejectedError("bad_credentials")
+        # A valid code already spent is a replay, worth telling apart in the
+        # audit trail; the person signing in sees one message for every failure.
+        replayed = password_ok and code_step is not None
+        raise SessionRejectedError("totp_reused" if replayed else "bad_credentials")
 
     operator.failed_login_count = 0
     operator.locked_until = None
     operator.last_login_at = now
+    # Under the row lock taken above and in this commit: a second login with the
+    # same code waits for this one and then reads this step.
+    operator.last_totp_step = code_step
     if needs_rehash(operator.password_hash):
         # Transparent upgrade: the stored cost keeps up with the library's
         # current parameters without a migration or a forced password reset.

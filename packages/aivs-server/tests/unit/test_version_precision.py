@@ -88,3 +88,39 @@ async def test_the_advertised_version_finds_the_object(
     assert entry["version"] == advertised
     assert found.status_code == 200
     assert [obj["id"] for obj in found.json()["objects"]] == [stix_id]
+
+
+@pytest.mark.parametrize("version", ["last", "all"])
+async def test_one_version_filed_twice_by_its_owner_is_served_once(
+    client, make_org, make_cert, make_circle, make_collection, join_circle, publish, version
+):
+    """A TIP that resends a whole bundle files the same version in a second
+    submission; both copies reach the circle. Objects and the manifest served
+    both, while the versions endpoint listed one (review R2-P3)."""
+    import datetime as dt  # noqa: PLC0415 - one test
+
+    member = await make_org("resender", org_type=OrgType.GSIB)
+    pem, _ = await make_cert(member)
+    circle = await make_circle("section9")
+    collection = await make_collection(circle)
+    await join_circle(member, circle)
+    stix_id = f"vulnerability--{uuid.uuid4()}"
+    modified = dt.datetime(2026, 8, 1, tzinfo=dt.UTC)
+    now = dt.datetime.now(dt.UTC)
+    for offset in (2, 1):
+        await publish(
+            member,
+            circle,
+            stix_id=stix_id,
+            modified=modified,
+            date_added=now - dt.timedelta(seconds=offset),
+        )
+    base = f"/taxii2/aivs/collections/{collection.id}"
+    query = {"match[id]": stix_id, "match[version]": version}
+
+    objects = await client.get(f"{base}/objects/", params=query, headers=proxy_headers(pem))
+    manifest = await client.get(f"{base}/manifest/", params=query, headers=proxy_headers(pem))
+
+    assert objects.status_code == manifest.status_code == 200, objects.text
+    assert len(objects.json()["objects"]) == 1
+    assert len(manifest.json()["objects"]) == 1

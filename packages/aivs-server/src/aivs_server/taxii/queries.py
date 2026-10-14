@@ -19,7 +19,7 @@ import datetime as dt
 import uuid
 from typing import Any
 
-from sqlalchemy import ColumnElement, Select, func, literal, select, tuple_
+from sqlalchemy import ColumnElement, Select, exists, func, literal, select, tuple_
 
 from aivs_server.auth.policy import Intervals, visible_content_clause
 from aivs_server.db.models import Distribution, StixObject, Submission
@@ -147,6 +147,29 @@ def _apply_version_filter(
     return query.where(combined)
 
 
+def _first_arrival_only(query: Select[Any], visible: Any, peers: Any) -> Select[Any]:
+    """One row per version: each owner's ``(stix_id, modified)`` at its first visible arrival.
+
+    One owner may carry the same version in two submissions (a TIP resending a
+    whole bundle does), and each submission stores its own copy, so a circle can
+    hold two rows of one version. The objects listing, the manifest and the
+    object endpoint served both: ``match[version]=last`` matched each, since
+    both are the latest (review R2-P3). The versions endpoint already collapsed
+    them to the first arrival, for the paging reason it gives; this is the same
+    rule for the other three. A row is dropped when an earlier visible row of
+    the same owner, id and version exists. The peers are not filtered by
+    ``added_after`` or the cursor, so a second arrival is never served just
+    because the first fell before the client's position.
+    """
+    earlier = select(peers.c.seq).where(
+        peers.c.stix_id == visible.c.stix_id,
+        peers.c.owner == visible.c.owner,
+        peers.c.modified == visible.c.modified,
+        tuple_(peers.c.date_added, peers.c.seq) < tuple_(visible.c.date_added, visible.c.seq),
+    )
+    return query.where(~exists(earlier))
+
+
 def build_object_listing_query(
     *,
     circle_id: uuid.UUID,
@@ -191,6 +214,7 @@ def build_object_listing_query(
 
     query = _apply_match_filters(query, filters, visible)
     query = _apply_version_filter(query, filters, visible, peers)
+    query = _first_arrival_only(query, visible, peers)
 
     if filters.added_after is not None:
         # Strictly greater than: `added_after` is exclusive, so a client that

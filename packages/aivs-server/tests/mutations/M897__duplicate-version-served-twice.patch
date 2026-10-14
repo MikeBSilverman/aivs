@@ -1,0 +1,18 @@
+Mutation M897: the objects listing serves every copy of a version
+Re-applies: build_object_listing_query before review R2-P3
+
+Expect red: packages/aivs-server/tests/unit/test_version_precision.py::test_one_version_filed_twice_by_its_owner_is_served_once[last]
+Expect red: packages/aivs-server/tests/unit/test_version_precision.py::test_one_version_filed_twice_by_its_owner_is_served_once[all]
+
+diff --git a/packages/aivs-server/src/aivs_server/taxii/queries.py b/packages/aivs-server/src/aivs_server/taxii/queries.py
+index 5accb01..efa70a2 100644
+--- a/packages/aivs-server/src/aivs_server/taxii/queries.py
++++ b/packages/aivs-server/src/aivs_server/taxii/queries.py
+@@ -214,7 +214,6 @@ def build_object_listing_query(
+ 
+     query = _apply_match_filters(query, filters, visible)
+     query = _apply_version_filter(query, filters, visible, peers)
+-    query = _first_arrival_only(query, visible, peers)
+ 
+     if filters.added_after is not None:
+         # Strictly greater than: `added_after` is exclusive, so a client that

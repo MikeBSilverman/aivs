@@ -208,26 +208,55 @@ def build_version_listing_query(
     intervals: Intervals,
     stix_id: str,
     now: dt.datetime,
+    cursor: Cursor | None,
     limit: int,
     added_after: dt.datetime | None = None,
 ) -> Select[Any]:
     """Build the query behind the object-versions endpoint.
 
-    Returns the ``modified`` timestamps of every visible version of one object,
-    ascending. Only versions the caller may see are listed, for the same reason
-    the version filter is scoped that way.
+    One row per visible version of one object, carrying the ``(date_added,
+    seq)`` of the first distribution row through which the caller can see it,
+    and paged on that key exactly as the objects listing is. Only versions the
+    caller may see are listed, for the same reason the version filter is scoped
+    that way.
 
-    ``DISTINCT`` because two submissions may legitimately carry the same
-    ``stix_id`` at the same ``modified``; without it the same version string
-    appeared once per distribution row.
+    **Ordered by when the version arrived, not by ``modified``.** A client
+    continues a listing with ``added_after`` set to the previous page's
+    ``X-TAXII-Date-Added-Last``. That is only safe if everything on later pages
+    was added after everything on earlier ones, which ``date_added`` order
+    guarantees and ``modified`` order does not: a correction distributed before
+    a backfilled earlier version put the later-added version on page one, its
+    stamp in the header, and the earlier-added one on page two below the
+    client's new ``added_after``, where it was never listed.
+
+    **One row per version, at its first visible arrival.** Two submissions may
+    carry the same ``(stix_id, modified)``, distributed at different times.
+    Keyed on the first, a later redistribution of a version the client already
+    holds is not news; keyed on each row, ``added_after`` between the two stamps
+    listed it again. The first visible arrival cannot move earlier once a
+    cursor has passed it, for the reason any ``date_added`` cannot (see
+    ``services.publication``), so the key is as stable as the objects listing's.
     """
     visible = _visible_rows(circle_id, intervals, now).subquery("visible")
-    query = (
-        select(visible.c.modified, visible.c.date_added)
-        .distinct()
-        .select_from(visible)
+    first_arrival = (
+        select(visible.c.modified, visible.c.date_added, visible.c.seq)
         .where(visible.c.stix_id == stix_id)
+        .distinct(visible.c.modified)
+        .order_by(visible.c.modified, visible.c.date_added, visible.c.seq)
+        .subquery("first_arrival")
     )
+    query = select(
+        first_arrival.c.modified, first_arrival.c.date_added, first_arrival.c.seq
+    ).select_from(first_arrival)
+    # Filtered after the versions are collapsed, never before: before, the
+    # second arrival of a version survives an `added_after` the first fails.
     if added_after is not None:
-        query = query.where(visible.c.date_added > added_after)
-    return query.order_by(visible.c.modified.asc()).limit(limit + 1)
+        query = query.where(first_arrival.c.date_added > added_after)
+    if cursor is not None:
+        query = query.where(
+            tuple_(first_arrival.c.date_added, first_arrival.c.seq)
+            > tuple_(literal(cursor.date_added), literal(cursor.seq))
+        )
+    return query.order_by(first_arrival.c.date_added.asc(), first_arrival.c.seq.asc()).limit(
+        limit + 1
+    )

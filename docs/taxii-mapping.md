@@ -165,10 +165,11 @@ hiding data" reports. A client that wants history must ask for it.
 
 ### Pagination contract
 
-- Results are sorted **ascending by `date_added`**, then by row id as a
-  deterministic tiebreaker for objects sharing a timestamp. This is the same
-  column order as the index `ix_distributions_circle_paging`
-  (`circle_id, date_added, id`); the index exists precisely to make this sort a
+- Results are sorted **ascending by `date_added`**, then by `seq` (the
+  distribution row's monotonic identity, not its random id) for objects sharing
+  a timestamp, on the objects, manifest and versions endpoints alike. This is
+  the same column order as the index `ix_distributions_circle_paging`
+  (`circle_id, date_added, seq`); the index exists precisely to make this sort a
   range scan rather than a sort of the whole circle.
 - `more: true` in the envelope means at least one further page exists, and `next`
   carries the cursor for it.
@@ -326,8 +327,15 @@ bodies. **Empty manifest responses are `{}`** — `objects` omitted.
 }
 ```
 
-A bare array of `modified` timestamps, ascending. **Empty versions responses are
-`{}`** — `versions` omitted.
+A bare array of `modified` timestamps, one per version, in the order the
+versions reached this collection for the caller: by the `date_added` of each
+version's first distribution the caller can see, then `seq`. **Not** by
+`modified`. Only arrival order lets `added_after` = `X-TAXII-Date-Added-Last`
+(or `next`) continue a listing without skipping a version, since a correction
+can be distributed before a backfilled earlier version; a client that wants
+modification order sorts the strings. A version two submissions carry is listed
+once, at its first arrival. **Empty versions responses are `{}`** — `versions`
+omitted.
 
 ### Status — `GET /{api-root}/status/{status-id}/`
 

@@ -301,12 +301,11 @@ def _date_added_headers(response: Response, rows: list[Any]) -> None:
     """
     if not rows:
         return
-    # min/max rather than first/last. The objects and manifest endpoints order by
-    # (date_added, seq), where the two coincide -- but the versions endpoint
-    # orders by `modified`, and nothing forces modification order to match
-    # distribution order. A correction distributed before a backfilled earlier
-    # version produced First > Last, and a client bounding its next poll on Last
-    # re-received content it already held on every poll.
+    # min/max rather than first/last. Every listing now orders by
+    # (date_added, seq), where the two coincide; the versions endpoint once
+    # ordered by `modified`, which put First above Last, and a header that
+    # follows the page's order instead of its bounds is wrong again the day a
+    # listing sorts by anything else.
     stamps = [row.date_added for row in rows]
     response.headers["X-TAXII-Date-Added-First"] = resources.to_taxii_timestamp(min(stamps))
     response.headers["X-TAXII-Date-Added-Last"] = resources.to_taxii_timestamp(max(stamps))
@@ -485,13 +484,15 @@ async def get_object_versions(
 ) -> Response:
     """List the visible versions of one object (section 5.8).
 
-    ``limit`` and ``added_after`` are honoured here. The handler previously took
-    no request at all, so both were silently dropped: a client asking for 500
-    versions received exactly one default page, with no ``next`` to follow and
-    nothing to indicate the list had been truncated.
+    ``limit``, ``added_after`` and ``next`` are honoured here, with the paging
+    the objects listing has. The handler once took no request at all, so a
+    client asking for 500 versions received one default page with nothing to
+    follow; and it later paged in ``modified`` order, which ``added_after``
+    cannot continue without skipping (see ``build_version_listing_query``).
     """
     _collection, circle, intervals = await _load_readable_collection(session, ctx, collection_id)
     filters = _parse_request_filters(request, settings)
+    cursor = _resolve_cursor(settings, filters.next_cursor, collection_id)
     limit = filters.limit or settings.taxii_default_page_size
     # Before the clock is read: no paging cursor may be computed while a
     # publication is in flight. See services.publication.
@@ -506,6 +507,7 @@ async def get_object_versions(
                     intervals=intervals,
                     stix_id=object_id,
                     now=now,
+                    cursor=cursor,
                     limit=limit,
                     added_after=filters.added_after,
                 )
@@ -516,11 +518,19 @@ async def get_object_versions(
     if not rows:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Object not found")
 
+    has_more = len(rows) > limit
     page = rows[:limit]
+    next_cursor = None
+    if has_more:
+        next_cursor = encode_cursor(
+            settings.session_secret.get_secret_value(),
+            Cursor(date_added=page[-1].date_added, seq=page[-1].seq, collection_id=collection_id),
+        )
     response = _taxii_response(
         resources.versions_resource(
             [resources.to_taxii_timestamp(row.modified) for row in page],
-            more=len(rows) > limit,
+            more=has_more,
+            next_cursor=next_cursor,
         )
     )
     _date_added_headers(response, page)

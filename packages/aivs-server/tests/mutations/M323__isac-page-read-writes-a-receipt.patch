@@ -1,0 +1,17 @@
+Mutation M323: an ISAC reviewer reading the page writes a receipt, which reads as a member having looked
+Re-applies: (T7, uncommitted) "The vulnerability page"
+
+Expect red: packages/aivs-server/tests/unit/test_vulnerability_page.py::test_the_isac_reading_the_page_writes_no_receipt
+
+diff --git a/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py b/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py
+--- a/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py
++++ b/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py
+@@ -145,8 +145,6 @@
+     The ISAC's reviewers write none. They are not a recipient of what they
+     triage, and a receipt from them would read as a member having looked.
+     """
+-    if can_review_submissions(ctx):
+-        return
+     await record_retrievals(
+         session,
+         org_id=ctx.org_id,

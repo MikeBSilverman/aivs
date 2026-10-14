@@ -53,6 +53,15 @@
 </div>
 
 <div class="card">
+  <h2>Open a vulnerability</h2>
+  <form method="get" action="/portal/vulnerabilities" class="inline">
+    <label for="vulnerability-id">CVE, advisory or STIX id</label>
+    <input id="vulnerability-id" name="id" maxlength="120" placeholder="CVE-2026-1234" required>
+    <button type="submit">Open</button>
+  </form>
+</div>
+
+<div class="card">
   <h2>Recently distributed to you</h2>
   {% if recent %}
     <div class="table-wrap">
@@ -65,7 +74,9 @@
             <tr>
               <td class="nowrap muted mono">{{ item.date_added }}</td>
               <td><span class="badge tlp tlp-{{ item.tlp }}">{{ item.tlp_label }}</span></td>
-              <td>{{ item.name }}</td>
+              <td>
+                {% if item.page %}<a href="/portal/vulnerabilities?id={{ item.page|urlencode }}">{{ item.name }}</a>{% else %}{{ item.name }}{% endif %}
+              </td>
             </tr>
           {% endfor %}
         </tbody>

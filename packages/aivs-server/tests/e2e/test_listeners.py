@@ -89,6 +89,7 @@ NOT_SERVED = "not served on this listener\n"
         # An allowed prefix walked out of: nginx matches the decoded,
         # normalised path, so this is /api/v1/whoami by the time it is routed.
         "/portal/submissions/..%2F..%2Fapi/v1/whoami",
+        "/portal/vulnerabilities/..%2F..%2Fapi/v1/whoami",
     ],
 )
 def test_the_public_listener_answers_everything_but_the_member_portal_itself(stack, path):
@@ -100,11 +101,12 @@ def test_the_public_listener_answers_everything_but_the_member_portal_itself(sta
 
 
 @pytest.mark.requirement("SF-65")
-def test_the_public_listener_passes_the_member_portal_to_the_application(stack):
+@pytest.mark.parametrize("path", ["/portal/", "/portal/vulnerabilities?id=CVE-2026-1234"])
+def test_the_public_listener_passes_the_member_portal_to_the_application(stack, path):
     """The pair: an allowed path is answered by the application, which sends
     a person with no session to sign in."""
     with stack.public_client() as client:
-        response = client.get("/portal/")
+        response = client.get(path)
 
     assert response.status_code == 303
     assert response.text != NOT_SERVED

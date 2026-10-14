@@ -1,0 +1,17 @@
+Mutation M325: a malformed id is refused with its own answer, so the uniform 404 for the rest confirms which well-formed ids exist
+Re-applies: (T7, uncommitted) "The vulnerability page"
+
+Expect red: packages/aivs-server/tests/unit/test_vulnerability_page.py::test_an_invisible_vulnerability_a_missing_one_and_a_malformed_id_answer_alike
+
+diff --git a/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py b/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py
+--- a/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py
++++ b/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py
+@@ -118,6 +118,8 @@
+     ctx, _csrf_hash = await current_session(request, settings, session)
+     reference = given.strip()
+     now = await database_now(session)
++    if not is_vulnerability_reference(reference):
++        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Not a vulnerability id")
+     found = await find_vulnerabilities(session, ctx, reference, now=now)
+     if not found:
+         raise _NOT_FOUND

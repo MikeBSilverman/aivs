@@ -1,0 +1,18 @@
+Mutation M300: readiness and the page for a member are computed from every distributed object, not only what reached it
+Re-applies: (T7, uncommitted) "Readiness, triage, duplicates and receipt channels"; moved to services/visible.py with the vulnerability page
+
+Expect red: packages/aivs-server/tests/unit/test_readiness.py::test_a_member_outside_the_fixs_circle_is_not_told_a_fix_exists
+Expect red: packages/aivs-server/tests/unit/test_vulnerability_page.py::test_a_member_does_not_see_a_fix_shared_where_it_is_not
+
+diff --git a/packages/aivs-server/src/aivs_server/services/visible.py b/packages/aivs-server/src/aivs_server/services/visible.py
+--- a/packages/aivs-server/src/aivs_server/services/visible.py
++++ b/packages/aivs-server/src/aivs_server/services/visible.py
+@@ -40,7 +40,7 @@
+         .join(Submission, Submission.id == StixObject.submission_id)
+         .join(Distribution, Distribution.stix_object_id == StixObject.id)
+     )
+-    if can_review_submissions(ctx):
++    if True:
+         return query.where(Submission.state.in_(tuple(VISIBLE_SUBMISSION_STATES)))
+     return query.where(distribution_visibility_clause(ctx, now))
+ 

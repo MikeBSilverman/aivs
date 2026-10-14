@@ -1,0 +1,16 @@
+Mutation M310: the receipt dedupe key ignores the channel, so a portal read after a poll is lost
+Re-applies: (T7, uncommitted) "Readiness, triage, duplicates and receipt channels"
+
+Expect red: packages/aivs-server/tests/unit/test_receipt_channels.py::test_a_portal_read_after_a_same_day_poll_is_its_own_receipt
+
+diff --git a/packages/aivs-server/src/aivs_server/db/models.py b/packages/aivs-server/src/aivs_server/db/models.py
+--- a/packages/aivs-server/src/aivs_server/db/models.py
++++ b/packages/aivs-server/src/aivs_server/db/models.py
+@@ -709,7 +709,6 @@
+             "org_id",
+             "submission_id",
+             "ack_type",
+-            "via",
+             "dedupe_day",
+             name="uq_acknowledgments_daily_dedupe",
+         ),

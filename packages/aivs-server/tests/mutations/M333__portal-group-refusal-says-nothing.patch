@@ -1,0 +1,16 @@
+Mutation M333: a refused group redirects to the queue with no notice, so the editor believes it was validated
+Re-applies: (T7, uncommitted) "Bulk validation of a review group"
+
+Expect red: packages/aivs-server/tests/unit/test_bulk_validation.py::test_the_portal_says_when_a_group_was_not_validated
+
+diff --git a/packages/aivs-server/src/aivs_server/portal/routes.py b/packages/aivs-server/src/aivs_server/portal/routes.py
+--- a/packages/aivs-server/src/aivs_server/portal/routes.py
++++ b/packages/aivs-server/src/aivs_server/portal/routes.py
+@@ -487,7 +487,6 @@
+         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Not found") from None
+     except SubmissionError as exc:
+         await session.rollback()
+-        set_notice(response, settings, "error", f"Nothing was validated: {exc}")
+         return response
+     set_notice(response, settings, "success", f"Validated {len(validated)} submissions.")
+     return response

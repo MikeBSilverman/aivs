@@ -339,7 +339,7 @@ build order, and nothing is built.
 | Federated identity for people (the ISAC's own IdP tenants, passkeys) | Member tenant built (next row); staff tenant and passkeys designed — [`identity-federation.md`](docs/identity-federation.md) |
 | Content sealed to its recipients (BYOK) | Designed; **optional and deferred** — [`encryption-design.md`](docs/encryption-design.md) |
 | GOLD EAGLE CVE handoff and return path | Designed, not scheduled — [`gold-eagle-integration.md`](docs/gold-eagle-integration.md) |
-| Contributions on public CVEs: one canonical page per vulnerability, "what's available" (remediation, mitigation, detection, validation), the split by disclosure, the vendor as a case party, KEV enrichment, telemetry back to the submitter | Planned — next |
+| Contributions on public CVEs: one canonical page per vulnerability, "what's available" (remediation, mitigation, detection, validation), the split by disclosure, the vendor as a case party, KEV enrichment, telemetry back to the submitter | Built — [`intel-model.md`](docs/intel-model.md) §2 |
 | Members sign in with the ISAC's SSO and a second factor over ordinary TLS; certificates stay for machines, ISAC staff and `TLP:RED` | Built — opt-in public listener ([`identity-federation.md`](docs/identity-federation.md) §11) |
 | Depth ("tell me what to do" through raw objects), print, IoC pack, Sigma conversion | Planned |
 | Member posture and evidence packs | Planned |

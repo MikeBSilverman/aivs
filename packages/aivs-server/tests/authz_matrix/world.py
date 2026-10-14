@@ -334,7 +334,7 @@ async def _seed_submissions(world: World, seed: _Seeder) -> None:
     world.submissions["read"], world.object_stix_id = await seed.distributed("Matrix read")
     for name in ("patch", "submit", "withdraw"):
         world.submissions[name], _ = await seed.create(f"Matrix {name}")
-    for name in ("validate", "validate_portal"):
+    for name in ("validate", "validate_portal", "bulk", "bulk_portal"):
         world.submissions[name], _ = await seed.create(f"Matrix {name}")
         await seed.step(world.submissions[name], "submit")
     world.submissions["distribute"], _ = await seed.create("Matrix distribute")

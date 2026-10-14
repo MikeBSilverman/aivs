@@ -6,7 +6,7 @@ Expect red: packages/aivs-server/tests/unit/test_submission_workflow.py::test_re
 diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs-server/src/aivs_server/auth/policy.py
 --- a/packages/aivs-server/src/aivs_server/auth/policy.py
 +++ b/packages/aivs-server/src/aivs_server/auth/policy.py
-@@ -187,7 +187,7 @@
+@@ -228,7 +228,7 @@
  
  def can_reveal_submitter(ctx: AuthContext) -> bool:
      """Name the submitter of an anonymous submission: an editorial act, audited."""
@@ -14,4 +14,4 @@ diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs
 +    return can_review_submissions(ctx)
  
  
- def can_change_embargo(ctx: AuthContext) -> bool:
+ def can_assign_submission(ctx: AuthContext) -> bool:

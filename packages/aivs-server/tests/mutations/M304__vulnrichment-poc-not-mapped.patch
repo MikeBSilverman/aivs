@@ -1,0 +1,19 @@
+Mutation M304: CISA vulnrichment's 'poc' is not mapped to the table's 'public poc'
+Re-applies: (T7, uncommitted) "Readiness, triage, duplicates and receipt channels"
+
+Expect red: packages/aivs-server/tests/unit/test_triage.py::test_the_default_is_cisas_decision_for_the_stated_points
+
+diff --git a/packages/aivs-server/src/aivs_server/services/priority.py b/packages/aivs-server/src/aivs_server/services/priority.py
+--- a/packages/aivs-server/src/aivs_server/services/priority.py
++++ b/packages/aivs-server/src/aivs_server/services/priority.py
+@@ -112,9 +112,7 @@
+ 
+ 
+ def _one(points: Mapping[str, str], mission_impact: str) -> tuple[SsvcPriority, Mapping[str, str]]:
+-    exploitation = _EXPLOITATION_SPELLING.get(
+-        points["ssvc_exploitation"], points["ssvc_exploitation"]
+-    )
++    exploitation = points["ssvc_exploitation"]
+     factors = {
+         "exploitation": exploitation,
+         "automatable": points["ssvc_automatable"],

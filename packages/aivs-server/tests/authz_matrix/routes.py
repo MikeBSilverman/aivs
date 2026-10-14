@@ -43,6 +43,11 @@ class RouteClass(enum.StrEnum):
     CIRCLE_CONTENT = "circle content"
     #: One submission's record: its submitter and the ISAC's reviewers; others 404.
     SUBMISSION_RECORD = "submission record"
+    #: What's available for a vulnerability: whoever can see the vulnerability,
+    #: which is its circle's members and the ISAC's reviewers; others 404.
+    READINESS = "readiness"
+    #: The vulnerability page: whoever can see the vulnerability; others 404.
+    VULNERABILITY_PAGE = "vulnerability page"
     #: Telemetry on a submission: its submitter only; everyone else 404, the
     #: ISAC included (it has the receipts; a count to the wrong reader is a
     #: disclosure of who engaged).
@@ -51,6 +56,13 @@ class RouteClass(enum.StrEnum):
     #: else 404, the submitter included (each row is the receiving member's
     #: record; the submitter gets telemetry).
     RECEIPT_RECORD = "receipt record"
+    #: Setting a submission's priority: an editor; others who can see it 403.
+    PRIORITY = "priority"
+    #: Taking or handing over a submission: the ISAC's reviewers.
+    ASSIGN = "assign"
+    #: Validating a review group in one action: an editor; everyone else 403,
+    #: before any submission is looked up.
+    BULK_VALIDATE = "bulk validate"
     #: Filing a new submission: every active caller.
     FILING = "filing"
     #: Amending or sending a draft: its submitter; a reviewer who can see it 403.
@@ -258,6 +270,80 @@ ROUTES: tuple[RouteCase, ...] = (
         "/api/v1/submissions/{submission_id}/telemetry",
         RouteClass.TELEMETRY,
         _sub("read", "/telemetry"),
+    ),
+    RouteCase(
+        "GET",
+        "/api/v1/submissions/{submission_id}/duplicates",
+        RouteClass.SUBMISSION_RECORD,
+        _sub("read", "/duplicates"),
+    ),
+    RouteCase(
+        "PUT",
+        "/api/v1/submissions/{submission_id}/priority",
+        RouteClass.PRIORITY,
+        _sub("read", "/priority", {"priority": "act"}),
+    ),
+    RouteCase(
+        "PUT",
+        "/api/v1/submissions/{submission_id}/assignee",
+        RouteClass.ASSIGN,
+        _sub("read", "/assignee", {"operator_id": None}),
+    ),
+    RouteCase(
+        "POST",
+        "/api/v1/review/validate",
+        RouteClass.BULK_VALIDATE,
+        lambda world: (
+            f"{API}/review/validate",
+            {"submission_ids": [str(world.submissions["bulk"])]},
+        ),
+    ),
+    RouteCase(
+        "POST",
+        "/portal/review/validate",
+        RouteClass.BULK_VALIDATE,
+        lambda world: (
+            "/portal/review/validate",
+            {"submission_ids": [str(world.submissions["bulk_portal"])]},
+        ),
+        is_portal=True,
+    ),
+    RouteCase(
+        "GET",
+        "/api/v1/vulnerabilities/readiness",
+        RouteClass.READINESS,
+        lambda world: (f"{API}/vulnerabilities/readiness?id={world.object_stix_id}", None),
+    ),
+    RouteCase(
+        "GET",
+        "/portal/vulnerabilities",
+        RouteClass.VULNERABILITY_PAGE,
+        lambda world: (f"/portal/vulnerabilities?id={world.object_stix_id}", None),
+        is_portal=True,
+    ),
+    RouteCase(
+        "POST",
+        "/portal/vulnerabilities/contributions",
+        RouteClass.CONTENT_RESPONSE,
+        lambda world: (
+            "/portal/vulnerabilities/contributions",
+            {
+                "vulnerability": world.object_stix_id,
+                "kind": "seen",
+                "target_id": world.object_stix_id,
+            },
+        ),
+        is_portal=True,
+    ),
+    RouteCase(
+        "POST",
+        "/portal/vulnerabilities/posture",
+        RouteClass.CONTENT_RESPONSE,
+        lambda world: (
+            "/portal/vulnerabilities/posture",
+            {"vulnerability": world.object_stix_id, "status": "not_affected"},
+        ),
+        is_portal=True,
     ),
     RouteCase(
         "GET",
@@ -697,7 +783,7 @@ ROUTES: tuple[RouteCase, ...] = (
 #: not a total, so one surface vanishing from the walk cannot hide behind another
 #: growing. Raise a floor when a surface grows; lowering one is a decision.
 SURFACE_FLOORS: dict[str, int] = {
-    "/api/v1": 38,
+    "/api/v1": 43,
     "/taxii2": 10,
     "/portal/admin": 10,
     "/portal": 22,

@@ -39,6 +39,7 @@ from aivs_server.auth.policy import (
     can_confirm_proxy_filing,
     can_review_submissions,
     can_transition_submission,
+    can_validate_in_bulk,
     can_view_submission,
     can_view_submission_receipts,
     distribution_visibility_clause,
@@ -82,11 +83,13 @@ from aivs_server.portal.shared import (
     tlp_label,
 )
 from aivs_server.portal.submitter_view import lint_hits, telemetry_rows
+from aivs_server.services.bulk_validation import GroupMemberNotFoundError, validate_group
 from aivs_server.services.contributions import submit_submission
 from aivs_server.services.distribution import DistributionError, distribute_submission
 from aivs_server.services.provenance import consequential_changes
 from aivs_server.services.proxy_filing import awaiting_confirmation, confirm_proxy_filing
 from aivs_server.services.publication import PublicationPausedError
+from aivs_server.services.review_queue import ReviewGroup, queued_for_review
 from aivs_server.services.submissions import (
     STORAGE_ERRORS,
     SubmissionError,
@@ -324,7 +327,13 @@ async def dashboard(request: Request, settings: SettingsDep, session: SessionDep
     if circle_grants:
         rows = (
             await session.execute(
-                select(Distribution.date_added, StixObject.name, Submission.tlp)
+                select(
+                    Distribution.date_added,
+                    StixObject.name,
+                    StixObject.stix_id,
+                    StixObject.type,
+                    Submission.tlp,
+                )
                 .join(StixObject, StixObject.id == Distribution.stix_object_id)
                 .join(Submission, Submission.id == Distribution.submission_id)
                 # The shared predicate, not a restatement of it. Written out by
@@ -341,6 +350,8 @@ async def dashboard(request: Request, settings: SettingsDep, session: SessionDep
             {
                 "date_added": stamp(row.date_added),
                 "name": row.name or "(unnamed object)",
+                # A vulnerability opens its page; other objects are read there.
+                "page": row.stix_id if row.type == "vulnerability" else None,
                 "tlp": str(row.tlp),
                 "tlp_label": tlp_label(row.tlp),
             }
@@ -483,29 +494,71 @@ async def review_queue(request: Request, settings: SettingsDep, session: Session
     if not can_review_submissions(ctx):
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Not found")
 
-    rows = (
-        (
-            await session.execute(
-                select(Submission)
-                .where(Submission.state.in_((SubmissionState.SUBMITTED, SubmissionState.VALIDATED)))
-                .order_by(Submission.created_at)
-                .limit(200)
-            )
-        )
-        .scalars()
-        .all()
-    )
+    groups = await queued_for_review(session, mission_impact=settings.ssvc_mission_impact)
 
     context = base_context(request, settings, ctx, await operator_name(session, ctx), "review")
     context.update(
         {
             "heading": "Review queue",
             "subheading": "Nothing reaches members until it passes through here.",
-            "submissions": [_submission_row(row) for row in rows],
+            "groups": [_review_group(group) for group in groups],
+            "can_validate_groups": can_validate_in_bulk(ctx),
             "empty_message": "Nothing is waiting for review.",
         }
     )
-    return render(request, "submissions.html", context)
+    return render(request, "review.html", context)
+
+
+@router.post("/review/validate")
+async def validate_review_group(
+    request: Request,
+    settings: SettingsDep,
+    session: SessionDep,
+    csrf_token: Annotated[str, Form()],
+    submission_ids: Annotated[list[uuid.UUID], Form()],
+) -> Response:
+    """Validate one review group from the queue: the API's action, through the same service."""
+    ctx, csrf_hash = await current_session(request, settings, session)
+    require_csrf(csrf_token, csrf_hash)
+    response = redirect_within_portal("/portal/review")
+    try:
+        validated = await validate_group(session, ctx, submission_ids)
+        await session.commit()
+    except GroupMemberNotFoundError:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Not found") from None
+    except SubmissionError as exc:
+        await session.rollback()
+        set_notice(response, settings, "error", f"Nothing was validated: {exc}")
+        return response
+    set_notice(response, settings, "success", f"Validated {len(validated)} submissions.")
+    return response
+
+
+def _review_group(group: ReviewGroup) -> dict[str, Any]:
+    return {
+        "organisation": group.organisation,
+        "source": str(group.source),
+        "submitted_ids": [
+            str(item.submission.id)
+            for item in group.items
+            if item.submission.state is SubmissionState.SUBMITTED
+        ],
+        "items": [
+            {
+                **_submission_row(item.submission),
+                "priority": str(item.priority) if item.priority else None,
+                "priority_source": item.priority_source,
+                "factors": ", ".join(
+                    f"{k.replace('_', ' ')} {v}" for k, v in item.default.factors.items()
+                ),
+                "missing": ", ".join(
+                    p.removeprefix("ssvc_").replace("_", " ") for p in item.default.missing
+                ),
+                "assignee": item.assignee,
+            }
+            for item in group.items
+        ],
+    }
 
 
 @router.get("/submissions/{submission_id}", response_class=HTMLResponse)

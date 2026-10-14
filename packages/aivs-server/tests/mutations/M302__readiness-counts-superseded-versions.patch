@@ -1,0 +1,17 @@
+Mutation M302: an older version of an object still counts after its owner revised it
+Re-applies: (T7, uncommitted) "Readiness, triage, duplicates and receipt channels"
+
+Expect red: packages/aivs-server/tests/unit/test_readiness.py::test_readiness_follows_the_rules
+
+diff --git a/packages/aivs-server/src/aivs_server/services/readiness.py b/packages/aivs-server/src/aivs_server/services/readiness.py
+--- a/packages/aivs-server/src/aivs_server/services/readiness.py
++++ b/packages/aivs-server/src/aivs_server/services/readiness.py
+@@ -102,7 +102,7 @@
+     """
+     available: set[str] = set()
+     stated_none: set[str] = set()
+-    for obj in _latest_versions(objects):
++    for obj in objects:
+         if obj.revoked:
+             continue
+         if obj.stix_type == "course-of-action" and obj.remediation_category is not None:

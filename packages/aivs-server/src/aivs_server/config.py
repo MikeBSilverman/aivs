@@ -316,6 +316,13 @@ class Settings(BaseSettings):
     #: What a detection that recommends quarantine does: ``propose`` shows it on
     #: the status page for a human to confirm; ``enforce`` applies it at once.
     detection_quarantine_policy: Literal["propose", "enforce"] = "propose"
+    #: SSVC's Mission and Well-Being Impact, the one input to CISA's table that
+    #: describes the stakeholder rather than the vulnerability. An ISAC triages
+    #: for its whole sector, so this is the instance's answer, not the content's:
+    #: ``high`` by default because an ISAC's members run critical financial
+    #: infrastructure, and a triage queue that under-ranks is the costlier error.
+    #: An ISAC whose membership is different sets it.
+    ssvc_mission_impact: Literal["low", "medium", "high"] = "high"
 
     # -- Bind address -------------------------------------------------------
     #: Interface the application listens on. The default binds all interfaces

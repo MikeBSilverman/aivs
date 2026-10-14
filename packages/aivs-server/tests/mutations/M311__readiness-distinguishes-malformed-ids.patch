@@ -1,0 +1,17 @@
+Mutation M311: a malformed vulnerability id is answered differently from an invisible one
+Re-applies: (T7, uncommitted) "Readiness, triage, duplicates and receipt channels"
+
+Expect red: packages/aivs-server/tests/unit/test_readiness.py::test_an_invisible_vulnerability_and_a_missing_one_answer_alike
+
+diff --git a/packages/aivs-server/src/aivs_server/api/vulnerabilities.py b/packages/aivs-server/src/aivs_server/api/vulnerabilities.py
+--- a/packages/aivs-server/src/aivs_server/api/vulnerabilities.py
++++ b/packages/aivs-server/src/aivs_server/api/vulnerabilities.py
+@@ -57,7 +57,7 @@
+     """
+     not_found = HTTPException(status.HTTP_404_NOT_FOUND, detail="Not found")
+     if _VULNERABILITY_ID.match(stix_id) is None:
+-        raise not_found
++        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="Not a vulnerability id")
+     try:
+         found = await readiness_for(session, ctx, stix_id, now=await database_now(session))
+     except VulnerabilityNotVisibleError:

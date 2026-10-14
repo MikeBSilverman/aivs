@@ -55,6 +55,7 @@ from aivs_schemas.enums import (
     OrgStatus,
     OrgType,
     PostureStatus,
+    SsvcPriority,
     SubmissionLane,
     SubmissionSource,
     SubmissionState,
@@ -495,6 +496,16 @@ class Submission(TimestampMixin, Base):
     discovery_scope: Mapped[DiscoveryScope] = mapped_column(
         pg_enum(DiscoveryScope, "discovery_scope"), nullable=False
     )
+    #: The ISAC reviewer working this submission, if anyone has taken it.
+    assignee_operator_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("operators.id", ondelete="SET NULL"), nullable=True
+    )
+    #: An editor's priority. ``None`` means the default derived from the SSVC
+    #: decision points (services.priority), computed when shown so it follows
+    #: the content rather than freezing at filing.
+    priority: Mapped[SsvcPriority | None] = mapped_column(
+        pg_enum(SsvcPriority, "ssvc_priority"), nullable=True
+    )
     #: Derived from the filing principal when the submission is created, never
     #: from anything the submission says: an automation organisation's filing
     #: is ``system`` however it describes itself. Read by the AI gate at
@@ -785,10 +796,14 @@ class Acknowledgment(Base):
     )
 
     __table_args__ = (
+        # `via` is part of the key: a portal read on a day the member's TAXII
+        # client already polled is a different fact (a person looked), and
+        # without it the second was silently absorbed (SF-51).
         UniqueConstraint(
             "org_id",
             "submission_id",
             "ack_type",
+            "via",
             "dedupe_day",
             name="uq_acknowledgments_daily_dedupe",
         ),

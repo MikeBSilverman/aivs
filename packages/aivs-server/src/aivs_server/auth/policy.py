@@ -55,6 +55,7 @@ __all__ = [
     "PolicyDeniedError",
     "can_acknowledge_own_submission",
     "can_administer_circle",
+    "can_assign_submission",
     "can_change_embargo",
     "can_confirm_proxy_filing",
     "can_manage_org",
@@ -70,8 +71,10 @@ __all__ = [
     "can_reveal_submitter",
     "can_review_submissions",
     "can_set_legal_hold",
+    "can_set_priority",
     "can_submit_to_circle",
     "can_transition_submission",
+    "can_validate_in_bulk",
     "can_view_instance_status",
     "can_view_submission",
     "can_view_submission_receipts",
@@ -241,6 +244,21 @@ def can_manage_own_webhooks(ctx: AuthContext) -> bool:
 
 def can_reveal_submitter(ctx: AuthContext) -> bool:
     """Name the submitter of an anonymous submission: an editorial act, audited."""
+    return is_isac_editor(ctx)
+
+
+def can_assign_submission(ctx: AuthContext) -> bool:
+    """Take or hand a submission to a reviewer: the people who work the queue."""
+    return can_review_submissions(ctx)
+
+
+def can_set_priority(ctx: AuthContext) -> bool:
+    """Override the SSVC default priority: an editorial judgement."""
+    return is_isac_editor(ctx)
+
+
+def can_validate_in_bulk(ctx: AuthContext) -> bool:
+    """Validate a review group in one action: an editor, as for a single validate."""
     return is_isac_editor(ctx)
 
 

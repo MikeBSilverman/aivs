@@ -1,0 +1,18 @@
+Mutation M328: a one-click on an object the member cannot see answers with a notice instead of the API's 404
+Re-applies: (T7, uncommitted) "The vulnerability page"
+
+Expect red: packages/aivs-server/tests/unit/test_vulnerability_page.py::test_a_one_click_on_something_the_member_cannot_see_is_not_found
+
+diff --git a/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py b/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py
+--- a/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py
++++ b/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py
+@@ -285,7 +285,8 @@
+         )
+         await session.commit()
+     except TargetNotFoundError:
+-        raise _NOT_FOUND from None
++        set_notice(response, settings, "error", "Nothing to respond to.")
++        return response
+     except ContributionRateLimitedError:
+         set_notice(
+             response, settings, "error", "Your firm has shared a lot this hour; try again later."

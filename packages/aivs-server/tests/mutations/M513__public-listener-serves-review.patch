@@ -6,12 +6,12 @@ Expect red: packages/aivs-server/tests/unit/test_proxy_config.py::test_the_publi
 diff --git a/deploy/nginx/nginx.conf b/deploy/nginx/nginx.conf
 --- a/deploy/nginx/nginx.conf
 +++ b/deploy/nginx/nginx.conf
-@@ -491,7 +491,7 @@
-         # The member portal: dashboard, own submissions and their member
-         # verbs, filing, signing out, and the portal's own static files.
+@@ -493,7 +493,7 @@
+         # from it (ids in the query or body, never the path), signing out, and
+         # the portal's own static files.
          # Quoted: unquoted, nginx reads the "{" of "{36}" as the start of a block.
--        location ~ "^/portal/((submissions(/[0-9a-f-]{36}(/(submit|withdraw))?)?|submit|logout)|static/[A-Za-z0-9._/-]+)?$" {
-+        location ~ "^/portal/((submissions(/[0-9a-f-]{36}(/(submit|withdraw))?)?|submit|logout|review)|static/[A-Za-z0-9._/-]+)?$" {
+-        location ~ "^/portal/((submissions(/[0-9a-f-]{36}(/(submit|withdraw))?)?|vulnerabilities(/(contributions|posture))?|submit|logout)|static/[A-Za-z0-9._/-]+)?$" {
++        location ~ "^/portal/((submissions(/[0-9a-f-]{36}(/(submit|withdraw))?)?|vulnerabilities(/(contributions|posture))?|submit|logout|review)|static/[A-Za-z0-9._/-]+)?$" {
              include     /etc/nginx/snippets/aivs-identity-headers.conf;
              proxy_pass  http://aivs_app;
          }

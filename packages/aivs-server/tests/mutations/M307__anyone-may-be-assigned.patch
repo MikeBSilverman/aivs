@@ -1,0 +1,17 @@
+Mutation M307: a submission may be assigned to someone who does not work the queue
+Re-applies: (T7, uncommitted) "Readiness, triage, duplicates and receipt channels"
+
+Expect red: packages/aivs-server/tests/unit/test_triage.py::test_a_reviewer_assigns_and_the_assignee_must_be_a_reviewer
+
+diff --git a/packages/aivs-server/src/aivs_server/api/triage.py b/packages/aivs-server/src/aivs_server/api/triage.py
+--- a/packages/aivs-server/src/aivs_server/api/triage.py
++++ b/packages/aivs-server/src/aivs_server/api/triage.py
+@@ -72,7 +72,7 @@
+ ) -> TriageOut:
+     submission = await _locked_visible(session, ctx, submission_id)
+     require(can_assign_submission(ctx), "assign_requires_isac_reviewer")
+-    if payload.operator_id is not None:
++    if False:
+         await _require_reviewer(session, payload.operator_id)
+     submission.assignee_operator_id = payload.operator_id
+     await record(

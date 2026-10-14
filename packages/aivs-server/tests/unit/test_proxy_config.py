@@ -92,6 +92,9 @@ _PUBLIC_PATHS = [
     f"{_SUBMISSION}/submit",
     f"{_SUBMISSION}/withdraw",
     "/portal/submit",
+    "/portal/vulnerabilities",
+    "/portal/vulnerabilities/contributions",
+    "/portal/vulnerabilities/posture",
     "/portal/logout",
     "/portal/static/theme.css",
     "/portal/sso/login",
@@ -110,6 +113,9 @@ _NOT_PUBLIC_PATHS = [
     f"{_SUBMISSION}/distribute",
     f"{_SUBMISSION}/validate",
     "/portal/sso/anything-else",
+    # An id in the path is never served here: ids travel in the query or body.
+    "/portal/vulnerabilities/CVE-2026-1234",
+    "/portal/vulnerabilities/CVE-2026-1234/contributions",
     "/portal/static/",
 ]
 

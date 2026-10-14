@@ -97,6 +97,23 @@ EXPECTED: Mapping[RouteClass, Mapping[Principal, Outcome]] = {
     RouteClass.SUBMISSION_RECORD: _allow(*_MEMBER, P.ISAC_ANALYST, P.ISAC_EDITOR, otherwise=N),
     RouteClass.TELEMETRY: _allow(*_MEMBER, otherwise=N),
     RouteClass.RECEIPT_RECORD: _allow(P.ISAC_ANALYST, P.ISAC_EDITOR, otherwise=N),
+    RouteClass.PRIORITY: {
+        **_allow(P.ISAC_EDITOR, otherwise=N),
+        **dict.fromkeys(_MEMBER, F),
+        P.ISAC_ANALYST: F,
+    },
+    RouteClass.BULK_VALIDATE: _allow(P.ISAC_EDITOR, otherwise=F),
+    RouteClass.ASSIGN: {
+        **_allow(P.ISAC_ANALYST, P.ISAC_EDITOR, otherwise=N),
+        **dict.fromkeys(_MEMBER, F),
+    },
+    RouteClass.READINESS: _allow(
+        *_MEMBER, P.PEER_MACHINE, P.ISAC_ANALYST, P.ISAC_EDITOR, otherwise=N
+    ),
+    RouteClass.VULNERABILITY_PAGE: {
+        **_allow(*_MEMBER, P.ISAC_ANALYST, P.ISAC_EDITOR, otherwise=N),
+        **dict.fromkeys(CERTIFICATE_ONLY, S),
+    },
     RouteClass.DRAFT_EDIT: {
         **_allow(*_MEMBER, otherwise=N),
         P.ISAC_ANALYST: F,

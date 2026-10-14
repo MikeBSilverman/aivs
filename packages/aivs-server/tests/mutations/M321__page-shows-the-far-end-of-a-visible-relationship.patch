@@ -1,0 +1,21 @@
+Mutation M321: the page shows the object at the far end of a relationship the member can see, whether or not the member can see the object
+Re-applies: (T7, uncommitted) "The vulnerability page"
+
+Expect red: packages/aivs-server/tests/unit/test_vulnerability_page.py::test_a_visible_relationship_does_not_show_an_invisible_object
+
+diff --git a/packages/aivs-server/src/aivs_server/services/vulnerability_page.py b/packages/aivs-server/src/aivs_server/services/vulnerability_page.py
+--- a/packages/aivs-server/src/aivs_server/services/vulnerability_page.py
++++ b/packages/aivs-server/src/aivs_server/services/vulnerability_page.py
+@@ -156,7 +156,11 @@
+     related_ids = await related_stix_ids(session, visible, stix_id)
+     related = [
+         item
+-        for item in await _latest_items(session, visible, related_ids)
++        for item in await _latest_items(
++            session,
++            select(StixObject).join(Distribution, Distribution.stix_object_id == StixObject.id),
++            related_ids,
++        )
+         if item.stix_type != "relationship"
+     ]
+     responses = await _responses(session, visible, [stix_id, *related_ids])

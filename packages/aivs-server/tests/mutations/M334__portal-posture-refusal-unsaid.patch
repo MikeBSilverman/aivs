@@ -1,0 +1,19 @@
+Mutation M334: the portal's posture form lets VEX's refusal escape as a server error instead of telling the member nothing was saved
+Re-applies: (T7, uncommitted) "The vulnerability page", rebased onto VEX postures
+
+Expect red: packages/aivs-server/tests/unit/test_vulnerability_page.py::test_a_not_affected_posture_without_a_reason_is_refused_and_said_so
+
+diff --git a/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py b/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py
+--- a/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py
++++ b/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py
+@@ -347,10 +347,6 @@
+         await session.commit()
+     except TargetNotFoundError:
+         raise _NOT_FOUND from None
+-    except PostureError as exc:
+-        await session.rollback()
+-        set_notice(response, settings, "error", f"Not saved: {exc}")
+-        return response
+     set_notice(
+         response, settings, "success", "Your firm's status is saved. Only your firm sees it."
+     )

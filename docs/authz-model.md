@@ -424,8 +424,13 @@ which it versions (KEV status) and cannot reach through a circle.
 | health | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | circle content | ✓ | ✓ | ✓ | ✓ | 404 | 404 | 404 | 404 | 404 | 404 |
 | submission record | ✓ | ✓ | ✓ | 404 | 404 | 404 | ✓ | ✓ | 404 | 404 |
+| readiness | ✓ | ✓ | ✓ | ✓ | 404 | 404 | ✓ | ✓ | 404 | 404 |
+| vulnerability page | sign in | ✓ | ✓ | sign in | sign in | sign in | ✓ | ✓ | 404 | 404 |
 | telemetry | ✓ | ✓ | ✓ | 404 | 404 | 404 | 404 | 404 | 404 | 404 |
 | receipt record | 404 | 404 | 404 | 404 | 404 | 404 | ✓ | ✓ | 404 | 404 |
+| priority | 403 | 403 | 403 | 404 | 404 | 404 | 403 | ✓ | 404 | 404 |
+| assign | 403 | 403 | 403 | 404 | 404 | 404 | ✓ | ✓ | 404 | 404 |
+| bulk validate | 403 | 403 | 403 | 403 | 403 | 403 | 403 | ✓ | 403 | 403 |
 | draft edit | ✓ | ✓ | ✓ | 404 | 404 | 404 | 403 | 403 | 404 | 404 |
 | withdraw | ✓ | ✓ | ✓ | 404 | 404 | 404 | 403 | ✓ | 404 | 404 |
 | receipt | 403 | 403 | 403 | ✓ | 404 | 404 | 404 | 404 | 404 | 404 |

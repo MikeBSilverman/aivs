@@ -74,8 +74,40 @@ The model the code holds now, as of phase D:
 - **Index columns** on `stix_objects`, extracted from `raw` and backfilled for
   existing rows, each held equal to its source by a test:
   `remediation_category`, `pattern_type`, `valid_until`,
-  `ssvc_exploitation`, `kev_listed`, `cwe_ids`. Nothing reads them yet;
-  `services/indexing.py` names the reader each is for.
+  `ssvc_exploitation`, `kev_listed`, `cwe_ids`. `services/indexing.py`
+  names each column's reader.
+- **Readiness** (SF-8). For remediation, mitigation, detection and validation,
+  the value is `available`, `none_available` or `unavailable`. It is computed
+  per caller from the objects the caller can see, through relationships
+  visible at both ends, using each object's latest visible version and
+  skipping expired indicators and revoked objects. It is served at
+  `GET /api/v1/vulnerabilities/readiness?id=` and never over TAXII.
+- **Triage.** Submissions carry an assignee and an editor's priority. With no
+  priority set, the default is CISA's SSVC decision, from CISA's own table
+  (vendored verbatim) and the vulnerability's decision points. Mission and
+  Well-Being Impact comes from the instance, because it describes the sector,
+  not the vulnerability. The review queue groups submissions by submitting
+  organisation and by member or automation, and orders each group by
+  priority, showing the factors. An editor may validate a group in one
+  audited action (`POST /api/v1/review/validate`, or the queue's button),
+  all or nothing; a consequential machine change stops the whole group,
+  because each submission still goes through `apply_transition`.
+- **Duplicate candidates** by CVE, purl, CPE and CWE. A member is compared
+  only with its own submissions and what reached it; the ISAC's reviewers are
+  compared with everything (SF-47).
+- **Receipts per channel.** The daily dedupe key includes `via`, so a portal
+  read is recorded on a day the collector already polled (SF-51).
+- **The vulnerability page** (`/portal/vulnerabilities?id=`). Any id the
+  vulnerability has opens it: its STIX id, its CVE, or an advisory id in its
+  external references, so a CVE attaching later changes no link a member
+  already pasted. It shows what's available, every related object and the
+  sightings, opinions and notes on them, and a timeline of when each was
+  shared. The ISAC's reviewers also see workflow transitions and receipts.
+  Everything comes from `services/visible.py`, the scope readiness uses. A
+  member responds from the page ("we see this too", "works here", "doesn't
+  work here", its own posture), and is told beforehand whether the click is
+  shared at once or reviewed first. A member's read writes an `AckVia.PORTAL`
+  receipt (SF-8, SF-51).
 - **Discovery scope.** A submission may be filed as `own_product`,
   `own_estate` or `ai_system`. Two further values, `disclosed_third_party` and
   `coordinated_disclosure`, exist in the Postgres type and the Python enum,
@@ -158,17 +190,14 @@ phase:
 
   Each lands with its first reader, as CLAUDE.md §5 requires of any column.
 
-**Readiness is computed, never stored.** For each of remediation,
-mitigation, detection and validation the value is `available`,
-`none_available` or `unavailable`, derived from the objects *visible to the
-caller*, with expired indicators excluded. Because it is caller-relative it
-is shown in the API and portal and never sent over TAXII. A stored global
-value would tell a member without a RED grant that RED content exists.
+**Readiness and the vulnerability page exist (§2).** Still to come:
+excluding a course of action past its `review_by` date. That is phase F's
+indicator-freshness work, and needs a `review_by` property that no extension
+defines yet; `services/readiness.py`'s `_is_current` is where it plugs in.
 
-**The vulnerability page is the case.** It shows every object related to the
-vulnerability, plus sightings, opinions, receipts and transitions, as one
-timeline. There is no `cases` table: assignee and priority are columns on
-`submissions`, and priority defaults from the SSVC coordinator tree.
+**The vulnerability page is the case.** There is no `cases` table: assignee
+and priority are columns on `submissions`, and priority defaults from the SSVC
+coordinator tree.
 
 **One-click contributions.** "We see this too" (a `sighting` with no
 `where_sighted_refs`), "works" and "doesn't work" (an `opinion`) are built by

@@ -39,6 +39,8 @@ from aivs_server.api import (
     meta,
     submissions,
     telemetry,
+    triage,
+    vulnerabilities,
 )
 from aivs_server.audit.log import AuditAction, record_denial
 from aivs_server.auth.deps import request_source_ip
@@ -57,6 +59,7 @@ from aivs_server.observability import run_periodically
 from aivs_server.portal import admin_routes as portal_admin_routes
 from aivs_server.portal import routes as portal_routes
 from aivs_server.portal import sso_routes as portal_sso_routes
+from aivs_server.portal import vulnerability_routes as portal_vulnerability_routes
 from aivs_server.services.detections import run_detections
 from aivs_server.services.embargo import sweep_due_embargoes
 from aivs_server.services.publication import PublicationPausedError
@@ -248,12 +251,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(telemetry.router)
     app.include_router(submissions.router)
     app.include_router(acknowledgments.router)
+    app.include_router(vulnerabilities.router)
+    app.include_router(triage.router)
     app.include_router(admin.router)
     app.include_router(contributions.router)
     app.include_router(isac_records.router)
     app.include_router(portal_routes.router)
     app.include_router(portal_admin_routes.router)
     app.include_router(portal_sso_routes.router)
+    app.include_router(portal_vulnerability_routes.router)
     app.include_router(taxii_router.router)
 
     # Served from the package so a deployment needs no separate asset step.

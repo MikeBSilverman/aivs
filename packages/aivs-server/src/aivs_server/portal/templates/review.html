@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Review queue &middot; {{ instance_name }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <h1>{{ heading }}</h1>
+  <p>{{ subheading }}</p>
+</div>
+
+{% if groups %}
+  {% for group in groups %}
+    <div class="card">
+      <h2>{{ group.organisation }} <span class="muted">&middot; filed by {{ "an automation" if group.source == "system" else "a member" }}</span></h2>
+      {% if can_validate_groups and group.submitted_ids|length > 1 %}
+        <form method="post" action="/portal/review/validate">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          {% for submission_id in group.submitted_ids %}
+            <input type="hidden" name="submission_ids" value="{{ submission_id }}">
+          {% endfor %}
+          <button type="submit" class="button-secondary">Validate these {{ group.submitted_ids|length }}</button>
+          <span class="muted small">All or none. A machine change that needs your acknowledgement stops the whole group.</span>
+        </form>
+      {% endif %}
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Priority</th><th>Filed</th><th>State</th><th>Marking</th>
+              <th>Title</th><th>With</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in group["items"] %}
+              <tr>
+                <td class="nowrap">
+                  {% if item.priority %}
+                    <span class="badge priority-{{ item.priority|replace('*', '-star') }}">{{ item.priority }}</span>
+                    <div class="muted small">
+                      {% if item.priority_source == "editor" %}set by an editor{% else %}SSVC: {{ item.factors }}{% endif %}
+                    </div>
+                  {% else %}
+                    <span class="muted">none</span>
+                    <div class="muted small">SSVC needs: {{ item.missing }}</div>
+                  {% endif %}
+                </td>
+                <td class="nowrap muted mono">{{ item.created_at }}</td>
+                <td><span class="badge state-{{ item.state }}">{{ item.state }}</span></td>
+                <td><span class="badge tlp tlp-{{ item.tlp }}">{{ item.tlp_label }}</span></td>
+                <td><a href="/portal/submissions/{{ item.id }}">{{ item.title }}</a></td>
+                <td class="muted nowrap">{{ item.assignee or "unassigned" }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  {% endfor %}
+{% else %}
+  <div class="card"><div class="empty">{{ empty_message }}</div></div>
+{% endif %}
+{% endblock %}

@@ -38,6 +38,7 @@ __all__ = [
     "OrgStatus",
     "OrgType",
     "PostureStatus",
+    "SsvcPriority",
     "SubmissionLane",
     "SubmissionSource",
     "SubmissionState",
@@ -337,6 +338,20 @@ class AckVia(StrEnum):
     TAXII = "taxii"
     API = "api"
     PORTAL = "portal"
+
+
+class SsvcPriority(StrEnum):
+    """CISA's SSVC decisions, the values of the CISA coordinator table verbatim.
+
+    A submission's triage priority in the ISAC's review queue. The default is
+    derived from the table (``services.priority``); an editor may set one, and
+    that is what is stored. Lower case, as the CERT/CC data files spell them.
+    """
+
+    TRACK = "track"
+    TRACK_STAR = "track*"
+    ATTEND = "attend"
+    ACT = "act"
 
 
 class AIDiscoveryMethod(StrEnum):

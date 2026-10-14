@@ -1,0 +1,17 @@
+Mutation M301: an expired indicator still makes detection available
+Re-applies: (T7, uncommitted) "Readiness, triage, duplicates and receipt channels"
+
+Expect red: packages/aivs-server/tests/unit/test_readiness.py::test_readiness_follows_the_rules
+
+diff --git a/packages/aivs-server/src/aivs_server/services/readiness.py b/packages/aivs-server/src/aivs_server/services/readiness.py
+--- a/packages/aivs-server/src/aivs_server/services/readiness.py
++++ b/packages/aivs-server/src/aivs_server/services/readiness.py
+@@ -132,7 +132,7 @@
+ 
+ 
+ def _is_current(obj: ReadinessInput, now: dt.datetime) -> bool:
+-    return obj.pattern_type is not None and obj.valid_until is not None and obj.valid_until > now
++    return obj.pattern_type is not None and obj.valid_until is not None
+ 
+ 
+ def _availability(group: str, available: set[str], stated_none: set[str]) -> Availability:

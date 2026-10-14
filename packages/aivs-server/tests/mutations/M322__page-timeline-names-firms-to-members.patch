@@ -1,0 +1,17 @@
+Mutation M322: a member's page timeline names which firms retrieved and acknowledged, as the ISAC's does
+Re-applies: (T7, uncommitted) "The vulnerability page"
+
+Expect red: packages/aivs-server/tests/unit/test_vulnerability_page.py::test_the_timeline_never_names_another_member_to_a_member
+
+diff --git a/packages/aivs-server/src/aivs_server/services/vulnerability_page.py b/packages/aivs-server/src/aivs_server/services/vulnerability_page.py
+--- a/packages/aivs-server/src/aivs_server/services/vulnerability_page.py
++++ b/packages/aivs-server/src/aivs_server/services/vulnerability_page.py
+@@ -164,7 +164,7 @@
+     submission_ids = frozenset(item.submission_id for item in shown)
+ 
+     events = _shared_events(shown)
+-    if can_view_submission_receipts(ctx):
++    if True:
+         events += await _workflow_events(session, submission_ids)
+     return VulnerabilityPage(
+         vulnerability=vulnerabilities[0],

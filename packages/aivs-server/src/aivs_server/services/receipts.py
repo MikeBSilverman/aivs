@@ -5,7 +5,10 @@ table an ISAC points at to answer "we warned you, and here is when your systems
 collected it", and it is a large part of why a member firm would pay for the
 service at all: it is a compliance artefact, not just telemetry.
 
-Receipts are deduplicated to one row per organisation, per submission, per day.
+Receipts are deduplicated to one row per organisation, per submission, per
+channel (TAXII, API, portal), per day. The channel is in the key because a
+person reading a warning in the portal is a different fact from the member's
+collector having polled it, and an auditor asks about both (SF-51).
 A member polling every minute would otherwise write over a thousand rows a day
 per object, which costs storage forever (the table is append-only) and buries
 the signal an auditor is looking for. Daily granularity answers "did they

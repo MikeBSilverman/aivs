@@ -1,0 +1,18 @@
+Mutation M306: an ISAC analyst may override the priority, an editorial judgement
+Re-applies: (T7, uncommitted) "Readiness, triage, duplicates and receipt channels"
+
+Expect red: packages/aivs-server/tests/unit/test_triage.py::test_an_editor_sets_a_priority_and_an_analyst_may_not
+Expect red: packages/aivs-server/tests/authz_matrix/test_principal_matrix.py::test_each_principal_gets_exactly_its_row[isac_analyst]
+
+diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs-server/src/aivs_server/auth/policy.py
+--- a/packages/aivs-server/src/aivs_server/auth/policy.py
++++ b/packages/aivs-server/src/aivs_server/auth/policy.py
+@@ -238,7 +238,7 @@
+ 
+ def can_set_priority(ctx: AuthContext) -> bool:
+     """Override the SSVC default priority: an editorial judgement."""
+-    return is_isac_editor(ctx)
++    return can_review_submissions(ctx)
+ 
+ 
+ def can_validate_in_bulk(ctx: AuthContext) -> bool:

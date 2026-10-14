@@ -1,0 +1,16 @@
+Mutation M324: a member's person reading the page leaves no receipt, so 'a person looked' is never recorded
+Re-applies: (T7, uncommitted) "The vulnerability page"
+
+Expect red: packages/aivs-server/tests/unit/test_vulnerability_page.py::test_a_member_reading_the_page_writes_a_portal_receipt_for_what_it_showed
+
+diff --git a/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py b/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py
+--- a/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py
++++ b/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py
+@@ -132,7 +132,6 @@
+     page = await vulnerability_page(session, ctx, found[0], now=now)
+     if page is None:
+         raise _NOT_FOUND
+-    await _record_portal_read(session, ctx, page, now=now)
+     context.update(await _page_context(session, ctx, page, now=now))
+     return render(request, "vulnerability.html", context)
+ 

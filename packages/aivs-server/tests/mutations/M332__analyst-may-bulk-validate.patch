@@ -1,0 +1,17 @@
+Mutation M332: an ISAC analyst passes the bulk-validation check, so the request is examined -- and a malformed one described -- before the analyst is refused
+Re-applies: (T7, uncommitted) "Bulk validation of a review group"
+
+Expect red: packages/aivs-server/tests/unit/test_bulk_validation.py::test_an_analyst_is_refused_before_the_group_is_examined
+
+diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs-server/src/aivs_server/auth/policy.py
+--- a/packages/aivs-server/src/aivs_server/auth/policy.py
++++ b/packages/aivs-server/src/aivs_server/auth/policy.py
+@@ -243,7 +243,7 @@
+ 
+ def can_validate_in_bulk(ctx: AuthContext) -> bool:
+     """Validate a review group in one action: an editor, as for a single validate."""
+-    return is_isac_editor(ctx)
++    return can_review_submissions(ctx)
+ 
+ 
+ def can_change_embargo(ctx: AuthContext) -> bool:

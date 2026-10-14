@@ -1,0 +1,30 @@
+Mutation M326: the page and readiness read through the visibility clause without the TLP ceiling, so an SSO session opens RED
+Re-applies: (T7, uncommitted) "The vulnerability page"
+
+Expect red: packages/aivs-server/tests/unit/test_vulnerability_page.py::test_an_sso_session_cannot_open_a_red_vulnerabilitys_page
+
+diff --git a/packages/aivs-server/src/aivs_server/services/visible.py b/packages/aivs-server/src/aivs_server/services/visible.py
+--- a/packages/aivs-server/src/aivs_server/services/visible.py
++++ b/packages/aivs-server/src/aivs_server/services/visible.py
+@@ -17,7 +17,11 @@
+ 
+ from aivs_schemas.enums import VISIBLE_SUBMISSION_STATES
+ from aivs_server.auth.context import AuthContext
+-from aivs_server.auth.policy import can_review_submissions, distribution_visibility_clause
++from aivs_server.auth.policy import (
++    can_review_submissions,
++    readable_circle_grants,
++    visible_content_clause,
++)
+ from aivs_server.db.models import Distribution, StixObject, Submission
+ 
+ __all__ = ["related_stix_ids", "visible_objects"]
+@@ -42,7 +46,7 @@
+     )
+     if can_review_submissions(ctx):
+         return query.where(Submission.state.in_(tuple(VISIBLE_SUBMISSION_STATES)))
+-    return query.where(distribution_visibility_clause(ctx, now))
++    return query.where(visible_content_clause(readable_circle_grants(ctx), now))
+ 
+ 
+ async def related_stix_ids(session: AsyncSession, visible: Select[Any], stix_id: str) -> list[str]:

@@ -189,6 +189,8 @@ def test_no_member_posture_route_carries_a_vulnerability_id_in_its_path(app):
         "/api/v1/postures",
         "/api/v1/postures/openvex",
         "/api/v1/postures/{posture_id}",
+        # The portal's form on the vulnerability page: the id is in the body.
+        "/portal/vulnerabilities/posture",
     }
 
 

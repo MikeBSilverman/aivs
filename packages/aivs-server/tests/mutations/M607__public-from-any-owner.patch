@@ -1,0 +1,19 @@
+Mutation M607: 'public' is read from whoever's version is latest
+Re-applies: a member's own record opening the fast lane (Phase E review)
+
+Expect red: packages/aivs-server/tests/unit/test_one_click.py::test_a_members_own_record_saying_published_does_not_open_the_fast_lane
+
+diff --git a/packages/aivs-server/src/aivs_server/services/contributions.py b/packages/aivs-server/src/aivs_server/services/contributions.py
+index 6df8403..92d25b9 100644
+--- a/packages/aivs-server/src/aivs_server/services/contributions.py
++++ b/packages/aivs-server/src/aivs_server/services/contributions.py
+@@ -159,7 +159,8 @@ def _is_public(rows: list[Any]) -> bool:
+     latest = max(rows, key=lambda row: row.modified)
+     if latest.raw.get("type") != "vulnerability":
+         return DiscoveryScope(latest.discovery_scope) is DiscoveryScope.DISCLOSED_THIRD_PARTY
+-    isac_rows = [row for row in rows if row.owner == ISAC_OWNER]
++    isac_rows = rows
++
+     if not isac_rows:
+         return False
+     return cve_status(max(isac_rows, key=lambda row: row.modified).raw) == "published"

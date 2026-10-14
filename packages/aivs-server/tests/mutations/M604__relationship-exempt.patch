@@ -1,0 +1,23 @@
+Mutation M604: a relationship id is anyone's to version
+Re-applies: the SF-48 relationship exemption (Phase E review)
+
+Expect red: packages/aivs-server/tests/unit/test_ownership.py::test_a_relationship_is_owned_like_anything_else
+
+diff --git a/packages/aivs-server/src/aivs_server/services/ownership.py b/packages/aivs-server/src/aivs_server/services/ownership.py
+index 9165768..ed08c8a 100644
+--- a/packages/aivs-server/src/aivs_server/services/ownership.py
++++ b/packages/aivs-server/src/aivs_server/services/ownership.py
+@@ -77,7 +77,12 @@ async def foreign_owned_versions_problem(
+     session: AsyncSession, objects: Iterable[Mapping[str, Any]], *, owner_org_id: uuid.UUID
+ ) -> str | None:
+     """Why these objects may not be published by ``owner_org_id``, or ``None``."""
+-    ids = {obj["id"] for obj in objects if isinstance(obj.get("id"), str)}
++    ids = {
++        obj["id"]
++        for obj in objects
++        if isinstance(obj.get("id"), str) and obj.get("type") != "relationship"
++    }
++
+     if not ids:
+         return None
+     owners = await _owners_like(session, owner_org_id)

@@ -1,0 +1,20 @@
+Mutation M606: the AI gate compares with the filing organisation's own versions only
+Re-applies: a machine lowering the ISAC's score with nothing to acknowledge (Phase E review)
+
+Expect red: packages/aivs-server/tests/unit/test_provenance_gate.py::test_the_isacs_automation_lowering_the_isacs_score_needs_naming
+
+diff --git a/packages/aivs-server/src/aivs_server/services/provenance.py b/packages/aivs-server/src/aivs_server/services/provenance.py
+index c599263..6278970 100644
+--- a/packages/aivs-server/src/aivs_server/services/provenance.py
++++ b/packages/aivs-server/src/aivs_server/services/provenance.py
+@@ -137,8 +137,8 @@ async def _distributed_versions(
+             .join(Submission, Submission.id == StixObject.submission_id)
+             .where(
+                 StixObject.stix_id.in_(stix_ids),
+-                owner_key(Submission.submitter_org_id)
+-                == owner_key(literal(submission.submitter_org_id)),
++                Submission.submitter_org_id == submission.submitter_org_id,
++
+                 Submission.id != submission.id,
+             )
+             .order_by(StixObject.stix_id, StixObject.modified.desc())

@@ -1,0 +1,19 @@
+Mutation M605: the feed resolves last per raw submitting organisation
+Re-applies: two current versions of the ISAC's record after a KEV version (Phase E review)
+
+Expect red: packages/aivs-server/tests/unit/test_ownership.py::test_a_kev_version_supersedes_the_isacs_record_in_the_default_feed
+
+diff --git a/packages/aivs-server/src/aivs_server/taxii/queries.py b/packages/aivs-server/src/aivs_server/taxii/queries.py
+index b342eef..fe9a86f 100644
+--- a/packages/aivs-server/src/aivs_server/taxii/queries.py
++++ b/packages/aivs-server/src/aivs_server/taxii/queries.py
+@@ -54,7 +54,8 @@ def _visible_rows(circle_id: uuid.UUID, intervals: Intervals, now: dt.datetime)
+             StixObject.spec_version.label("spec_version"),
+             StixObject.raw.label("raw"),
+             Distribution.submission_id.label("submission_id"),
+-            owner_key(Submission.submitter_org_id).label("owner"),
++            Submission.submitter_org_id.label("owner"),
++
+         )
+         .select_from(Distribution)
+         .join(StixObject, StixObject.id == Distribution.stix_object_id)

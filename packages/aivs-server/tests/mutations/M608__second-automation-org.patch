@@ -1,0 +1,23 @@
+Mutation M608: any number of automation organisations
+Re-applies: the ISAC-owner equivalence keyed on a type anyone can be enrolled as (Phase E review)
+
+Expect red: packages/aivs-server/tests/unit/test_ownership.py::test_an_instance_has_one_automation_organisation
+
+diff --git a/packages/aivs-server/src/aivs_server/db/models.py b/packages/aivs-server/src/aivs_server/db/models.py
+index 24de7e5..ce53a8d 100644
+--- a/packages/aivs-server/src/aivs_server/db/models.py
++++ b/packages/aivs-server/src/aivs_server/db/models.py
+@@ -134,12 +134,7 @@ class Organization(TimestampMixin, Base):
+         # its versions as the ISAC's by type (services/ownership.py), so a
+         # second one would be a second identity able to version the ISAC's
+         # canonical records.
+-        Index(
+-            "uq_organizations_one_automation",
+-            "org_type",
+-            unique=True,
+-            postgresql_where=text("org_type = 'automation'"),
+-        ),
++
+     )
+ 
+     certificates: Mapped[list[ClientCertificate]] = relationship(back_populates="organization")

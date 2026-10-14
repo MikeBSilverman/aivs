@@ -208,13 +208,17 @@ def _declared_length_refusal(declared: str | None, max_bytes: int) -> tuple[int,
 
     ``None`` means "not refused here", which includes a request that declares no
     length at all: the streamed count still applies to it.
+
+    A declared length is ASCII digits and nothing else (RFC 9110 section 8.6).
+    This used to be "whatever ``int()`` accepts", which let ``-1``, ``+10`` and
+    ``1_0`` through -- harmless only because the stream count still bounded
+    them, and the shape of a check that is right by accident.
     """
     if declared is None:
         return None
-    try:
-        declared_bytes = int(declared)
-    except ValueError:
+    if not (declared.isascii() and declared.isdigit()):
         return 400, "Malformed Content-Length header"
+    declared_bytes = int(declared)
     if declared_bytes > max_bytes:
         return 413, "Request body too large"
     return None

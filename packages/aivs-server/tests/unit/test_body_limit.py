@@ -16,6 +16,8 @@ from collections.abc import MutableMapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
+import pytest
+
 from aivs_server.middleware import ASGIApp, BodySizeLimitMiddleware, Receive, Scope, Send
 
 LIMIT = 10
@@ -97,6 +99,24 @@ async def test_malformed_declared_length_is_refused_before_the_application_runs(
 
     assert exchange.statuses == [400]
     assert not exchange.app_ran
+
+
+@pytest.mark.parametrize("length", [b"-1", b"+10", b"1_0", b" 10", b"", b"\xb2"])
+async def test_declared_length_that_is_not_plain_digits_is_refused(length: bytes) -> None:
+    # int() accepts the first four. The empty string was always refused. The
+    # last decodes to a superscript digit that isdigit() accepts and int() does
+    # not, which would escape as a 500. A declared length is 1*DIGIT or it is
+    # malformed.
+    exchange = await drive(reads_then_responds, headers=declared(length), chunks=[b"x"])
+
+    assert exchange.statuses == [400]
+    assert not exchange.app_ran
+
+
+async def test_declared_length_of_zero_is_served() -> None:
+    exchange = await drive(reads_then_responds, headers=declared(b"0"), chunks=[b""])
+
+    assert exchange.statuses == [200]
 
 
 async def test_undeclared_body_is_counted_and_refused_past_the_limit() -> None:

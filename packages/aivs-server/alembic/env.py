@@ -38,7 +38,7 @@ target_metadata = Base.metadata
 def _database_url() -> str:
     """Return the migration target URL.
 
-    Prefers the explicit AIVS_DATABASE_URL so that migrations can be run by an
+    Prefers AIVS_MIGRATION_DATABASE_URL over AIVS_DATABASE_URL, so that migrations can be run by an
     operator with elevated (DDL-capable) credentials that differ from the
     application's own restricted role.
     """

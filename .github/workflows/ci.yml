@@ -33,7 +33,6 @@ env:
   PYTHON_VERSION: "3.12"
   UV_VERSION: "0.11.16"
   AIVS_TEST_DATABASE_URL: postgresql+psycopg://aivs:aivs@localhost:5432/aivs_test
-  AIVS_MIGRATION_DATABASE_URL: postgresql+psycopg://aivs:aivs@localhost:5432/aivs_dev
 
 jobs:
   verify:
@@ -125,7 +124,9 @@ jobs:
           umask 077
           python3 -c 'import base64, os; print(base64.b64encode(os.urandom(32)).decode())' > "$RUNNER_TEMP/kek"
           export AIVS_SECRET_ENCRYPTION_KEY_FILE="$RUNNER_TEMP/kek"
-          export AIVS_DATABASE_URL="$AIVS_MIGRATION_DATABASE_URL"
+          # Scoped to this step: job-wide, alembic's preference for it
+          # silently redirected the migrated-schema test's scratch database.
+          export AIVS_MIGRATION_DATABASE_URL=postgresql+psycopg://aivs:aivs@localhost:5432/aivs_dev
           uv run alembic -c packages/aivs-server/alembic.ini upgrade head
           uv run alembic -c packages/aivs-server/alembic.ini check
 

@@ -45,9 +45,18 @@ def migrated_url() -> Iterator[str]:
         connection.execute(text(f'CREATE DATABASE "{scratch}"'))
 
     url = test_url.set(database=scratch).render_as_string(hide_password=False)
-    names = ("AIVS_DATABASE_URL", "AIVS_SECRET_ENCRYPTION_KEY", "AIVS_SECRET_ENCRYPTION_KEY_FILE")
+    names = (
+        "AIVS_DATABASE_URL",
+        "AIVS_MIGRATION_DATABASE_URL",
+        "AIVS_SECRET_ENCRYPTION_KEY",
+        "AIVS_SECRET_ENCRYPTION_KEY_FILE",
+    )
     saved = {name: os.environ.get(name) for name in names}
+    # Both names: alembic's env.py prefers AIVS_MIGRATION_DATABASE_URL. CI set
+    # it job-wide, so this fixture migrated the CI database a second time and
+    # left the scratch one empty -- green locally, where nobody sets it.
     os.environ["AIVS_DATABASE_URL"] = url
+    os.environ["AIVS_MIGRATION_DATABASE_URL"] = url
     # The secrets migration refuses to run without a key. The file form, because
     # that is what a deployment outside dev uses, so what the migration must read.
     os.environ.pop("AIVS_SECRET_ENCRYPTION_KEY", None)

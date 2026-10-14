@@ -49,7 +49,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from aivs_schemas.enums import PostureStatus, VexJustification
 from aivs_server.audit.log import AuditAction, record
 from aivs_server.auth.context import AuthContext
+from aivs_server.auth.policy import PolicyDeniedError
 from aivs_server.db.models import Distribution, OrgPosture, StixObject
+from aivs_server.db.org_lock import org_still_active
 from aivs_server.services.contributions import TargetNotFoundError, resolve_target
 from aivs_server.services.telemetry import (
     K_ANONYMITY,
@@ -126,6 +128,9 @@ async def record_posture(
     problem = vex_problem(statement)
     if problem is not None:
         raise PostureError(problem)
+    if not await org_still_active(session, ctx.org_id):
+        denial = "posture_org_not_active"
+        raise PolicyDeniedError(denial)
 
     row = await _own_row_locked(session, ctx, vulnerability_id, statement=statement)
     _apply(row, statement, now=now)

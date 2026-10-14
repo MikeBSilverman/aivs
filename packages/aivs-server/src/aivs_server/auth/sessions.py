@@ -53,6 +53,7 @@ from aivs_server.db.models import (
     Organization,
     PortalSession,
 )
+from aivs_server.db.org_lock import org_still_active
 
 logger = logging.getLogger(__name__)
 
@@ -237,6 +238,9 @@ async def establish_session(
     that authenticates on its own.
     """
     now = now or dt.datetime.now(dt.UTC)
+    if not await org_still_active(session, operator.org_id):
+        # Credentials checked while active; offboarded or cut off since.
+        raise SessionRejectedError("org_not_active")
     token = generate_session_token()
     csrf_token = generate_session_token()
     expires_at = now + dt.timedelta(minutes=settings.session_ttl_minutes)

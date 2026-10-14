@@ -39,6 +39,7 @@ from aivs_server.audit.log import AuditAction, record
 from aivs_server.auth.context import AuthContext
 from aivs_server.auth.deps import AuthenticatedContext, SessionDep, SettingsDep
 from aivs_server.auth.policy import (
+    PolicyDeniedError,
     can_administer_circle,
     can_manage_org,
     can_manage_own_webhooks,
@@ -63,6 +64,7 @@ from aivs_server.db.models import (
     TaxiiCollection,
     Webhook,
 )
+from aivs_server.db.org_lock import org_still_active
 from aivs_server.notify.webhooks import WebhookRejectedError, resolve_delivery_target
 from aivs_server.services.certificates import CertificateRegistrationError
 from aivs_server.services.certificates import register_certificate as register_certificate_for
@@ -537,6 +539,10 @@ async def register_webhook(
             detail=f"That URL cannot be used as a webhook target ({exc.reason}).",
         ) from exc
 
+    if not await org_still_active(session, ctx.org_id):
+        # Authenticated while active; offboarded or cut off since.
+        denial = "webhook_org_not_active"
+        raise PolicyDeniedError(denial)
     secret = secrets.token_urlsafe(32)
     # The identifier is generated here rather than left to the column default,
     # because the seal is bound to it: a column default is applied at INSERT,

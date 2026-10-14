@@ -43,7 +43,9 @@ from aivs_schemas.enums import (
 from aivs_schemas.extension.builders import MAX_BUNDLE_OBJECTS
 from aivs_server.audit.log import AuditAction, record
 from aivs_server.auth.context import AuthContext
+from aivs_server.auth.policy import PolicyDeniedError
 from aivs_server.db.models import Circle, TaxiiCollection, TaxiiStatus
+from aivs_server.db.org_lock import org_still_active
 from aivs_server.services.contributions import (
     ContributionRateLimitedError,
     record_rate_limited,
@@ -84,6 +86,9 @@ async def receive_envelope(
     collection.
     """
     objects = _objects_of(envelope)
+    if not await org_still_active(session, ctx.org_id):
+        denial = "inbox_org_not_active"
+        raise PolicyDeniedError(denial)
     if not await within_hourly_allowance(session, ctx.org_id, limit=hourly_limit, now=now):
         await record_rate_limited(ctx, lane="taxii_inbox", limit=hourly_limit)
         raise ContributionRateLimitedError(ctx.org_id)

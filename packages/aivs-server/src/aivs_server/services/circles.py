@@ -252,6 +252,19 @@ async def _refuse_starts_in_a_gap(
         raise MembershipStartRefusedError(msg)
 
 
+async def _locked_for_share(
+    session: AsyncSession, organisations: list[Organization]
+) -> list[Organization]:
+    """The same organisations, re-read under a shared row lock."""
+    rows = await session.execute(
+        select(Organization)
+        .where(Organization.id.in_([org.id for org in organisations]))
+        .with_for_update(read=True)
+        .execution_options(populate_existing=True)
+    )
+    return list(rows.scalars().all())
+
+
 async def _lock_circle(session: AsyncSession, circle_id: uuid.UUID) -> None:
     """Serialise every membership change to one circle.
 
@@ -297,6 +310,10 @@ async def add_circle_members(
     """
     _refuse_unsafe_additions(organisations, joined_at, now)
     await _lock_circle(session, circle.id)
+    # Again on rows share-locked now: the statuses above were read before the
+    # lock, and an offboarding committing in between would otherwise leave an
+    # offboarded firm with an open interval nothing ever closes.
+    _refuse_unsafe_additions(await _locked_for_share(session, organisations), joined_at, now)
     existing = await _open_memberships(session, circle.id)
     if joined_at is not None:
         await _refuse_starts_in_a_gap(session, circle.id, existing, organisations, joined_at, now)
@@ -400,13 +417,18 @@ async def _orgs_matching_rule(session: AsyncSession, circle: Circle) -> set[uuid
     return set(
         (
             await session.execute(
-                select(Organization.id).where(
+                select(Organization.id)
+                .where(
                     Organization.org_type.in_(_eligible_rule_types(circle)),
                     # A pending enrolment has not been accepted, and a suspended
                     # or quarantined one is switched off; a rule hands none of
                     # them a circle. That is about *adding* only -- see below.
                     Organization.status == OrgStatus.ACTIVE,
                 )
+                # Shared row locks, so an offboarding or quarantine committing
+                # meanwhile is waited for and its status read: without them a
+                # rule opened an interval for a firm offboarded a moment before.
+                .with_for_update(read=True)
             )
         )
         .scalars()

@@ -1,0 +1,17 @@
+Mutation M751: a machine-filed parent restart validates without an editor naming it
+Re-applies: SF-6 tested with "system" alone -- "parent" dropped from the disruptive set
+
+Expect red: packages/aivs-server/tests/unit/test_provenance_gate.py::test_a_machine_filed_disruptive_restart_needs_an_editor_to_name_it[parent]
+
+diff --git a/packages/aivs-server/src/aivs_server/services/provenance.py b/packages/aivs-server/src/aivs_server/services/provenance.py
+--- a/packages/aivs-server/src/aivs_server/services/provenance.py
++++ b/packages/aivs-server/src/aivs_server/services/provenance.py
+@@ -51,7 +51,7 @@ __all__ = [
+ _REVIEWER_NAMESPACE: Final[uuid.UUID] = uuid.UUID("5d3c2a8e-7f4b-4c61-9e0a-2b6f8d1c4e73")
+ 
+ #: CSAF ``restart_required`` categories that take down more than the product.
+-_DISRUPTIVE_RESTARTS: Final[frozenset[str]] = frozenset({"system", "parent"})
++_DISRUPTIVE_RESTARTS: Final[frozenset[str]] = frozenset({"system"})
+ 
+ #: SSVC v2 values in increasing urgency, CISA's spellings.
+ _SSVC_ORDER: Final[Mapping[str, tuple[str, ...]]] = {

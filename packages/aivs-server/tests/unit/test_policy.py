@@ -228,6 +228,17 @@ def test_an_org_admin_may_manage_only_their_own_org():
     assert can_manage_org(ctx, OTHER_ORG) is False
 
 
+def test_an_org_admin_at_the_hosting_isac_manages_nothing():
+    """The admin organisation's certificates are ISAC powers, held through ISAC roles.
+
+    Otherwise an ``org_admin`` there could revoke every staff certificate, or
+    register a new one, with no ISAC role at all.
+    """
+    ctx = context(org_type=OrgType.ADMIN, operator_roles=frozenset({OperatorRole.ORG_ADMIN}))
+    assert can_manage_org(ctx, ORG) is False
+    assert is_org_admin(ctx) is False
+
+
 def test_an_analyst_may_manage_no_org():
     ctx = context(operator_roles=frozenset({OperatorRole.ANALYST}))
     assert can_manage_org(ctx, ORG) is False

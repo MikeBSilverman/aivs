@@ -11,16 +11,19 @@ made there instead; this file is for properties that had no test at all.
 from __future__ import annotations
 
 import datetime as dt
+import re
 import uuid
 
+import pyotp
 import pytest
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from aivs_schemas.enums import CertStatus, OrgStatus, OrgType
 from aivs_schemas.extension.builders import UnknownExtensionError, validate_bundle
 from aivs_schemas.tlp import TLP_MARKING_IDS
-from aivs_server.db.models import ClientCertificate, Organization
-from tests.conftest import proxy_headers
+from aivs_server.audit.log import AuditAction
+from aivs_server.db.models import AuditLog, ClientCertificate, Organization
+from tests.conftest import TEST_OPERATOR_PASSWORD, proxy_headers
 
 API = "/api/v1"
 
@@ -138,7 +141,7 @@ def test_an_ordinary_nested_object_still_validates():
 # ---------------------------------------------------------------------------
 @pytest.mark.db
 class TestPortalLoginChecksStatus:
-    """A revoked certificate must not reach the credential check.
+    """A certificate or organisation that may not transact must not reach the credential check.
 
     nginx has no CRL -- revocation is authoritative in the database -- so the
     holder of a revoked certificate still completes the TLS handshake. The login
@@ -146,30 +149,70 @@ class TestPortalLoginChecksStatus:
     the full password and TOTP check and could distinguish a correct credential
     from a wrong one by the 303 it returned: an oracle for precisely the
     compromised-certificate case revocation exists for.
+
+    Each test signs in with the *correct* password and code, and asserts which
+    check refused. These tests once posted a wrong password, which no login
+    accepts, so they passed with the status checks removed.
     """
 
     LOGIN = "/portal/login"
 
-    async def _post(self, client, pem):
+    async def _sign_in(self, client, operator, seed, pem):
         page = await client.get(self.LOGIN, headers=proxy_headers(pem))
         assert page.status_code == 200
+        token = re.search(r'name="csrf_token" value="([^"]+)"', page.text).group(1)
         return await client.post(
             self.LOGIN,
             data={
-                "email": "analyst@example.test",
-                "password": "whatever",
-                "totp_code": "000000",
-                "csrf_token": "irrelevant",
+                "email": operator.email,
+                "password": TEST_OPERATOR_PASSWORD,
+                "totp_code": pyotp.TOTP(seed).now(),
+                "csrf_token": token,
             },
             headers=proxy_headers(pem),
         )
 
-    async def test_a_revoked_certificate_cannot_reach_the_credential_check(
-        self, client, make_org, make_cert, session
-    ):
-        org = await make_org("revoked-firm", org_type=OrgType.GSIB)
-        pem, _ = await make_cert(org)
+    async def _refused_before_credentials(self, session, response, operator) -> None:
+        assert response.status_code != 303, "no session may be established"
+        reasons = (
+            (
+                await session.execute(
+                    select(AuditLog.details).where(AuditLog.action == AuditAction.LOGIN_FAILURE)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert [reason.get("reason") for reason in reasons] == ["no_client_certificate"]
+        assert (
+            await session.scalar(
+                select(func.count())
+                .select_from(AuditLog)
+                .where(AuditLog.action == AuditAction.LOGIN_SUCCESS)
+            )
+            == 0
+        )
+        await session.refresh(operator)
 
+    async def _firm(self, make_org, make_cert, make_operator, slug):
+        org = await make_org(slug, org_type=OrgType.GSIB)
+        pem, _ = await make_cert(org)
+        operator, seed = await make_operator(org)
+        return org, pem, operator, seed
+
+    async def test_the_pair_a_valid_certificate_signs_in(
+        self, client, make_org, make_cert, make_operator
+    ):
+        _org, pem, operator, seed = await self._firm(make_org, make_cert, make_operator, "firm")
+
+        assert (await self._sign_in(client, operator, seed, pem)).status_code == 303
+
+    async def test_a_revoked_certificate_cannot_reach_the_credential_check(
+        self, client, session, make_org, make_cert, make_operator
+    ):
+        org, pem, operator, seed = await self._firm(
+            make_org, make_cert, make_operator, "revoked-firm"
+        )
         row = (
             await session.execute(
                 select(ClientCertificate).where(ClientCertificate.org_id == org.id)
@@ -182,22 +225,43 @@ class TestPortalLoginChecksStatus:
         row.revoked_reason = "stolen"
         await session.commit()
 
-        response = await self._post(client, pem)
-        assert response.status_code != 303, "a revoked certificate must not establish a session"
+        response = await self._sign_in(client, operator, seed, pem)
+
+        await self._refused_before_credentials(session, response, operator)
+
+    async def test_an_expired_registration_cannot_reach_the_credential_check(
+        self, client, session, make_org, make_cert, make_operator
+    ):
+        """nginx allows a few minutes of clock skew past notAfter; every later request refuses."""
+        org, pem, operator, seed = await self._firm(
+            make_org, make_cert, make_operator, "expired-firm"
+        )
+        row = (
+            await session.execute(
+                select(ClientCertificate).where(ClientCertificate.org_id == org.id)
+            )
+        ).scalar_one()
+        row.not_after = dt.datetime.now(dt.UTC) - dt.timedelta(minutes=1)
+        await session.commit()
+
+        response = await self._sign_in(client, operator, seed, pem)
+
+        await self._refused_before_credentials(session, response, operator)
 
     async def test_a_suspended_organisation_cannot_reach_the_credential_check(
-        self, client, make_org, make_cert, session
+        self, client, session, make_org, make_cert, make_operator
     ):
-        org = await make_org("suspended-firm", org_type=OrgType.GSIB)
-        pem, _ = await make_cert(org)
-
+        org, pem, operator, seed = await self._firm(
+            make_org, make_cert, make_operator, "suspended-firm"
+        )
         row = await session.get(Organization, org.id)
         assert row is not None
         row.status = OrgStatus.SUSPENDED
         await session.commit()
 
-        response = await self._post(client, pem)
-        assert response.status_code != 303
+        response = await self._sign_in(client, operator, seed, pem)
+
+        await self._refused_before_credentials(session, response, operator)
 
 
 # ---------------------------------------------------------------------------

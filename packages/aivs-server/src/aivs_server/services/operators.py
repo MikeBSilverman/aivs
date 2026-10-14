@@ -62,6 +62,11 @@ async def create_operator(
     if not held:
         msg = "an operator needs at least one role"
         raise OperatorError(msg)
+    if OperatorRole.ORG_ADMIN in held and organisation.org_type is OrgType.ADMIN:
+        # A member firm's role; at the ISAC it grants nothing (policy.is_org_admin),
+        # and an inert grant reads as real to anyone auditing who holds what.
+        msg = "org_admin is a member firm's role; the hosting ISAC uses its own roles"
+        raise OperatorError(msg)
     misplaced = held & ISAC_ONLY_ROLES
     if misplaced and organisation.org_type is not OrgType.ADMIN:
         msg = (

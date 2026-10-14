@@ -154,7 +154,9 @@ async def login(
     # login a working password/TOTP oracle for exactly the compromised-certificate
     # case revocation exists for, reset the operator's lockout counter on
     # success, and wrote a LOGIN_SUCCESS audit row for an access that policy
-    # grants nothing.
+    # grants nothing. The registration's expiry is the third predicate for the
+    # same reason: nginx tolerates a few minutes of clock skew past notAfter,
+    # and every later request refuses the expired registration.
     org = (
         await session.execute(
             select(Organization)
@@ -162,6 +164,7 @@ async def login(
             .where(
                 ClientCertificate.fingerprint_sha256 == fingerprint,
                 ClientCertificate.status == CertStatus.ACTIVE,
+                ClientCertificate.not_after > dt.datetime.now(dt.UTC),
                 Organization.status == OrgStatus.ACTIVE,
             )
         )

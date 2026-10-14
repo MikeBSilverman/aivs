@@ -17,7 +17,7 @@ import uuid
 from collections.abc import Awaitable, Callable, MutableMapping
 from typing import Any, Final
 
-from aivs_server.auth.mtls import client_address
+from aivs_server.auth.mtls import client_address, is_vouched_for_by_proxy
 from aivs_server.config import Settings
 from aivs_server.logging_config import set_request_id
 
@@ -86,14 +86,32 @@ _PORTAL_CSP: Final[bytes] = (
 _access_logger = logging.getLogger("aivs_server.access")
 
 
-def _client(scope: Scope, settings: Settings) -> str | None:
-    """The member's address when the proxy vouches for it, as on audit rows."""
+def _headers_and_peer(scope: Scope) -> tuple[dict[str, str], str | None]:
     peer = scope.get("client")
     headers = {
         key.decode("latin-1").lower(): value.decode("latin-1")
         for key, value in scope.get("headers", [])
     }
-    return client_address(settings, headers, peer[0] if peer else None)
+    return headers, peer[0] if peer else None
+
+
+def _client(scope: Scope, settings: Settings) -> str | None:
+    """The member's address when the proxy vouches for it, as on audit rows."""
+    headers, peer = _headers_and_peer(scope)
+    return client_address(settings, headers, peer)
+
+
+def _vouched_request_id(scope: Scope, settings: Settings, header_name: bytes) -> str | None:
+    """The proxy's request id, or ``None`` when the proxy did not send this request.
+
+    nginx overwrites the header so a caller cannot choose the id an audit row
+    carries; a request that reaches the app without the proxy's credential
+    could otherwise choose it here.
+    """
+    headers, peer = _headers_and_peer(scope)
+    if not is_vouched_for_by_proxy(settings, headers, peer):
+        return None
+    return _header_value(scope, header_name)
 
 
 def _log_access(scope: Scope, settings: Settings, status_code: int, started: float) -> None:
@@ -128,7 +146,7 @@ class RequestContextMiddleware:
             await self.app(scope, receive, send)
             return
 
-        incoming = _header_value(scope, self._header_name)
+        incoming = _vouched_request_id(scope, self.settings, self._header_name)
         # An inbound id is echoed for correlation but never trusted as
         # structure: it lands in logs, so bound its length and character set.
         request_id = _sanitise_request_id(incoming) or uuid.uuid4().hex

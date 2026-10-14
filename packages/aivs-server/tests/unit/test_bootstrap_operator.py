@@ -145,6 +145,23 @@ async def test_a_forged_certificate_refuses_the_whole_bootstrap(session, setting
     assert await _count(session, Operator) == 0
 
 
+async def test_org_admin_is_refused_at_the_hosting_isac(session, secret_box, make_org):
+    """A member firm's role grants nothing at the ISAC; an inert grant reads as real."""
+    isac = await make_org("hosting-isac", org_type=OrgType.ADMIN)
+
+    with pytest.raises(OperatorError, match="member firm's role"):
+        await create_operator(
+            session,
+            None,
+            organisation=isac,
+            email="admin@isac.test",
+            display_name="Admin",
+            password=TEST_OPERATOR_PASSWORD,
+            roles=[OperatorRole.ORG_ADMIN],
+            secret_box=secret_box,
+        )
+
+
 async def test_isac_roles_are_refused_at_a_member_firm_and_member_roles_are_not(
     session, secret_box, make_org
 ):

@@ -187,8 +187,18 @@ def is_isac_staff(ctx: AuthContext) -> bool:
 
 
 def is_org_admin(ctx: AuthContext) -> bool:
-    """Return whether the caller may administer their own organisation."""
-    return is_active(ctx) and OperatorRole.ORG_ADMIN in ctx.operator_roles
+    """Return whether the caller may administer their own organisation.
+
+    A member firm's role. At the hosting ISAC it grants nothing: the admin
+    organisation's certificates and webhooks are ISAC powers, held through
+    the ISAC roles, and an ``org_admin`` there could otherwise cut every
+    staff certificate or register a new one with no ISAC role at all.
+    """
+    return (
+        is_active(ctx)
+        and ctx.org_type is not OrgType.ADMIN
+        and OperatorRole.ORG_ADMIN in ctx.operator_roles
+    )
 
 
 def can_acknowledge_own_submission(ctx: AuthContext) -> bool:

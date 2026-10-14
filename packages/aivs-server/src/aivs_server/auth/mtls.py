@@ -52,6 +52,7 @@ __all__ = [
     "MtlsError",
     "client_address",
     "extract_client_certificate",
+    "is_vouched_for_by_proxy",
     "verify_issued_by",
 ]
 
@@ -148,6 +149,21 @@ def _require_trusted_proxy(
         raise CertificateRejectedError("proxy_auth_mismatch")
 
 
+def is_vouched_for_by_proxy(
+    settings: Settings, headers: Mapping[str, str], peer_ip: str | None
+) -> bool:
+    """Whether the request came from the trusted proxy, carrying its credential.
+
+    What nginx sets on such a request (``X-Real-IP``, ``X-Request-Id``) is a
+    fact; on any other request a caller chose it.
+    """
+    try:
+        _require_trusted_proxy(settings, peer_ip, headers.get(settings.header_proxy_auth))
+    except CertificateRejectedError:
+        return False
+    return True
+
+
 def client_address(
     settings: Settings, headers: Mapping[str, str], peer_ip: str | None
 ) -> str | None:
@@ -161,9 +177,7 @@ def client_address(
     anyone could have set it, and the peer -- the address actually talking to
     us -- is the honest answer. Informational only: no decision reads it.
     """
-    try:
-        _require_trusted_proxy(settings, peer_ip, headers.get(settings.header_proxy_auth))
-    except CertificateRejectedError:
+    if not is_vouched_for_by_proxy(settings, headers, peer_ip):
         return peer_ip
     forwarded = headers.get(settings.header_real_ip, "").strip()
     try:

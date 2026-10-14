@@ -87,6 +87,10 @@ _CLIENT_ERRORS = (
     ExtensionValidationError,
     UnknownExtensionError,
 )
+# Routes commit inside their try (CLAUDE.md section 5). Only create and amend
+# write what the caller sent, so only they map STORAGE_ERRORS to 400. The
+# workflow verbs write a reason the schema bounds and rows built from stored
+# content, so a database error there is a server fault and is reported as one.
 
 
 async def _require_visible_submission(
@@ -267,9 +271,9 @@ async def _transition(
     submission = await _require_visible_submission(session, ctx, submission_id, for_update=True)
     try:
         await apply_transition(session, ctx, submission, target, reason=reason)
+        await session.commit()
     except _CLIENT_ERRORS as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-    await session.commit()
     await session.refresh(submission)
     return submission
 
@@ -297,9 +301,9 @@ async def submit(
             hourly_limit=settings.contribution_hourly_limit,
             now=dt.datetime.now(dt.UTC),
         )
+        await session.commit()
     except _CLIENT_ERRORS as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-    await session.commit()
     await session.refresh(submission)
     return _present(submission, ctx)
 
@@ -329,9 +333,9 @@ async def validate(
             reason=payload.reason,
             acknowledged_changes=frozenset(payload.acknowledge),
         )
+        await session.commit()
     except _CLIENT_ERRORS as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-    await session.commit()
     await session.refresh(submission)
     return _present(submission, ctx)
 
@@ -391,12 +395,11 @@ async def distribute(
             circle_ids=list(payload.circle_ids),
             visible_at=payload.release_at or dt.datetime.now(dt.UTC),
         )
+        # One commit for the visibility rows, the state change, the notifications,
+        # and the audit trail.
+        await session.commit()
     except _CLIENT_ERRORS as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-
-    # One commit for the visibility rows, the state change, the notifications,
-    # and the audit trail.
-    await session.commit()
     await session.refresh(submission)
     return _present(submission, ctx)
 

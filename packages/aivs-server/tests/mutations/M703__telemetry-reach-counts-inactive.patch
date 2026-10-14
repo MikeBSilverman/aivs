@@ -4,15 +4,13 @@ Re-applies: suspended and quarantined firms counted toward k
 Expect red: packages/aivs-server/tests/unit/test_telemetry.py::test_an_organisation_that_cannot_read_is_not_reach
 
 diff --git a/packages/aivs-server/src/aivs_server/services/telemetry.py b/packages/aivs-server/src/aivs_server/services/telemetry.py
-index c80bbb8..60958fd 100644
 --- a/packages/aivs-server/src/aivs_server/services/telemetry.py
 +++ b/packages/aivs-server/src/aivs_server/services/telemetry.py
-@@ -111,7 +111,7 @@ def _reach_count(reach: int) -> Count:
- def _is_counted(org_id: Any, submitter_org_id: uuid.UUID) -> Any:
-     """Organisations that count: active, not the submitter, not the ISAC itself."""
-     counted = select(Organization.id).where(
--        Organization.org_type != OrgType.ADMIN, Organization.status == OrgStatus.ACTIVE
-+        Organization.org_type != OrgType.ADMIN
+@@ -119,7 +119,6 @@ def counted_organisations() -> Select[tuple[uuid.UUID]]:
+     """
+     return select(Organization.id).where(
+         Organization.org_type.not_in(tuple(ISAC_OWNER_TYPES)),
+-        Organization.status == OrgStatus.ACTIVE,
      )
-     return and_(org_id != submitter_org_id, org_id.in_(counted))
+ 
  

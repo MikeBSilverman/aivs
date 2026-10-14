@@ -37,7 +37,12 @@ from aivs_server.services.contributions import (
     TargetNotFoundError,
     contribute,
 )
-from aivs_server.services.posture import own_posture, posture_summary, record_posture
+from aivs_server.services.posture import (
+    own_posture,
+    own_postures,
+    posture_summary,
+    record_posture,
+)
 from aivs_server.services.proxy_filing import confirm_proxy_filing, file_on_behalf
 from aivs_server.services.submissions import STORAGE_ERRORS, SubmissionError, load_submission
 
@@ -73,6 +78,9 @@ class ContributionOut(BaseModel):
 
 
 class PostureIn(_In):
+    #: In the body, never the path: request lines are logged with the caller's
+    #: identity and forwarded off the platform (SF-70).
+    vulnerability: Annotated[str, Field(min_length=1, max_length=100)]
     #: The one-click's default: never ``affected`` unless the member says so.
     status: PostureStatus = PostureStatus.UNDER_INVESTIGATION
     detection_deployed: bool = False
@@ -167,16 +175,14 @@ async def one_click(
 # ---------------------------------------------------------------------------
 # Posture
 # ---------------------------------------------------------------------------
-@router.put("/vulnerabilities/{stix_id}/posture", response_model=PostureOut)
-async def set_posture(
-    stix_id: str, payload: PostureIn, ctx: AuthenticatedContext, session: SessionDep
-) -> Any:
+@router.put("/postures", response_model=PostureOut)
+async def set_posture(payload: PostureIn, ctx: AuthenticatedContext, session: SessionDep) -> Any:
     """Set this organisation's posture on a vulnerability it can see. Private to it."""
     try:
         row = await record_posture(
             session,
             ctx,
-            vulnerability_id=stix_id,
+            vulnerability_id=payload.vulnerability,
             status=payload.status,
             detection_deployed=payload.detection_deployed,
             now=dt.datetime.now(dt.UTC),
@@ -186,6 +192,12 @@ async def set_posture(
         raise _NOT_FOUND from None
     await session.refresh(row)
     return row
+
+
+@router.get("/postures", response_model=list[PostureOut])
+async def list_postures(ctx: AuthenticatedContext, session: SessionDep) -> Any:
+    """This organisation's own postures. Nobody else's, whoever asks."""
+    return await own_postures(session, ctx)
 
 
 @router.get("/postures/{posture_id}", response_model=PostureOut)
@@ -201,10 +213,16 @@ async def get_posture(posture_id: uuid.UUID, ctx: AuthenticatedContext, session:
 async def get_posture_summary(
     stix_id: str, ctx: AuthenticatedContext, session: SessionDep
 ) -> PostureSummaryOut:
-    """Counts per status for the ISAC's reviewers, each withheld below k."""
+    """Counts per status for the ISAC's reviewers, each withheld below k.
+
+    The id may sit in this path: the caller is the ISAC, and the request says
+    nothing about any member.
+    """
     if not can_review_submissions(ctx):
         raise _NOT_FOUND
     summary = await posture_summary(session, stix_id)
+    if summary is None:
+        raise _NOT_FOUND
     return PostureSummaryOut(
         vulnerability=stix_id,
         total=CountOut(value=summary.total.value, withheld=summary.total.withheld),

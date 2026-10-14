@@ -8,18 +8,23 @@ row gets -- and the ISAC sees counts, each withheld below k.
 
 from __future__ import annotations
 
+import asyncio
+import datetime as dt
 import uuid
 from typing import Any
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import func, select
 
-from aivs_schemas.enums import PostureStatus
+from aivs_schemas.enums import CircleRole, OrgStatus, PostureStatus
 from aivs_server.audit.log import AuditAction
-from aivs_server.db.models import AuditLog
-from aivs_server.services.posture import _suppress
+from aivs_server.auth.context import AuthContext, AuthMethod, CircleGrant, MembershipInterval
+from aivs_server.db.models import AuditLog, OrgPosture
+from aivs_server.services.posture import _suppress, record_posture
 from aivs_server.services.telemetry import K_ANONYMITY
+from tests.authz_matrix.test_authz_matrix import walk_routes
 from tests.conftest import proxy_headers
+from tests.unit.contribution_world import STAMP, seed
 from tests.unit.sharing_world import API, SharingWorld, build_sharing_world
 
 pytestmark = pytest.mark.db
@@ -52,9 +57,26 @@ async def world(
     )
 
 
+async def seed_visible_indicator(session, world) -> str:
+    """An indicator in the circle: an object the member can read that is not a vulnerability."""
+    stix_id = f"indicator--{uuid.uuid4()}"
+    raw = {
+        "type": "indicator",
+        "spec_version": "2.1",
+        "id": stix_id,
+        "created": STAMP,
+        "modified": STAMP,
+        "pattern": "[file:name = 'agent.so']",
+        "pattern_type": "stix",
+        "valid_from": STAMP,
+    }
+    await seed(session, world.isac_org, raw, circle=world.circle)
+    return stix_id
+
+
 async def set_posture(client, headers, vulnerability: str, **body: Any):
     return await client.put(
-        f"{API}/vulnerabilities/{vulnerability}/posture", json=body, headers=headers
+        f"{API}/postures", json={"vulnerability": vulnerability, **body}, headers=headers
     )
 
 
@@ -115,10 +137,95 @@ async def test_a_posture_on_a_vulnerability_the_member_cannot_see_reads_as_absen
     assert hidden.text == absent.text
 
 
-async def test_a_posture_is_on_a_vulnerability_only(client, world):
-    response = await set_posture(client, world.member.person, f"indicator--{uuid.uuid4()}")
+async def test_a_posture_is_on_a_vulnerability_only(client, session, world):
+    """Refused for an object the member *can* read, so the type check is what refuses."""
+    indicator = await seed_visible_indicator(session, world)
+
+    response = await set_posture(client, world.member.person, indicator)
 
     assert response.status_code == 404
+    assert await session.scalar(select(func.count()).select_from(OrgPosture)) == 0
+
+
+@pytest.mark.requirement("SF-70")
+async def test_a_member_lists_its_own_postures_and_nobody_elses(client, world):
+    mine = await set_posture(client, world.member.person, world.published)
+    await set_posture(client, world.reader.person, world.published, status="affected")
+
+    listed = await client.get(f"{API}/postures", headers=world.member.machine)
+    by_isac = await client.get(f"{API}/postures", headers=world.editor)
+
+    assert [row["id"] for row in listed.json()] == [mine.json()["id"]]
+    assert by_isac.status_code == 200
+    assert by_isac.json() == []
+
+
+@pytest.mark.requirement("SF-70")
+def test_no_member_posture_route_carries_a_vulnerability_id_in_its_path(app):
+    """Request lines are logged with the caller's identity and leave the platform.
+
+    "Firm X wrote a posture on V at t", beside the summary read before and
+    after, is the status. Only the ISAC's summary may name a vulnerability in
+    its path: the ISAC is the caller there, and it says nothing of a member.
+    """
+    posture_paths = {path for path, _method in walk_routes(app.routes) if "posture" in path}
+
+    member_paths = posture_paths - {"/api/v1/vulnerabilities/{stix_id}/posture-summary"}
+    assert member_paths == {"/api/v1/postures", "/api/v1/postures/{posture_id}"}
+
+
+@pytest.mark.requirement("SF-70")
+async def test_two_first_writes_of_one_posture_make_one_row(world, open_session):
+    """The second first write waits for the first, then updates its row.
+
+    It used to find no row, insert one, and meet ``uq_org_postures_org_vuln``
+    as a 500 once the first committed.
+    """
+    ctx = _member_context(world)
+    now = dt.datetime.now(dt.UTC)
+    first, second = open_session(), open_session()
+    winner = await record_posture(
+        first,
+        ctx,
+        vulnerability_id=world.published,
+        status=PostureStatus.UNDER_INVESTIGATION,
+        detection_deployed=False,
+        now=now,
+    )
+    loser = asyncio.create_task(
+        record_posture(
+            second,
+            ctx,
+            vulnerability_id=world.published,
+            status=PostureStatus.AFFECTED,
+            detection_deployed=True,
+            now=now,
+        )
+    )
+    await asyncio.sleep(0.3)
+    assert not loser.done(), "the second write must wait for the first, not race past it"
+
+    await first.commit()
+    updated = await loser
+    await second.commit()
+
+    assert updated.id == winner.id
+    assert updated.status is PostureStatus.AFFECTED
+
+
+def _member_context(world) -> AuthContext:
+    member = world.member.org
+    grant = CircleGrant(
+        CircleRole.CONTRIBUTOR, (MembershipInterval(dt.datetime(2000, 1, 1, tzinfo=dt.UTC)),)
+    )
+    return AuthContext(
+        org_id=member.id,
+        org_slug=member.slug,
+        org_type=member.org_type,
+        org_status=OrgStatus.ACTIVE,
+        auth_method=AuthMethod.MTLS,
+        circles={world.circle.id: grant},
+    )
 
 
 @pytest.mark.requirement("SF-70")
@@ -182,6 +289,33 @@ async def test_below_k_the_isac_sees_nothing(client, world, make_org, make_cert,
 async def test_the_counts_are_for_the_isacs_reviewers_only(client, world):
     for headers in (world.member.person, world.reader.person):
         assert (await _summary(client, headers, world.published)).status_code == 404
+
+
+@pytest.mark.requirement("SF-70")
+async def test_the_isacs_own_posture_does_not_count_toward_k(
+    client, world, make_org, make_cert, join_circle, isac
+):
+    """k-1 members and the ISAC are k rows and k-1 firms: still withheld."""
+    await join_circle(world.isac_org, world.circle)
+    _isac_org, editor = isac
+    assert (await set_posture(client, editor, world.published)).status_code == 200
+    await _members_with_posture(
+        world, client, make_org, make_cert, join_circle, ["affected"] * (K_ANONYMITY - 1)
+    )
+
+    summary = (await _summary(client, world.editor, world.published)).json()
+
+    assert summary["total"]["value"] is None
+    assert {count["value"] for count in summary["by_status"].values()} == {None}
+
+
+@pytest.mark.requirement("SF-70")
+async def test_counts_are_only_for_a_distributed_vulnerability(client, session, world):
+    """The pair is ``world.published``, which answers 200 above."""
+    indicator = await seed_visible_indicator(session, world)
+
+    for stix_id in (f"vulnerability--{uuid.uuid4()}", indicator):
+        assert (await _summary(client, world.editor, stix_id)).status_code == 404
 
 
 def test_a_small_count_is_withheld_and_so_is_the_total_that_would_reveal_it():

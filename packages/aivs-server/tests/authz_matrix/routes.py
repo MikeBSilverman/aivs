@@ -382,9 +382,15 @@ ROUTES: tuple[RouteCase, ...] = (
     ),
     RouteCase(
         "PUT",
-        "/api/v1/vulnerabilities/{stix_id}/posture",
+        "/api/v1/postures",
         RouteClass.CONTENT_RESPONSE,
-        lambda world: (f"{API}/vulnerabilities/{world.object_stix_id}/posture", {}),
+        lambda world: (f"{API}/postures", {"vulnerability": world.object_stix_id}),
+    ),
+    RouteCase(
+        "GET",
+        "/api/v1/postures",
+        RouteClass.LISTING,
+        lambda _world: (f"{API}/postures", None),
     ),
     RouteCase(
         "GET",

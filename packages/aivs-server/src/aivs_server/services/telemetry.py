@@ -33,10 +33,10 @@ import uuid
 from dataclasses import dataclass
 from typing import Any, Final
 
-from sqlalchemy import and_, distinct, func, or_, select
+from sqlalchemy import Select, and_, distinct, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from aivs_schemas.enums import AckType, OrgStatus, OrgType
+from aivs_schemas.enums import AckType, OrgStatus
 from aivs_server.db.models import (
     Acknowledgment,
     CircleMembership,
@@ -47,12 +47,14 @@ from aivs_server.db.models import (
     Webhook,
     WebhookDelivery,
 )
+from aivs_server.services.ownership import ISAC_OWNER_TYPES
 
 __all__ = [
     "EVENT_SUBMISSION_TELEMETRY",
     "K_ANONYMITY",
     "Count",
     "Telemetry",
+    "counted_organisations",
     "queue_milestones",
     "submission_telemetry",
 ]
@@ -108,12 +110,22 @@ def _reach_count(reach: int) -> Count:
     return Count(reach)
 
 
-def _is_counted(org_id: Any, submitter_org_id: uuid.UUID) -> Any:
-    """Organisations that count: active, not the submitter, not the ISAC itself."""
-    counted = select(Organization.id).where(
-        Organization.org_type != OrgType.ADMIN, Organization.status == OrgStatus.ACTIVE
+def counted_organisations() -> Select[tuple[uuid.UUID]]:
+    """The organisations a k-anonymous count may count: active members, never the ISAC.
+
+    A count is about members. The ISAC's own row, or its automation's, would
+    let K describe one member fewer than it says; so would an inactive
+    organisation, which cannot read. Posture's summary counts through this too.
+    """
+    return select(Organization.id).where(
+        Organization.org_type.not_in(tuple(ISAC_OWNER_TYPES)),
+        Organization.status == OrgStatus.ACTIVE,
     )
-    return and_(org_id != submitter_org_id, org_id.in_(counted))
+
+
+def _is_counted(org_id: Any, submitter_org_id: uuid.UUID) -> Any:
+    """Organisations that count here: those that may be counted, other than the submitter."""
+    return and_(org_id != submitter_org_id, org_id.in_(counted_organisations()))
 
 
 async def _reach(session: AsyncSession, submission: Submission) -> int:

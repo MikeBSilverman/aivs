@@ -1,0 +1,16 @@
+Mutation M609: the posture summary counts the ISAC's own posture toward k
+Re-applies: Phase E slice 4 (T7) -- every organisation counted (Phase E review)
+
+Expect red: packages/aivs-server/tests/unit/test_posture.py::test_the_isacs_own_posture_does_not_count_toward_k
+
+diff --git a/packages/aivs-server/src/aivs_server/services/posture.py b/packages/aivs-server/src/aivs_server/services/posture.py
+--- a/packages/aivs-server/src/aivs_server/services/posture.py
++++ b/packages/aivs-server/src/aivs_server/services/posture.py
+@@ -187,7 +187,6 @@ async def posture_summary(session: AsyncSession, vulnerability_id: str) -> Postu
+             select(OrgPosture.status, func.count())
+             .where(
+                 OrgPosture.vulnerability_stix_id == vulnerability_id,
+-                OrgPosture.org_id.in_(counted_organisations()),
+             )
+             .group_by(OrgPosture.status)
+         )

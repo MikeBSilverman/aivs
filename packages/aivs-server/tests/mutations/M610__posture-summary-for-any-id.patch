@@ -1,0 +1,17 @@
+Mutation M610: the posture summary answers for any id, distributed or not
+Re-applies: Phase E slice 4 (T7) -- the summary's missing bound (Phase E review)
+
+Expect red: packages/aivs-server/tests/unit/test_posture.py::test_counts_are_only_for_a_distributed_vulnerability
+
+diff --git a/packages/aivs-server/src/aivs_server/services/posture.py b/packages/aivs-server/src/aivs_server/services/posture.py
+--- a/packages/aivs-server/src/aivs_server/services/posture.py
++++ b/packages/aivs-server/src/aivs_server/services/posture.py
+@@ -180,8 +180,6 @@ async def posture_summary(session: AsyncSession, vulnerability_id: str) -> Postu
+     Only members are counted (``counted_organisations``): the ISAC's own
+     posture counted toward k would let five rows describe four firms.
+     """
+-    if not await is_distributed_vulnerability(session, vulnerability_id):
+-        return None
+     rows = (
+         await session.execute(
+             select(OrgPosture.status, func.count())

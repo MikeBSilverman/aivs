@@ -6,12 +6,12 @@ Expect red: packages/aivs-server/tests/unit/test_posture.py::test_the_counts_are
 diff --git a/packages/aivs-server/src/aivs_server/api/contributions.py b/packages/aivs-server/src/aivs_server/api/contributions.py
 --- a/packages/aivs-server/src/aivs_server/api/contributions.py
 +++ b/packages/aivs-server/src/aivs_server/api/contributions.py
-@@ -202,8 +202,6 @@
-     stix_id: str, ctx: AuthenticatedContext, session: SessionDep
- ) -> PostureSummaryOut:
-     """Counts per status for the ISAC's reviewers, each withheld below k."""
+@@ -218,8 +218,6 @@ async def get_posture_summary(
+     The id may sit in this path: the caller is the ISAC, and the request says
+     nothing about any member.
+     """
 -    if not can_review_submissions(ctx):
 -        raise _NOT_FOUND
      summary = await posture_summary(session, stix_id)
-     return PostureSummaryOut(
-         vulnerability=stix_id,
+     if summary is None:
+         raise _NOT_FOUND

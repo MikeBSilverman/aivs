@@ -193,7 +193,7 @@ class _Seeder:
 
     async def posture(self, stix_id: str) -> uuid.UUID:
         response = await self.client.put(
-            f"/api/v1/vulnerabilities/{stix_id}/posture", json={}, headers=self.member
+            "/api/v1/postures", json={"vulnerability": stix_id}, headers=self.member
         )
         assert response.status_code == 200, response.text
         return uuid.UUID(response.json()["id"])

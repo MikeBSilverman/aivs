@@ -1,0 +1,18 @@
+Mutation M03: readers take the publication lock exclusively, serialising every page
+Re-applies: 80cdce4 "Serialise publications so date_added order is commit order"
+
+Expect red: packages/aivs-server/tests/unit/test_publication_lock.py::test_a_paging_read_proceeds_when_nothing_is_in_flight
+Expect red: packages/aivs-server/tests/unit/test_publication_guards.py::test_a_taxii_page_waits_for_an_open_publication_and_not_otherwise
+
+diff --git a/packages/aivs-server/src/aivs_server/services/publication.py b/packages/aivs-server/src/aivs_server/services/publication.py
+--- a/packages/aivs-server/src/aivs_server/services/publication.py
++++ b/packages/aivs-server/src/aivs_server/services/publication.py
+@@ -105,7 +105,7 @@
+     read's transaction ends.
+     """
+     await session.execute(
+-        text("SELECT pg_advisory_xact_lock_shared(:key)"), {"key": _PUBLICATION_LOCK_KEY}
++        text("SELECT pg_advisory_xact_lock(:key)"), {"key": _PUBLICATION_LOCK_KEY}
+     )
+ 
+ 

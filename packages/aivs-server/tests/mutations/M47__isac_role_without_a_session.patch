@@ -1,0 +1,26 @@
+Mutation M47: an ISAC role is honoured on a context that is not a signed-in human session
+Re-applies: the session term of _isac_human, which no test pinned until the mutation run found it (M30's first form survived)
+
+Expect red: packages/aivs-server/tests/unit/test_policy.py::test_isac_roles_on_a_non_session_context_confer_nothing[is_system_admin]
+Expect red: packages/aivs-server/tests/unit/test_policy.py::test_isac_roles_on_a_non_session_context_confer_nothing[is_isac_editor]
+Expect red: packages/aivs-server/tests/unit/test_policy.py::test_isac_roles_on_a_non_session_context_confer_nothing[is_isac_membership]
+Expect red: packages/aivs-server/tests/unit/test_policy.py::test_isac_roles_on_a_non_session_context_confer_nothing[can_review_submissions]
+Expect red: packages/aivs-server/tests/unit/test_policy.py::test_isac_roles_on_a_non_session_context_confer_nothing[can_change_embargo]
+Expect red: packages/aivs-server/tests/unit/test_policy.py::test_isac_roles_on_a_non_session_context_confer_nothing[can_reveal_submitter]
+Expect red: packages/aivs-server/tests/unit/test_policy.py::test_isac_roles_on_a_non_session_context_confer_nothing[can_pause_distribution]
+Expect red: packages/aivs-server/tests/unit/test_policy.py::test_isac_roles_on_a_non_session_context_confer_nothing[can_resume_distribution]
+Expect red: packages/aivs-server/tests/unit/test_policy.py::test_isac_roles_on_a_non_session_context_confer_nothing[can_reconnect_org]
+Expect red: packages/aivs-server/tests/unit/test_policy.py::test_isac_roles_on_a_non_session_context_confer_nothing[can_view_instance_status]
+
+diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs-server/src/aivs_server/auth/policy.py
+index 9dcb2c8..770d745 100644
+--- a/packages/aivs-server/src/aivs_server/auth/policy.py
++++ b/packages/aivs-server/src/aivs_server/auth/policy.py
+@@ -138,7 +138,6 @@ def _isac_human(ctx: AuthContext, role: OperatorRole) -> bool:
+     return (
+         is_active(ctx)
+         and ctx.org_type is OrgType.ADMIN
+-        and ctx.auth_method is AuthMethod.PORTAL_SESSION
+         and role in ctx.operator_roles
+     )
+ 

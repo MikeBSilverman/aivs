@@ -1,0 +1,16 @@
+Mutation M16: removing a member does not serialise with an addition to the same circle
+Re-applies: cc3550c "Serialise membership changes per circle, and lock certificate revocation"
+
+Expect red: packages/aivs-server/tests/unit/test_membership_locks.py::test_a_removal_waits_for_an_open_addition_to_the_same_circle_only
+
+diff --git a/packages/aivs-server/src/aivs_server/services/circles.py b/packages/aivs-server/src/aivs_server/services/circles.py
+--- a/packages/aivs-server/src/aivs_server/services/circles.py
++++ b/packages/aivs-server/src/aivs_server/services/circles.py
+@@ -249,7 +249,6 @@
+     gap stays unreadable while the earlier interval's content does not vanish.
+     Recorded as an operator's act, which the rule will not undo.
+     """
+-    await _lock_circle(session, circle_id)
+     membership = (
+         await session.execute(
+             select(CircleMembership)

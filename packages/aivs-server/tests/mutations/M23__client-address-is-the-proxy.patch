@@ -1,0 +1,17 @@
+Mutation M23: the recorded address is the TCP peer, which behind nginx is always nginx
+Re-applies: 5dd9abb "Record the member's address, not the proxy's, and add the first abuse scenarios"
+
+Expect red: packages/aivs-server/tests/abuse/test_platform_abuse.py::test_a_probe_burst_is_attributed_to_the_prober_not_to_the_proxy
+
+diff --git a/packages/aivs-server/src/aivs_server/auth/mtls.py b/packages/aivs-server/src/aivs_server/auth/mtls.py
+--- a/packages/aivs-server/src/aivs_server/auth/mtls.py
++++ b/packages/aivs-server/src/aivs_server/auth/mtls.py
+@@ -167,7 +167,7 @@
+         return peer_ip
+     forwarded = headers.get(settings.header_real_ip, "").strip()
+     try:
+-        return str(ipaddress.ip_address(forwarded))
++        return str(ipaddress.ip_address(peer_ip))
+     except ValueError:
+         return peer_ip
+ 

@@ -1,0 +1,17 @@
+Mutation M36: the hosting ISAC's own organisation can be quarantined, locking out every ISAC credential
+Re-applies: 9b251a9 "Close the identity-lifecycle findings from the Phase A review"
+
+Expect red: packages/aivs-server/tests/unit/test_lifecycle_guards.py::test_the_isac_cannot_lock_itself_out_and_can_act_on_a_member
+
+diff --git a/packages/aivs-server/src/aivs_server/services/quarantine.py b/packages/aivs-server/src/aivs_server/services/quarantine.py
+--- a/packages/aivs-server/src/aivs_server/services/quarantine.py
++++ b/packages/aivs-server/src/aivs_server/services/quarantine.py
+@@ -114,7 +114,7 @@
+ 
+ async def _cut_off(session: AsyncSession, organisation: Organization, now: dt.datetime) -> int:
+     """Refuse what may not be quarantined, else revoke everything. Returns certificates revoked."""
+-    if organisation.org_type is OrgType.ADMIN:
++    if False:
+         # It would revoke every ISAC credential, and reconnection needs an ISAC
+         # human: only SQL could undo it. The instance-wide stop is the pause.
+         msg = (

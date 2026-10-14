@@ -1,0 +1,16 @@
+Mutation M10: pressing pause returns while a publication is still being written
+Re-applies: ce63344 "Make the pause wait for a publication already under way"
+
+Expect red: packages/aivs-server/tests/unit/test_publication_guards.py::test_a_pause_waits_for_a_publication_already_under_way
+
+diff --git a/packages/aivs-server/src/aivs_server/services/instance.py b/packages/aivs-server/src/aivs_server/services/instance.py
+--- a/packages/aivs-server/src/aivs_server/services/instance.py
++++ b/packages/aivs-server/src/aivs_server/services/instance.py
+@@ -52,7 +52,6 @@
+     the audit trail recorded a distribution after the stop button. Same lock
+     order as every writer (advisory lock, then the controls row).
+     """
+-    await hold_publication_lock(session, refuse_while_paused=False)
+     row = await _controls(session)
+     row.distribution_paused = True
+     row.paused_at = now

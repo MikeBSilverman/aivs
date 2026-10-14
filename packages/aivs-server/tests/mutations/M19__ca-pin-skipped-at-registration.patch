@@ -1,0 +1,18 @@
+Mutation M19: registration accepts a certificate the issuing CA did not sign
+Re-applies: 06d0d8f "Verify the issuing CA by signature, at registration and on every request"
+
+Expect red: packages/aivs-server/tests/unit/test_issuing_ca_pin.py::test_registration_refuses_a_forgery_and_accepts_the_genuine
+
+diff --git a/packages/aivs-server/src/aivs_server/services/certificates.py b/packages/aivs-server/src/aivs_server/services/certificates.py
+--- a/packages/aivs-server/src/aivs_server/services/certificates.py
++++ b/packages/aivs-server/src/aivs_server/services/certificates.py
+@@ -45,8 +45,7 @@
+     if certificate.not_valid_after_utc <= now:
+         msg = "Certificate has already expired"
+         raise CertificateRegistrationError(msg)
+-    if issuing_ca is None:
+-        return
++    return
+     try:
+         verify_issued_by(certificate, issuing_ca)
+     except CertificateRejectedError as exc:

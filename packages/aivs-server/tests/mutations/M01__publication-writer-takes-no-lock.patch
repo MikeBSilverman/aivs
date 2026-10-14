@@ -1,0 +1,18 @@
+Mutation M01: writers publish without the exclusive publication lock
+Re-applies: 80cdce4 "Serialise publications so date_added order is commit order"
+
+Expect red: packages/aivs-server/tests/unit/test_publication_lock.py::test_a_second_distribution_waits_for_the_first_to_commit
+
+diff --git a/packages/aivs-server/src/aivs_server/services/publication.py b/packages/aivs-server/src/aivs_server/services/publication.py
+--- a/packages/aivs-server/src/aivs_server/services/publication.py
++++ b/packages/aivs-server/src/aivs_server/services/publication.py
+@@ -82,9 +82,6 @@
+     timer that passed during the pause opens at once on resume (Mike, end of
+     Phase A).
+     """
+-    await session.execute(
+-        text("SELECT pg_advisory_xact_lock(:key)"), {"key": _PUBLICATION_LOCK_KEY}
+-    )
+     if not refuse_while_paused:
+         return
+     # Checked under the lock, so a pause that commits while a writer waits is

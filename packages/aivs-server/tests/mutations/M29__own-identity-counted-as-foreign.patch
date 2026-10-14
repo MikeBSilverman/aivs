@@ -1,0 +1,16 @@
+Mutation M29: a member's own registered identity is refused as if it were a peer's
+Re-applies: 99ef2a6 "Refuse identity objects that use another organisation's registered identifier"
+
+Expect red: packages/aivs-server/tests/unit/test_submission_workflow.py::test_a_member_may_carry_its_own_identity
+
+diff --git a/packages/aivs-server/src/aivs_server/services/submissions.py b/packages/aivs-server/src/aivs_server/services/submissions.py
+--- a/packages/aivs-server/src/aivs_server/services/submissions.py
++++ b/packages/aivs-server/src/aivs_server/services/submissions.py
+@@ -265,7 +265,6 @@
+         await session.execute(
+             select(Organization.stix_identity_id).where(
+                 func.lower(Organization.stix_identity_id).in_(claimed),
+-                Organization.id != submitter_org_id,
+             )
+         )
+     ).scalars()

@@ -1,0 +1,17 @@
+Mutation M18: the CA pin is checked at registration but not on every request
+Re-applies: 06d0d8f "Verify the issuing CA by signature, at registration and on every request"
+
+Expect red: packages/aivs-server/tests/unit/test_issuing_ca_pin.py::test_a_registered_forgery_cannot_authenticate
+
+diff --git a/packages/aivs-server/src/aivs_server/auth/mtls.py b/packages/aivs-server/src/aivs_server/auth/mtls.py
+--- a/packages/aivs-server/src/aivs_server/auth/mtls.py
++++ b/packages/aivs-server/src/aivs_server/auth/mtls.py
+@@ -286,8 +286,6 @@
+     # Before any database lookup: a certificate this instance did not issue
+     # never reaches a query, whatever the proxy said about it.
+     issuing_ca = settings.issuing_ca_certificate
+-    if issuing_ca is not None:
+-        verify_issued_by(certificate, issuing_ca)
+     _check_validity_window(certificate, now)
+ 
+     fingerprint = certificate.fingerprint(hashes.SHA256()).hex()

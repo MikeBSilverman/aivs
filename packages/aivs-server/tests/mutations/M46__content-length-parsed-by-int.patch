@@ -1,0 +1,21 @@
+Mutation M46: any string int() accepts is taken as a Content-Length (-1, +10, 1_0)
+Re-applies: d0a7bde "Refuse a Content-Length that is not plain digits"
+
+Expect red: packages/aivs-server/tests/unit/test_body_limit.py::test_declared_length_that_is_not_plain_digits_is_refused
+
+diff --git a/packages/aivs-server/src/aivs_server/middleware.py b/packages/aivs-server/src/aivs_server/middleware.py
+--- a/packages/aivs-server/src/aivs_server/middleware.py
++++ b/packages/aivs-server/src/aivs_server/middleware.py
+@@ -216,9 +216,10 @@
+     """
+     if declared is None:
+         return None
+-    if not (declared.isascii() and declared.isdigit()):
++    try:
++        declared_bytes = int(declared)
++    except ValueError:
+         return 400, "Malformed Content-Length header"
+-    declared_bytes = int(declared)
+     if declared_bytes > max_bytes:
+         return 413, "Request body too large"
+     return None

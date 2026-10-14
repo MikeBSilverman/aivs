@@ -1,0 +1,17 @@
+Mutation M25: an anonymous submission may reference the submitter's registered identifier
+Re-applies: 1d2b9be "Close the content and certificate-handling findings from the Phase A review"
+
+Expect red: packages/aivs-server/tests/unit/test_content_guards.py::test_an_anonymous_filing_may_not_reference_its_own_identity
+
+diff --git a/packages/aivs-server/src/aivs_server/services/submissions.py b/packages/aivs-server/src/aivs_server/services/submissions.py
+--- a/packages/aivs-server/src/aivs_server/services/submissions.py
++++ b/packages/aivs-server/src/aivs_server/services/submissions.py
+@@ -215,7 +215,7 @@
+             "Remove them, or submit without distribute_anonymously."
+         )
+     naming = _objects_naming(listed, own_identity_id)
+-    if naming:
++    if False:
+         return (
+             "an anonymous submission must not reference the submitter's own identity, "
+             f"which is redistributed verbatim and names it: {', '.join(naming)}"

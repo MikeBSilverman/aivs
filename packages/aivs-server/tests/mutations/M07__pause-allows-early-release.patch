@@ -1,0 +1,17 @@
+Mutation M07: releasing an embargo early is allowed while distribution is paused
+Re-applies: 67fccb8 "Allow extending an embargo while distribution is paused"
+
+Expect red: packages/aivs-server/tests/unit/test_publication_guards.py::test_a_pause_still_allows_moving_an_embargo_later_and_nothing_sooner
+
+diff --git a/packages/aivs-server/src/aivs_server/services/embargo.py b/packages/aivs-server/src/aivs_server/services/embargo.py
+--- a/packages/aivs-server/src/aivs_server/services/embargo.py
++++ b/packages/aivs-server/src/aivs_server/services/embargo.py
+@@ -126,7 +126,7 @@
+     Safe in the direction it moves. See the module docstring.
+     """
+     # Before the clock is read: see services.publication.
+-    await hold_publication_lock(session, refuse_while_paused=True)
++    await hold_publication_lock(session, refuse_while_paused=False)
+     now = now or dt.datetime.now(dt.UTC)
+     # The next millisecond, not this one. A released row keeps the `seq` it was
+     # given when it was *distributed*, which is necessarily lower than that of

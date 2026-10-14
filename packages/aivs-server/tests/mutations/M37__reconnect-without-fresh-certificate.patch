@@ -1,0 +1,17 @@
+Mutation M37: reconnection is allowed with no certificate registered since the quarantine
+Re-applies: 28c0257 "Add quarantine: cut a member off during an incident, reconnect on fresh credentials"
+
+Expect red: packages/aivs-server/tests/unit/test_quarantine.py::test_reconnection_needs_a_fresh_certificate_and_never_revives_the_old
+
+diff --git a/packages/aivs-server/src/aivs_server/services/quarantine.py b/packages/aivs-server/src/aivs_server/services/quarantine.py
+--- a/packages/aivs-server/src/aivs_server/services/quarantine.py
++++ b/packages/aivs-server/src/aivs_server/services/quarantine.py
+@@ -211,7 +211,7 @@
+     if organisation.status is not OrgStatus.QUARANTINED:
+         msg = "this organisation is not quarantined"
+         raise QuarantineError(msg)
+-    if not await _has_fresh_certificate(session, organisation):
++    if False:
+         msg = (
+             "register a new certificate first: quarantine revoked every one this "
+             "organisation held, and reconnecting on none would leave it unable to "

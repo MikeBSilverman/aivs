@@ -1,0 +1,17 @@
+Mutation M41: a 404 for an id the caller cannot see is not recorded, so walking identifiers goes unseen
+Re-applies: f04bb1f "Name who was refused, audit refused lookups, and add the last two Phase A rules"
+
+Expect red: packages/aivs-server/tests/unit/test_refusal_audit.py::test_a_lookup_of_an_invisible_id_is_recorded_and_an_unknown_path_is_not
+
+diff --git a/packages/aivs-server/src/aivs_server/main.py b/packages/aivs-server/src/aivs_server/main.py
+--- a/packages/aivs-server/src/aivs_server/main.py
++++ b/packages/aivs-server/src/aivs_server/main.py
+@@ -305,7 +305,7 @@
+         guard keeps a future public route from writing actorless rows.
+         """
+         ctx = getattr(request.state, "auth_context", None)
+-        if exc.status_code == status.HTTP_404_NOT_FOUND and ctx is not None:
++        if False:
+             await record_denial(
+                 reason="not_found",
+                 action=AuditAction.ACCESS_NOT_FOUND,

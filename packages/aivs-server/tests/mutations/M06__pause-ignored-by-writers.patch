@@ -1,0 +1,18 @@
+Mutation M06: writers ignore the pause
+Re-applies: eaa73db "Add the incident stop button: pause all distribution, and serve nothing while paused"
+
+Expect red: packages/aivs-server/tests/unit/test_pause_distribution.py::test_distribution_is_refused_while_paused_and_works_after
+Expect red: packages/aivs-server/tests/unit/test_publication_guards.py::test_a_paused_instance_releases_and_announces_nothing
+
+diff --git a/packages/aivs-server/src/aivs_server/services/publication.py b/packages/aivs-server/src/aivs_server/services/publication.py
+--- a/packages/aivs-server/src/aivs_server/services/publication.py
++++ b/packages/aivs-server/src/aivs_server/services/publication.py
+@@ -92,7 +92,7 @@
+     paused = await session.scalar(
+         select(InstanceControl.distribution_paused).where(InstanceControl.id == 1)
+     )
+-    if paused:
++    if False:
+         msg = "distribution is paused instance-wide"
+         raise PublicationPausedError(msg)
+ 

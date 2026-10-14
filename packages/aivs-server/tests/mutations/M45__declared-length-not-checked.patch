@@ -1,0 +1,17 @@
+Mutation M45: a declared Content-Length over the limit reaches the application
+Re-applies: ae50ef0 "Test the request-body size limit, which nothing exercised"
+
+Expect red: packages/aivs-server/tests/unit/test_body_limit.py::test_declared_length_over_limit_is_refused_before_the_application_runs
+
+diff --git a/packages/aivs-server/src/aivs_server/middleware.py b/packages/aivs-server/src/aivs_server/middleware.py
+--- a/packages/aivs-server/src/aivs_server/middleware.py
++++ b/packages/aivs-server/src/aivs_server/middleware.py
+@@ -219,7 +219,7 @@
+     if not (declared.isascii() and declared.isdigit()):
+         return 400, "Malformed Content-Length header"
+     declared_bytes = int(declared)
+-    if declared_bytes > max_bytes:
++    if False:
+         return 413, "Request body too large"
+     return None
+ 

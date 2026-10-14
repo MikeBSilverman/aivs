@@ -1,0 +1,14 @@
+Mutation M04: date_added is stamped with the current millisecond, which a poller may already have passed
+Re-applies: ebfda69 "Close the publication-surface findings from the Phase A review"
+
+Expect red: packages/aivs-server/tests/unit/test_publication_guards.py::test_a_distribution_is_stamped_after_the_current_millisecond
+
+diff --git a/packages/aivs-server/src/aivs_server/services/publication.py b/packages/aivs-server/src/aivs_server/services/publication.py
+--- a/packages/aivs-server/src/aivs_server/services/publication.py
++++ b/packages/aivs-server/src/aivs_server/services/publication.py
+@@ -121,4 +121,4 @@
+     truncate to the same value. Early release learned this first; distribution
+     did not, until review found the same tie there.
+     """
+-    return truncate_to_taxii_precision(now) + _ONE_MILLISECOND
++    return truncate_to_taxii_precision(now)

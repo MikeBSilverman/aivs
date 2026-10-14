@@ -1,0 +1,17 @@
+Mutation M33: an ordinary read of an anonymous submission names the submitter
+Re-applies: dc038de "Withhold anonymous submitters from ordinary reads; make revealing one an audited act"
+
+Expect red: packages/aivs-server/tests/unit/test_submission_workflow.py::test_anonymous_distribution_rewrites_attribution
+
+diff --git a/packages/aivs-server/src/aivs_server/api/submissions.py b/packages/aivs-server/src/aivs_server/api/submissions.py
+--- a/packages/aivs-server/src/aivs_server/api/submissions.py
++++ b/packages/aivs-server/src/aivs_server/api/submissions.py
+@@ -119,7 +119,7 @@
+     would have been decoration.
+     """
+     out = SubmissionOut.model_validate(submission)
+-    if submission.distribute_anonymously and submission.submitter_org_id != ctx.org_id:
++    if False:
+         out = out.model_copy(update={"submitter_org_id": None})
+     return out
+ 

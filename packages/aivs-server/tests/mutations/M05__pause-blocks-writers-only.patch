@@ -1,0 +1,16 @@
+Mutation M05: the pause stops new distributions but readers still see content
+Re-applies: eaa73db "Add the incident stop button: pause all distribution, and serve nothing while paused"
+
+Expect red: packages/aivs-server/tests/unit/test_pause_distribution.py::test_pausing_withholds_everything_until_resumed
+
+diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs-server/src/aivs_server/auth/policy.py
+--- a/packages/aivs-server/src/aivs_server/auth/policy.py
++++ b/packages/aivs-server/src/aivs_server/auth/policy.py
+@@ -488,7 +488,6 @@
+         or_(*per_circle),
+         Distribution.date_added <= now,
+         Submission.state.in_(tuple(VISIBLE_SUBMISSION_STATES)),
+-        _distribution_not_paused(),
+     )
+ 
+ 

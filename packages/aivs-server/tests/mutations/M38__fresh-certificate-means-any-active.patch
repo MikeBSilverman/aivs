@@ -1,0 +1,16 @@
+Mutation M38: any active certificate counts as fresh, including one registered as the quarantine began
+Re-applies: 9b251a9 "Close the identity-lifecycle findings from the Phase A review"
+
+Expect red: packages/aivs-server/tests/unit/test_lifecycle_guards.py::test_only_a_certificate_registered_after_the_quarantine_reconnects
+
+diff --git a/packages/aivs-server/src/aivs_server/services/quarantine.py b/packages/aivs-server/src/aivs_server/services/quarantine.py
+--- a/packages/aivs-server/src/aivs_server/services/quarantine.py
++++ b/packages/aivs-server/src/aivs_server/services/quarantine.py
+@@ -144,7 +144,6 @@
+         .where(
+             ClientCertificate.org_id == organisation.id,
+             ClientCertificate.status == CertStatus.ACTIVE,
+-            ClientCertificate.created_at > organisation.quarantined_at,
+         )
+         .limit(1)
+     )

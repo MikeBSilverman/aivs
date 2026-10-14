@@ -1,0 +1,17 @@
+Mutation M43: detection alerts go to every organisation's webhooks, not only the ISAC's
+Re-applies: 3bf6757 "Detect abuse of the platform itself, and make every background job report its health"
+
+Expect red: packages/aivs-server/tests/unit/test_detections.py::test_a_finding_is_audited_logged_as_ocsf_and_cef_and_sent_to_the_isac_only
+
+diff --git a/packages/aivs-server/src/aivs_server/services/detections.py b/packages/aivs-server/src/aivs_server/services/detections.py
+--- a/packages/aivs-server/src/aivs_server/services/detections.py
++++ b/packages/aivs-server/src/aivs_server/services/detections.py
+@@ -469,7 +469,7 @@
+             await session.execute(
+                 select(Webhook)
+                 .join(Organization, Organization.id == Webhook.org_id)
+-                .where(Organization.org_type == OrgType.ADMIN, Webhook.is_active.is_(True))
++                .where(Webhook.is_active.is_(True))
+             )
+         )
+         .scalars()

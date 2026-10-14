@@ -1,0 +1,19 @@
+Mutation M22: X-Real-IP is recorded without the trusted-proxy check
+Re-applies: 5dd9abb "Record the member's address, not the proxy's, and add the first abuse scenarios"
+
+Expect red: packages/aivs-server/tests/abuse/test_platform_abuse.py::test_a_forged_client_address_is_not_believed
+
+diff --git a/packages/aivs-server/src/aivs_server/auth/mtls.py b/packages/aivs-server/src/aivs_server/auth/mtls.py
+--- a/packages/aivs-server/src/aivs_server/auth/mtls.py
++++ b/packages/aivs-server/src/aivs_server/auth/mtls.py
+@@ -161,10 +161,6 @@
+     anyone could have set it, and the peer -- the address actually talking to
+     us -- is the honest answer. Informational only: no decision reads it.
+     """
+-    try:
+-        _require_trusted_proxy(settings, peer_ip, headers.get(settings.header_proxy_auth))
+-    except CertificateRejectedError:
+-        return peer_ip
+     forwarded = headers.get(settings.header_real_ip, "").strip()
+     try:
+         return str(ipaddress.ip_address(forwarded))

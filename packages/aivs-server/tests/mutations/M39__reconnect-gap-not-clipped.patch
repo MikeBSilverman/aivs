@@ -1,0 +1,17 @@
+Mutation M39: withholding the backlog ignores an interval closed during the quarantine, which still covers part of the gap
+Re-applies: 9b251a9 "Close the identity-lifecycle findings from the Phase A review"
+
+Expect red: packages/aivs-server/tests/unit/test_lifecycle_guards.py::test_a_new_interval_reconnection_clips_an_interval_closed_during_the_quarantine
+
+diff --git a/packages/aivs-server/src/aivs_server/services/quarantine.py b/packages/aivs-server/src/aivs_server/services/quarantine.py
+--- a/packages/aivs-server/src/aivs_server/services/quarantine.py
++++ b/packages/aivs-server/src/aivs_server/services/quarantine.py
+@@ -171,7 +171,7 @@
+             await session.execute(
+                 select(CircleMembership).where(
+                     CircleMembership.org_id == organisation.id,
+-                    (CircleMembership.left_at.is_(None)) | (CircleMembership.left_at > started),
++                    CircleMembership.left_at.is_(None),
+                 )
+             )
+         )

@@ -1,0 +1,16 @@
+Mutation M40: the authenticated context is never put on request.state, so refusals are audited with no actor
+Re-applies: f04bb1f "Name who was refused, audit refused lookups, and add the last two Phase A rules"
+
+Expect red: packages/aivs-server/tests/unit/test_refusal_audit.py::test_a_forbidden_request_is_recorded_against_the_caller
+
+diff --git a/packages/aivs-server/src/aivs_server/auth/deps.py b/packages/aivs-server/src/aivs_server/auth/deps.py
+--- a/packages/aivs-server/src/aivs_server/auth/deps.py
++++ b/packages/aivs-server/src/aivs_server/auth/deps.py
+@@ -154,7 +154,6 @@
+     not be reviewed.
+     """
+     ctx = await _resolve_auth_context(request, settings, session)
+-    request.state.auth_context = ctx
+     return ctx
+ 
+ 

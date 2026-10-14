@@ -1,0 +1,19 @@
+Mutation M26: turning on anonymity without a bundle skips the check of the stored objects
+Re-applies: a1236f8 "Resolve findings from the sharded security review and OWASP 2025 assessment"
+
+Expect red: packages/aivs-server/tests/unit/test_submission_workflow.py::test_turning_on_anonymity_later_rechecks_the_stored_objects
+
+diff --git a/packages/aivs-server/src/aivs_server/services/submissions.py b/packages/aivs-server/src/aivs_server/services/submissions.py
+--- a/packages/aivs-server/src/aivs_server/services/submissions.py
++++ b/packages/aivs-server/src/aivs_server/services/submissions.py
+@@ -289,9 +289,7 @@
+         .scalars()
+         .all()
+     )
+-    reject_self_identifying_content(
+-        raws, own_identity_id=await submitter_identity_id(session, submission.submitter_org_id)
+-    )
++    del raws
+ 
+ 
+ @dataclass(frozen=True, slots=True)

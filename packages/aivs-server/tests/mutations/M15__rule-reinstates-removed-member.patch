@@ -1,0 +1,17 @@
+Mutation M15: a membership rule re-adds an organisation an operator removed
+Re-applies: f4d2920 "Make circle membership an interval, so status changes never cost history"
+
+Expect red: packages/aivs-server/tests/unit/test_circle_groups.py::test_a_rule_never_reinstates_a_member_an_operator_removed
+
+diff --git a/packages/aivs-server/src/aivs_server/services/circles.py b/packages/aivs-server/src/aivs_server/services/circles.py
+--- a/packages/aivs-server/src/aivs_server/services/circles.py
++++ b/packages/aivs-server/src/aivs_server/services/circles.py
+@@ -385,7 +385,7 @@
+     excluded = await _orgs_removed_by_operator(session, circle)
+     eligible = await _orgs_matching_rule(session, circle)
+ 
+-    added = sorted(eligible - set(open_rows) - excluded, key=str)
++    added = sorted(eligible - set(open_rows), key=str)
+     for org_id in added:
+         session.add(
+             CircleMembership(

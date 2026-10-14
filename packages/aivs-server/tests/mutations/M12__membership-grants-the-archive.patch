@@ -1,0 +1,18 @@
+Mutation M12: joining a circle grants everything ever distributed there, not only what follows
+Re-applies: 84a2bd9 "Bound visibility by membership start, and let an ISAC select a known group"
+
+Expect red: packages/aivs-server/tests/unit/test_review_regressions.py::test_a_new_member_does_not_receive_the_circles_back_catalogue
+Expect red: packages/aivs-server/tests/unit/test_membership_intervals.py::test_a_rejoining_member_reads_both_intervals_and_not_the_gap
+
+diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs-server/src/aivs_server/auth/policy.py
+--- a/packages/aivs-server/src/aivs_server/auth/policy.py
++++ b/packages/aivs-server/src/aivs_server/auth/policy.py
+@@ -423,7 +423,7 @@
+     return or_(
+         *(
+             and_(
+-                Distribution.date_added >= interval.joined_at,
++                true(),
+                 Distribution.date_added < interval.left_at
+                 if interval.left_at is not None
+                 else true(),

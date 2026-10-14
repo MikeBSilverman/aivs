@@ -1,0 +1,18 @@
+Mutation M17: the issuing CA is matched by name, not by signature
+Re-applies: 06d0d8f "Verify the issuing CA by signature, at registration and on every request"
+
+Expect red: packages/aivs-server/tests/unit/test_issuing_ca_pin.py::test_a_forgery_carrying_the_ca_name_is_refused
+Expect red: packages/aivs-server/tests/unit/test_issuing_ca_pin.py::test_a_registered_forgery_cannot_authenticate
+
+diff --git a/packages/aivs-server/src/aivs_server/auth/mtls.py b/packages/aivs-server/src/aivs_server/auth/mtls.py
+--- a/packages/aivs-server/src/aivs_server/auth/mtls.py
++++ b/packages/aivs-server/src/aivs_server/auth/mtls.py
+@@ -207,7 +207,7 @@
+     if certificate.issuer != issuing_ca.subject:
+         raise CertificateRejectedError("issuer_mismatch")
+     try:
+-        certificate.verify_directly_issued_by(issuing_ca)
++        pass
+     except (InvalidSignature, UnsupportedAlgorithm, ValueError, TypeError) as exc:
+         # UnsupportedAlgorithm is not a ValueError; uncaught, a certificate with
+         # an unknown signature algorithm was a 500 rather than the uniform 401.

@@ -478,3 +478,48 @@ def test_require_raises_with_the_audit_token():
 
 def test_require_passes_when_allowed():
     require(True, "unused")
+
+
+@pytest.mark.parametrize(
+    "predicate",
+    [
+        "is_system_admin",
+        "is_isac_editor",
+        "is_isac_membership",
+        "can_review_submissions",
+        "can_change_embargo",
+        "can_reveal_submitter",
+        "can_pause_distribution",
+        "can_resume_distribution",
+        "can_reconnect_org",
+        "can_view_instance_status",
+    ],
+)
+def test_isac_roles_on_a_non_session_context_confer_nothing(predicate):
+    """Every ISAC power needs a *signed-in human*, not only the role.
+
+    Today a certificate context carries no roles, so the role test alone
+    refuses it and the session test was untested defence in depth (a mutation
+    dropping it survived). The day any other path builds a context with roles
+    (single sign-on, in Phase M), this is what keeps a role from working
+    without a portal session. The pair: the same roles on a session are
+    honoured.
+    """
+    from aivs_server.auth import policy  # noqa: PLC0415 - name-addressed predicates
+
+    every_role = frozenset(OperatorRole)
+
+    def context(method: AuthMethod) -> AuthContext:
+        return AuthContext(
+            org_id=uuid.uuid4(),
+            org_slug="hosting-isac",
+            org_type=OrgType.ADMIN,
+            org_status=OrgStatus.ACTIVE,
+            auth_method=method,
+            operator_id=uuid.uuid4(),
+            operator_roles=every_role,
+        )
+
+    check = getattr(policy, predicate)
+    assert check(context(AuthMethod.PORTAL_SESSION)) is True
+    assert check(context(AuthMethod.MTLS)) is False

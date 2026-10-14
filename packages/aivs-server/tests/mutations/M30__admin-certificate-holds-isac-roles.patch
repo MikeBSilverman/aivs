@@ -1,0 +1,19 @@
+Mutation M30: the admin organisation's certificate alone, with no human session, holds ISAC powers
+Re-applies: dd2c1fa "Make every ISAC power human and split it four ways"
+
+Expect red: packages/aivs-server/tests/unit/test_isac_roles.py::test_the_admin_certificate_alone_cannot_validate
+Expect red: packages/aivs-server/tests/unit/test_isac_roles.py::test_the_admin_certificate_alone_cannot_enrol
+
+diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs-server/src/aivs_server/auth/policy.py
+--- a/packages/aivs-server/src/aivs_server/auth/policy.py
++++ b/packages/aivs-server/src/aivs_server/auth/policy.py
+@@ -138,8 +138,7 @@
+     return (
+         is_active(ctx)
+         and ctx.org_type is OrgType.ADMIN
+-        and ctx.auth_method is AuthMethod.PORTAL_SESSION
+-        and role in ctx.operator_roles
++        and (ctx.auth_method is AuthMethod.MTLS or role in ctx.operator_roles)
+     )
+ 
+ 

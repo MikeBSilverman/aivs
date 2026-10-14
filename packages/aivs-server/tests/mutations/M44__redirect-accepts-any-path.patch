@@ -1,0 +1,17 @@
+Mutation M44: the portal redirect helper accepts any absolute path, including //host
+Re-applies: 1752a09 "Make every portal redirect a checked, local-only redirect"
+
+Expect red: packages/aivs-server/tests/unit/test_portal_redirects.py::test_anything_else_is_refused
+
+diff --git a/packages/aivs-server/src/aivs_server/portal/shared.py b/packages/aivs-server/src/aivs_server/portal/shared.py
+--- a/packages/aivs-server/src/aivs_server/portal/shared.py
++++ b/packages/aivs-server/src/aivs_server/portal/shared.py
+@@ -234,7 +234,7 @@
+     or a query cannot turn the portal into an open redirect, which a phishing
+     page would use to borrow the instance's address.
+     """
+-    is_local = path.startswith("/portal/") and "//" not in path and "\\" not in path
++    is_local = path.startswith("/")
+     if not is_local:
+         msg = f"refusing to redirect outside the portal: {path!r}"
+         raise ValueError(msg)

@@ -1,0 +1,17 @@
+Mutation M09: the dispatcher keeps telling members to poll while distribution is paused
+Re-applies: ebfda69 "Close the publication-surface findings from the Phase A review"
+
+Expect red: packages/aivs-server/tests/unit/test_publication_guards.py::test_a_pause_holds_members_deliveries_but_not_the_isacs
+
+diff --git a/packages/aivs-server/src/aivs_server/notify/dispatcher.py b/packages/aivs-server/src/aivs_server/notify/dispatcher.py
+--- a/packages/aivs-server/src/aivs_server/notify/dispatcher.py
++++ b/packages/aivs-server/src/aivs_server/notify/dispatcher.py
+@@ -92,7 +92,7 @@
+     # the detection alert that someone pressed the stop button.
+     recipients = (
+         Organization.org_type == OrgType.ADMIN
+-        if await _distribution_paused(session)
++        if False
+         else Organization.org_type.is_not(None)
+     )
+ 

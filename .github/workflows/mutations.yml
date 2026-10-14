@@ -1,0 +1,77 @@
+name: Mutation proofs
+
+# Re-applies every recorded defect (packages/aivs-server/tests/mutations/) and
+# requires the tests written to catch it to fail. A proof that lived only in a
+# commit message could not notice when its patch stopped applying or its test
+# stopped catching it; this run does, and goes red.
+#
+# Nightly and on demand rather than on every push: each mutation re-runs its
+# tests against a mutated tree, which is minutes, not seconds, and a code change
+# that breaks a patch is caught by the next night's run. Same rules as ci.yml
+# (CLAUDE.md section 6): actions pinned by SHA, the image by digest, no
+# credentials persisted, read-only token.
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mutations-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  PYTHON_VERSION: "3.12"
+  UV_VERSION: "0.11.16"
+  # Its own database, as the script requires: two runs sharing one block each
+  # other on the cleanup TRUNCATE (CLAUDE.md section 3).
+  AIVS_TEST_DATABASE_URL: postgresql+psycopg://aivs:aivs@localhost:5432/aivs_ci
+
+jobs:
+  mutations:
+    name: Every recorded defect is still caught
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: postgres:16-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
+        env:
+          POSTGRES_USER: aivs
+          POSTGRES_PASSWORD: aivs
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U aivs"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Install dependencies (locked)
+        run: uv sync --frozen
+
+      - name: Prepare database
+        env:
+          PGPASSWORD: aivs
+        run: psql -h localhost -U aivs -d postgres -c "CREATE DATABASE aivs_ci;"
+
+      - name: Re-apply every recorded defect
+        env:
+          MUTATION_CHECK_VERBOSE: "1"
+        run: scripts/mutation-check.sh

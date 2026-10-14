@@ -1,0 +1,16 @@
+Mutation M14: an organisation that joined after content became visible is notified about it
+Re-applies: 7f05772 "Wire up contentless notifications, delivered from a durable queue"
+
+Expect red: packages/aivs-server/tests/unit/test_notifications.py::test_an_organisation_that_joined_later_is_not_notified
+
+diff --git a/packages/aivs-server/src/aivs_server/notify/events.py b/packages/aivs-server/src/aivs_server/notify/events.py
+--- a/packages/aivs-server/src/aivs_server/notify/events.py
++++ b/packages/aivs-server/src/aivs_server/notify/events.py
+@@ -146,7 +146,6 @@
+                 # shared after it went -- an embargo releasing after a firm left
+                 # did exactly that.
+                 CircleMembership.left_at.is_(None),
+-                CircleMembership.joined_at <= visible_at,
+                 Webhook.is_active.is_(True),
+                 TaxiiCollection.is_active.is_(True),
+                 TaxiiCollection.can_read.is_(True),

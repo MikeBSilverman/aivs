@@ -1,0 +1,17 @@
+Mutation M20: a certificate that is itself a CA is accepted as a client
+Re-applies: 06d0d8f "Verify the issuing CA by signature, at registration and on every request"
+
+Expect red: packages/aivs-server/tests/unit/test_issuing_ca_pin.py::test_a_ca_signed_certificate_that_is_itself_a_ca_is_refused
+
+diff --git a/packages/aivs-server/src/aivs_server/auth/mtls.py b/packages/aivs-server/src/aivs_server/auth/mtls.py
+--- a/packages/aivs-server/src/aivs_server/auth/mtls.py
++++ b/packages/aivs-server/src/aivs_server/auth/mtls.py
+@@ -214,7 +214,7 @@
+         raise CertificateRejectedError("issuer_signature_invalid") from exc
+ 
+     constraints = _extension(certificate, x509.BasicConstraints)
+-    if constraints is not None and constraints.ca:
++    if False:
+         raise CertificateRejectedError("certificate_is_a_ca")
+ 
+     usages = _extension(certificate, x509.ExtendedKeyUsage)

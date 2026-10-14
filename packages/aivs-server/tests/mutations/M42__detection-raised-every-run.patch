@@ -1,0 +1,17 @@
+Mutation M42: a finding is raised on every run instead of once per window
+Re-applies: 3bf6757 "Detect abuse of the platform itself, and make every background job report its health"
+
+Expect red: packages/aivs-server/tests/unit/test_detections.py::test_a_finding_raises_once_per_window_and_again_after_it
+
+diff --git a/packages/aivs-server/src/aivs_server/services/detections.py b/packages/aivs-server/src/aivs_server/services/detections.py
+--- a/packages/aivs-server/src/aivs_server/services/detections.py
++++ b/packages/aivs-server/src/aivs_server/services/detections.py
+@@ -427,7 +427,7 @@
+     session: AsyncSession, finding: Finding, now: dt.datetime, window: dt.timedelta
+ ) -> bool:
+     state = await session.get(DetectionState, (finding.rule, finding.subject))
+-    if state is not None and state.last_raised_at > now - window:
++    if False:
+         return True
+     if state is None:
+         session.add(DetectionState(rule=finding.rule, subject=finding.subject, last_raised_at=now))

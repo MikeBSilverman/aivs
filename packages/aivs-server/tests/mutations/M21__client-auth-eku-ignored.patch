@@ -1,0 +1,17 @@
+Mutation M21: a certificate without clientAuth extended key usage is accepted
+Re-applies: 06d0d8f "Verify the issuing CA by signature, at registration and on every request"
+
+Expect red: packages/aivs-server/tests/unit/test_issuing_ca_pin.py::test_a_ca_signed_certificate_without_client_auth_is_refused
+
+diff --git a/packages/aivs-server/src/aivs_server/auth/mtls.py b/packages/aivs-server/src/aivs_server/auth/mtls.py
+--- a/packages/aivs-server/src/aivs_server/auth/mtls.py
++++ b/packages/aivs-server/src/aivs_server/auth/mtls.py
+@@ -218,7 +218,7 @@
+         raise CertificateRejectedError("certificate_is_a_ca")
+ 
+     usages = _extension(certificate, x509.ExtendedKeyUsage)
+-    if usages is None or ExtendedKeyUsageOID.CLIENT_AUTH not in usages:
++    if False:
+         raise CertificateRejectedError("not_a_client_certificate")
+ 
+ 

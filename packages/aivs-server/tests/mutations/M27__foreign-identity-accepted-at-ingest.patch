@@ -1,0 +1,17 @@
+Mutation M27: ingest accepts an identity object using a peer's registered identifier
+Re-applies: 99ef2a6 "Refuse identity objects that use another organisation's registered identifier"
+
+Expect red: packages/aivs-server/tests/unit/test_submission_workflow.py::test_an_identity_object_cannot_use_a_peers_registered_identifier
+
+diff --git a/packages/aivs-server/src/aivs_server/services/submissions.py b/packages/aivs-server/src/aivs_server/services/submissions.py
+--- a/packages/aivs-server/src/aivs_server/services/submissions.py
++++ b/packages/aivs-server/src/aivs_server/services/submissions.py
+@@ -375,7 +375,7 @@
+     impersonated = await foreign_identity_ids(
+         session, objects, submitter_org_id=submission.submitter_org_id
+     )
+-    if impersonated:
++    if False:
+         msg = (
+             "identity objects may not use an identifier registered to another "
+             f"organisation: {', '.join(impersonated)}"

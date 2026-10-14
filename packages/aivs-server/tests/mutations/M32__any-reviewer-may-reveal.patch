@@ -1,0 +1,17 @@
+Mutation M32: any ISAC reviewer, not only an editor, may reveal an anonymous submitter
+Re-applies: dc038de "Withhold anonymous submitters from ordinary reads; make revealing one an audited act"
+
+Expect red: packages/aivs-server/tests/unit/test_submission_workflow.py::test_revealing_an_anonymous_submitter_is_an_audited_editorial_act
+
+diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs-server/src/aivs_server/auth/policy.py
+--- a/packages/aivs-server/src/aivs_server/auth/policy.py
++++ b/packages/aivs-server/src/aivs_server/auth/policy.py
+@@ -187,7 +187,7 @@
+ 
+ def can_reveal_submitter(ctx: AuthContext) -> bool:
+     """Name the submitter of an anonymous submission: an editorial act, audited."""
+-    return is_isac_editor(ctx)
++    return can_review_submissions(ctx)
+ 
+ 
+ def can_change_embargo(ctx: AuthContext) -> bool:

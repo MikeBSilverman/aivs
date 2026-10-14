@@ -1,0 +1,18 @@
+Mutation M24: an anonymous submission may carry the submitter's own identity object
+Re-applies: db7cf2f "Fix confirmed review findings; add reference client, CI, and working rules"
+
+Expect red: packages/aivs-server/tests/unit/test_submission_workflow.py::test_anonymous_submission_refuses_an_identity_object
+Expect red: packages/aivs-server/tests/unit/test_submission_workflow.py::test_distribution_refuses_an_anonymous_submission_that_names_its_submitter
+
+diff --git a/packages/aivs-server/src/aivs_server/services/submissions.py b/packages/aivs-server/src/aivs_server/services/submissions.py
+--- a/packages/aivs-server/src/aivs_server/services/submissions.py
++++ b/packages/aivs-server/src/aivs_server/services/submissions.py
+@@ -208,7 +208,7 @@
+     """
+     listed = list(objects)
+     identities = identity_object_ids(listed)
+-    if identities:
++    if False:
+         return (
+             "an anonymous submission must not carry identity objects, which are "
+             f"redistributed verbatim and would name the submitter: {', '.join(identities)}. "

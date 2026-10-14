@@ -1,0 +1,20 @@
+Mutation M02: a read that issues a paging cursor does not wait for an open publication
+Re-applies: 80cdce4 "Serialise publications so date_added order is commit order"
+
+Expect red: packages/aivs-server/tests/unit/test_publication_lock.py::test_a_paging_read_waits_for_an_open_publication
+Expect red: packages/aivs-server/tests/unit/test_publication_guards.py::test_a_taxii_page_waits_for_an_open_publication_and_not_otherwise
+
+diff --git a/packages/aivs-server/src/aivs_server/services/publication.py b/packages/aivs-server/src/aivs_server/services/publication.py
+--- a/packages/aivs-server/src/aivs_server/services/publication.py
++++ b/packages/aivs-server/src/aivs_server/services/publication.py
+@@ -104,9 +104,7 @@
+     Returns once no publication is in flight, and holds off new ones until the
+     read's transaction ends.
+     """
+-    await session.execute(
+-        text("SELECT pg_advisory_xact_lock_shared(:key)"), {"key": _PUBLICATION_LOCK_KEY}
+-    )
++    return
+ 
+ 
+ def earliest_publication_instant(now: dt.datetime) -> dt.datetime:

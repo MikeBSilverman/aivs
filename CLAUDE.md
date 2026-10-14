@@ -148,6 +148,19 @@ hand (deleting a background job changed nothing), and migration tests that
 checked a trigger's *name* (a trigger that raised a NOTICE passed). Drive the
 real write, then read; attempt the operation the control refuses.
 
+**Mutation proofs are files, and they are re-run.** Each security fix's
+"re-apply the defect" proof is a patch in `packages/aivs-server/tests/mutations/`,
+naming the tests it must turn red. `scripts/mutation-check.sh` applies each one,
+runs those tests, and restores the file by checksum; CI runs it nightly. Three
+rules: a patch re-applies *the defect as it was written*, not merely a deleted
+guard (deleting one term of `_isac_human` survived because another term covered
+for it, which is a test gap, not a pass). If you change a line a patch touches,
+run that patch in the same commit; when it no longer applies, rewrite it against
+the new code, and never delete it to make the run green. And run it only in a
+worktree of your own or in CI: while a patch is applied, its files hold the
+defect, and the script refuses a tree whose target files have uncommitted
+changes.
+
 **A mutation proof can run the wrong code.** Python reuses a cached `.pyc`
 when the source's mtime (whole seconds) and size match. Two mutations of one
 file that change it by the same number of bytes within the same second run the
@@ -161,6 +174,18 @@ logs" against `caplog.text` passes while content sits in a structured field
 (`extra=`), which is where this codebase puts everything. Assert over the
 records' fields -- `str(vars(record))` -- or the check is decorative. Found by
 a mutation that logged the query string and passed.
+
+**`ruff check --fix` with a narrowed `--select` deletes valid suppressions.**
+RUF100 then counts every `noqa` for a rule outside the selection as unused and
+strips it: an import-order fix removed `# noqa: F401 - registers every table`
+and `# noqa: S506 - SafeLoader subclass`. Fix import order with `--select I`
+alone, and never pair RUF100 with a narrowed selection.
+
+**A requirement row is a claim, so it carries its test's id.** Rows in
+`docs/security-requirements.md` and `docs/non-functional-requirements.md` land
+only with `@pytest.mark.requirement("<id>")` on a collected, unskipped test, and
+`tests/test_requirements_pinned.py` checks both directions. When a later phase
+extends a row, rewrite its text in the same commit as the new test, not before.
 
 **Suppressions are arguments, not annotations.** A `noqa`, `nosec`, or
 `type: ignore` needs a comment saying why the rule does not apply here. If the
@@ -335,6 +360,13 @@ existed. That is "a model with no caller", written in prose. Before writing
 "currently" or "today", grep for the code. Design docs carry a `Status:` line at
 the top, and anything that mentions an unbuilt design says "designed" or
 "planned".
+
+**Refuse a reserved value before parsing it, with the text an unknown value
+gets.** Converting a string to the enum and then checking membership gives two
+different refusals: the enum's own for an unknown value, ours for a reserved
+one. That difference tells a caller which values the server already knows. The
+portal did exactly this with the reserved `DiscoveryScope` values until it was
+caught.
 
 **Docs that list an enum's values are a second description of it.** Reserving
 two `DiscoveryScope` values made five docs' "there is no fourth value" false in
@@ -564,6 +596,12 @@ locally fails the build.
 Replace the generated docstring with the reasoning when a migration exists for a
 non-obvious correctness reason — `6439704af276` (the paging key) is the model to
 follow. A reviewer should not have to reconstruct why a column exists.
+
+**An enum value is a migration, and `alembic check` does not see it.** The suite
+builds its schema from the Python enums, so a value added without
+`ALTER TYPE ... ADD VALUE IF NOT EXISTS` passed every gate and would have failed
+on the first production write. `tests/migrations` now compares every Postgres
+enum type's labels with its Python enum.
 
 **`alembic check` cannot see triggers or exclusion constraints**, and
 autogenerate does not emit `ExcludeConstraint` at all. The test suite builds

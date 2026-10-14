@@ -325,8 +325,9 @@ async def test_below_k_the_isac_sees_nothing(client, world, make_org, make_cert,
 
     summary = (await _summary(client, world.editor, world.published)).json()
 
-    assert summary["total"]["value"] is None
-    assert {count["value"] for count in summary["by_status"].values()} == {None}
+    too_few = {"value": None, "withheld": "shown once at least 5 organisations have one"}
+    assert summary["total"] == too_few
+    assert all(count == too_few for count in summary["by_status"].values())
 
 
 async def test_the_counts_are_for_the_isacs_reviewers_only(client, world):
@@ -338,18 +339,28 @@ async def test_the_counts_are_for_the_isacs_reviewers_only(client, world):
 async def test_the_isacs_own_posture_does_not_count_toward_k(
     client, world, make_org, make_cert, join_circle, isac
 ):
-    """k-1 members and the ISAC are k rows and k-1 firms: still withheld."""
+    """k-1 members and the ISAC are k rows and k-1 firms: still withheld.
+
+    Ten members beside them, so the four are a count the two-sided rule
+    would otherwise show; the five affected are the pair, shown exactly.
+    """
     await join_circle(world.isac_org, world.circle)
     _isac_org, editor = isac
-    assert (await set_posture(client, editor, world.published)).status_code == 200
+    isac_posture = await set_posture(client, editor, world.published, status="not_affected")
+    assert isac_posture.status_code == 200
     await _members_with_posture(
-        world, client, make_org, make_cert, join_circle, ["affected"] * (K_ANONYMITY - 1)
+        world,
+        client,
+        make_org,
+        make_cert,
+        join_circle,
+        ["affected"] * K_ANONYMITY + ["not_affected"] * (K_ANONYMITY - 1) + ["fixed"],
     )
 
     summary = (await _summary(client, world.editor, world.published)).json()
 
-    assert summary["total"]["value"] is None
-    assert {count["value"] for count in summary["by_status"].values()} == {None}
+    assert summary["by_status"]["affected"]["value"] == K_ANONYMITY
+    assert summary["by_status"]["not_affected"] == {"value": None, "withheld": "fewer than 5"}
 
 
 @pytest.mark.requirement("SF-70")

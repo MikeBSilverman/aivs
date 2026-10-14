@@ -6,8 +6,8 @@ Expect red: packages/aivs-server/tests/unit/test_quarantine.py::test_a_registrat
 diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs-server/src/aivs_server/auth/policy.py
 --- a/packages/aivs-server/src/aivs_server/auth/policy.py
 +++ b/packages/aivs-server/src/aivs_server/auth/policy.py
-@@ -433,7 +433,7 @@ def can_register_certificate(ctx: AuthContext, organisation: Organization) -> bo
-     """
+@@ -438,7 +438,7 @@ def can_register_certificate(ctx: AuthContext, organisation: Organization) -> bo
+         return False
      if is_isac_membership(ctx):
          return True
 -    return can_manage_org(ctx, organisation.id) and organisation.status is OrgStatus.ACTIVE

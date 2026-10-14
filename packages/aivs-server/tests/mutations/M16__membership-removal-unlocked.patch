@@ -6,9 +6,9 @@ Expect red: packages/aivs-server/tests/unit/test_membership_locks.py::test_a_rem
 diff --git a/packages/aivs-server/src/aivs_server/services/circles.py b/packages/aivs-server/src/aivs_server/services/circles.py
 --- a/packages/aivs-server/src/aivs_server/services/circles.py
 +++ b/packages/aivs-server/src/aivs_server/services/circles.py
-@@ -249,7 +249,6 @@
-     gap stays unreadable while the earlier interval's content does not vanish.
-     Recorded as an operator's act, which the rule will not undo.
+@@ -356,7 +356,6 @@ async def remove_circle_member(
+     ``ended_by`` says whose act closed it: an operator's, which the rule will
+     not undo, or the organisation's offboarding.
      """
 -    await _lock_circle(session, circle_id)
      membership = (

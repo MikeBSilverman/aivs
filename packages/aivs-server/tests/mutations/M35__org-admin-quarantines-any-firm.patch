@@ -6,7 +6,7 @@ Expect red: packages/aivs-server/tests/unit/test_quarantine.py::test_a_member_ma
 diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs-server/src/aivs_server/auth/policy.py
 --- a/packages/aivs-server/src/aivs_server/auth/policy.py
 +++ b/packages/aivs-server/src/aivs_server/auth/policy.py
-@@ -384,7 +384,7 @@
+@@ -464,7 +464,7 @@ def can_quarantine_org(ctx: AuthContext, target_org_id: uuid.UUID) -> bool:
      """
      if is_isac_membership(ctx) or is_isac_editor(ctx) or is_system_admin(ctx):
          return True
@@ -14,4 +14,4 @@ diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs
 +    return is_org_admin(ctx)
  
  
- def can_reconnect_org(ctx: AuthContext) -> bool:
+ def can_offboard_org(ctx: AuthContext) -> bool:

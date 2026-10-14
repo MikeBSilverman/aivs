@@ -6,12 +6,12 @@ Expect red: packages/aivs-server/tests/unit/test_one_clock.py::test_a_removal_on
 diff --git a/packages/aivs-server/src/aivs_server/api/admin.py b/packages/aivs-server/src/aivs_server/api/admin.py
 --- a/packages/aivs-server/src/aivs_server/api/admin.py
 +++ b/packages/aivs-server/src/aivs_server/api/admin.py
-@@ -448,7 +448,7 @@ async def delete_circle_member(
-     require(can_administer_circle(ctx, circle_id), "circle_membership_manage")
- 
-     closed = await remove_circle_member(
--        session, ctx, circle_id=circle_id, org_id=org_id, now=await database_now(session), via="api"
-+        session, ctx, circle_id=circle_id, org_id=org_id, now=dt.datetime.now(dt.UTC), via="api"
+@@ -462,7 +462,7 @@ async def delete_circle_member(
+         ctx,
+         circle_id=circle_id,
+         org_id=org_id,
+-        now=await database_now(session),
++        now=dt.datetime.now(dt.UTC),
+         via="api",
+         ended_by="operator",
      )
-     if not closed:
-         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Membership not found")

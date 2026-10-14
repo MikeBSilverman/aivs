@@ -1,0 +1,17 @@
+Mutation M798: the request's certificate is believed without the trusted-proxy check, on the API and the portal alike
+Re-applies: the guard's absence; since I-P2 both surfaces resolve identity through auth.deps.request_certificate, so this one check covers both
+
+Expect red: packages/aivs-server/tests/authz_matrix/test_authz_matrix.py::test_forged_proxy_secret_reaches_nothing
+Expect red: packages/aivs-server/tests/authz_matrix/test_principal_matrix.py::test_each_principal_gets_exactly_its_row[forged_proxy_secret]
+
+diff --git a/packages/aivs-server/src/aivs_server/auth/mtls.py b/packages/aivs-server/src/aivs_server/auth/mtls.py
+--- a/packages/aivs-server/src/aivs_server/auth/mtls.py
++++ b/packages/aivs-server/src/aivs_server/auth/mtls.py
+@@ -283,7 +283,6 @@ def extract_client_certificate(
+     """
+     now = now or dt.datetime.now(dt.UTC)
+ 
+-    _require_trusted_proxy(settings, peer_ip, headers.get(settings.header_proxy_auth))
+ 
+     verify = headers.get(settings.header_client_verify, "").strip().upper()
+     if verify != _VERIFY_SUCCESS:

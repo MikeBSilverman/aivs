@@ -1,0 +1,14 @@
+Mutation M794: a TLP 1.0 marking is not recognised as TLP, so it is kept beside the stamped TLP 2.0 one and carried into a KEV version
+Re-applies: tlp_for_marking_id used as the TLP test, which declines the 1.0 identifiers
+
+Expect red: packages/aivs-schemas/tests/test_extension_validation.py::test_a_legacy_tlp10_marking_is_still_a_tlp_marking
+
+diff --git a/packages/aivs-schemas/src/aivs_schemas/tlp.py b/packages/aivs-schemas/src/aivs_schemas/tlp.py
+--- a/packages/aivs-schemas/src/aivs_schemas/tlp.py
++++ b/packages/aivs-schemas/src/aivs_schemas/tlp.py
+@@ -175,4 +175,4 @@ def is_tlp_marking_id(marking_id: str) -> bool:
+     question about *whether* an object carries a TLP must not answer "no" for
+     a TLP it declines to translate.
+     """
+-    return marking_id in _ID_TO_TLP or marking_id in _LEGACY_TLP10_IDS
++    return marking_id in _ID_TO_TLP

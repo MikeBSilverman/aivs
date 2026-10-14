@@ -1,0 +1,16 @@
+Mutation M793: the KEV version drops every marking, a statement marking with the TLP one
+Re-applies: scripts/enrich-kev.py before N-1 (review fb88ef6)
+
+Expect red: packages/aivs-server/tests/unit/test_enrich_kev.py::test_a_records_other_markings_are_carried_and_only_its_tlp_is_left_to_the_server
+
+diff --git a/scripts/enrich-kev.py b/scripts/enrich-kev.py
+--- a/scripts/enrich-kev.py
++++ b/scripts/enrich-kev.py
+@@ -89,7 +89,6 @@ def enriched_version(
+     if stamp <= str(record.get("modified", "")):
+         return None
+     version = {key: value for key, value in record.items() if key != "object_marking_refs"}
+-    version.update(_markings_the_server_does_not_stamp(record))
+     version["modified"] = stamp
+     version["extensions"] = _without_server_review(
+         {**record["extensions"], AIVS_INTEL_EXTENSION_ID: {**extension, **wanted}}

@@ -1,0 +1,16 @@
+Mutation M790: the ISAC records read answers with the distributed version while a newer one is submitted or validated
+Re-applies: services/isac_records.py before R-P4 (review fb88ef6)
+
+Expect red: packages/aivs-server/tests/unit/test_enrich_kev.py::test_a_record_with_a_newer_version_in_review_is_left_out
+
+diff --git a/packages/aivs-server/src/aivs_server/services/isac_records.py b/packages/aivs-server/src/aivs_server/services/isac_records.py
+--- a/packages/aivs-server/src/aivs_server/services/isac_records.py
++++ b/packages/aivs-server/src/aivs_server/services/isac_records.py
+@@ -86,7 +86,6 @@ async def latest_isac_vulnerabilities(
+         .where(
+             StixObject.id.in_(select(newest.c.id)),
+             isac_record_read_clause(now),
+-            ~_has_version_in_review(),
+         )
+         .order_by(StixObject.stix_id)
+     )

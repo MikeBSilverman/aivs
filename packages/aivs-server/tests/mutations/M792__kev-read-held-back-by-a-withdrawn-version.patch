@@ -1,0 +1,21 @@
+Mutation M792: a withdrawn version holds the record back from the KEV read for good
+Re-applies: an over-wide R-P4 fix: every undistributed state counted as in review
+
+Expect red: packages/aivs-server/tests/unit/test_enrich_kev.py::test_a_withdrawn_newer_version_does_not_hold_the_record_back
+
+diff --git a/packages/aivs-server/src/aivs_server/services/isac_records.py b/packages/aivs-server/src/aivs_server/services/isac_records.py
+--- a/packages/aivs-server/src/aivs_server/services/isac_records.py
++++ b/packages/aivs-server/src/aivs_server/services/isac_records.py
+@@ -37,7 +37,11 @@ from aivs_server.services.ownership import ISAC_OWNER, owner_key
+ __all__ = ["latest_isac_vulnerabilities"]
+ 
+ #: States in which a version is on its way to distribution and may still get there.
+-_IN_REVIEW_STATES = (SubmissionState.SUBMITTED, SubmissionState.VALIDATED)
++_IN_REVIEW_STATES = (
++    SubmissionState.SUBMITTED,
++    SubmissionState.VALIDATED,
++    SubmissionState.WITHDRAWN,
++)
+ 
+ 
+ def _newest_isac_versions() -> Any:

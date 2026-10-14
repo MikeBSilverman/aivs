@@ -6,10 +6,10 @@ Expect red: packages/aivs-server/tests/unit/test_markings.py::test_an_object_mar
 diff --git a/packages/aivs-server/src/aivs_server/services/markings.py b/packages/aivs-server/src/aivs_server/services/markings.py
 --- a/packages/aivs-server/src/aivs_server/services/markings.py
 +++ b/packages/aivs-server/src/aivs_server/services/markings.py
-@@ -62,7 +62,7 @@
+@@ -61,7 +61,7 @@ def stamp_tlp_marking(raw: Mapping[str, Any], tlp: TLP) -> dict[str, Any]:
      stamped = marking_id_for(tlp)
      existing = [ref for ref in raw.get("object_marking_refs") or [] if isinstance(ref, str)]
-     conflicting = sorted({ref for ref in existing if _is_tlp_marking(ref) and ref != stamped})
+     conflicting = sorted({ref for ref in existing if is_tlp_marking_id(ref) and ref != stamped})
 -    if conflicting:
 +    if False:
          msg = (

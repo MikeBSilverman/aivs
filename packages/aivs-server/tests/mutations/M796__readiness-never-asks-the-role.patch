@@ -1,0 +1,17 @@
+Mutation M796: readiness answers 200 while the application is connected as a superuser
+Re-applies: api/meta.py before N-5 (review fb88ef6)
+
+Expect red: packages/aivs-server/tests/unit/test_readiness_role.py::test_readiness_refuses_an_unsafe_connection_outside_dev
+
+diff --git a/packages/aivs-server/src/aivs_server/api/meta.py b/packages/aivs-server/src/aivs_server/api/meta.py
+--- a/packages/aivs-server/src/aivs_server/api/meta.py
++++ b/packages/aivs-server/src/aivs_server/api/meta.py
+@@ -79,7 +79,7 @@ async def readyz(session: SessionDep, settings: SettingsDep, response: Response)
+         # reason belongs in the logs rather than in an unauthenticated response.
+         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+         return {"status": "unavailable", "database": "unreachable"}
+-    if settings.environment != "dev":
++    if False:
+         problem = await connection_role_problem(session)
+         if problem is not None:
+             # Which role, and why, to the log; the unauthenticated body says

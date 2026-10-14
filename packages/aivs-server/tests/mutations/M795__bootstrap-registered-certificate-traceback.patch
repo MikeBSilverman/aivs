@@ -1,0 +1,17 @@
+Mutation M795: bootstrap_operator with an already registered certificate dies with a raw IntegrityError
+Re-applies: bootstrap_operator.py before N-3 (review fb88ef6)
+
+Expect red: packages/aivs-server/tests/unit/test_bootstrap_operator.py::test_an_additional_operator_with_a_registered_certificate_is_refused_by_name
+
+diff --git a/packages/aivs-server/src/aivs_server/bootstrap_operator.py b/packages/aivs-server/src/aivs_server/bootstrap_operator.py
+--- a/packages/aivs-server/src/aivs_server/bootstrap_operator.py
++++ b/packages/aivs-server/src/aivs_server/bootstrap_operator.py
+@@ -144,7 +144,7 @@ async def _register_new_certificate(
+             now=dt.datetime.now(dt.UTC),
+         )
+         await session.flush()
+-    except IntegrityError as exc:
++    except BootstrapError as exc:
+         await session.rollback()
+         msg = (
+             "that certificate is already registered; omit --certificate when adding "

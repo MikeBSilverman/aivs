@@ -753,6 +753,14 @@ digest, `persist-credentials: false` on every checkout, `permissions:
 contents: read` as the floor and restated per job, and no `curl | sh`
 installer. zizmor runs in CI to hold the line.
 
+**Base images are pinned by digest where they are named.** The Dockerfile's
+bases were tag defaults behind `ARG PYTHON_IMAGE`, with the digest form
+documented as a `--build-arg` that neither CI nor e2e passed -- so the image the
+SBOM described was whatever the tag meant that day. The indirection also hid
+the bases from Dependabot, which reads `FROM` lines literally: its docker
+updater was configured and updated nothing. Digests go in the `FROM` line and
+in compose's image defaults; `test_deployment_contract.py` refuses one without.
+
 ---
 
 ## 7. Migrations

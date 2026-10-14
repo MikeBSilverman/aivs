@@ -87,14 +87,52 @@ def _scalars(url: str, sql: str, **params: str) -> set[str]:
         engine.dispose()
 
 
+_OVERLAP_ORG = "00000000-0000-4000-8000-000000000501"
+_OVERLAP_CIRCLE = "00000000-0000-4000-8000-000000000502"
+
+
+def _interval(connection: Any, joined: str, left: str | None) -> None:
+    connection.execute(
+        text(
+            "INSERT INTO circle_memberships "
+            "(circle_id, org_id, role, joined_at, left_at, ended_by) "
+            "VALUES (:circle, :org, 'member', CAST(:joined AS timestamptz), "
+            "CAST(:left AS timestamptz), CASE WHEN :left IS NULL THEN NULL ELSE 'operator' END)"
+        ),
+        {"circle": _OVERLAP_CIRCLE, "org": _OVERLAP_ORG, "joined": joined, "left": left},
+    )
+
+
 @pytest.mark.requirement("SF-43")
 def test_membership_intervals_cannot_overlap(migrated_url: str):
-    constraints = _scalars(
-        migrated_url,
-        "SELECT conname FROM pg_constraint "
-        "WHERE conrelid = 'circle_memberships'::regclass AND contype = 'x'",
-    )
-    assert "ex_circle_memberships_no_overlap" in constraints
+    """Attempted, not looked up by name: autogenerate never emits an exclusion
+    constraint, so one with the wrong operator would pass every other gate."""
+    engine = create_engine(migrated_url)
+    try:
+        with engine.connect() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO organizations "
+                    "(id, name, slug, org_type, status, stix_identity_id) "
+                    "VALUES (:org, 'Overlap', 'overlap-firm', 'gsib', 'active', :identity)"
+                ),
+                {"org": _OVERLAP_ORG, "identity": f"identity--{_OVERLAP_ORG}"},
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO circles (id, slug, name, minimum_tlp, is_active) "
+                    "VALUES (:circle, 'overlap-circle', 'Overlap', 'amber', true)"
+                ),
+                {"circle": _OVERLAP_CIRCLE},
+            )
+            _interval(connection, "2026-01-01T00:00:00Z", "2026-03-01T00:00:00Z")
+            # The pair: an interval starting where the last ended is not an overlap.
+            _interval(connection, "2026-03-01T00:00:00Z", "2026-05-01T00:00:00Z")
+            with pytest.raises(DBAPIError, match="ex_circle_memberships_no_overlap"):
+                _interval(connection, "2026-04-01T00:00:00Z", None)
+            connection.rollback()
+    finally:
+        engine.dispose()
 
 
 _SEED_ORG = "00000000-0000-4000-8000-000000000001"

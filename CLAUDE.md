@@ -148,6 +148,14 @@ hand (deleting a background job changed nothing), and migration tests that
 checked a trigger's *name* (a trigger that raised a NOTICE passed). Drive the
 real write, then read; attempt the operation the control refuses.
 
+**A mutation proof can run the wrong code.** Python reuses a cached `.pyc`
+when the source's mtime (whole seconds) and size match. Two mutations of one
+file that change it by the same number of bytes within the same second run the
+*first* mutation's bytecode, and the result is credited to the wrong test.
+Found while proving the client tests: a "caught" mutation was really the
+previous one. Run mutation proofs with `PYTHONDONTWRITEBYTECODE=1` and delete
+the module's `__pycache__` before each run.
+
 **`caplog.text` is only the messages.** A test that asserts "no content in the
 logs" against `caplog.text` passes while content sits in a structured field
 (`extra=`), which is where this codebase puts everything. Assert over the

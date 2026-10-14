@@ -1,0 +1,89 @@
+name: End-to-end
+
+# The production stack, stood up from nothing by scripts/e2e.sh exactly as an
+# operator would (an ephemeral CA, generated secrets, compose up, bootstrap,
+# enrolment through the API), then tested through nginx. These are the
+# properties only a running stack can show: that nginx overwrites identity
+# headers, that mutual TLS is enforced at both layers, that the probes are not
+# served to members, that the hybrid post-quantum group is negotiated, and that
+# the application's healthcheck follows the database.
+#
+# On push to main and on demand only: it builds the image and starts three
+# containers, which is minutes, not seconds, and the ordinary CI job already
+# gates pull requests. No secrets: every key and password is minted in the job
+# and destroyed with it. `pull_request_target` is never used (CLAUDE.md
+# section 6).
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.12"
+  UV_VERSION: "0.11.16"
+  # The stack's images by digest, so the run tests the bytes a reviewed
+  # deployment would pin (compose reads these over its tag defaults).
+  AIVS_PROXY_IMAGE: nginxinc/nginx-unprivileged:1.29-alpine@sha256:0c79d56aee561a1d81c63f00eee5fb5fe29279560cdc55e91425133104c7fbe6
+  AIVS_DB_IMAGE: postgres:16-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
+
+jobs:
+  e2e:
+    name: Stack through nginx
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: ${{ env.PYTHON_VERSION }}
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Install dependencies (locked)
+        run: uv sync --frozen
+
+      - name: Stand the stack up
+        env:
+          AIVS_E2E_DIR: ${{ runner.temp }}/aivs-e2e
+        run: scripts/e2e.sh up
+
+      - name: End-to-end tests
+        env:
+          AIVS_E2E_STATE: ${{ runner.temp }}/aivs-e2e/state.json
+        # Fixed order, and the database-stopping test excluded: it runs alone
+        # in the next step, after everything that needs a database.
+        run: >-
+          uv run pytest -m e2e -p no:randomly -rxs
+          packages/aivs-server/tests/e2e
+          --ignore=packages/aivs-server/tests/e2e/test_resilience.py
+
+      - name: Healthcheck follows the database
+        env:
+          AIVS_E2E_STATE: ${{ runner.temp }}/aivs-e2e/state.json
+        run: uv run pytest -m e2e -p no:randomly packages/aivs-server/tests/e2e/test_resilience.py
+
+      - name: Stack logs
+        if: failure()
+        env:
+          AIVS_E2E_DIR: ${{ runner.temp }}/aivs-e2e
+        run: scripts/e2e.sh logs
+
+      - name: Tear the stack down
+        if: always()
+        env:
+          AIVS_E2E_DIR: ${{ runner.temp }}/aivs-e2e
+        run: scripts/e2e.sh down

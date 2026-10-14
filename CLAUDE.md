@@ -116,6 +116,13 @@ so a local run means what a CI run means. The same shape as the `pip-audit`
 flags above: an option whose default quietly narrows what a security gate
 covers, while the output still says "completed successfully".
 
+**Start the stack, not only the compose file.** `docker compose config` checks
+syntax and merges files. It cannot show two containers competing for one
+address, and the first `up` on a clean host failed on exactly that, in a file
+that had passed every gate. `scripts/e2e.sh up` builds a throwaway CA and
+environment and starts the real stack; run it, and `uv run pytest -m e2e` with
+`AIVS_E2E_STATE` set, for any change to compose files or `deploy/`.
+
 **Render the compose file.** `docker-compose.yml` was invalid under Compose
 2.40 (`pids_limit` beside `deploy.resources.limits` is refused) for as long as
 nobody here could run Docker, so every claim about the deployment stack was
@@ -139,6 +146,16 @@ False positives go in `.gitleaks.toml` as a *rule-level* allowlist matching the
 call shape, with the argument written beside it. A top-level `[[allowlists]]`
 with `targetRules` parsed cleanly in gitleaks 8.28 and was silently not
 applied, which is the same shape as the semgrep and pip-audit defaults above.
+
+**A refusal test must show which check refused.** The end-to-end test for a
+certificate signed by the root CA passed while the CA pin it is named for was
+disabled: the certificate was not registered, so it was refused anyway. Assert
+the reason (the audit row names it), not only the status.
+
+**Destructive tooling permits only what it can prove it owns.** The e2e
+`down` first refused only volumes labelled for *another* project, so it
+deleted an unlabelled `aivs_pgdata`. "Fail closed by allow-list" applies to
+scripts as much as to the application.
 
 **Test a reader against the rows its writer produces.** The detection rules
 read audit `details` by key and were tested on hand-built rows, so renaming

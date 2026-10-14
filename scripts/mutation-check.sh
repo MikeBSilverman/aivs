@@ -21,16 +21,23 @@
 # Run it in a dedicated `git worktree` or in CI, never in a tree other sessions
 # are using: while a patch is applied, its files hold the defect.
 #
-# Uses its own database (AIVS_TEST_DATABASE_URL, default aivs_ci): the suite's
-# cleanup is TRUNCATE, and two runs sharing a database block each other
-# indefinitely (CLAUDE.md section 3).
+# Needs AIVS_TEST_DATABASE_URL set explicitly, to a database no other run is
+# using: the suite's cleanup is TRUNCATE, and two runs sharing a database block
+# or corrupt each other (CLAUDE.md section 3).
 
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
 
 readonly MUTATIONS_DIR="packages/aivs-server/tests/mutations"
-export AIVS_TEST_DATABASE_URL="${AIVS_TEST_DATABASE_URL:-postgresql+psycopg://aivs@127.0.0.1:55432/aivs_ci}"
+# No default. It defaulted to aivs_ci, which is a helper session's database:
+# a run from another session truncated tables under that session mid-run.
+# Name the database yourself (CLAUDE.md section 3); CI sets it.
+if [[ -z "${AIVS_TEST_DATABASE_URL:-}" ]]; then
+    echo "refusing: set AIVS_TEST_DATABASE_URL to a database no other run is using" >&2
+    exit 4
+fi
+export AIVS_TEST_DATABASE_URL
 
 # The bytecode-cache trap (CLAUDE.md section 2): Python reuses a .pyc whose
 # source has the same size and whole-second mtime, so two same-size mutations

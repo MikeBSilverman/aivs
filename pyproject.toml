@@ -217,9 +217,7 @@ addopts = [
 ]
 markers = [
     "db: test requires a live PostgreSQL database",
-    # No `e2e` marker until an end-to-end test exists: an empty tests/e2e/ and a
-    # declared marker applied to nothing read as a deselected tier rather than an
-    # absent one. The first e2e test (through nginx, in Docker) brings both back.
+    "e2e: runs against the real stack through nginx (scripts/e2e.sh up); skipped, with the reason, when no stack is up",
     "slow: migrates a scratch database or similar; deselect with '-m \"not slow\"'",
     "authz: authorization matrix test -- the deny-by-default proof",
     "conformance: TAXII 2.1 / STIX 2.1 specification conformance test",

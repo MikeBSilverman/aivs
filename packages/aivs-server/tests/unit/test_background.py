@@ -16,13 +16,14 @@ from aivs_server.main import background_components
 from aivs_server.observability import Heartbeats, run_periodically
 
 
-def test_the_process_runs_the_three_unattended_jobs_at_their_configured_intervals(settings):
+def test_the_process_runs_its_unattended_jobs_at_their_configured_intervals(settings):
     components = {c.name: c.interval for c in background_components(settings)}
 
     assert components == {
         "embargo_sweeper": dt.timedelta(seconds=settings.embargo_sweep_interval_seconds),
         "webhook_dispatcher": dt.timedelta(seconds=settings.webhook_dispatch_interval_seconds),
         "detections": dt.timedelta(seconds=settings.detection_interval_seconds),
+        "telemetry": dt.timedelta(seconds=settings.telemetry_interval_seconds),
     }
 
 

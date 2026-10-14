@@ -41,6 +41,10 @@ class RouteClass(enum.StrEnum):
     CIRCLE_CONTENT = "circle content"
     #: One submission's record: its submitter and the ISAC's reviewers; others 404.
     SUBMISSION_RECORD = "submission record"
+    #: Telemetry on a submission: its submitter only; everyone else 404, the
+    #: ISAC included (it has the receipts; a count to the wrong reader is a
+    #: disclosure of who engaged).
+    TELEMETRY = "telemetry"
     #: Filing a new submission: every active caller.
     FILING = "filing"
     #: Amending or sending a draft: its submitter; a reviewer who can see it 403.
@@ -205,6 +209,12 @@ ROUTES: tuple[RouteCase, ...] = (
     RouteCase("GET", "/api/v1/submissions", RouteClass.LISTING, _fixed(f"{API}/submissions")),
     RouteCase(
         "GET", "/api/v1/submissions/{submission_id}", RouteClass.SUBMISSION_RECORD, _sub("read")
+    ),
+    RouteCase(
+        "GET",
+        "/api/v1/submissions/{submission_id}/telemetry",
+        RouteClass.TELEMETRY,
+        _sub("read", "/telemetry"),
     ),
     RouteCase(
         "GET",

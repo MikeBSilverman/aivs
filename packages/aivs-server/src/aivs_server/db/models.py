@@ -833,6 +833,22 @@ class DetectionState(Base):
     last_raised_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class SubmissionMilestone(Base):
+    """A telemetry milestone already announced to a submission's submitter.
+
+    So "your submission reached 10 organisations" is sent once, not on every
+    pass. Holds no content: which submission, which milestone, when.
+    """
+
+    __tablename__ = "submission_milestones"
+
+    submission_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("submissions.id", ondelete="CASCADE"), primary_key=True
+    )
+    milestone: Mapped[str] = mapped_column(String(40), primary_key=True)
+    reached_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class InstanceControl(Base):
     """Instance-wide switches an incident needs. Exactly one row, id 1.
 

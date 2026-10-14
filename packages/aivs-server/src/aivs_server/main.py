@@ -30,7 +30,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from aivs_server.api import acknowledgments, admin, lint, meta, submissions
+from aivs_server.api import acknowledgments, admin, lint, meta, submissions, telemetry
 from aivs_server.audit.log import AuditAction, record_denial
 from aivs_server.auth.deps import request_source_ip
 from aivs_server.auth.policy import PolicyDeniedError
@@ -50,6 +50,7 @@ from aivs_server.portal import routes as portal_routes
 from aivs_server.services.detections import run_detections
 from aivs_server.services.embargo import sweep_due_embargoes
 from aivs_server.services.publication import PublicationPausedError
+from aivs_server.services.telemetry import queue_milestones
 from aivs_server.taxii import router as taxii_router
 
 __all__ = ["create_app"]
@@ -152,11 +153,22 @@ def background_components(settings: Settings) -> list[BackgroundComponent]:
             lambda: _dispatch_webhooks(settings),
         ),
         BackgroundComponent(
+            "telemetry",
+            dt.timedelta(seconds=settings.telemetry_interval_seconds),
+            _queue_telemetry_milestones,
+        ),
+        BackgroundComponent(
             "detections",
             dt.timedelta(seconds=settings.detection_interval_seconds),
             lambda: _run_detections(settings),
         ),
     ]
+
+
+async def _queue_telemetry_milestones() -> None:
+    """Tell submitters, contentlessly, when what they shared crossed a milestone."""
+    async with session_scope() as session:
+        await queue_milestones(session, now=dt.datetime.now(dt.UTC), lookback=dt.timedelta(days=1))
 
 
 async def _sweep_embargoes() -> None:
@@ -222,6 +234,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # Before submissions.router: its /submissions/{submission_id} would
     # otherwise match "lint" first.
     app.include_router(lint.router)
+    app.include_router(telemetry.router)
     app.include_router(submissions.router)
     app.include_router(acknowledgments.router)
     app.include_router(admin.router)

@@ -341,6 +341,7 @@ _ALL_TABLES = (
     "organizations",
     "instance_controls",
     "detection_state",
+    "submission_milestones",
 )
 
 

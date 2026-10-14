@@ -48,4 +48,5 @@ rather than deleting rows.
 | `webhooks` | operational | A member's notification endpoints and sealed signing keys. |
 | `webhook_deliveries` | operational | The outbound notification queue. Contentless payloads. |
 | `instance_controls` | operational | The instance-wide pause switch and who pressed it. |
+| `submission_milestones` | operational | Which telemetry milestones a submitter has been told about, so each is announced once. |
 | `detection_state` | operational | When each detection finding was last raised, so it raises once per window. |

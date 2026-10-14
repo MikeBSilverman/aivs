@@ -91,6 +91,7 @@ EXPECTED: Mapping[RouteClass, Mapping[Principal, Outcome]] = {
     RouteClass.HEALTH: _row(A),
     RouteClass.CIRCLE_CONTENT: _allow(*_MEMBER, P.PEER_MACHINE, otherwise=N),
     RouteClass.SUBMISSION_RECORD: _allow(*_MEMBER, P.ISAC_ANALYST, P.ISAC_EDITOR, otherwise=N),
+    RouteClass.TELEMETRY: _allow(*_MEMBER, otherwise=N),
     RouteClass.DRAFT_EDIT: {
         **_allow(*_MEMBER, otherwise=N),
         P.ISAC_ANALYST: F,

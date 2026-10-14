@@ -47,7 +47,8 @@ def test_the_default_proxy_image_is_built_with_an_openssl_that_has_ml_kem(repo_r
     # The `image:` line itself -- a first version of this test matched the tag
     # in a comment above it and passed with the old image restored.
     match = re.search(
-        r"^\s*image: \$\{AIVS_PROXY_IMAGE:-nginxinc/nginx-unprivileged:(\d+)\.(\d+)-alpine\}",
+        r"^\s*image: \$\{AIVS_PROXY_IMAGE:-nginxinc/nginx-unprivileged:(\d+)\.(\d+)-alpine"
+        r"(?:@sha256:[0-9a-f]{64})?\}",
         compose,
         re.MULTILINE,
     )

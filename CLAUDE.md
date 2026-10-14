@@ -353,6 +353,13 @@ never looks backwards. The row is then never delivered — a warning a member
 would swear they never received. Relatedly, `release_at` may not be backdated,
 for exactly the same reason.
 
+**A listing sorts on the key its continuation compares.** The versions
+endpoint sorted on `modified` and was continued with `added_after`, which
+compares `date_added`; a page cut in one order and resumed in the other skipped
+a version for good. Every paged listing sorts on `(date_added, seq)`, one row
+per thing listed, so `added_after`, `next` and the date-added headers all mean
+the same position.
+
 **Stamp the next millisecond, never the current one.** `added_after` is a
 strict comparison at TAXII's millisecond precision, and a reader in the current
 millisecond may already have reported it as `X-TAXII-Date-Added-Last`. The
@@ -458,7 +465,10 @@ code's own description, then pin it.
 **Version resolution is scoped to what the caller can see.** `match[version]=last`
 resolves the latest *visible* version. Resolving globally then filtering would
 return nothing for an object whose newest version is withheld — from which the
-caller infers that it exists.
+caller infers that it exists. An acceptance is an answer too: ingest admitted
+a coordinated contribution on a vendor opinion still under embargo, which told
+the member the vendor had agreed. Every input to an ingest-time decision goes
+through the caller's visibility, not only the main lookup.
 
 **A model or table with no caller is a claim the system does not keep.** The
 `embargoes` table, `EmbargoUpsert`, and the `Webhook` model all existed and were

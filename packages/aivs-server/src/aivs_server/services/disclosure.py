@@ -21,9 +21,11 @@ excluding the submission under check. A member's own pre-CVE finding under the
 same id is not canonical and decides nothing.
 
 **Where it is checked, and what a refusal may say.** At ingest only against
-targets the submitter can see, and a reference to a target it cannot see gets
-exactly the refusal a nonexistent one does, byte for byte: otherwise the
-difference confirms that a pre-CVE finding exists (SF-47). At validate and at
+what the submitter can see -- the target, and the vendor's opinion and the
+target's distribution that make the vendor a party -- and a reference to a
+target it cannot see gets exactly the refusal a nonexistent one does, byte for
+byte: otherwise the difference confirms that a pre-CVE finding exists, or that
+a vendor agreed before the ISAC released it (SF-47). At validate and at
 distribution against the current state globally, by the ISAC -- so a target
 whose disclosure is withdrawn between validation and distribution stops the
 contribution there.
@@ -37,7 +39,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any, Final
 
-from sqlalchemy import and_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aivs_schemas.enums import (
@@ -139,34 +141,50 @@ async def _canonical_current(
     return raw
 
 
-async def _vendor_party_acknowledges(session: AsyncSession, stix_id: str) -> bool:
-    """A vendor an editor put in a circle the target reached agreed, in a distributed opinion."""
+async def _vendor_party_acknowledges(
+    session: AsyncSession, stix_id: str, scope: DisclosureScope
+) -> bool:
+    """A vendor an editor put in a circle the target reached agreed, in a distributed opinion.
+
+    At ingest both halves are read through the submitter's view: the target's
+    distribution and the opinion's must each be one the submitter can read.
+    Looked up globally, an agreeing opinion still under embargo, or shared only
+    in a circle the submitter is not in, admitted its contribution -- and the
+    acceptance told it that the vendor had agreed before the ISAC said so.
+    """
     vendors_in_case = (
         select(CircleMembership.org_id)
         .join(Organization, Organization.id == CircleMembership.org_id)
         .join(Distribution, Distribution.circle_id == CircleMembership.circle_id)
         .join(StixObject, StixObject.id == Distribution.stix_object_id)
+        .join(Submission, Submission.id == Distribution.submission_id)
         .where(
             Organization.org_type == OrgType.VENDOR,
             CircleMembership.left_at.is_(None),
             StixObject.stix_id == stix_id,
         )
     )
-    agreeing = await session.scalar(
+    agreeing = (
         select(StixObject.id)
         .join(Submission, Submission.id == StixObject.submission_id)
         .where(
             StixObject.type == "opinion",
             StixObject.raw.contains({"object_refs": [stix_id]}),
             StixObject.raw["opinion"].astext.in_(tuple(_AGREEING_OPINIONS)),
-            and_(
-                Submission.state == SubmissionState.DISTRIBUTED,
-                Submission.submitter_org_id.in_(vendors_in_case),
-            ),
+            Submission.state == SubmissionState.DISTRIBUTED,
         )
         .limit(1)
     )
-    return agreeing is not None
+    if scope.visible_to is not None:
+        caller_reads = distribution_visibility_clause(scope.visible_to, scope.now)
+        vendors_in_case = vendors_in_case.where(caller_reads)
+        agreeing = agreeing.join(Distribution, Distribution.stix_object_id == StixObject.id).where(
+            caller_reads
+        )
+    found = await session.scalar(
+        agreeing.where(Submission.submitter_org_id.in_(vendors_in_case.correlate(None)))
+    )
+    return found is not None
 
 
 async def _target_problem(
@@ -182,7 +200,7 @@ async def _target_problem(
             f"{stix_id} is not public yet; a contribution before disclosure is "
             "coordinated_disclosure, which needs the vendor as a party to the case"
         )
-    if _has_coordination_case(current) or await _vendor_party_acknowledges(session, stix_id):
+    if _has_coordination_case(current) or await _vendor_party_acknowledges(session, stix_id, scope):
         return None
     return (
         f"{stix_id} has no coordination case: the ISAC records the vendor as a party, or a "

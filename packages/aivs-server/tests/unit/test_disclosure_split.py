@@ -10,15 +10,16 @@ compared byte for byte.
 
 from __future__ import annotations
 
+import datetime as dt
 import uuid
 from typing import Any
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 
 from aivs_schemas.enums import OrgType, SubmissionState
 from aivs_schemas.extension.builders import AIVS_EXTENSION_ID
-from aivs_server.db.models import StixObject, Submission
+from aivs_server.db.models import Distribution, StixObject, Submission
 from tests.unit.contribution_world import (
     LATER,
     STAMP,
@@ -58,6 +59,7 @@ async def world(make_org, make_cert, make_circle, join_circle, isac, isac_org):
         "vendor": (vendor, vendor_pem),
         "editor": editor,
         "isac_org": isac_org,
+        "join_circle": join_circle,
     }
 
 
@@ -240,6 +242,82 @@ async def test_a_vendor_party_that_agreed_admits_a_coordinated_contribution(
     _member, pem = world["member"]
 
     assert (await coordinated(client, pem, target)).status_code == 201
+
+
+async def _ingest_answer_before_and_after(client, session, world, place_the_opinion):
+    """The member's ingest answer for one target, without an opinion and then with one."""
+    target = await canonical(session, world, cve_status="pre-cve")
+    vendor, _pem = world["vendor"]
+    await join_circle_of(world, vendor)
+    _member, pem = world["member"]
+
+    before = await coordinated(client, pem, target)
+    await place_the_opinion(target)
+    after = await coordinated(client, pem, target)
+    return before, after
+
+
+async def join_circle_of(world, org):
+    await world["join_circle"](org, world["circle"])
+
+
+@pytest.mark.requirement("SF-47")
+async def test_an_embargoed_vendor_opinion_gives_the_ingest_answer_no_opinion_gives(
+    client, session, world
+):
+    """At ingest the vendor's agreement counts only once the member could read it.
+
+    Counted globally, an agreeing opinion still under embargo admitted the
+    member's coordinated contribution, and the acceptance itself told the member
+    that the vendor had agreed before the ISAC released it.
+    """
+
+    async def embargoed(target):
+        vendor, _pem = world["vendor"]
+        submission = await seed(
+            session, vendor, opinion_about(target, opinion="agree"), circle=world["circle"]
+        )
+        await session.execute(
+            update(Distribution)
+            .where(Distribution.submission_id == submission.id)
+            .values(date_added=dt.datetime.now(dt.UTC) + dt.timedelta(days=7))
+        )
+        await session.commit()
+
+    before, after = await _ingest_answer_before_and_after(client, session, world, embargoed)
+
+    assert before.status_code == 400
+    assert after.content == before.content
+
+
+@pytest.mark.requirement("SF-47")
+async def test_a_vendor_opinion_outside_the_members_circles_gives_the_answer_none_gives(
+    client, session, world, make_circle
+):
+    elsewhere = await make_circle("vendor-and-isac-only")
+
+    async def in_another_circle(target):
+        vendor, _pem = world["vendor"]
+        await world["join_circle"](vendor, elsewhere)
+        await seed(session, vendor, opinion_about(target, opinion="agree"), circle=elsewhere)
+
+    before, after = await _ingest_answer_before_and_after(client, session, world, in_another_circle)
+
+    assert before.status_code == 400
+    assert after.content == before.content
+
+
+@pytest.mark.requirement("SF-47")
+async def test_a_vendor_opinion_the_member_can_read_admits_the_coordinated_contribution(
+    client, session, world
+):
+    async def readable(target):
+        await vendor_says(session, world, target, "agree")
+
+    before, after = await _ingest_answer_before_and_after(client, session, world, readable)
+
+    assert before.status_code == 400
+    assert after.status_code == 201, after.text
 
 
 async def test_a_vendor_that_disputes_is_not_an_acknowledging_party(

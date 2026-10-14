@@ -54,6 +54,7 @@ __all__ = [
     "can_administer_circle",
     "can_change_embargo",
     "can_manage_org",
+    "can_manage_own_webhooks",
     "can_pause_distribution",
     "can_quarantine_org",
     "can_read_circle",
@@ -183,6 +184,25 @@ def is_isac_staff(ctx: AuthContext) -> bool:
 def is_org_admin(ctx: AuthContext) -> bool:
     """Return whether the caller may administer their own organisation."""
     return is_active(ctx) and OperatorRole.ORG_ADMIN in ctx.operator_roles
+
+
+def can_manage_own_webhooks(ctx: AuthContext) -> bool:
+    """Register or delete the caller's own organisation's webhooks.
+
+    At the hosting ISAC, only a signed-in system admin: its webhooks carry the
+    platform's own detection alerts, and the admin organisation's certificate
+    alone -- which whoever holds the issuing CA can mint, in managed hosting the
+    host -- could otherwise subscribe to learn when it has been noticed. At a
+    member, its machine certificate (collectors register their own endpoint)
+    or a signed-in org admin, not any analyst.
+    """
+    if not is_active(ctx):
+        return False
+    if ctx.org_type is OrgType.ADMIN:
+        return is_system_admin(ctx)
+    if ctx.auth_method is AuthMethod.MTLS and ctx.operator_id is None:
+        return True
+    return is_org_admin(ctx)
 
 
 def can_reveal_submitter(ctx: AuthContext) -> bool:

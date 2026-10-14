@@ -1,0 +1,18 @@
+Mutation M62: the admin organisation's certificate alone may register a webhook, and so subscribe to the detection stream
+Re-applies: webhook management open to any caller at the admin organisation (before this commit)
+
+Expect red: packages/aivs-server/tests/authz_matrix/test_principal_matrix.py::test_each_principal_gets_exactly_its_row[admin_certificate]
+
+diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs-server/src/aivs_server/auth/policy.py
+index be57bc3..2a17ff7 100644
+--- a/packages/aivs-server/src/aivs_server/auth/policy.py
++++ b/packages/aivs-server/src/aivs_server/auth/policy.py
+@@ -198,8 +198,6 @@ def can_manage_own_webhooks(ctx: AuthContext) -> bool:
+     """
+     if not is_active(ctx):
+         return False
+-    if ctx.org_type is OrgType.ADMIN:
+-        return is_system_admin(ctx)
+     if ctx.auth_method is AuthMethod.MTLS and ctx.operator_id is None:
+         return True
+     return is_org_admin(ctx)

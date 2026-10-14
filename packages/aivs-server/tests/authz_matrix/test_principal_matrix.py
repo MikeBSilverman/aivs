@@ -125,7 +125,14 @@ EXPECTED: Mapping[RouteClass, Mapping[Principal, Outcome]] = {
         **_allow(P.SYSTEM_ADMIN, P.ISAC_MEMBERSHIP, otherwise=F),
         **dict.fromkeys(CERTIFICATE_ONLY, S),
     },
-    RouteClass.WEBHOOK_DELETE: _allow(*_MEMBER, otherwise=N),
+    RouteClass.WEBHOOK_REGISTER: _allow(
+        P.MEMBER_MACHINE, P.MEMBER_ORG_ADMIN, P.PEER_MACHINE, P.SYSTEM_ADMIN, otherwise=F
+    ),
+    RouteClass.WEBHOOK_DELETE: {
+        **_allow(P.MEMBER_MACHINE, P.MEMBER_ORG_ADMIN, otherwise=F),
+        P.PEER_MACHINE: N,
+        P.SYSTEM_ADMIN: N,
+    },
 }
 
 #: Signing in and out answers every caller alike: the form renders, a wrong

@@ -73,7 +73,11 @@ class RouteClass(enum.StrEnum):
     STATUS_PAGE = "status page"
     #: The caller's own identity and notification endpoints.
     OWN_SETTINGS = "own settings"
-    #: Deleting a webhook, addressed by id: its organisation; others 404.
+    #: Registering a webhook: a member's certificate or org admin; at the ISAC,
+    #: a system admin only (its webhooks carry the detection alerts).
+    WEBHOOK_REGISTER = "webhook register"
+    #: Deleting a webhook, addressed by id: whoever may register one, for their
+    #: own organisation's; others 404, those who may not 403 (before any lookup).
     WEBHOOK_DELETE = "webhook delete"
     #: Signing in and out: the same for every caller.
     SIGN_IN = "sign in"
@@ -498,7 +502,7 @@ ROUTES: tuple[RouteCase, ...] = (
     RouteCase(
         "POST",
         "/api/v1/webhooks",
-        RouteClass.OWN_SETTINGS,
+        RouteClass.WEBHOOK_REGISTER,
         _fixed(f"{API}/webhooks", {"url": "https://hooks.matrix.example/aivs"}),
     ),
     RouteCase(

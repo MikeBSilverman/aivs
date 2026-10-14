@@ -39,6 +39,7 @@ from aivs_server.auth.deps import AuthenticatedContext, SessionDep, SettingsDep
 from aivs_server.auth.policy import (
     can_administer_circle,
     can_manage_org,
+    can_manage_own_webhooks,
     can_pause_distribution,
     can_quarantine_org,
     can_reconnect_org,
@@ -496,6 +497,7 @@ async def register_webhook(
     finds out immediately that they have pointed it somewhere unreachable rather
     than discovering it from a silent absence of notifications.
     """
+    require(can_manage_own_webhooks(ctx), "webhook_register")
     try:
         resolve_delivery_target(
             payload.url, allow_private=settings.dev_allow_private_webhook_targets
@@ -557,8 +559,10 @@ async def delete_webhook(
     """Remove a webhook.
 
     Reported as absent when it belongs to another organisation, so identifiers
-    cannot be probed to learn that someone else registered one.
+    cannot be probed to learn that someone else registered one. The role check
+    comes first and does not depend on the id, so it is no oracle either.
     """
+    require(can_manage_own_webhooks(ctx), "webhook_delete")
     webhook = await session.get(Webhook, webhook_id)
     if webhook is None or webhook.org_id != ctx.org_id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Webhook not found")

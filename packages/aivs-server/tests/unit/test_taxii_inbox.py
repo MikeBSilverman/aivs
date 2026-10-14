@@ -200,6 +200,24 @@ async def test_a_reader_of_the_circle_is_refused_with_taxiis_403(client, session
     assert await _filed(session, world.reader.org.id) == []
 
 
+@pytest.mark.requirement("SF-69")
+async def test_a_contributor_is_refused_with_taxiis_403_where_the_collection_takes_no_writes(
+    client, session, world
+):
+    """``can_write`` is the collection's half of the rule; the circle role is the other.
+
+    The member contributes to the circle, so only the flag refuses it here.
+    """
+    world.collection.can_write = False
+    session.add(world.collection)
+    await session.commit()
+
+    response = await post(client, world, world.member.machine, [note_about(world.published)])
+
+    assert response.status_code == 403
+    assert await _filed(session, world.member.org.id) == []
+
+
 @pytest.mark.requirement("SF-69", "SF-47")
 async def test_an_outsider_gets_the_404_an_absent_collection_gets(
     client, world, make_org, make_cert

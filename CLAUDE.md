@@ -179,7 +179,8 @@ defect, and the script refuses a tree whose target files have uncommitted
 changes. A patch naming several tests must turn each of them red: the
 runner once took pytest's exit status as the verdict, so one red test credited
 the patch with all of them, and a patch carrying two defects (M412) was
-"killed" by the half that belonged to another patch.
+"killed" by the half that belonged to another patch. Turning that on found two
+more patches (M03, M11) naming a test that pinned a different control.
 
 **A mutation proof can run the wrong code.** Python reuses a cached `.pyc`
 when the source's mtime (whole seconds) and size match. Two mutations of one

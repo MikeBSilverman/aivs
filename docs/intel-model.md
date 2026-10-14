@@ -113,9 +113,9 @@ The model the code holds now, as of phase D:
   receipt (SF-8, SF-51).
 - **Discovery scope.** A submission may be filed as `own_product`,
   `own_estate` or `ai_system`. Two further values, `disclosed_third_party` and
-  `coordinated_disclosure`, exist in the Postgres type and the Python enum,
-  and every ingest surface refuses them exactly as it refuses an unknown
-  value (§3.1 explains why they are reserved rather than absent).
+  `coordinated_disclosure`, are contributions about another party's
+  vulnerability, legal only by the current state of the ISAC's canonical
+  record of the target (§3.1; `services/disclosure.py`, SF-7).
   `ai_discovery_method` is optional.
 - **Circles** are the unit of publication, with TLP floors and membership
   held as intervals. **Distributions** record which object became visible to

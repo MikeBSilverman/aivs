@@ -107,17 +107,16 @@ workflow: a member firm can upload content but can never distribute it. Only the
 hosting ISAC moves a submission `submitted → validated → distributed`. That human
 checkpoint is a design feature.
 
-**Planned: the split by disclosure.** The wider goal needs contributions about
-other parties' software, and the line that keeps them lawful is disclosure, not
-ownership. Once a vulnerability is public, any member or vendor may contribute
-defence intelligence about it — a detection, a workaround, a sighting. Before
-disclosure the restriction above stays, with one addition,
-`coordinated_disclosure`: the vendor is a party to the case, recorded by the
-ISAC, or a GOLD EAGLE/VINCE identifier is attached. Until that is built the
-server accepts only the three scopes in the table; the two new values exist in
-the database type so the rule that admits them can ship without a type change,
-and every surface refuses them exactly as it refuses a value it has never
-heard of.
+**The split by disclosure.** Contributions about other parties' software are
+lawful by disclosure, not ownership. Once the ISAC's canonical record of a
+vulnerability says it is published, any member or vendor may contribute
+defence intelligence about it (`disclosed_third_party`): a detection, a
+workaround, a sighting. Before disclosure the restriction above stays, with one
+addition, `coordinated_disclosure`: the vendor is a party to the case, placed
+in the case's circle by an editor and agreeing on the record, or a GOLD
+EAGLE/VINCE identifier is attached. Legality is read from the ISAC's record of
+the target, never from what the submitter's bundle says, at ingest and again at
+validation and distribution (`services/disclosure.py`, SF-7).
 
 ---
 

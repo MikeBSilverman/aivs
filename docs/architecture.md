@@ -153,12 +153,15 @@ goal needs a line drawn by **disclosure** instead: once a vulnerability is
 public, anyone may contribute defence intelligence about it; before disclosure
 the three scopes above hold, plus `coordinated_disclosure` (the vendor is a
 recorded party to the case, or a GOLD EAGLE/VINCE identifier is attached).
-That split is planned, not built. The two new values, `disclosed_third_party`
-and `coordinated_disclosure`, are reserved in the storage type so the rule that
-admits them can ship without a type change; until it does,
-`ACCEPTED_DISCOVERY_SCOPES` holds only the three values in the table, and every
-ingest surface refuses a reserved value exactly as it refuses an unknown one — a
-distinct refusal would advertise a capability that does not exist.
+That split is built (`services/disclosure.py`, SF-7). The three scopes in the
+table are always accepted (`ACCEPTED_DISCOVERY_SCOPES`); the two third-party
+scopes (`THIRD_PARTY_DISCOVERY_SCOPES`) are legal only by the current state of
+the ISAC's canonical record of the target: `disclosed_third_party` once its
+`cve_status` is `published`, `coordinated_disclosure` while the vendor is a
+recorded party to the case or a CERT case id is attached. It is checked at
+ingest against what the submitter can see, and again at validation and
+distribution against the ISAC's view, and a target the submitter cannot see
+gets the refusal a nonexistent one does.
 
 ---
 

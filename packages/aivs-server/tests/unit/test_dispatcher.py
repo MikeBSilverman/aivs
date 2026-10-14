@@ -25,6 +25,7 @@ from aivs_server.auth.secretbox import SecretPurpose
 from aivs_server.db.models import Webhook, WebhookDelivery
 from aivs_server.notify.dispatcher import _next_attempt_delay, dispatch_pending
 from aivs_server.notify.webhooks import SIGNATURE_HEADER, sign_payload
+from aivs_server.services.detections import RULES
 from tests.conftest import StubEndpoint, proxy_headers
 
 pytestmark = pytest.mark.db
@@ -219,6 +220,11 @@ async def test_a_delivery_for_a_removed_webhook_is_ignored(session, settings, qu
     assert remaining == [], "cascade removes the deliveries with the registration"
 
 
+async def _key_alerts(session, now):
+    rule = next(r for r in RULES if r.name == "signing_key_unavailable")
+    return await rule.check(session, now, rule.window, rule.threshold)
+
+
 async def test_an_unopenable_signing_key_defers_the_delivery_until_it_is_fixed(
     session, settings, queued, member_endpoint
 ):
@@ -251,6 +257,8 @@ async def test_an_unopenable_signing_key_defers_the_delivery_until_it_is_fixed(
     assert delivery.next_attempt_at is not None
     assert delivery.next_attempt_at > now, "deferred, to be retried"
     assert webhook.consecutive_failures == 0, "not held against the member's endpoint"
+    # Held, but not silently: the ISAC is alerted (it was not, before review).
+    assert [f.subject for f in await _key_alerts(session, now)] == [str(webhook.id)]
 
     webhook.hmac_secret_encrypted = sealed
     await session.commit()
@@ -260,6 +268,7 @@ async def test_an_unopenable_signing_key_defers_the_delivery_until_it_is_fixed(
     await session.refresh(delivery)
     assert delivery.delivered_at is not None
     assert len(endpoint.requests) == 1
+    assert await _key_alerts(session, later) == [], "nothing held once delivered"
 
 
 # ---------------------------------------------------------------------------

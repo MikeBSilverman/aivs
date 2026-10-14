@@ -39,6 +39,7 @@ from aivs_server.db.models import (
     Webhook,
     WebhookDelivery,
 )
+from aivs_server.notify.dispatcher import KEY_UNAVAILABLE_ERROR
 from aivs_server.observability import HEARTBEATS
 
 __all__ = ["EVENT_DETECTION_RAISED", "RULES", "Finding", "run_detections"]
@@ -220,6 +221,40 @@ async def _first_distribution_to_circle(
     ]
 
 
+async def _signing_key_unavailable(
+    session: AsyncSession, now: dt.datetime, window: dt.timedelta, threshold: int
+) -> list[Finding]:
+    """Notifications held because their signing key cannot be opened.
+
+    The dispatcher defers them rather than spending an attempt, which is right
+    for a configuration fault on our side, and retries every few minutes for as
+    long as it lasts. Without this the member simply stops hearing, and the
+    only trace is an ERROR line every few minutes.
+    """
+    del now, window
+    rows = (
+        await session.execute(
+            select(WebhookDelivery.webhook_id, func.count())
+            .where(
+                WebhookDelivery.delivered_at.is_(None),
+                WebhookDelivery.error == KEY_UNAVAILABLE_ERROR,
+            )
+            .group_by(WebhookDelivery.webhook_id)
+            .having(func.count() >= threshold)
+        )
+    ).all()
+    return [
+        Finding(
+            rule="signing_key_unavailable",
+            severity="high",
+            subject=str(webhook_id),
+            summary=f"{count} notification(s) held: their signing key cannot be opened",
+            count=int(count),
+        )
+        for webhook_id, count in rows
+    ]
+
+
 async def _bulk_retrieval(
     session: AsyncSession, now: dt.datetime, window: dt.timedelta, threshold: int
 ) -> list[Finding]:
@@ -302,6 +337,13 @@ RULES: Final[tuple[Rule, ...]] = (
     Rule("auth_failure_burst", "medium", dt.timedelta(minutes=10), 20, _auth_failure_burst),
     Rule("login_failure_burst", "high", dt.timedelta(minutes=15), 10, _login_failure_burst),
     Rule("bulk_retrieval", "high", dt.timedelta(hours=1), 200, _bulk_retrieval),
+    Rule(
+        "signing_key_unavailable",
+        "high",
+        dt.timedelta(hours=6),
+        1,
+        _signing_key_unavailable,
+    ),
     Rule("not_found_burst", "medium", dt.timedelta(minutes=10), 50, _not_found_burst),
     Rule(
         "first_distribution_to_circle",

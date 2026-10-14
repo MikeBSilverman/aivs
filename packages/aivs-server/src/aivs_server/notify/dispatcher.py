@@ -45,7 +45,7 @@ from aivs_server.notify.webhooks import (
     sign_payload,
 )
 
-__all__ = ["dispatch_pending"]
+__all__ = ["KEY_UNAVAILABLE_ERROR", "dispatch_pending"]
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +61,11 @@ _BACKOFF_BASE: Final[int] = 5
 #: rather than backed off: the cause is a configuration on our side, and the
 #: retry should pick up the fix promptly without hammering the log meanwhile.
 _KEY_UNAVAILABLE_RETRY: Final[dt.timedelta] = dt.timedelta(minutes=5)
+
+#: Recorded on a delivery held for that reason. The ``signing_key_unavailable``
+#: detection and the status page read it: a delivery deferred forever with no
+#: alert was the silent failure this module had.
+KEY_UNAVAILABLE_ERROR: Final[str] = "signing key could not be opened"
 
 _SUCCESS_FLOOR: Final[int] = 200
 _SUCCESS_CEILING: Final[int] = 300
@@ -186,7 +191,7 @@ async def _attempt(
         #
         # `consecutive_failures` is not incremented either: it describes the
         # member's endpoint, which was never at fault.
-        delivery.error = "signing key could not be opened"
+        delivery.error = KEY_UNAVAILABLE_ERROR
         delivery.next_attempt_at = now + _KEY_UNAVAILABLE_RETRY
         logger.error(
             "webhook signing key could not be opened; check AIVS_SECRET_ENCRYPTION_KEY",

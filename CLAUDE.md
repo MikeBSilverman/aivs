@@ -437,7 +437,11 @@ its siblings.
 **Two descriptions of one thing will drift.** The STIX extension is described by
 both a JSON Schema and a `stix2` registration; they diverged within a day. A
 test now asserts they enumerate the same properties. Any time you write a second
-description of something, write the test that pins them together.
+description of something, write the test that pins them together. That includes
+prose: the authorization table in `docs/authz-model.md` is what a member's
+counsel reads, and it showed a receipts policy two changes old until a test
+started comparing it with the asserted matrix. Generate such a table from the
+code's own description, then pin it.
 
 **Version resolution is scoped to what the caller can see.** `match[version]=last`
 resolves the latest *visible* version. Resolving globally then filtering would

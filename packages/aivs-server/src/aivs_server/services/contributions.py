@@ -553,7 +553,7 @@ async def submit_submission(
     has one home.
     """
     await apply_transition(session, ctx, submission, SubmissionState.SUBMITTED, reason=reason)
-    if submission.source is not SubmissionSource.MEMBER or filer_problem(ctx) is not None:
+    if submission.source is not SubmissionSource.MEMBER or ctx.operator_id is None:
         return submission
     raws = list(
         (

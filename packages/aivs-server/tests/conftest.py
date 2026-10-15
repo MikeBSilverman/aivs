@@ -26,6 +26,7 @@ import base64
 import datetime as dt
 import functools
 import os
+import secrets
 import shutil
 import tempfile
 import uuid
@@ -66,6 +67,7 @@ from aivs_server.auth.sessions import establish_session
 from aivs_server.config import Settings
 from aivs_server.db import models
 from aivs_server.db.base import Base
+from aivs_server.db.grants import grant_member_role
 from aivs_server.services.attribution import (
     FilingRecord,
     owner_tokens_for,
@@ -162,11 +164,17 @@ TEST_ATTRIBUTION_KEY_FILE.chmod(0o600)
 TEST_ATTRIBUTION_KEY = AttributionKey(TEST_ATTRIBUTION_KEY_BYTES)
 
 
-#: The member login's URL in the suite's settings: the test database under
-#: another role name, which no test connects as.
+#: The member login the suite's member engine connects as: a real role, granted
+#: by ``grant_member_role`` exactly as the migration step grants a deployment's,
+#: so a member request that needs a privilege the login lacks fails here rather
+#: than in production. Roles are cluster-wide, so the name derives from the test
+#: database's: two concurrent runs never share one. The password is minted per
+#: run; CI's Postgres authenticates by password, the local one by trust.
+TEST_MEMBER_ROLE = f"aivs_member_{make_url(TEST_DATABASE_URL).database}"
+_TEST_MEMBER_PASSWORD = secrets.token_hex(16)
 TEST_MEMBER_DATABASE_URL = (
     make_url(TEST_DATABASE_URL)
-    .set(username="aivs_member_suite")
+    .set(username=TEST_MEMBER_ROLE, password=_TEST_MEMBER_PASSWORD)
     .render_as_string(hide_password=False)
 )
 
@@ -184,9 +192,8 @@ def settings() -> Settings:
         instance_name="AIVS Test",
         public_base_url="https://aivs.test",
         database_url=TEST_DATABASE_URL,  # type: ignore[arg-type]
-        # A login of its own, as the posture requires outside dev. Never
-        # connected to: the app fixture points both engines at the test
-        # database, which the suite reaches as one role.
+        # A login of its own, as the posture requires outside dev: the app
+        # fixture's member engine connects as it.
         member_database_url=TEST_MEMBER_DATABASE_URL,  # type: ignore[arg-type]
         proxy_shared_secret=TEST_PROXY_SECRET,  # type: ignore[arg-type]
         session_secret=TEST_SESSION_SECRET,  # type: ignore[arg-type]
@@ -356,6 +363,15 @@ async def engine(settings: Settings) -> AsyncIterator[Any]:
 
 
 @pytest.fixture(scope="session")
+async def member_engine(settings: Settings, _schema: None) -> AsyncIterator[Any]:
+    """Session-scoped engine on the test database, as the suite's member login."""
+    assert settings.member_database_url is not None
+    engine = create_async_engine(settings.member_database_url.get_secret_value(), poolclass=None)
+    yield engine
+    await engine.dispose()
+
+
+@pytest.fixture(scope="session")
 async def _schema(engine: Any) -> AsyncIterator[None]:
     """Create the schema once for the session, then drop it.
 
@@ -387,10 +403,45 @@ async def _schema(engine: Any) -> AsyncIterator[None]:
                 "FOR EACH ROW EXECUTE FUNCTION aivs_offboarded_is_terminal();"
             )
         )
+    await _create_member_role(engine)
     yield
     async with engine.begin() as connection:
         await _refuse_to_wait_on_another_run(connection)
         await connection.run_sync(Base.metadata.drop_all)
+        await _drop_member_role(connection)
+        await connection.execute(text("DROP TABLE IF EXISTS alembic_version"))
+
+
+async def _create_member_role(engine: Any) -> None:
+    """The suite's member login, granted what a deployment's is granted.
+
+    A role left by a run that was killed is dropped first, with what it was
+    granted: the tables it was granted on went with that run's ``drop_all``,
+    but its grants on the schemas did not.
+    """
+    async with engine.begin() as connection:
+        await _drop_member_role(connection)
+        # Every migrated database has it, and the grants name it.
+        await connection.execute(
+            text("CREATE TABLE IF NOT EXISTS alembic_version (version_num varchar(32) PRIMARY KEY)")
+        )
+        await connection.execute(
+            text(f"CREATE ROLE \"{TEST_MEMBER_ROLE}\" LOGIN PASSWORD '{_TEST_MEMBER_PASSWORD}'")
+        )
+        staff_role = (await connection.execute(text("SELECT current_user"))).scalar_one()
+        await connection.run_sync(
+            functools.partial(grant_member_role, role=TEST_MEMBER_ROLE, staff_role=staff_role)
+        )
+
+
+async def _drop_member_role(connection: Any) -> None:
+    exists = await connection.execute(
+        text("SELECT 1 FROM pg_roles WHERE rolname = :role"), {"role": TEST_MEMBER_ROLE}
+    )
+    if exists.scalar_one_or_none() is None:
+        return
+    await connection.execute(text(f'DROP OWNED BY "{TEST_MEMBER_ROLE}"'))
+    await connection.execute(text(f'DROP ROLE "{TEST_MEMBER_ROLE}"'))
 
 
 async def _refuse_to_wait_on_another_run(connection: Any) -> None:
@@ -520,7 +571,9 @@ async def session(engine: Any, _schema: None) -> AsyncIterator[AsyncSession]:
 # Application
 # ---------------------------------------------------------------------------
 @pytest.fixture
-async def app(settings: Settings, engine: Any, _schema: None) -> AsyncIterator[Any]:
+async def app(
+    settings: Settings, engine: Any, member_engine: Any, _schema: None
+) -> AsyncIterator[Any]:
     """The FastAPI application wired to the test database."""
     # Imported inside the fixture so that module import order cannot cause
     # aivs_server.db.engine to build a real engine from process environment
@@ -535,10 +588,13 @@ async def app(settings: Settings, engine: Any, _schema: None) -> AsyncIterator[A
     factory = async_sessionmaker(bind=engine, expire_on_commit=False, autoflush=False)
     engine_module._engine = engine
     engine_module._sessionmaker = factory
-    # The member login shares the test database: the suite runs as one role.
-    # Which login each caller is routed to is asserted by test_database_logins.
-    engine_module._member_engine = engine
-    engine_module._member_sessionmaker = factory
+    # The member engine connects as the suite's member login, so every member
+    # request runs with that login's grants. Which login each caller is routed
+    # to is asserted by test_database_logins.
+    engine_module._member_engine = member_engine
+    engine_module._member_sessionmaker = async_sessionmaker(
+        bind=member_engine, expire_on_commit=False, autoflush=False
+    )
 
     application = create_app(settings)
     yield application

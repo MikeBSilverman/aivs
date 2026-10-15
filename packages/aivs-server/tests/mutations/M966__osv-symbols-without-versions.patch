@@ -1,0 +1,19 @@
+Mutation M966: a product with no version range is exported with no ranges
+Re-applies: symbols without versions, which a scanner reads as no version affected
+
+Expect red: packages/aivs-server/tests/unit/test_osv_export.py::test_a_product_without_a_range_or_in_an_unknown_ecosystem_is_refused
+
+diff --git a/packages/aivs-server/src/aivs_server/services/osv_export.py b/packages/aivs-server/src/aivs_server/services/osv_export.py
+index f5ca4ad..53204b4 100644
+--- a/packages/aivs-server/src/aivs_server/services/osv_export.py
++++ b/packages/aivs-server/src/aivs_server/services/osv_export.py
+@@ -249,8 +249,7 @@ def _intervals(version_range: Any, package: _Package) -> list[list[dict[str, str
+     in one range, and ``<`` and ``<=`` bounds can both appear in one vers.
+     """
+     if not isinstance(version_range, str) or "/" not in version_range:
+-        reason = f"{package.purl} states no version range"
+-        raise OsvRefusedError(reason)
++        return []
+     scheme, _, constraints = version_range.removeprefix("vers:").partition("/")
+     if scheme not in package.ecosystem.vers_schemes:
+         reason = f"{version_range} is not in a scheme {package.ecosystem.name} orders"

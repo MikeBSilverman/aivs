@@ -18,8 +18,10 @@ from pydantic import BaseModel
 from aivs_server.auth.deps import AuthenticatedContext, SessionDep
 from aivs_server.db.clock import database_now
 from aivs_server.services.exploitability import ExploitabilityStatus, exploitability_for
+from aivs_server.services.osv_export import OsvRefusedError, osv_for
 from aivs_server.services.readiness import Availability, readiness_for
 from aivs_server.services.visible import VulnerabilityNotVisibleError
+from aivs_server.services.vulnerability_objects import VulnerabilityHiddenError
 
 __all__ = ["router"]
 
@@ -142,3 +144,26 @@ async def exploitability(
             for source in view.sources
         ],
     )
+
+
+@router.get("/vulnerabilities/osv", response_model=None)
+async def osv(
+    ctx: AuthenticatedContext,
+    session: SessionDep,
+    stix_id: Annotated[str, Query(alias="id", max_length=100)],
+) -> dict[str, Any]:
+    """The vulnerability as an OSV record, for reachability tools (Phase N).
+
+    409 with the reason when the record could not say everything the caller's
+    view does: a scanner reads a missing product, range or symbol as "not
+    affected", so a partial record is never sent. The same 404 for a
+    malformed, an unknown and an invisible id, as readiness gives (SF-47).
+    """
+    if _VULNERABILITY_ID.match(stix_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Not found")
+    try:
+        return await osv_for(session, ctx, stix_id, now=await database_now(session))
+    except VulnerabilityHiddenError:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Not found") from None
+    except OsvRefusedError as refused:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=refused.reason) from None

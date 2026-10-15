@@ -1,0 +1,18 @@
+Mutation M965: an inclusive upper bound is exported as OSV's exclusive fixed
+Re-applies: one event name for both bounds: the last affected version reads as fixed
+
+Expect red: packages/aivs-server/tests/unit/test_osv_export.py::test_a_vers_range_converts_interval_by_interval
+
+diff --git a/packages/aivs-server/src/aivs_server/services/osv_export.py b/packages/aivs-server/src/aivs_server/services/osv_export.py
+index f5ca4ad..56986cc 100644
+--- a/packages/aivs-server/src/aivs_server/services/osv_export.py
++++ b/packages/aivs-server/src/aivs_server/services/osv_export.py
+@@ -277,7 +277,7 @@ def _events(constraints: Sequence[str], ecosystem: _Ecosystem) -> Iterator[list[
+         if operator == ">=" and lower is None:
+             lower = version
+         elif operator in {"<", "<="} and (lower is not None or position == 0):
+-            bound = "fixed" if operator == "<" else "last_affected"
++            bound = "fixed"
+             yield [{"introduced": lower or "0"}, {bound: version}]
+             lower = None
+         elif operator == "=" and lower is None:

@@ -474,6 +474,24 @@ sequences):
 | A stolen member credential harvests the firm's evidence packs. | Each draw is audited with the pack's hash; `evidence_pack_burst` raises when one organisation draws 20 in an hour (SF-79). |
 | A posture change tells the ISAC the status through a receipt. | "We've acted" is a separate, explicit click; setting a posture writes no receipt (SF-79). |
 
+## Cross-cutting: exploitability conditions (Phase N)
+
+A condition note tells most members they are *not* affected. That makes it
+the one kind of content whose error is silent: a wrong fix fails visibly when
+applied, while a wrong condition leaves a member unpatched and sure of it. It
+is also the most precise content the instance holds, naming the function or
+setting an attacker needs before a patch exists.
+
+| What goes wrong | What stops it |
+| --- | --- |
+| A malformed condition reads to a member's tooling as "no requirements" and clears everyone. | Conditions are typed terms, refused at ingest naming the note and term; an empty list is refused; such a note is always reviewed, never post-moderated (SF-83). |
+| Two sources disagree, and a merged set narrows what one of them says is exposed. | A disagreement is `contested` with no merged set; standard depth lists each source's account, guided depth gives no conditions at all and says to treat yourself as affected (SF-84). |
+| No source has spoken, and an empty answer reads as "not affected". | `not_established` says "assume affected", never an empty list; readiness's `scoping` is unavailable, never `none_available` (SF-84). |
+| A member clicks "this doesn't hold for us" and is recorded not affected without deciding it. | The click fills the posture form and writes nothing; a condition the caller cannot see fills in nothing (SF-84). |
+| A scanner reads an OSV record's missing product, range or symbol as "not affected". | The export is complete or refused with 409; one product it cannot carry refuses the whole record; what it drops only widens the record (SF-86). |
+| A pre-patch condition, a roadmap to exploitation, reaches a wider circle than its own. | The view and the export read through the one visibility scope, at each note's latest visible version, so an embargoed or narrower circle's condition counts for, and contests, nothing outside it (SF-84, SF-8). |
+| A source contests a correct set to push every member back to "assume affected". | It fails wide, not narrow; condition notes are reviewed before distribution, and a contested view names each source's note for the editor to resolve (R23). |
+
 ## Consolidated residual risk register
 
 | # | Residual risk | Severity | Owner |
@@ -497,6 +515,8 @@ sequences):
 | R19 | The audit stream waits behind the oldest running transaction on the whole database cluster: a connection left idle in a transaction stalls the SIEM's feed (it never skips). | Low | Hosting ISAC — runbook §9.6; monitor for idle-in-transaction connections |
 | R20 | A posture is kept as its current statement only, so an evidence pack shows the posture now and when it last changed, not its history. | Low | Member — draw and keep packs at the points a regulator will ask about |
 | R21 | A member's auditor role is enforced but cannot yet be created: operators are created only from the host for the ISAC. | Low | Lands with member operator management (Phase L) |
+| R22 | An agreed condition set that is wrong narrows exposure for every member relying on it: agreement is between sources, not a proof, and a member who checks a condition and finds it absent records itself not affected. | Medium | ISAC editors (review; `reproduced` and `unknowns` shown); members confirm with the stated check |
+| R23 | A source can contest a correct condition set and return every member to "assume affected" for that vulnerability. | Low | ISAC editors resolve contested views; fails wide by design |
 | R11 | Webhook SSRF residual via DNS rebinding. | Low | Resolve-and-pin; egress policy |
 | R12 | A member firm can poison the corpus with plausible false findings. | Low–Medium | Reviewer judgement |
 

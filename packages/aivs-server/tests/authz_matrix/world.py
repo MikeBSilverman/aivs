@@ -20,6 +20,7 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aivs_schemas.enums import CircleRole, OperatorRole, OrgStatus, OrgType, ReadingDepth
+from aivs_schemas.extension.builders import AIVS_INTEL_EXTENSION_ID
 from aivs_server.auth.secretbox import SecretBox, SecretPurpose
 from aivs_server.auth.sessions import establish_session, establish_sso_session
 from aivs_server.config import Settings
@@ -47,6 +48,9 @@ class World:
     circle_id: uuid.UUID | None = None
     collection_id: uuid.UUID | None = None
     object_stix_id: str = ""
+    #: A vulnerability the OSV export can carry whole: a purl, a range and an
+    #: agreed function condition, so an allowed caller gets a record, not a 409.
+    osv_stix_id: str = ""
     unregistered_pem: str = ""
     revocable_certificate_id: uuid.UUID | None = None
     webhook_id: uuid.UUID | None = None
@@ -78,23 +82,58 @@ class Factories:
     make_operator: Any
 
 
-def _bundle(name: str) -> tuple[dict[str, Any], str]:
+def _bundle(name: str, *, exportable: bool = False) -> tuple[dict[str, Any], str]:
     stix_id = f"vulnerability--{uuid.uuid4()}"
-    bundle = {
-        "type": "bundle",
-        "id": f"bundle--{uuid.uuid4()}",
-        "objects": [
-            {
-                "type": "vulnerability",
-                "spec_version": "2.1",
-                "id": stix_id,
-                "created": STAMP,
-                "modified": STAMP,
-                "name": name,
-            }
-        ],
+    vulnerability: dict[str, Any] = {
+        "type": "vulnerability",
+        "spec_version": "2.1",
+        "id": stix_id,
+        "created": STAMP,
+        "modified": STAMP,
+        "name": name,
     }
+    objects = [vulnerability, *(_exportable(vulnerability) if exportable else ())]
+    bundle = {"type": "bundle", "id": f"bundle--{uuid.uuid4()}", "objects": objects}
     return bundle, stix_id
+
+
+def _exportable(vulnerability: dict[str, Any]) -> list[dict[str, Any]]:
+    """Make ``vulnerability`` one the OSV export carries whole; return its condition note."""
+    vulnerability["extensions"] = {
+        AIVS_INTEL_EXTENSION_ID: {
+            "extension_type": "property-extension",
+            "aivs_schema_version": "2.0",
+            "discovery_scope": "own_product",
+            "cve_status": "pre-cve",
+            "affected_products": [
+                {
+                    "vendor": "Example",
+                    "product": "xml",
+                    "purl": "pkg:golang/example.com/xml",
+                    "version_range": "vers:golang/<v1.4.1",
+                }
+            ],
+        }
+    }
+    calls = {"ecosystem": "Go", "package": "pkg:golang/example.com/xml", "symbol": "Parse"}
+    note = {
+        "type": "note",
+        "spec_version": "2.1",
+        "id": f"note--{uuid.uuid4()}",
+        "created": STAMP,
+        "modified": STAMP,
+        "content": "Exploitability conditions.",
+        "object_refs": [vulnerability["id"]],
+        "extensions": {
+            AIVS_INTEL_EXTENSION_ID: {
+                "extension_type": "property-extension",
+                "aivs_schema_version": "2.1",
+                "summary": "Reachable only through Parse.",
+                "conditions": [{"id": "fn", "kind": "function", "any_of": [calls]}],
+            }
+        },
+    }
+    return [note]
 
 
 def inbox_note(public_stix_id: str) -> dict[str, Any]:
@@ -212,8 +251,10 @@ class _Seeder:
         assert submitted.json()["state"] == "distributed", submitted.text
         return uuid.UUID(filed.json()["id"])
 
-    async def create(self, name: str, *, anonymous: bool = False) -> tuple[uuid.UUID, str]:
-        bundle, stix_id = _bundle(name)
+    async def create(
+        self, name: str, *, anonymous: bool = False, exportable: bool = False
+    ) -> tuple[uuid.UUID, str]:
+        bundle, stix_id = _bundle(name, exportable=exportable)
         response = await self.client.post(
             API,
             json={
@@ -238,9 +279,14 @@ class _Seeder:
         assert response.status_code == 200, f"{verb}: {response.text}"
 
     async def distributed(
-        self, name: str, *, anonymous: bool = False, release_at: dt.datetime | None = None
+        self,
+        name: str,
+        *,
+        anonymous: bool = False,
+        exportable: bool = False,
+        release_at: dt.datetime | None = None,
     ) -> tuple[uuid.UUID, str]:
-        submission_id, stix_id = await self.create(name, anonymous=anonymous)
+        submission_id, stix_id = await self.create(name, anonymous=anonymous, exportable=exportable)
         await self.step(submission_id, "submit")
         await self.step(submission_id, "validate")
         body: dict[str, Any] = {"circle_ids": [str(self.circle_id)]}
@@ -393,6 +439,9 @@ async def build_world(f: Factories) -> tuple[World, dict[Principal, Credentials]
 async def _seed_submissions(world: World, seed: _Seeder) -> None:
     later = dt.datetime.now(dt.UTC) + dt.timedelta(days=3)
     world.submissions["read"], world.object_stix_id = await seed.distributed("Matrix read")
+    world.submissions["osv"], world.osv_stix_id = await seed.distributed(
+        "Matrix OSV", exportable=True
+    )
     for name in ("patch", "submit", "withdraw"):
         world.submissions[name], _ = await seed.create(f"Matrix {name}")
     for name in ("validate", "validate_portal", "bulk", "bulk_portal"):

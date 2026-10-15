@@ -1,0 +1,31 @@
+Mutation M967: the OSV export reads conditions from every circle, not the caller's
+Re-applies: the view built over the whole table, so a narrower or embargoed circle's condition reaches the export (SF-8)
+
+Expect red: packages/aivs-server/tests/unit/test_osv_export.py::test_a_condition_shared_only_elsewhere_exports_nothing
+
+diff --git a/packages/aivs-server/src/aivs_server/services/osv_export.py b/packages/aivs-server/src/aivs_server/services/osv_export.py
+index f5ca4ad..e1d40dc 100644
+--- a/packages/aivs-server/src/aivs_server/services/osv_export.py
++++ b/packages/aivs-server/src/aivs_server/services/osv_export.py
+@@ -36,10 +36,12 @@ from dataclasses import dataclass
+ from typing import Any, Final
+ from urllib.parse import unquote
+ 
++from sqlalchemy import select
+ from sqlalchemy.ext.asyncio import AsyncSession
+ 
+ from aivs_schemas.extension.builders import AIVS_EXTENSION_ID, AIVS_INTEL_EXTENSION_ID
+ from aivs_server.auth.context import AuthContext
++from aivs_server.db.models import StixObject
+ from aivs_server.services.exploitability import (
+     ExploitabilityStatus,
+     ExploitabilityView,
+@@ -110,7 +112,7 @@ async def osv_for(
+     complete.
+     """
+     found = await gather_vulnerability(session, ctx, vulnerability_stix_id, now=now)
+-    view = await exploitability_in(session, visible_objects(ctx, now), vulnerability_stix_id)
++    view = await exploitability_in(session, select(StixObject), vulnerability_stix_id)
+     return osv_record(found.vulnerability.raw, view)
+ 
+ 

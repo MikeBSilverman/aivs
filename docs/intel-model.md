@@ -370,8 +370,20 @@ In progress. Built:
   conditions or the sources disagree. A contested view gives the guided
   reader no conditions, since any one source's list would narrow another's.
 
-Planned: intake from CVE 5.x and OSV records through the KEV/NVD script, and
-the OSV export.
+- **The OSV export** at `GET /api/v1/vulnerabilities/osv?id=`: the
+  vulnerability as an OSV 1.9.1 record (id `x_AIVS-<uuid>`), for the
+  reachability tools that read OSV (SF-86). A scanner reads a missing
+  product, range or symbol as "not affected", so the record is complete or
+  refused with a 409 naming what is missing, never sent smaller. It needs
+  the view `agreed` with a function condition, and every affected product
+  with a purl in an ecosystem OSV knows and a `vers:` range that converts
+  exactly, one OSV range per interval. Conditions OSV has no field for
+  (platform, configuration, exposure, file, module, version) are left out,
+  which widens the record; every function condition's symbols go in one
+  list, which widens it again. Symbols use the `ecosystem_specific.imports`
+  shape Go's tooling reads.
+
+Planned: intake from CVE 5.x and OSV records through the KEV/NVD script.
 
 ### 3.6 Phase I: documents
 

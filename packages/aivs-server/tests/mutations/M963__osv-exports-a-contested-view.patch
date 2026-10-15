@@ -1,0 +1,21 @@
+Mutation M963: a contested view is exported with every source's functions
+Re-applies: the helpful version: a scanner gets the symbols anyone named, and one source's list narrows another's (plan, Phase N, property 1)
+
+Expect red: packages/aivs-server/tests/unit/test_osv_export.py::test_nothing_is_exported_until_the_sources_agree
+
+diff --git a/packages/aivs-server/src/aivs_server/services/osv_export.py b/packages/aivs-server/src/aivs_server/services/osv_export.py
+index f5ca4ad..5f7d006 100644
+--- a/packages/aivs-server/src/aivs_server/services/osv_export.py
++++ b/packages/aivs-server/src/aivs_server/services/osv_export.py
+@@ -116,9 +116,9 @@ async def osv_for(
+ 
+ def osv_record(vulnerability: Mapping[str, Any], view: ExploitabilityView) -> dict[str, Any]:
+     """``vulnerability`` and its view as an OSV record, or :class:`OsvRefusedError`."""
+-    if view.status is not ExploitabilityStatus.AGREED:
++    if view.status is ExploitabilityStatus.NOT_ESTABLISHED:
+         raise OsvRefusedError(_NOT_AGREED[view.status])
+-    functions = [c for c in view.conditions if c["kind"] == "function"]
++    functions = [c for s in view.sources for c in s.conditions if c["kind"] == "function"]
+     if not functions:
+         reason = "no agreed condition names a function, which is what OSV carries"
+         raise OsvRefusedError(reason)

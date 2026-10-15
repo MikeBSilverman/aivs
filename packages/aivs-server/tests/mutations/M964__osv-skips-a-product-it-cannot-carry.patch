@@ -1,0 +1,18 @@
+Mutation M964: a product with no purl is left out of the record
+Re-applies: export what can be exported: the scanner then reads the product left out as not affected
+
+Expect red: packages/aivs-server/tests/unit/test_osv_export.py::test_one_product_the_record_cannot_carry_refuses_the_whole_record
+
+diff --git a/packages/aivs-server/src/aivs_server/services/osv_export.py b/packages/aivs-server/src/aivs_server/services/osv_export.py
+index f5ca4ad..052d9f3 100644
+--- a/packages/aivs-server/src/aivs_server/services/osv_export.py
++++ b/packages/aivs-server/src/aivs_server/services/osv_export.py
+@@ -134,7 +134,7 @@ def osv_record(vulnerability: Mapping[str, Any], view: ExploitabilityView) -> di
+         "modified": _stamp(_modified(vulnerability, view)),
+         "published": _stamp(_parse(vulnerability["created"])),
+         "summary": str(vulnerability.get("name", "")),
+-        "affected": [_affected(product, symbols) for product in products],
++        "affected": [_affected(product, symbols) for product in products if product.get("purl")],
+     }
+     if isinstance(vulnerability.get("description"), str):
+         record["details"] = vulnerability["description"]

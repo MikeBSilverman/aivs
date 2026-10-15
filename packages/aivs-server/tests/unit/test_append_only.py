@@ -20,7 +20,8 @@ from __future__ import annotations
 
 import pytest
 from sqlalchemy import text
-from sqlalchemy.exc import DBAPIError
+
+from aivs_server.db.engine import PrivilegeRefusedError
 
 APPEND_ONLY_TABLES = ("audit_log", "submission_transitions", "audit_stream_modes")
 
@@ -29,7 +30,8 @@ APPEND_ONLY_TABLES = ("audit_log", "submission_transitions", "audit_stream_modes
 #: The UPDATE probe used to be ``SET action = 'tampered'`` for both, and
 #: ``submission_transitions`` has no ``action`` column -- so PostgreSQL raised
 #: UndefinedColumn before the trigger was ever consulted, and
-#: ``pytest.raises(DBAPIError)`` accepted it. The UPDATE half of the guarantee
+#: ``pytest.raises(DBAPIError)`` accepted it (the trigger's refusal is now raised
+#: as ``PrivilegeRefusedError``, carrying the trigger's text). The UPDATE half of the guarantee
 #: passed for that table with the trigger dropped. Both the real column and the
 #: ``match=`` below are needed: either alone leaves the test satisfied by the
 #: wrong error.
@@ -63,7 +65,7 @@ async def seeded_audit_row(session):
 async def test_update_is_refused(session, table, seeded_audit_row):
     """Rewriting history is refused, not merely discouraged."""
     column = MUTABLE_COLUMN[table]
-    with pytest.raises(DBAPIError, match=REFUSAL):
+    with pytest.raises(PrivilegeRefusedError, match=REFUSAL):
         await session.execute(text(f"UPDATE {table} SET {column} = {column}"))  # noqa: S608
     await session.rollback()
 
@@ -71,7 +73,7 @@ async def test_update_is_refused(session, table, seeded_audit_row):
 @pytest.mark.parametrize("table", APPEND_ONLY_TABLES)
 @pytest.mark.requirement("NFR-S6")
 async def test_delete_is_refused(session, table, seeded_audit_row):
-    with pytest.raises(DBAPIError, match=REFUSAL):
+    with pytest.raises(PrivilegeRefusedError, match=REFUSAL):
         await session.execute(text(f"DELETE FROM {table}"))  # noqa: S608
     await session.rollback()
 
@@ -83,7 +85,7 @@ async def test_truncate_is_refused(session, table, seeded_audit_row):
     references (``submission_triage`` references the transitions) refuses a
     plain TRUNCATE on the foreign key, before the trigger is reached, and the
     refusal would then say nothing about the trigger."""
-    with pytest.raises(DBAPIError, match=REFUSAL):
+    with pytest.raises(PrivilegeRefusedError, match=REFUSAL):
         await session.execute(text(f"TRUNCATE {table} CASCADE"))
     await session.rollback()
 
@@ -96,7 +98,7 @@ async def test_a_delete_matching_no_rows_is_still_refused(session, table, seeded
     nothing would succeed silently and tell an attacker the table is mutable.
     Statement-level fires regardless, so probing and doing are equally refused.
     """
-    with pytest.raises(DBAPIError, match=REFUSAL):
+    with pytest.raises(PrivilegeRefusedError, match=REFUSAL):
         await session.execute(text(f"DELETE FROM {table} WHERE id = -1"))  # noqa: S608
     await session.rollback()
 
@@ -120,7 +122,7 @@ async def test_the_protection_survives_a_refused_attempt(session, seeded_audit_r
     """A rejected mutation must leave the row untouched, not partially applied."""
     before = (await session.execute(text("SELECT count(*) FROM audit_log"))).scalar_one()
 
-    with pytest.raises(DBAPIError, match=REFUSAL):
+    with pytest.raises(PrivilegeRefusedError, match=REFUSAL):
         await session.execute(text("DELETE FROM audit_log"))
     await session.rollback()
 

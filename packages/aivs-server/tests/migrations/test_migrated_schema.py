@@ -29,6 +29,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import DBAPIError
 
+from aivs_server.db.engine import PrivilegeRefusedError
 from aivs_server.db.models import Base
 from tests.conftest import TEST_DATABASE_URL, TEST_SECRET_KEY_FILE
 
@@ -200,7 +201,7 @@ def test_append_only_tables_refuse_to_change_and_still_accept_inserts(
     engine = create_engine(seeded_url)
     try:
         with engine.connect() as connection:
-            with pytest.raises(DBAPIError, match="append-only"):
+            with pytest.raises(PrivilegeRefusedError, match="append-only"):
                 connection.execute(text(statement.format(table=table, column=_APPEND_ONLY[table])))
             connection.rollback()
             count = connection.execute(text(f"SELECT count(*) FROM {table}")).scalar_one()  # noqa: S608 - table from the parametrize list

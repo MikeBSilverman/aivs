@@ -1179,6 +1179,13 @@ on unchanged. Changing to the mode already in force writes nothing.
 - **Pointing `AIVS_MEMBER_DATABASE_URL` at the staff login** (or leaving it
   unset) is refused at startup outside `dev`: the member path would run with
   the staff login's reach.
+- **A 500 whose app log line is `database refused a privilege`** means a
+  login lacked a grant the request needed, or something wrote to an
+  append-only table. The line names the table (`db_table`), the operation
+  (`db_operation`) and the request (`request_id`), and never the request's
+  content. It is the server's fault, not the caller's: report it with that
+  line. Do not grant the privilege by hand; the next migration run puts the
+  grants back as `aivs_server.db.grants` lists them.
 - **Running the app as a database superuser or as the tables' owner** voids the
   append-only guarantee entirely. The shipped stack connects as
   `AIVS_DB_APP_USER`, the migrate step refuses to grant to a role that is

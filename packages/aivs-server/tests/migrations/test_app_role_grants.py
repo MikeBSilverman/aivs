@@ -24,8 +24,8 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import URL, make_url
-from sqlalchemy.exc import DBAPIError
 
+from aivs_server.db.engine import PrivilegeRefusedError
 from aivs_server.db.grants import UnsafeAppRoleError
 from tests.conftest import TEST_DATABASE_URL, TEST_SECRET_KEY_FILE
 
@@ -151,7 +151,7 @@ def test_the_app_role_holds_no_privilege_to_change_history(
     The trigger refuses too, with "append-only". Matching "permission denied"
     shows which check refused: the one a superuser or the owner would not meet.
     """
-    with pytest.raises(DBAPIError, match=f"permission denied for table {table}"):
+    with pytest.raises(PrivilegeRefusedError, match=f"permission denied for table {table}"):
         _as_app(scratch, statement.format(table=table))
 
 
@@ -189,7 +189,7 @@ def test_the_app_role_may_record_who_filed_and_read_it_back(scratch: Scratch):
 def test_the_app_role_cannot_rewrite_who_filed(scratch: Scratch, table: str, statement: str):
     """Refused by the grant, as the audit log is: re-attributing a filing after
     the fact is what the append-only tables exist to prevent."""
-    with pytest.raises(DBAPIError, match=f"permission denied for table {table}"):
+    with pytest.raises(PrivilegeRefusedError, match=f"permission denied for table {table}"):
         _as_app(scratch, statement)
 
 

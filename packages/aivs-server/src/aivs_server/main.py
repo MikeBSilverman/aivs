@@ -55,7 +55,13 @@ from aivs_server.auth.deps import request_source_ip
 from aivs_server.auth.policy import PolicyDeniedError
 from aivs_server.config import Settings, get_settings
 from aivs_server.db.clock import database_now
-from aivs_server.db.engine import dispose_engine, get_engine, get_member_engine, session_scope
+from aivs_server.db.engine import (
+    PrivilegeRefusedError,
+    dispose_engine,
+    get_engine,
+    get_member_engine,
+    session_scope,
+)
 from aivs_server.logging_config import configure_logging
 from aivs_server.middleware import (
     BodySizeLimitMiddleware,
@@ -456,6 +462,25 @@ def _register_exception_handlers(app: FastAPI, settings: Settings) -> None:
         for key, value in headers.items():
             response.headers[key] = value
         return response
+
+    @app.exception_handler(PrivilegeRefusedError)
+    async def _privilege_refused(request: Request, exc: PrivilegeRefusedError) -> JSONResponse:
+        """A grant the request needed and its login lacks: the server's fault, logged by name.
+
+        The line an operator triaging a 500 looks for (runbook section 9): which
+        table and which operation, and the request's correlation id; never the
+        statement's values, which ``hide_parameters`` keeps out of it anyway.
+        """
+        logger.error(
+            "database refused a privilege",
+            extra={
+                "request_id": request.scope.get("aivs_request_id"),
+                "path": request.url.path,
+                "db_operation": exc.operation,
+                "db_table": exc.table,
+            },
+        )
+        return _error_response(status.HTTP_500_INTERNAL_SERVER_ERROR, "Internal server error")
 
     @app.exception_handler(Exception)
     async def _unhandled(request: Request, exc: Exception) -> JSONResponse:

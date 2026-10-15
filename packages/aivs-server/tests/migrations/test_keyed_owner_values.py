@@ -19,8 +19,8 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
-from sqlalchemy.exc import DBAPIError
 
+from aivs_server.db.engine import PrivilegeRefusedError
 from tests.conftest import (
     TEST_ATTRIBUTION_KEY,
     TEST_ATTRIBUTION_KEY_FILE,
@@ -204,5 +204,5 @@ def test_every_tag_and_token_is_the_one_the_application_computes(config: Config,
     assert restored[(SECOND, "vulnerability--x")] == by_id["vulnerability--x"]
     assert restored[(SECOND, "vulnerability--y")] == by_id["vulnerability--y"]
     assert restored[(ISAC_FILING, "vulnerability--z")] == "isac"
-    with pytest.raises(DBAPIError, match="append-only"):
+    with pytest.raises(PrivilegeRefusedError, match="append-only"):
         _execute(url, ("UPDATE attribution.object_owners SET org_id = org_id",))

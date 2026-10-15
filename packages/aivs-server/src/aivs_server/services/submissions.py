@@ -112,7 +112,9 @@ _MAX_OBJECT_NAME: Final[int] = 300
 #: malformed -- the caller's problem, not a server fault. Every ingest surface
 #: catches these and answers 400; the message is not echoed, because it would
 #: expose column names and constraint definitions. One definition, because the
-#: portal and the API disagreed about exactly this (finding #7).
+#: portal and the API disagreed about exactly this (finding #7). A privilege
+#: the database refuses is never among them: the engine raises it as
+#: ``db.engine.PrivilegeRefusedError``, a server fault and a logged 500.
 STORAGE_ERRORS: Final = (IntegrityError, DBAPIError)
 
 

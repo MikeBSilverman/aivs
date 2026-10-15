@@ -25,7 +25,8 @@ from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from typing import Any, Final
 
-from sqlalchemy import Engine
+from sqlalchemy import Engine, event
+from sqlalchemy.engine import ExceptionContext
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -37,6 +38,7 @@ from sqlalchemy.orm import Session
 from aivs_server.config import Settings, get_settings
 
 __all__ = [
+    "PrivilegeRefusedError",
     "dispose_engine",
     "get_engine",
     "get_member_engine",
@@ -58,6 +60,49 @@ _CONNECT_OPTIONS_TEMPLATE: Final[str] = (
     "-c idle_in_transaction_session_timeout={idle_timeout_ms} "
     "-c lock_timeout={lock_timeout_ms}"
 )
+
+
+#: SQLSTATE ``insufficient_privilege``: a grant withheld from the connection's
+#: role, or an append-only table's deny trigger.
+_INSUFFICIENT_PRIVILEGE: Final[str] = "42501"
+
+
+class PrivilegeRefusedError(RuntimeError):
+    """The database refused the connection's role something (SQLSTATE 42501).
+
+    A server fault, never the caller's: the member login's grants are an
+    allow-list made from what the member path does (``db.grants``), so a path
+    nobody exercised meets this the first time it runs. Deliberately not a
+    ``DBAPIError``, so the handlers that report a storage refusal as the
+    caller's malformed content (``STORAGE_ERRORS``) cannot catch it, and a
+    wrong grant is a logged 500 rather than a member told its bundle was bad.
+    """
+
+    def __init__(self, operation: str, table: str | None, reason: str) -> None:
+        super().__init__(
+            f"database refused {operation} on {table or 'an unnamed object'}: {reason}"
+        )
+        self.operation = operation
+        self.table = table
+
+
+@event.listens_for(Engine, "handle_error")
+def _privilege_refused(context: ExceptionContext) -> None:
+    """Raise ``PrivilegeRefusedError`` in place of a 42501, on every engine in the process.
+
+    Matched on the SQLSTATE, not on the message, which a server's locale
+    translates. The table is read from the message for the log line alone.
+    """
+    original = context.original_exception
+    if getattr(original, "sqlstate", None) != _INSUFFICIENT_PRIVILEGE:
+        return
+    statement = context.statement or ""
+    operation = statement.split(maxsplit=1)[0].upper() if statement.strip() else "a statement"
+    # The database's own words, which name the table and the rule and never a
+    # value: "permission denied for table x", or the append-only trigger's.
+    reason = getattr(getattr(original, "diag", None), "message_primary", None) or ""
+    table = reason.rsplit(" ", 1)[-1] if reason.startswith("permission denied for ") else None
+    raise PrivilegeRefusedError(operation, table, reason) from original
 
 
 def _build_engine(settings: Settings, url: str) -> AsyncEngine:

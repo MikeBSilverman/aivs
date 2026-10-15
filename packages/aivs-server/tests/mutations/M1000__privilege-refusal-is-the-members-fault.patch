@@ -1,0 +1,25 @@
+Mutation M1000: a refused privilege is folded back into the storage errors, a 400 the member is told is its content
+Re-applies: STORAGE_ERRORS caught every DBAPIError, SQLSTATE 42501 included (Phase P, slice 3c)
+
+Expect red: packages/aivs-server/tests/unit/test_privilege_refused.py::test_a_member_meeting_a_refused_privilege_gets_a_500_and_the_operator_a_line
+
+diff --git a/packages/aivs-server/src/aivs_server/services/submissions.py b/packages/aivs-server/src/aivs_server/services/submissions.py
+--- a/packages/aivs-server/src/aivs_server/services/submissions.py
++++ b/packages/aivs-server/src/aivs_server/services/submissions.py
+@@ -53,6 +53,7 @@
+     require,
+ )
+ from aivs_server.db.clock import database_now
++from aivs_server.db.engine import PrivilegeRefusedError
+ from aivs_server.db.models import Organization, StixObject, Submission, SubmissionTransition
+ from aivs_server.services.anonymity import anonymity_change_problem
+ from aivs_server.services.attribution import (
+@@ -115,7 +116,7 @@
+ #: portal and the API disagreed about exactly this (finding #7). A privilege
+ #: the database refuses is never among them: the engine raises it as
+ #: ``db.engine.PrivilegeRefusedError``, a server fault and a logged 500.
+-STORAGE_ERRORS: Final = (IntegrityError, DBAPIError)
++STORAGE_ERRORS: Final = (IntegrityError, DBAPIError, PrivilegeRefusedError)
+ 
+ 
+ class SubmissionError(ValueError):

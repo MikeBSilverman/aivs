@@ -265,6 +265,13 @@ Found while proving the client tests: a "caught" mutation was really the
 previous one. Run mutation proofs with `PYTHONDONTWRITEBYTECODE=1` and delete
 the module's `__pycache__` before each run.
 
+**A mutation must leave every name a fixture patches.** M987 deleted an
+import that the 3c `logins` fixture monkeypatches, so its tests errored at
+setup and never ran the defect; the strict runner listed them as "still
+green", and the proof looked like a gap in the tests rather than in the
+patch (T1, slice 3c). Move the call, keep the name: a patch re-applies the
+defect, and a fixture failing is not the defect.
+
 **A patch that applies is not a patch in the right place.** Three ways a
 proof stops proving what it names while still applying cleanly:
 
@@ -805,6 +812,18 @@ sessionmaker disables autoflush deliberately. `activate_org` set a status and
 then reconciled circle rules against it; the reconcile query read the *old*
 status and matched nothing, silently. Any read that depends on a pending write
 in the same transaction needs an explicit `await session.flush()`.
+
+**`with_for_update(key_share=True)` is not a share lock.** SQLAlchemy renders
+it `FOR NO KEY UPDATE`, which is exclusive and conflicts with itself; `FOR KEY
+SHARE` needs `read=True` as well. The webhook lock was written the first way
+under a docstring saying readers never wait for each other, and every
+notification to one member queued behind every other until slice 3c recorded
+162 of them. Assert the compiled SQL, not the keyword.
+
+**An INSERT-only grant needs `implicit_returning=False`.** SQLAlchemy appends
+`RETURNING id` to every insert, even a Core one, and Postgres refuses
+RETURNING without SELECT. A table the member login may write but not read
+sets it, and the login gets USAGE on the table's sequence (slice 3c).
 
 **An empty `ARRAY[]` has no inferable element type.** `Column != []` compiles to
 an untyped `ARRAY[]` that Postgres cannot compare, so the filter matches nothing

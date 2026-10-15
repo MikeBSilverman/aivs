@@ -6,14 +6,14 @@ Expect red: packages/aivs-server/tests/authz_matrix/test_principal_matrix.py::te
 diff --git a/packages/aivs-server/src/aivs_server/portal/shared.py b/packages/aivs-server/src/aivs_server/portal/shared.py
 --- a/packages/aivs-server/src/aivs_server/portal/shared.py
 +++ b/packages/aivs-server/src/aivs_server/portal/shared.py
-@@ -74,9 +74,7 @@
+@@ -73,9 +73,7 @@
      its session is refused here, as ``auth.deps`` refuses it on every other
      API route. Signing out is the one portal action it takes (:func:`any_session`).
      """
--    resolved = await any_session(request, settings, session)
+-    resolved = await any_session(request, settings)
 -    require(not is_auditor(resolved[0]), "auditor_outside_audit")
 -    return resolved
-+    return await any_session(request, settings, session)
++    return await any_session(request, settings)
  
  
- async def any_session(
+ async def any_session(request: Request, settings: Settings) -> tuple[AuthContext, str]:

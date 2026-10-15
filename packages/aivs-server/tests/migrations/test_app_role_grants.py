@@ -38,6 +38,7 @@ _ENV_NAMES = (
     "AIVS_SECRET_ENCRYPTION_KEY",
     "AIVS_SECRET_ENCRYPTION_KEY_FILE",
     "AIVS_APP_DB_ROLE",
+    "AIVS_MEMBER_DB_ROLE",
 )
 _ORG = "00000000-0000-4000-8000-0000000000a1"
 
@@ -46,14 +47,18 @@ def _admin(test_url: URL):
     return create_engine(test_url.set(database="postgres"), isolation_level="AUTOCOMMIT")
 
 
-def _migrate(owner_url: str, app_role: str) -> None:
-    """``alembic upgrade head`` as the owner, naming ``app_role``, as the stack does."""
+def _migrate(owner_url: str, app_role: str, member_role: str | None = None) -> None:
+    """``alembic upgrade head`` as the owner, naming the logins, as the stack does."""
     saved = {name: os.environ.get(name) for name in _ENV_NAMES}
     os.environ["AIVS_DATABASE_URL"] = owner_url
     os.environ["AIVS_MIGRATION_DATABASE_URL"] = owner_url
     os.environ.pop("AIVS_SECRET_ENCRYPTION_KEY", None)
     os.environ["AIVS_SECRET_ENCRYPTION_KEY_FILE"] = str(TEST_SECRET_KEY_FILE)
     os.environ["AIVS_APP_DB_ROLE"] = app_role
+    if member_role is None:
+        os.environ.pop("AIVS_MEMBER_DB_ROLE", None)
+    else:
+        os.environ["AIVS_MEMBER_DB_ROLE"] = member_role
     try:
         command.upgrade(Config(str(ALEMBIC_INI)), "head")
     finally:
@@ -212,6 +217,16 @@ def extra_role(scratch: Scratch) -> Iterator[str]:
     with admin.connect() as connection:
         connection.execute(text(f'DROP ROLE IF EXISTS "{role}"'))
     yield role
+    # A role granted privileges in the scratch database cannot be dropped
+    # until they are: DROP OWNED revokes them there.
+    scratch_admin = create_engine(make_url(scratch.owner_url), isolation_level="AUTOCOMMIT")
+    with scratch_admin.connect() as connection:
+        exists = connection.execute(
+            text("SELECT 1 FROM pg_roles WHERE rolname = :role"), {"role": role}
+        ).first()
+        if exists is not None:
+            connection.execute(text(f'DROP OWNED BY "{role}"'))
+    scratch_admin.dispose()
     with admin.connect() as connection:
         connection.execute(text(f'DROP ROLE IF EXISTS "{role}"'))
     admin.dispose()
@@ -245,3 +260,38 @@ def test_migrating_refuses_a_member_of_the_owning_role(scratch: Scratch, extra_r
 def test_migrating_refuses_an_app_role_that_does_not_exist(scratch: Scratch, extra_role: str):
     with pytest.raises(UnsafeAppRoleError, match="does not exist"):
         _migrate(scratch.owner_url, extra_role)
+
+
+# ---------------------------------------------------------------------------
+# The member login (Phase P, slice 3a)
+# ---------------------------------------------------------------------------
+@pytest.mark.requirement("SF-89")
+def test_migrating_grants_the_member_login(scratch: Scratch, extra_role: str):
+    """The pair of the refusals below: a plain login of its own is granted,
+    and can do the member path's work."""
+    password = secrets.token_hex(16)
+    _create_role(extra_role, f"LOGIN NOSUPERUSER PASSWORD '{password}'")
+    _migrate(scratch.owner_url, scratch.app_role, member_role=extra_role)
+
+    engine = create_engine(make_url(scratch.owner_url).set(username=extra_role, password=password))
+    try:
+        with engine.connect() as connection:
+            connection.execute(text("SELECT count(*) FROM organizations")).scalar_one()
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.requirement("SF-89")
+def test_migrating_refuses_a_member_login_that_can_act_as_the_staff_login(
+    scratch: Scratch, extra_role: str
+):
+    """One ``SET ROLE`` would give the member path the staff login's reach."""
+    _create_role(extra_role, f'LOGIN NOSUPERUSER IN ROLE "{scratch.app_role}"')
+    with pytest.raises(UnsafeAppRoleError, match="can act as, the staff role"):
+        _migrate(scratch.owner_url, scratch.app_role, member_role=extra_role)
+
+
+@pytest.mark.requirement("SF-89")
+def test_migrating_refuses_the_staff_login_as_the_member_login(scratch: Scratch):
+    with pytest.raises(UnsafeAppRoleError, match="can act as, the staff role"):
+        _migrate(scratch.owner_url, scratch.app_role, member_role=scratch.app_role)

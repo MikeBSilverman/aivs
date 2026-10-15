@@ -58,6 +58,7 @@ from aivs_server.taxii.queries import build_object_listing_query
 from tests.conftest import (
     TEST_CA_CERT_FILE,
     TEST_DATABASE_URL,
+    TEST_MEMBER_DATABASE_URL,
     TEST_PROXY_SECRET,
     TEST_SECRET_KEY_FILE,
     TEST_SESSION_SECRET,
@@ -559,6 +560,7 @@ def _staging(**overrides: object) -> Settings:
         "environment": "staging",
         "public_base_url": "https://aivs.test",
         "database_url": TEST_DATABASE_URL,
+        "member_database_url": TEST_MEMBER_DATABASE_URL,
         "proxy_shared_secret": TEST_PROXY_SECRET,
         "session_secret": TEST_SESSION_SECRET,
         "issuing_ca_certificate_file": TEST_CA_CERT_FILE,

@@ -581,6 +581,16 @@ in every authorization predicate.
   could drop the append-only triggers. Outside compose, do the same: create the
   role, migrate as the owner with `AIVS_APP_DB_ROLE` set, connect the app as the
   role.
+- A third, the **member login** (`AIVS_DB_MEMBER_USER`, default
+  `aivs_member`; Phase P). Every request from a member organisation, and
+  anything not yet authenticated, runs on it; the ISAC's staff and every
+  background job run on the application role above, the **staff** login. It is
+  created by the same init script and granted by the same migrate step
+  (`AIVS_MEMBER_DB_ROLE`), which refuses a member login that is, or can act
+  as, the staff role: one `SET ROLE` would undo the split. Outside `dev` the
+  application refuses to start without it (`AIVS_MEMBER_DATABASE_URL`), or
+  with one naming the staff login. Its grants equal the staff login's until
+  Phase P slice 3c narrows them to what the member path needs.
 
 ### People and process
 
@@ -604,7 +614,8 @@ Minimum production environment:
 AIVS_ENVIRONMENT=production            # anything but `dev` gets the strict posture
 AIVS_INSTANCE_NAME="Example Financial ISAC"
 AIVS_PUBLIC_BASE_URL=https://aivs.example.org
-AIVS_DATABASE_URL=postgresql+psycopg://aivs_app:...@db:5432/aivs   # the app role, never the owner
+AIVS_DATABASE_URL=postgresql+psycopg://aivs_app:...@db:5432/aivs   # the staff login, never the owner
+AIVS_MEMBER_DATABASE_URL=postgresql+psycopg://aivs_member:...@db:5432/aivs   # the member login, never the staff one
 AIVS_PROXY_SHARED_SECRET=<32+ chars>
 AIVS_SESSION_SECRET=<32+ chars>
 AIVS_SECRET_ENCRYPTION_KEY_FILE=/run/aivs/secret-encryption-key   # 0600, never the env form
@@ -619,7 +630,8 @@ AIVS_LOG_LEVEL=INFO
 throws away most of its value.
 
 Under compose, these are set in `docker-compose.yml` from `deploy/.env`, and
-the database URL is built from `AIVS_DB_APP_USER` and `AIVS_DB_APP_PASSWORD`.
+the database URLs are built from `AIVS_DB_APP_USER` and `AIVS_DB_APP_PASSWORD`,
+and from `AIVS_DB_MEMBER_USER` and `AIVS_DB_MEMBER_PASSWORD`.
 Verify before cutting traffic over, in the app container, which is where the
 configuration is:
 

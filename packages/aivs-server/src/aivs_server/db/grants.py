@@ -27,16 +27,26 @@ from typing import Final
 from sqlalchemy import Connection, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-__all__ = ["APP_ROLE_ENV_VAR", "UnsafeAppRoleError", "connection_role_problem", "grant_app_role"]
+__all__ = [
+    "APP_ROLE_ENV_VAR",
+    "MEMBER_ROLE_ENV_VAR",
+    "UnsafeAppRoleError",
+    "connection_role_problem",
+    "grant_app_role",
+    "grant_member_role",
+]
 
 #: Names the role the application connects as. The same variable migration
 #: ``c185fd428721`` reads.
 APP_ROLE_ENV_VAR: Final[str] = "AIVS_APP_DB_ROLE"
+#: Names the member path's login (Phase P): every member organisation's
+#: request, and anything not yet authenticated, connects as it.
+MEMBER_ROLE_ENV_VAR: Final[str] = "AIVS_MEMBER_DB_ROLE"
 
 _DENY_FUNCTION: Final[str] = "aivs_deny_mutation"
 #: Every schema the application's tables live in. ``attribution`` holds who
-#: filed what (Phase P); granted here to the one application role, until the
-#: member path is given a login of its own that is refused it.
+#: filed what (Phase P); granted to both logins until the member login's grants
+#: are narrowed to what the member path needs (Phase P, slice 3c).
 _SCHEMAS: Final[tuple[str, ...]] = ("public", "attribution")
 
 
@@ -47,6 +57,32 @@ class UnsafeAppRoleError(RuntimeError):
 def grant_app_role(connection: Connection, role: str) -> None:
     """Refuse an unsafe ``role``; otherwise grant it the application's privileges."""
     _refuse_unsafe_role(connection, role)
+    for statement in _grant_statements(role, _append_only_tables(connection)):
+        connection.execute(text(statement))
+
+
+#: Whether one role can act as another: ``SET ROLE`` to it, or inherit its grants.
+_CAN_ACT_AS: Final = text("SELECT pg_has_role(:role, :other, 'MEMBER')")
+
+
+def grant_member_role(connection: Connection, role: str, *, staff_role: str) -> None:
+    """Refuse an unsafe member login; otherwise grant it the member path's privileges.
+
+    Everything ``grant_app_role`` refuses, and also the staff login itself or
+    any role that can act as it: the split rests on the member login being
+    unable to reach what the staff login can, and membership of the staff role
+    reaches all of it with one ``SET ROLE``.
+    """
+    _refuse_unsafe_role(connection, role)
+    if (
+        role == staff_role
+        or connection.execute(_CAN_ACT_AS, {"role": role, "other": staff_role}).scalar_one()
+    ):
+        msg = (
+            f"member role {role!r} is, or can act as, the staff role {staff_role!r}; "
+            "the member path must have a login of its own"
+        )
+        raise UnsafeAppRoleError(msg)
     for statement in _grant_statements(role, _append_only_tables(connection)):
         connection.execute(text(statement))
 

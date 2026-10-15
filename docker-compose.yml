@@ -246,6 +246,11 @@ services:
       # it with `openssl rand -base64 36 | tr '+/' '-_'` or use hex. A raw '@'
       # or '/' in the password silently truncates the host or the database name.
       AIVS_DATABASE_URL: postgresql+psycopg://${AIVS_DB_APP_USER:-aivs_app}:${AIVS_DB_APP_PASSWORD:?set AIVS_DB_APP_PASSWORD in deploy/.env}@db:5432/${AIVS_DB_NAME:-aivs}
+      # The member path's own login (Phase P): every member organisation's
+      # request runs on it, the ISAC's staff and background jobs on the one
+      # above. Not a member of that role, so SQL on the member path cannot
+      # switch to it. Required outside dev; URL-safe, like the one above.
+      AIVS_MEMBER_DATABASE_URL: postgresql+psycopg://${AIVS_DB_MEMBER_USER:-aivs_member}:${AIVS_DB_MEMBER_PASSWORD:?set AIVS_DB_MEMBER_PASSWORD in deploy/.env}@db:5432/${AIVS_DB_NAME:-aivs}
 
       # -- Trust boundary ---------------------------------------------------
       AIVS_PROXY_SHARED_SECRET: ${AIVS_PROXY_SHARED_SECRET:?set AIVS_PROXY_SHARED_SECRET in deploy/.env (>= 32 chars)}
@@ -365,6 +370,8 @@ services:
     environment:
       AIVS_MIGRATION_DATABASE_URL: postgresql+psycopg://${AIVS_DB_USER:-aivs}:${AIVS_DB_PASSWORD:?set AIVS_DB_PASSWORD in deploy/.env}@db:5432/${AIVS_DB_NAME:-aivs}
       AIVS_APP_DB_ROLE: ${AIVS_DB_APP_USER:-aivs_app}
+      # Granted after the staff role, and refused if it is, or can act as, it.
+      AIVS_MEMBER_DB_ROLE: ${AIVS_DB_MEMBER_USER:-aivs_member}
       AIVS_SECRET_ENCRYPTION_KEY_FILE: /run/aivs/secret-encryption-key
       AIVS_SECRET_ENCRYPTION_ALGORITHM: ${AIVS_SECRET_ENCRYPTION_ALGORITHM:-aes-256-gcm}
     volumes:
@@ -408,6 +415,8 @@ services:
       # itself ignores them.
       AIVS_DB_APP_USER: ${AIVS_DB_APP_USER:-aivs_app}
       AIVS_DB_APP_PASSWORD: ${AIVS_DB_APP_PASSWORD:?set AIVS_DB_APP_PASSWORD in deploy/.env}
+      AIVS_DB_MEMBER_USER: ${AIVS_DB_MEMBER_USER:-aivs_member}
+      AIVS_DB_MEMBER_PASSWORD: ${AIVS_DB_MEMBER_PASSWORD:?set AIVS_DB_MEMBER_PASSWORD in deploy/.env}
       # --data-checksums detects silent corruption in the audit log, which is
       # append-only and therefore has no other way of noticing.
       # scram-sha-256 rather than the historical md5: md5 password verifiers are

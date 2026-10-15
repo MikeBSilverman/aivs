@@ -6,12 +6,12 @@ Expect red: packages/aivs-server/tests/unit/test_readiness_role.py::test_readine
 diff --git a/packages/aivs-server/src/aivs_server/api/meta.py b/packages/aivs-server/src/aivs_server/api/meta.py
 --- a/packages/aivs-server/src/aivs_server/api/meta.py
 +++ b/packages/aivs-server/src/aivs_server/api/meta.py
-@@ -79,7 +79,7 @@ async def readyz(session: SessionDep, settings: SettingsDep, response: Response)
+@@ -80,7 +80,7 @@
          # reason belongs in the logs rather than in an unauthenticated response.
          response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
          return {"status": "unavailable", "database": "unreachable"}
 -    if settings.environment != "dev":
 +    if settings.environment == "production":
-         problem = await connection_role_problem(session)
-         if problem is not None:
-             # Which role, and why, to the log; the unauthenticated body says
+         # Both logins: this request's session is the member login's (it is not
+         # authenticated), and the staff login serves the ISAC and every
+         # background job. Either one able to undo the triggers is not ready.

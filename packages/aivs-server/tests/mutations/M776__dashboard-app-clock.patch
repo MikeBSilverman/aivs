@@ -6,8 +6,8 @@ Expect red: packages/aivs-server/tests/unit/test_one_clock.py::test_the_portal_d
 diff --git a/packages/aivs-server/src/aivs_server/portal/routes.py b/packages/aivs-server/src/aivs_server/portal/routes.py
 --- a/packages/aivs-server/src/aivs_server/portal/routes.py
 +++ b/packages/aivs-server/src/aivs_server/portal/routes.py
-@@ -307,7 +307,7 @@ async def dashboard(request: Request, settings: SettingsDep, session: SessionDep
-     ctx, _csrf_hash = await current_session(request, settings, session)
+@@ -330,7 +330,7 @@
+     ctx, _csrf_hash = await current_session(request, settings)
      # The database's clock, which date_added is stamped on: a replica running
      # fast would list embargoed content early (see db.clock).
 -    now = await database_now(session)

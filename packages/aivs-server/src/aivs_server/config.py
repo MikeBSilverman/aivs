@@ -33,6 +33,7 @@ from typing import Any, Final, Literal, Self
 from cryptography import x509
 from pydantic import Field, SecretStr, ValidationError, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import make_url
 
 from aivs_server.auth.secretbox import (
     DEFAULT_ALGORITHM_NAME,
@@ -152,6 +153,18 @@ _IDENTITY_HEADER_FIELDS: Final[frozenset[str]] = frozenset(
 )
 
 
+def _refuse_placeholder(value: SecretStr) -> SecretStr:
+    """Refuse a secret that still holds the ``deploy/env.example`` placeholder marker."""
+    if _PLACEHOLDER_MARKER in value.get_secret_value():
+        msg = (
+            f"secret still contains {_PLACEHOLDER_MARKER!r} -- it is the "
+            "deploy/env.example placeholder, which is public. Generate a "
+            "real one with: openssl rand -base64 48"
+        )
+        raise ValueError(msg)
+    return value
+
+
 class Settings(BaseSettings):
     """Process configuration, read once from the environment at startup."""
 
@@ -178,6 +191,15 @@ class Settings(BaseSettings):
     # -- Database ---------------------------------------------------------
     #: SQLAlchemy async URL, e.g. postgresql+psycopg://user:pw@host:5432/aivs
     database_url: SecretStr
+    #: The member path's own login (Phase P): every request from a member
+    #: organisation, and anything not yet authenticated, runs on it, and the
+    #: ISAC's staff and background jobs on ``database_url``. Two logins rather
+    #: than one that switches role, because a role switch is SQL that injected
+    #: SQL can undo; the member login is simply not a member of the staff one.
+    #: May be absent in ``dev`` only, where the member path then shares
+    #: ``database_url``; everywhere else ``validate_production_posture`` refuses
+    #: its absence, and a value naming the staff login.
+    member_database_url: SecretStr | None = None
     db_pool_size: int = Field(default=10, ge=1, le=100)
     db_max_overflow: int = Field(default=5, ge=0, le=100)
     db_pool_timeout_seconds: float = Field(default=10.0, gt=0, le=120)
@@ -430,6 +452,18 @@ class Settings(BaseSettings):
             return None
         return value
 
+    @field_validator("member_database_url", mode="before")
+    @classmethod
+    def _member_url_unset_when_empty(cls, value: object) -> object:
+        """An empty string is how compose and Kubernetes spell unset."""
+        return None if value == "" else value
+
+    @field_validator("member_database_url")
+    @classmethod
+    def _member_url_is_not_a_placeholder(cls, value: SecretStr | None) -> SecretStr | None:
+        """The placeholder refusal of the other secrets, for an optional one."""
+        return None if value is None else _refuse_placeholder(value)
+
     @field_validator("proxy_shared_secret", "session_secret", "database_url")
     @classmethod
     def _secret_is_not_a_placeholder(cls, value: SecretStr) -> SecretStr:
@@ -443,14 +477,7 @@ class Settings(BaseSettings):
         cursor-signing key were published in a public repository, with every
         healthcheck green and nothing anywhere saying so.
         """
-        if _PLACEHOLDER_MARKER in value.get_secret_value():
-            msg = (
-                f"secret still contains {_PLACEHOLDER_MARKER!r} -- it is the "
-                "deploy/env.example placeholder, which is public. Generate a "
-                "real one with: openssl rand -base64 48"
-            )
-            raise ValueError(msg)
-        return value
+        return _refuse_placeholder(value)
 
     @field_validator("trusted_proxy_cidrs")
     @classmethod
@@ -590,6 +617,7 @@ class Settings(BaseSettings):
             *self._output_violations(),
             *self._key_and_identity_violations(),
             *self._secret_reuse_violations(),
+            *self._database_login_violations(),
             *self._sso_violations(),
             *self._smtp_violations(),
         ]
@@ -680,6 +708,24 @@ class Settings(BaseSettings):
         """
         if self.session_secret.get_secret_value() == self.proxy_shared_secret.get_secret_value():
             return ["session_secret (must differ from proxy_shared_secret)"]
+        return []
+
+    def _database_login_violations(self) -> list[str]:
+        """The member path has a login of its own, and it is not the staff login.
+
+        Allow-listed: missing is tolerated in ``dev`` alone (the posture check
+        is not reached there). A member URL naming the staff login would pass
+        every other check and give the member path the staff login's reach,
+        which is the thing the split exists to withhold.
+        """
+        if self.member_database_url is None:
+            return ["member_database_url (the member path needs its own database login)"]
+        if self.member_database_url.get_secret_value() == self.database_url.get_secret_value():
+            return ["member_database_url (must differ from database_url)"]
+        member_user = make_url(self.member_database_url.get_secret_value()).username
+        staff_user = make_url(self.database_url.get_secret_value()).username
+        if member_user is None or member_user == staff_user:
+            return ["member_database_url (must log in as a different role from database_url)"]
         return []
 
     def _key_and_identity_violations(self) -> list[str]:

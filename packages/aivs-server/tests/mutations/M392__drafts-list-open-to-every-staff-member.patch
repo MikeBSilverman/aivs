@@ -6,10 +6,10 @@ Expect red: packages/aivs-server/tests/unit/test_isac_drafts.py::test_staff_who_
 diff --git a/packages/aivs-server/src/aivs_server/portal/routes.py b/packages/aivs-server/src/aivs_server/portal/routes.py
 --- a/packages/aivs-server/src/aivs_server/portal/routes.py
 +++ b/packages/aivs-server/src/aivs_server/portal/routes.py
-@@ -506,7 +506,7 @@
+@@ -508,7 +508,7 @@
      than being a filter on a list.
      """
-     ctx, _csrf_hash = await current_session(request, settings, session)
+     ctx, _csrf_hash = await current_session(request, settings)
 -    if not can_review_submissions(ctx):
 +    if not can_review_submissions(ctx) and ctx.operator_id is None:
          raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Not found")

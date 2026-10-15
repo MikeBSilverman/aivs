@@ -55,13 +55,23 @@ SELECT DISTINCT a.usename || ' superuser=' || r.rolsuper
   FROM pg_stat_activity a JOIN pg_roles r ON r.rolname = a.usename
  WHERE a.datname = current_database() AND a.backend_type = 'client backend'
    AND a.application_name <> 'psql';
+SELECT 'member can act as staff=' || pg_has_role('aivs_member', 'aivs_app', 'MEMBER');
 SQL
 # → the six *_deny_update / *_deny_delete / *_deny_truncate triggers
-# → aivs                      the owner owns the tables, never the app's role
-# → aivs_app superuser=false  the only role the running application is
-#                             connected as (your AIVS_DB_APP_USER), and it
-#                             is not a superuser
+# → aivs                      the owner owns the tables, never the app's roles
+# → aivs_app superuser=false     the staff login (your AIVS_DB_APP_USER): the
+#                                ISAC's staff and every background job
+# → aivs_member superuser=false  the member login (your AIVS_DB_MEMBER_USER):
+#                                every member organisation's request
+# → member can act as staff=false
+#                             (use your own names in the last query if you
+#                             changed the defaults)
 ```
+
+The member login exists so that SQL on a member's request runs as a role that
+cannot become the staff one (Phase P). `member can act as staff=true` means
+someone granted the staff role to it: revoke that, then re-run the migrate
+service, which refuses it.
 
 As the application role, the same check the application would meet:
 
@@ -80,7 +90,8 @@ see `table audit_log is append-only` instead, the trigger caught it but the role
 holds the privilege: re-run the migrate service (`docker compose --env-file
 deploy/.env run --rm migrate`), which grants the application role and refuses
 one that is a superuser or owns the tables. A database initialised before the
-application role existed needs the role created first:
+application role, or before the member login, existed needs it created first
+(the script creates both, and is safe to run again):
 
 ```bash
 docker compose --env-file deploy/.env exec -T db /docker-entrypoint-initdb.d/10-app-role.sh
@@ -1097,9 +1108,14 @@ on unchanged. Changing to the mode already in force writes nothing.
   host and left it.
 - **A too-wide `AIVS_TRUSTED_PROXY_CIDRS`** throws away half of the B3 boundary
   control. It should be a `/32`.
-- **Migrating without `AIVS_APP_DB_ROLE`** leaves the application role with no
-  privileges at all, or with whatever an older run left. The shipped `migrate`
-  service always sets it; a migration run any other way must too.
+- **Migrating without `AIVS_APP_DB_ROLE` and `AIVS_MEMBER_DB_ROLE`** leaves
+  the application's logins with no privileges at all, or with whatever an
+  older run left. The shipped `migrate` service always sets both; a migration
+  run any other way must too. The member role is refused if it is, or can act
+  as, the staff role.
+- **Pointing `AIVS_MEMBER_DATABASE_URL` at the staff login** (or leaving it
+  unset) is refused at startup outside `dev`: the member path would run with
+  the staff login's reach.
 - **Running the app as a database superuser or as the tables' owner** voids the
   append-only guarantee entirely. The shipped stack connects as
   `AIVS_DB_APP_USER`, the migrate step refuses to grant to a role that is

@@ -531,6 +531,19 @@ def can_confirm_proxy_filing(ctx: AuthContext, *, owner_is_caller: bool) -> bool
 ISAC_FILER_TYPES: Final[frozenset[OrgType]] = frozenset({OrgType.ADMIN, OrgType.AUTOMATION})
 
 
+def uses_staff_database(ctx: AuthContext) -> bool:
+    """Whether the caller's requests run on the staff database login (Phase P).
+
+    The ISAC's own organisation and its automation: their staff read who filed
+    what, and their filings are the instance's record. Every member
+    organisation's request runs on the member login, which is refused that
+    mapping; so does anything not yet authenticated, which never reaches here.
+    Permit-only, so an organisation type added later runs on the member login
+    until someone decides otherwise.
+    """
+    return ctx.org_type in ISAC_FILER_TYPES
+
+
 def holds_submitter_rights(ctx: AuthContext, *, owner_is_isac: bool, owner_is_caller: bool) -> bool:
     """Whether the caller may act as ``submission``'s submitter: amend its
     draft, submit, withdraw or supersede it.

@@ -113,7 +113,7 @@ def _parse_names(raw: str) -> tuple[list[uuid.UUID], list[str]]:
 @router.get("/orgs", response_class=HTMLResponse)
 async def orgs_screen(request: Request, settings: SettingsDep, session: SessionDep) -> Response:
     """Every enrolled organisation, with its certificates."""
-    ctx, _csrf = await current_session(request, settings, session)
+    ctx, _csrf = await current_session(request, settings)
     require(is_isac_membership(ctx), "portal_admin_orgs")
 
     orgs = (await session.execute(select(Organization).order_by(Organization.slug))).scalars().all()
@@ -169,7 +169,7 @@ async def enrol_org(
     contact_email: Annotated[str, Form()] = "",
 ) -> Response:
     """Enrol an organisation. It starts pending, exactly as over the API."""
-    ctx, csrf_hash = await current_session(request, settings, session)
+    ctx, csrf_hash = await current_session(request, settings)
     require_csrf(csrf_token, csrf_hash)
     require(is_isac_membership(ctx), "portal_admin_orgs")
 
@@ -235,7 +235,7 @@ async def quarantine_screen(
     Declared before ``/orgs/{org_id}/{action}``, which would otherwise match
     "quarantine" first and answer 404.
     """
-    ctx, csrf_hash = await current_session(request, settings, session)
+    ctx, csrf_hash = await current_session(request, settings)
     require_csrf(csrf_token, csrf_hash)
     require(can_quarantine_org(ctx, org_id), "portal_quarantine")
 
@@ -270,7 +270,7 @@ async def org_status(
     Reconciliation runs through the same service the API uses, so a rule-managed
     circle picks up an activation here exactly as it would there.
     """
-    ctx, csrf_hash = await current_session(request, settings, session)
+    ctx, csrf_hash = await current_session(request, settings)
     require_csrf(csrf_token, csrf_hash)
     require(is_isac_membership(ctx), "portal_admin_orgs")
 
@@ -306,7 +306,7 @@ async def org_status(
 @router.get("/circles", response_class=HTMLResponse)
 async def circles_screen(request: Request, settings: SettingsDep, session: SessionDep) -> Response:
     """Every circle, with its membership count and rule."""
-    ctx, _csrf = await current_session(request, settings, session)
+    ctx, _csrf = await current_session(request, settings)
     require(is_isac_editor(ctx) or is_isac_membership(ctx), "portal_admin_circles")
 
     circles = (await session.execute(select(Circle).order_by(Circle.slug))).scalars().all()
@@ -362,7 +362,7 @@ async def create_circle_screen(
     is_sandbox: Annotated[str, Form()] = "",
 ) -> Response:
     """Create a circle, its collection, and populate any rule immediately."""
-    ctx, csrf_hash = await current_session(request, settings, session)
+    ctx, csrf_hash = await current_session(request, settings)
     require_csrf(csrf_token, csrf_hash)
     require(is_isac_editor(ctx), "portal_admin_circles")
 
@@ -440,7 +440,7 @@ async def circle_detail(
     what bounds what they can read and an operator answering "why can they not
     see this?" needs it in front of them.
     """
-    ctx, _csrf = await current_session(request, settings, session)
+    ctx, _csrf = await current_session(request, settings)
     require(is_isac_editor(ctx) or is_isac_membership(ctx), "portal_admin_circles")
 
     circle = await session.get(Circle, circle_id)
@@ -530,7 +530,7 @@ async def add_members_screen(
     the one it has: the gap is never handed over, and the earlier interval's
     content is kept without a repair.
     """
-    ctx, csrf_hash = await current_session(request, settings, session)
+    ctx, csrf_hash = await current_session(request, settings)
     require_csrf(csrf_token, csrf_hash)
     # The API's predicate, so the two doors cannot drift: delegation, if it
     # returns, is reintroduced there and reaches both.
@@ -592,7 +592,7 @@ async def switch_taxii_inbox_screen(
     enabled: Annotated[str, Form()],
 ) -> Response:
     """Open or close the circle's TAXII inbox, through the API's one writer."""
-    ctx, csrf_hash = await current_session(request, settings, session)
+    ctx, csrf_hash = await current_session(request, settings)
     require_csrf(csrf_token, csrf_hash)
     require(is_isac_editor(ctx), "taxii_inbox_requires_isac_editor")
     if enabled not in {"on", "off"}:
@@ -623,7 +623,7 @@ async def remove_member_screen(
     csrf_token: Annotated[str, Form()],
 ) -> Response:
     """Remove one organisation from a circle."""
-    ctx, csrf_hash = await current_session(request, settings, session)
+    ctx, csrf_hash = await current_session(request, settings)
     require_csrf(csrf_token, csrf_hash)
     require(can_administer_circle(ctx, circle_id), "portal_admin_circles")
 
@@ -661,7 +661,7 @@ async def status_screen(request: Request, settings: SettingsDep, session: Sessio
     The same facts ``/readyz`` and ``/metrics`` expose, from the same functions,
     so the page cannot say "fine" while the probe says "degraded".
     """
-    ctx, _csrf = await current_session(request, settings, session)
+    ctx, _csrf = await current_session(request, settings)
     require(can_view_instance_status(ctx), "portal_admin_status")
 
     facts = await gather_status(

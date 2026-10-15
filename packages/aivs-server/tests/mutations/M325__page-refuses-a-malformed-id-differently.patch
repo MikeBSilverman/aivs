@@ -6,8 +6,8 @@ Expect red: packages/aivs-server/tests/unit/test_vulnerability_page.py::test_an_
 diff --git a/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py b/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py
 --- a/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py
 +++ b/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py
-@@ -118,6 +118,8 @@
-     ctx, _csrf_hash = await current_session(request, settings, session)
+@@ -143,6 +143,8 @@
+     ctx, _csrf_hash = await current_session(request, settings)
      reference = given.strip()
      now = await database_now(session)
 +    if not is_vulnerability_reference(reference):

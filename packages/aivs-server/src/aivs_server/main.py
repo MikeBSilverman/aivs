@@ -54,7 +54,7 @@ from aivs_server.auth.deps import request_source_ip
 from aivs_server.auth.policy import PolicyDeniedError
 from aivs_server.config import Settings, get_settings
 from aivs_server.db.clock import database_now
-from aivs_server.db.engine import dispose_engine, get_engine, session_scope
+from aivs_server.db.engine import dispose_engine, get_engine, get_member_engine, session_scope
 from aivs_server.logging_config import configure_logging
 from aivs_server.middleware import (
     BodySizeLimitMiddleware,
@@ -132,9 +132,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         "starting AIVS",
         extra={"environment": settings.environment, "instance": settings.instance_name},
     )
-    # Construct the engine eagerly so a bad database URL fails at startup rather
-    # than on a member's first request.
+    # Construct both engines eagerly so a bad database URL fails at startup
+    # rather than on a member's first request.
     get_engine()
+    get_member_engine()
 
     background = [
         asyncio.create_task(run_periodically(component.name, component.interval, component.work))

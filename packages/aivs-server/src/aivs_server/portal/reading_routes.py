@@ -54,7 +54,7 @@ async def set_default_depth(
     Only the person's own row, found from the session and never from the form.
     An unknown value is refused with a notice and changes nothing.
     """
-    ctx, csrf_hash = await current_session(request, settings, session)
+    ctx, csrf_hash = await current_session(request, settings)
     require_csrf(csrf_token, csrf_hash)
     response = redirect_within_portal("/portal/")
     known = {value.value: value for value in ReadingDepth}
@@ -76,7 +76,7 @@ async def ioc_pack(
     stix_id: Annotated[str, Query(alias="id", max_length=100)],
 ) -> Response:
     """The vulnerability's current indicators as CSV, recorded as a portal retrieval."""
-    ctx, _ = await current_session(request, settings, session)
+    ctx, _ = await current_session(request, settings)
     try:
         pack = await export_ioc_pack(
             session, ctx, stix_id, via=AckVia.PORTAL, now=await database_now(session)
@@ -90,7 +90,7 @@ async def ioc_pack(
 @router.get("/connection", response_class=HTMLResponse)
 async def connection_page(request: Request, settings: SettingsDep, session: SessionDep) -> Response:
     """The signed-in person's organisation's connection, and its TIP's starting configuration."""
-    ctx, _ = await current_session(request, settings, session)
+    ctx, _ = await current_session(request, settings)
     health = await member_health(session, ctx, await database_now(session))
     collections = [
         CollectionRef(collection_id, title)

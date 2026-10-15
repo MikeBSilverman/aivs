@@ -6,10 +6,10 @@ Expect red: packages/aivs-server/tests/migrations/test_app_role_grants.py::test_
 diff --git a/packages/aivs-server/src/aivs_server/db/grants.py b/packages/aivs-server/src/aivs_server/db/grants.py
 --- a/packages/aivs-server/src/aivs_server/db/grants.py
 +++ b/packages/aivs-server/src/aivs_server/db/grants.py
-@@ -37,7 +37,7 @@
+@@ -47,7 +47,7 @@
  #: Every schema the application's tables live in. ``attribution`` holds who
- #: filed what (Phase P); granted here to the one application role, until the
- #: member path is given a login of its own that is refused it.
+ #: filed what (Phase P); granted to both logins until the member login's grants
+ #: are narrowed to what the member path needs (Phase P, slice 3c).
 -_SCHEMAS: Final[tuple[str, ...]] = ("public", "attribution")
 +_SCHEMAS: Final[tuple[str, ...]] = ("public",)
  

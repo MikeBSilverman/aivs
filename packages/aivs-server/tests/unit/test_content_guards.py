@@ -99,7 +99,9 @@ async def test_a_timestamp_with_no_utc_form_is_the_members_error(client, submitt
 
 
 def test_bound_values_never_reach_an_exception_message(settings):
-    assert _build_engine(settings).sync_engine.hide_parameters is True
+    # Both logins' engines are built by the one function, so both hide them.
+    for url in (settings.database_url, settings.member_database_url):
+        assert _build_engine(settings, url.get_secret_value()).sync_engine.hide_parameters is True
 
 
 def test_postgres_never_logs_a_statements_bound_values():

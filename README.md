@@ -196,10 +196,13 @@ deploy/ca/init-ca.sh --org "Your ISAC" \
 $EDITOR .env
 uv run python -m aivs_server.config     # → configuration OK for environment=...
 
-# Schema, migrating as the database owner. Naming the app's role (a login that
-# is not a superuser and owns nothing) grants it what the app needs and refuses
-# one that could drop the append-only triggers. The app connects as that role.
-AIVS_APP_DB_ROLE=aivs_app \
+# Schema, migrating as the database owner. Naming the app's two logins (plain
+# logins that are not superusers and own nothing) grants them what the app
+# needs and refuses one that could drop the append-only triggers, or a member
+# login that could act as the staff one. The ISAC's staff connect as aivs_app,
+# member organisations as aivs_member (AIVS_DATABASE_URL and
+# AIVS_MEMBER_DATABASE_URL).
+AIVS_APP_DB_ROLE=aivs_app AIVS_MEMBER_DB_ROLE=aivs_member \
   uv run alembic -c packages/aivs-server/alembic.ini upgrade head
 
 # Verify the append-only enforcement actually took, as the app's role. Do not

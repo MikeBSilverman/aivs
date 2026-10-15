@@ -9,12 +9,12 @@ Expect red: packages/aivs-server/tests/migrations/test_app_role_grants.py::test_
 diff --git a/packages/aivs-server/alembic/env.py b/packages/aivs-server/alembic/env.py
 --- a/packages/aivs-server/alembic/env.py
 +++ b/packages/aivs-server/alembic/env.py
-@@ -84,7 +84,7 @@ def do_run_migrations(connection: Connection) -> None:
-         # revision: the grants then cover whatever this run created, and a
+@@ -105,7 +105,7 @@
          # role named late is put right by the next upgrade. See db/grants.py.
          app_role = os.environ.get(APP_ROLE_ENV_VAR, "").strip()
+         member_role = os.environ.get(MEMBER_ROLE_ENV_VAR, "").strip()
 -        if app_role:
 +        if app_role and not app_role:
              grant_app_role(connection, app_role)
- 
- 
+         if member_role:
+             # Checked against the staff login, so it must be named too.

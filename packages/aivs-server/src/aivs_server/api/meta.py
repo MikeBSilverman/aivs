@@ -11,6 +11,7 @@ from fastapi.responses import PlainTextResponse
 from sqlalchemy import text
 
 from aivs_server.auth.deps import AuthenticatedContext, SessionDep, SettingsDep
+from aivs_server.db.engine import get_sessionmaker
 from aivs_server.db.grants import connection_role_problem
 from aivs_server.observability import HEARTBEATS, render_metrics
 from aivs_server.services.instance_status import pending_deliveries, pending_embargoes
@@ -80,7 +81,13 @@ async def readyz(session: SessionDep, settings: SettingsDep, response: Response)
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
         return {"status": "unavailable", "database": "unreachable"}
     if settings.environment != "dev":
+        # Both logins: this request's session is the member login's (it is not
+        # authenticated), and the staff login serves the ISAC and every
+        # background job. Either one able to undo the triggers is not ready.
         problem = await connection_role_problem(session)
+        if problem is None:
+            async with get_sessionmaker()() as staff_session:
+                problem = await connection_role_problem(staff_session)
         if problem is not None:
             # Which role, and why, to the log; the unauthenticated body says
             # only that the connection was refused.

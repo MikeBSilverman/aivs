@@ -1,0 +1,18 @@
+Mutation M847: every caller, members included, is routed to the staff login
+Re-applies: Phase P slice 3a (SF-89)
+
+Expect red: packages/aivs-server/tests/unit/test_database_logins.py::test_a_members_api_request_never_touches_the_staff_login
+Expect red: packages/aivs-server/tests/unit/test_database_logins.py::test_a_members_portal_page_never_touches_the_staff_login
+
+diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs-server/src/aivs_server/auth/policy.py
+--- a/packages/aivs-server/src/aivs_server/auth/policy.py
++++ b/packages/aivs-server/src/aivs_server/auth/policy.py
+@@ -541,7 +541,7 @@
+     Permit-only, so an organisation type added later runs on the member login
+     until someone decides otherwise.
+     """
+-    return ctx.org_type in ISAC_FILER_TYPES
++    return ctx.org_type in ISAC_FILER_TYPES or True
+ 
+ 
+ def holds_submitter_rights(ctx: AuthContext, *, owner_is_isac: bool, owner_is_caller: bool) -> bool:

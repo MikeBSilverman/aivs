@@ -1,0 +1,20 @@
+Mutation M752: the migration grants a member login that can SET ROLE to the staff login
+Re-applies: Phase P slice 3a (SF-89)
+
+Expect red: packages/aivs-server/tests/migrations/test_app_role_grants.py::test_migrating_refuses_a_member_login_that_can_act_as_the_staff_login
+
+diff --git a/packages/aivs-server/src/aivs_server/db/grants.py b/packages/aivs-server/src/aivs_server/db/grants.py
+--- a/packages/aivs-server/src/aivs_server/db/grants.py
++++ b/packages/aivs-server/src/aivs_server/db/grants.py
+@@ -74,10 +74,7 @@
+     reaches all of it with one ``SET ROLE``.
+     """
+     _refuse_unsafe_role(connection, role)
+-    if (
+-        role == staff_role
+-        or connection.execute(_CAN_ACT_AS, {"role": role, "other": staff_role}).scalar_one()
+-    ):
++    if role == staff_role:
+         msg = (
+             f"member role {role!r} is, or can act as, the staff role {staff_role!r}; "
+             "the member path must have a login of its own"

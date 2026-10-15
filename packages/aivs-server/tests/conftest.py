@@ -43,6 +43,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.x509.oid import NameOID
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select, text
+from sqlalchemy.engine import make_url
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -102,6 +103,15 @@ TEST_SECRET_KEY_FILE.chmod(0o600)
 atexit.register(shutil.rmtree, _secrets_directory, ignore_errors=True)
 
 
+#: The member login's URL in the suite's settings: the test database under
+#: another role name, which no test connects as.
+TEST_MEMBER_DATABASE_URL = (
+    make_url(TEST_DATABASE_URL)
+    .set(username="aivs_member_suite")
+    .render_as_string(hide_password=False)
+)
+
+
 @pytest.fixture(scope="session")
 def settings() -> Settings:
     """Settings for the test environment.
@@ -115,6 +125,10 @@ def settings() -> Settings:
         instance_name="AIVS Test",
         public_base_url="https://aivs.test",
         database_url=TEST_DATABASE_URL,  # type: ignore[arg-type]
+        # A login of its own, as the posture requires outside dev. Never
+        # connected to: the app fixture points both engines at the test
+        # database, which the suite reaches as one role.
+        member_database_url=TEST_MEMBER_DATABASE_URL,  # type: ignore[arg-type]
         proxy_shared_secret=TEST_PROXY_SECRET,  # type: ignore[arg-type]
         session_secret=TEST_SESSION_SECRET,  # type: ignore[arg-type]
         secret_encryption_key_file=TEST_SECRET_KEY_FILE,
@@ -457,12 +471,18 @@ async def app(settings: Settings, engine: Any, _schema: None) -> AsyncIterator[A
     factory = async_sessionmaker(bind=engine, expire_on_commit=False, autoflush=False)
     engine_module._engine = engine
     engine_module._sessionmaker = factory
+    # The member login shares the test database: the suite runs as one role.
+    # Which login each caller is routed to is asserted by test_database_logins.
+    engine_module._member_engine = engine
+    engine_module._member_sessionmaker = factory
 
     application = create_app(settings)
     yield application
 
     engine_module._sessionmaker = None
     engine_module._engine = None
+    engine_module._member_sessionmaker = None
+    engine_module._member_engine = None
 
 
 @pytest.fixture

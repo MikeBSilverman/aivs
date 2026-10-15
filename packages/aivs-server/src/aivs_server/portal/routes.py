@@ -300,7 +300,7 @@ async def logout(
     every sibling route performs.
     """
     # Any session may end itself, an auditor's included.
-    ctx, csrf_hash = await any_session(request, settings, session)
+    ctx, csrf_hash = await any_session(request, settings)
     require_csrf(csrf_token, csrf_hash)
 
     token = request.cookies.get(settings.session_cookie_name)
@@ -327,7 +327,7 @@ async def logout(
 @router.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request, settings: SettingsDep, session: SessionDep) -> Response:
     """What this analyst's firm can see, and what it has filed."""
-    ctx, _csrf_hash = await current_session(request, settings, session)
+    ctx, _csrf_hash = await current_session(request, settings)
     # The database's clock, which date_added is stamped on: a replica running
     # fast would list embargoed content early (see db.clock).
     now = await database_now(session)
@@ -473,7 +473,7 @@ async def list_submissions(
     request: Request, settings: SettingsDep, session: SessionDep
 ) -> Response:
     """Submissions filed by this analyst's organisation."""
-    ctx, _csrf_hash = await current_session(request, settings, session)
+    ctx, _csrf_hash = await current_session(request, settings)
     rows = (
         (
             await session.execute(
@@ -507,7 +507,7 @@ async def review_queue(request: Request, settings: SettingsDep, session: Session
     coordinated-disclosure consent problem, so it gets its own screen rather
     than being a filter on a list.
     """
-    ctx, _csrf_hash = await current_session(request, settings, session)
+    ctx, _csrf_hash = await current_session(request, settings)
     if not can_review_submissions(ctx):
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Not found")
 
@@ -559,7 +559,7 @@ async def validate_review_group(
     submission_ids: Annotated[list[uuid.UUID], Form()],
 ) -> Response:
     """Validate one review group from the queue: the API's action, through the same service."""
-    ctx, csrf_hash = await current_session(request, settings, session)
+    ctx, csrf_hash = await current_session(request, settings)
     require_csrf(csrf_token, csrf_hash)
     response = redirect_within_portal("/portal/review")
     try:
@@ -610,7 +610,7 @@ async def submission_detail(
     session: SessionDep,
 ) -> Response:
     """One submission, its history, and the actions this analyst may take."""
-    ctx, csrf_hash = await current_session(request, settings, session)
+    ctx, csrf_hash = await current_session(request, settings)
     submission = await load_submission(session, submission_id, for_update=False)
     owner_is_caller = submission is not None and await is_submitted_by(
         session, submission, ctx.org_id
@@ -871,7 +871,7 @@ async def perform_action(
     native API uses are called, so the portal cannot become a second, weaker
     door to the same operations.
     """
-    ctx, csrf_hash = await current_session(request, settings, session)
+    ctx, csrf_hash = await current_session(request, settings)
     require_csrf(csrf_token, csrf_hash)
 
     submission = await load_submission(session, submission_id, for_update=True)
@@ -1006,7 +1006,7 @@ async def _distribute_from_portal(
 # ---------------------------------------------------------------------------
 @router.get("/submit", response_class=HTMLResponse)
 async def submit_form(request: Request, settings: SettingsDep, session: SessionDep) -> Response:
-    ctx, _csrf_hash = await current_session(request, settings, session)
+    ctx, _csrf_hash = await current_session(request, settings)
     context = base_context(request, settings, ctx, await operator_name(session, ctx), "submit")
     context.update({"form": {}, "error": None, "csrf_token": request.cookies.get("aivs_csrf", "")})
     return render(request, "submit.html", context)
@@ -1037,7 +1037,7 @@ async def submit_finding(
     Calls the same service the API does, so the validation a member gets here is
     the validation they would get there.
     """
-    ctx, csrf_hash = await current_session(request, settings, session)
+    ctx, csrf_hash = await current_session(request, settings)
     require_csrf(csrf_token, csrf_hash)
 
     form_values = {"title": title, "summary": summary, "bundle": bundle}

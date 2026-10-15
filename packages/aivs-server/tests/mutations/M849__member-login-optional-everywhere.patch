@@ -1,0 +1,18 @@
+Mutation M849: a hardened environment starts with no member login, running the member path on the staff one
+Re-applies: Phase P slice 3a (SF-89)
+
+Expect red: packages/aivs-server/tests/unit/test_security_regressions.py::test_hardened_environments_refuse_a_member_path_on_the_staff_login[missing-production]
+Expect red: packages/aivs-server/tests/unit/test_security_regressions.py::test_hardened_environments_refuse_a_member_path_on_the_staff_login[missing-staging]
+
+diff --git a/packages/aivs-server/src/aivs_server/config.py b/packages/aivs-server/src/aivs_server/config.py
+--- a/packages/aivs-server/src/aivs_server/config.py
++++ b/packages/aivs-server/src/aivs_server/config.py
+@@ -719,7 +719,7 @@
+         which is the thing the split exists to withhold.
+         """
+         if self.member_database_url is None:
+-            return ["member_database_url (the member path needs its own database login)"]
++            return []
+         if self.member_database_url.get_secret_value() == self.database_url.get_secret_value():
+             return ["member_database_url (must differ from database_url)"]
+         member_user = make_url(self.member_database_url.get_secret_value()).username

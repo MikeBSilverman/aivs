@@ -6,12 +6,12 @@ Expect red: packages/aivs-server/tests/unit/test_deployment_contract.py::test_th
 diff --git a/docker-compose.yml b/docker-compose.yml
 --- a/docker-compose.yml
 +++ b/docker-compose.yml
-@@ -245,7 +245,7 @@ services:
+@@ -245,7 +245,7 @@
        # The password is URL-encoded into a DSN, so it must be URL-safe: generate
        # it with `openssl rand -base64 36 | tr '+/' '-_'` or use hex. A raw '@'
        # or '/' in the password silently truncates the host or the database name.
 -      AIVS_DATABASE_URL: postgresql+psycopg://${AIVS_DB_APP_USER:-aivs_app}:${AIVS_DB_APP_PASSWORD:?set AIVS_DB_APP_PASSWORD in deploy/.env}@db:5432/${AIVS_DB_NAME:-aivs}
 +      AIVS_DATABASE_URL: postgresql+psycopg://${AIVS_DB_USER:-aivs}:${AIVS_DB_PASSWORD:?set AIVS_DB_PASSWORD in deploy/.env}@db:5432/${AIVS_DB_NAME:-aivs}
- 
-       # -- Trust boundary ---------------------------------------------------
-       AIVS_PROXY_SHARED_SECRET: ${AIVS_PROXY_SHARED_SECRET:?set AIVS_PROXY_SHARED_SECRET in deploy/.env (>= 32 chars)}
+       # The member path's own login (Phase P): every member organisation's
+       # request runs on it, the ISAC's staff and background jobs on the one
+       # above. Not a member of that role, so SQL on the member path cannot

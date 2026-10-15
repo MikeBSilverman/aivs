@@ -13,11 +13,12 @@ organisation is free reconnaissance.
 from __future__ import annotations
 
 import datetime as dt
+from collections.abc import AsyncIterator
 from typing import Annotated, Final
 
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from aivs_schemas.enums import CertStatus, CircleRole, OrgStatus
 from aivs_server.audit.log import AuditAction, record_independently
@@ -29,13 +30,19 @@ from aivs_server.auth.mtls import (
     client_address,
     extract_client_certificate,
 )
-from aivs_server.auth.policy import is_auditor, require
+from aivs_server.auth.policy import is_auditor, require, uses_staff_database
 from aivs_server.auth.sessions import SessionRejectedError, resolve_session, resolve_sso_session
 from aivs_server.config import Settings, get_settings
-from aivs_server.db.engine import get_session
+from aivs_server.db.engine import (
+    get_engine,
+    get_member_engine,
+    get_member_sessionmaker,
+    routed_session,
+)
 from aivs_server.db.models import ClientCertificate, Organization
 
 __all__ = [
+    "AuthSessionDep",
     "AuthenticatedContext",
     "SessionDep",
     "SettingsDep",
@@ -64,7 +71,55 @@ def _settings_dependency(request: Request) -> Settings:
 
 
 SettingsDep = Annotated[Settings, Depends(_settings_dependency)]
-SessionDep = Annotated[AsyncSession, Depends(get_session)]
+
+
+async def get_request_session(request: Request) -> AsyncIterator[AsyncSession]:
+    """The handler's session: bound on its first statement to the login its caller gets.
+
+    The staff login for the ISAC's organisations (``policy.uses_staff_database``),
+    the member login for everyone else, including a request not yet
+    authenticated. The choice is read when the first statement runs, which is
+    after authentication: the context dependencies resolve the caller on a
+    session of their own (``AuthSessionDep``) and leave it on
+    ``request.state``, as the error handlers already read it. Rolled back and
+    closed unconditionally; handlers commit explicitly.
+    """
+
+    def choose() -> AsyncEngine:
+        ctx: AuthContext | None = getattr(request.state, "auth_context", None)
+        if ctx is not None and uses_staff_database(ctx):
+            return get_engine()
+        return get_member_engine()
+
+    async with routed_session(choose) as session:
+        try:
+            yield session
+        except Exception:
+            await session.rollback()
+            raise
+        finally:
+            await session.close()
+
+
+async def get_auth_session() -> AsyncIterator[AsyncSession]:
+    """Authentication's own session, on the member login: who the caller is is not yet known.
+
+    Kept apart from the handler's session so the handler's can be bound to the
+    caller's login afterwards. Every write authentication makes it commits
+    itself (``auth.sessions``).
+    """
+    async with get_member_sessionmaker()() as session:
+        try:
+            yield session
+        except Exception:
+            await session.rollback()
+            raise
+        finally:
+            await session.close()
+
+
+SessionDep = Annotated[AsyncSession, Depends(get_request_session)]
+AuthSessionDep = Annotated[AsyncSession, Depends(get_auth_session)]
 
 
 def _client_ip(request: Request) -> str | None:
@@ -219,7 +274,7 @@ async def _human_session_context(
 async def get_auth_context(
     request: Request,
     settings: SettingsDep,
-    session: SessionDep,
+    session: AuthSessionDep,
 ) -> AuthContext:
     """Resolve the caller, and leave the result where error handlers can find it.
 
@@ -242,7 +297,7 @@ async def get_auth_context(
 async def get_auditor_context(
     request: Request,
     settings: SettingsDep,
-    session: SessionDep,
+    session: AuthSessionDep,
 ) -> AuthContext:
     """The caller, for the audit read alone, which then asks ``policy.can_read_audit``."""
     ctx = await _resolve_auth_context(request, settings, session)

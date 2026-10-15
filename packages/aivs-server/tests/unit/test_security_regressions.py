@@ -34,6 +34,7 @@ def _settings(**overrides: object) -> dict[str, object]:
         "environment": "staging",
         "public_base_url": "https://aivs.test",
         "database_url": "postgresql+psycopg://aivs@127.0.0.1:55432/aivs_test",
+        "member_database_url": "postgresql+psycopg://aivs_member@127.0.0.1:55432/aivs_test",
         "proxy_shared_secret": TEST_PROXY_SECRET,
         "session_secret": TEST_SESSION_SECRET,
         "secret_encryption_key_file": TEST_SECRET_KEY_FILE,
@@ -103,6 +104,46 @@ def test_hardened_environments_refuse_one_value_for_both_secrets(environment):
     rendered config (or the env file line copied twice) forges sessions."""
     with pytest.raises(ValidationError, match="session_secret \\(must differ"):
         Settings(**_settings(environment=environment, session_secret=TEST_PROXY_SECRET))
+
+
+@pytest.mark.requirement("SF-89")
+@pytest.mark.parametrize("environment", ["production", "staging"])
+@pytest.mark.parametrize(
+    ("member_url", "refusal"),
+    [
+        (None, "member path needs its own database login"),
+        ("postgresql+psycopg://aivs@127.0.0.1:55432/aivs_test", "must differ from database_url"),
+        (
+            "postgresql+psycopg://aivs@127.0.0.1:55432/other",
+            "must log in as a different role from database_url",
+        ),
+    ],
+    ids=["missing", "the-staff-url", "the-staff-role"],
+)
+def test_hardened_environments_refuse_a_member_path_on_the_staff_login(
+    environment, member_url, refusal
+):
+    """Phase P: the member path's login must exist, and must not be the staff
+    login under another spelling. Absent, the member path would share the
+    staff login's reach, which is what the split withholds."""
+    with pytest.raises(ValidationError, match=refusal):
+        Settings(**_settings(environment=environment, member_database_url=member_url))
+
+
+def test_development_may_run_the_member_path_on_the_one_login():
+    settings = Settings(**_settings(environment="dev", member_database_url=None))
+    assert settings.member_database_url is None
+
+
+@pytest.mark.requirement("SF-89")
+def test_a_placeholder_member_login_is_refused_everywhere():
+    with pytest.raises(ValidationError, match="REPLACE_ME"):
+        Settings(
+            **_settings(
+                environment="dev",
+                member_database_url="postgresql+psycopg://aivs_member:REPLACE_ME@db/aivs",
+            )
+        )
 
 
 # ---------------------------------------------------------------------------

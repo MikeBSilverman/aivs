@@ -154,6 +154,8 @@ AIVS_DB_NAME=aivs
 AIVS_DB_PASSWORD=$(random_secret)
 AIVS_DB_APP_USER=aivs_app
 AIVS_DB_APP_PASSWORD=$(random_secret)
+AIVS_DB_MEMBER_USER=aivs_member
+AIVS_DB_MEMBER_PASSWORD=$(random_secret)
 EOF
     chmod 0600 "${WORK}/.env"
 }

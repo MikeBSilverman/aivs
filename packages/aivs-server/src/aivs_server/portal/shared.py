@@ -38,6 +38,7 @@ from aivs_server.auth.passwords import constant_time_equals
 from aivs_server.auth.policy import can_view_instance_status, is_auditor, is_isac_staff, require
 from aivs_server.auth.sessions import SessionRejectedError
 from aivs_server.config import Settings
+from aivs_server.db.engine import get_member_sessionmaker
 from aivs_server.db.models import Operator
 
 __all__ = [
@@ -65,24 +66,24 @@ TEMPLATES = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 LOGIN_FAILED = "Those credentials were not accepted."
 
 
-async def current_session(
-    request: Request, settings: Settings, session: SessionDep
-) -> tuple[AuthContext, str]:
+async def current_session(request: Request, settings: Settings) -> tuple[AuthContext, str]:
     """Resolve the signed-in person for a portal page, or send them to sign in.
 
     An auditor has no portal page -- its read is the API's audit stream -- so
     its session is refused here, as ``auth.deps`` refuses it on every other
     API route. Signing out is the one portal action it takes (:func:`any_session`).
     """
-    resolved = await any_session(request, settings, session)
+    resolved = await any_session(request, settings)
     require(not is_auditor(resolved[0]), "auditor_outside_audit")
     return resolved
 
 
-async def any_session(
-    request: Request, settings: Settings, session: SessionDep
-) -> tuple[AuthContext, str]:
+async def any_session(request: Request, settings: Settings) -> tuple[AuthContext, str]:
     """Resolve the signed-in person, whatever they may do, or send them to sign in.
+
+    On authentication's own session (the member login, ``AuthSessionDep``'s),
+    never the handler's: the handler's is bound to its caller's login on its
+    first statement, and the caller is what this decides.
 
     The request decides which kind of session it may resume. One that carries
     a client certificate resumes only a certificate-bound session; one with no
@@ -100,12 +101,15 @@ async def any_session(
         # Identity is resolved in auth.deps, as the API's is; this function
         # decides only which kind of session the request may resume, and what
         # a refusal looks like here.
-        if is_sso:
-            resolved = await resolve_request_sso_session(request, settings, session, token=token)
-        else:
-            resolved = await resolve_request_session(
-                request, settings, session, token=token, cert_fingerprint=fingerprint
-            )
+        async with get_member_sessionmaker()() as session:
+            if is_sso:
+                resolved = await resolve_request_sso_session(
+                    request, settings, session, token=token
+                )
+            else:
+                resolved = await resolve_request_session(
+                    request, settings, session, token=token, cert_fingerprint=fingerprint
+                )
     except SessionRejectedError as exc:
         await record_independently(
             action=AuditAction.SESSION_REJECTED,

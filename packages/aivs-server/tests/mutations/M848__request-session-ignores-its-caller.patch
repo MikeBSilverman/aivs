@@ -1,0 +1,20 @@
+Mutation M848: the handler's session goes to the staff login for any authenticated caller
+Re-applies: Phase P slice 3a (SF-89)
+
+Expect red: packages/aivs-server/tests/unit/test_database_logins.py::test_a_members_api_request_never_touches_the_staff_login
+Expect red: packages/aivs-server/tests/unit/test_database_logins.py::test_a_members_portal_page_never_touches_the_staff_login
+
+diff --git a/packages/aivs-server/src/aivs_server/auth/deps.py b/packages/aivs-server/src/aivs_server/auth/deps.py
+--- a/packages/aivs-server/src/aivs_server/auth/deps.py
++++ b/packages/aivs-server/src/aivs_server/auth/deps.py
+@@ -87,9 +87,7 @@
+ 
+     def choose() -> AsyncEngine:
+         ctx: AuthContext | None = getattr(request.state, "auth_context", None)
+-        if ctx is not None and uses_staff_database(ctx):
+-            return get_engine()
+-        return get_member_engine()
++        return get_member_engine() if ctx is None else get_engine()
+ 
+     async with routed_session(choose) as session:
+         try:

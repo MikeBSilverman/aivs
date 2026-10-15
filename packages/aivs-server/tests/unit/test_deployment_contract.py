@@ -218,6 +218,34 @@ def test_the_database_creates_the_application_role_on_first_start():
     assert re.search(r"^AIVS_DB_APP_PASSWORD=$", (ROOT / "deploy/env.example").read_text(), re.M)
 
 
+_MEMBER_DSN = "postgresql+psycopg://${AIVS_DB_MEMBER_USER:-aivs_member}:${AIVS_DB_MEMBER_PASSWORD:?"
+
+
+@pytest.mark.requirement("SF-89")
+def test_the_app_has_a_member_login_of_its_own():
+    """Phase P: the member path's login, a different role from the staff one,
+    created by the database on first start and granted by the migrate step."""
+    services = _compose("docker-compose.yml")["services"]
+    app_env, db_env = services["app"]["environment"], services["db"]["environment"]
+    migrate_env = services["migrate"]["environment"]
+    example = (ROOT / "deploy/env.example").read_text(encoding="utf-8")
+    script = (ROOT / "deploy/db/init/10-app-role.sh").read_text(encoding="utf-8")
+
+    assert app_env["AIVS_MEMBER_DATABASE_URL"].startswith(_MEMBER_DSN)
+    assert migrate_env["AIVS_MEMBER_DB_ROLE"] == "${AIVS_DB_MEMBER_USER:-aivs_member}"
+    assert db_env["AIVS_DB_MEMBER_PASSWORD"].startswith("${AIVS_DB_MEMBER_PASSWORD:?")
+    assert re.search(r"^AIVS_DB_MEMBER_USER=aivs_member$", example, re.M)
+    assert re.search(r"^AIVS_DB_MEMBER_PASSWORD=$", example, re.M), "empty, as the others"
+    assert 'create_login "${AIVS_DB_MEMBER_USER}"' in script
+    assert "AIVS_DB_MEMBER_USER must differ from AIVS_DB_APP_USER" in script
+
+
+def test_the_e2e_stack_sets_the_member_login():
+    script = (ROOT / "scripts/e2e.sh").read_text(encoding="utf-8")
+    assert "AIVS_DB_MEMBER_USER=aivs_member" in script
+    assert "AIVS_DB_MEMBER_PASSWORD=$(random_secret)" in script
+
+
 def test_the_db_healthcheck_signs_in_as_the_application_role():
     """pg_isready never authenticates, under a comment saying it checked the role."""
     kind, command = _compose("docker-compose.yml")["services"]["db"]["healthcheck"]["test"]

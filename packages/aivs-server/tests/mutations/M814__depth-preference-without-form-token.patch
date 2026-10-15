@@ -10,9 +10,9 @@ diff --git a/packages/aivs-server/src/aivs_server/portal/reading_routes.py b/pac
      Only the person's own row, found from the session and never from the form.
      An unknown value is refused with a notice and changes nothing.
      """
--    ctx, csrf_hash = await current_session(request, settings, session)
+-    ctx, csrf_hash = await current_session(request, settings)
 -    require_csrf(csrf_token, csrf_hash)
-+    ctx, _csrf_hash = await current_session(request, settings, session)
++    ctx, _csrf_hash = await current_session(request, settings)
      response = redirect_within_portal("/portal/")
      known = {value.value: value for value in ReadingDepth}
      if depth != _NO_PREFERENCE and depth not in known:

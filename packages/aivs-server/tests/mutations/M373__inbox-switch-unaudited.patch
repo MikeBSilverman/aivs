@@ -1,0 +1,21 @@
+Mutation M373: opening or closing the inbox leaves no audit row
+Re-applies: T13 (Mike, Q19; finding P2-C3)
+
+Expect red: packages/aivs-server/tests/unit/test_taxii_inbox.py::test_the_audit_row_names_who_switched_the_inbox_and_which_way
+
+diff --git a/packages/aivs-server/src/aivs_server/services/circles.py b/packages/aivs-server/src/aivs_server/services/circles.py
+--- a/packages/aivs-server/src/aivs_server/services/circles.py
++++ b/packages/aivs-server/src/aivs_server/services/circles.py
+@@ -657,12 +657,4 @@
+         return False
+     previous = collection.can_write
+     collection.can_write = enabled
+-    await record(
+-        session,
+-        action=AuditAction.CIRCLE_TAXII_INBOX_SET,
+-        ctx=ctx,
+-        resource_type="circle",
+-        resource_id=str(circle_id),
+-        details={"enabled": enabled, "previous": previous},
+-    )
+     return True

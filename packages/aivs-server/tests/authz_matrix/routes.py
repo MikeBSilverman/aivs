@@ -138,6 +138,8 @@ class RouteClass(enum.StrEnum):
     TAXII_INBOX = "taxii inbox"
     #: Turning a circle's post-moderation on or off: an editor.
     POST_MODERATION = "post moderation"
+    #: Opening or closing a circle's TAXII inbox: an editor, on either door.
+    INBOX_SWITCH = "inbox switch"
     #: Filing for a member on its consent: an editor.
     PROXY_FILING = "proxy filing"
     #: Confirming a filing made in one's name: a person at that member; its
@@ -594,6 +596,21 @@ ROUTES: tuple[RouteCase, ...] = (
         "/api/v1/circles/{circle_id}/post-moderation",
         RouteClass.POST_MODERATION,
         lambda world: (f"{API}/circles/{world.circle_id}/post-moderation", {"enabled": False}),
+    ),
+    # Opened, not closed: the inbox cases depend on the world's collection
+    # taking posts, whichever order the cases run in.
+    RouteCase(
+        "PUT",
+        "/api/v1/circles/{circle_id}/taxii-inbox",
+        RouteClass.INBOX_SWITCH,
+        lambda world: (f"{API}/circles/{world.circle_id}/taxii-inbox", {"enabled": True}),
+    ),
+    RouteCase(
+        "POST",
+        "/portal/admin/circles/{circle_id}/taxii-inbox",
+        RouteClass.INBOX_SWITCH,
+        lambda world: (f"/portal/admin/circles/{world.circle_id}/taxii-inbox", {"enabled": "on"}),
+        is_portal=True,
     ),
     RouteCase("POST", "/api/v1/submissions/on-behalf", RouteClass.PROXY_FILING, _on_behalf),
     RouteCase(

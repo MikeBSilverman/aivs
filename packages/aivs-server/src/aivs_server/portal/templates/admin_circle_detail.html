@@ -55,6 +55,28 @@
 </div>
 
 <div class="card">
+  <h2>TAXII inbox</h2>
+  <p>
+    {% if inbox_open %}
+      <strong>Open.</strong> The circle's contributors' TAXII clients may post to
+      its collection; each post arrives as a submission for review, never published
+      by itself.
+    {% else %}
+      <strong>Closed.</strong> Posts to this circle's collection are refused.
+    {% endif %}
+  </p>
+  {% if may_switch_inbox %}
+    <form method="post" action="/portal/admin/circles/{{ circle.id }}/taxii-inbox">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="enabled" value="{{ 'off' if inbox_open else 'on' }}">
+      <button type="submit" class="button-secondary">{{ 'Close the inbox' if inbox_open else 'Open the inbox' }}</button>
+    </form>
+  {% else %}
+    <p class="muted small">An ISAC editor opens and closes it.</p>
+  {% endif %}
+</div>
+
+<div class="card">
   <h2>Add organisations</h2>
   <p class="muted">
     Paste slugs or identifiers, one per line or comma separated. Organisations

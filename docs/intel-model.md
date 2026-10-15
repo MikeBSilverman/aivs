@@ -217,7 +217,15 @@ Everything in the pre-CVE lane, everything RED, and every `vulnerability`,
 `course-of-action`, `indicator`, `attack-pattern` and `report` still needs a
 human `validate`. Everything published without review, with every TAXII inbox
 post, spends one hourly allowance per organisation, and a refusal raises
-`contribution_flood`. `revoke` is not built yet.
+`contribution_flood`. An editor revokes a post-moderated contribution with
+`POST /api/v1/submissions/{id}/revoke`.
+
+**The TAXII inbox, per circle.** A circle's collection takes POSTs only once an
+ISAC editor has opened its inbox (`PUT /api/v1/circles/{id}/taxii-inbox`, or the
+circle's page); every collection starts closed, and the switch is audited. It
+opens a door into review, nothing more: each post is a `submitted` submission
+under source `system`, anonymous, under the AI gate, the disclosure split and
+the hourly allowance (SF-69). Polling members' own TAXII servers is Phase O.
 
 **Telemetry back to the submitter**, computed from the rows the pipeline
 already writes: reach, retrieved, acknowledged and actioned counts (built);

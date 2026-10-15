@@ -72,6 +72,7 @@ from aivs_server.services.circles import (
     reconcile_circle,
     remove_circle_member,
     resolve_organisations,
+    set_taxii_inbox,
 )
 from aivs_server.services.enrolment import enrolment_problem
 from aivs_server.services.instance_status import gather_status
@@ -400,8 +401,8 @@ async def create_circle_screen(
                 title=circle.name,
                 alias=circle.slug,
                 can_read=True,
-                # See api.admin.create_circle: there is no TAXII write endpoint,
-                # so advertising one sends off-the-shelf clients at a 405.
+                # Closed until an editor opens the inbox (services.circles.
+                # set_taxii_inbox); see api.admin.create_circle.
                 can_write=False,
             )
         )
@@ -458,11 +459,18 @@ async def circle_detail(
         )
     ).all()
 
+    inbox_open = await session.scalar(
+        select(TaxiiCollection.can_write).where(
+            TaxiiCollection.circle_id == circle_id, TaxiiCollection.is_active.is_(True)
+        )
+    )
     context = base_context(
         request, settings, ctx, await operator_name(session, ctx), "admin-circles"
     )
     context.update(
         {
+            "inbox_open": bool(inbox_open),
+            "may_switch_inbox": is_isac_editor(ctx),
             "circle": {
                 "id": str(circle.id),
                 "slug": circle.slug,
@@ -571,6 +579,37 @@ async def add_members_screen(
     if skipped:
         message += f" {skipped} already belonged."
     set_notice(response, settings, "info", message)
+    return response
+
+
+@router.post("/circles/{circle_id}/taxii-inbox")
+async def switch_taxii_inbox_screen(
+    circle_id: uuid.UUID,
+    request: Request,
+    settings: SettingsDep,
+    session: SessionDep,
+    csrf_token: Annotated[str, Form()],
+    enabled: Annotated[str, Form()],
+) -> Response:
+    """Open or close the circle's TAXII inbox, through the API's one writer."""
+    ctx, csrf_hash = await current_session(request, settings, session)
+    require_csrf(csrf_token, csrf_hash)
+    require(is_isac_editor(ctx), "taxii_inbox_requires_isac_editor")
+    if enabled not in {"on", "off"}:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="enabled must be on or off")
+    opening = enabled == "on"
+    if not await set_taxii_inbox(session, ctx, circle_id, enabled=opening):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Not found")
+    await session.commit()
+    response = redirect_within_portal(f"/portal/admin/circles/{circle_id}")
+    set_notice(
+        response,
+        settings,
+        "info",
+        "The TAXII inbox is open: contributors' POSTs arrive for review."
+        if opening
+        else "The TAXII inbox is closed: POSTs are refused.",
+    )
     return response
 
 

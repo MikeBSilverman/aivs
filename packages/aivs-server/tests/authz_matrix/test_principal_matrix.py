@@ -169,6 +169,7 @@ EXPECTED: Mapping[RouteClass, Mapping[Principal, Outcome]] = {
     # The member contributes to the circle; the peer only reads it.
     RouteClass.TAXII_INBOX: {**_allow(*_MEMBER, otherwise=N), P.PEER_MACHINE: F},
     RouteClass.POST_MODERATION: _allow(P.ISAC_EDITOR, otherwise=F),
+    RouteClass.INBOX_SWITCH: _allow(P.ISAC_EDITOR, otherwise=F),
     RouteClass.PROXY_FILING: _allow(P.ISAC_EDITOR, otherwise=F),
     # A person at the member confirms; its machine certificate may not, or a
     # collector confirming whatever arrives would close the window unread.

@@ -346,6 +346,7 @@ rule that refuses it (`tests/abuse/test_sharing_abuse.py` drives the sequences):
 
 | What they try | What stops it |
 | --- | --- |
+| A member's platform posts into a circle the ISAC never decided should take machine contributions. | Every collection is created closed; only an ISAC editor opens a circle's inbox, on the API or the portal through one writer, and the switch is recorded with who and which way (SF-69). Open, a post is still a submission for review. |
 | A script, or a stolen certificate behind a person's session, floods a circle with one-clicks. | An hourly allowance per organisation for everything published without review, inbox posts included; past it a one-click is refused, and the refusal is audited and raises `contribution_flood` (SF-66). |
 | Publish prose, a pre-CVE finding, or RED content through the fast lane. | The lane rule: only a click with no free text, about a published vulnerability or a contribution on one, never RED, takes it. Prose takes it only in a circle an editor made post-moderated, and only for a note, opinion, sighting or RFI grouping (SF-66). |
 | A vendor clicks "doesn't work" on a workaround for its own product. | A vendor's opinion is never published without review, whatever product it concerns (SF-66). |

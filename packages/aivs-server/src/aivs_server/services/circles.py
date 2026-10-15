@@ -65,7 +65,7 @@ from aivs_schemas.enums import (
 from aivs_server.audit.log import AuditAction, record
 from aivs_server.auth.context import AuthContext
 from aivs_server.db.clock import database_now
-from aivs_server.db.models import Circle, CircleMembership, Organization
+from aivs_server.db.models import Circle, CircleMembership, Organization, TaxiiCollection
 
 __all__ = [
     "CircleMembershipError",
@@ -76,6 +76,7 @@ __all__ = [
     "reconcile_circles_for_org",
     "remove_circle_member",
     "resolve_organisations",
+    "set_taxii_inbox",
 ]
 
 
@@ -629,3 +630,39 @@ async def reconcile_circles_for_org(
 
     del organisation  # the trigger, not an input: the rule is evaluated over all
     return touched
+
+
+async def set_taxii_inbox(
+    session: AsyncSession, ctx: AuthContext, circle_id: uuid.UUID, *, enabled: bool
+) -> bool:
+    """Open or close a circle's TAXII inbox; ``False`` if there is no such circle. Does not commit.
+
+    The inbox's door is the circle's collection's ``can_write``, which the
+    TAXII POST and the collection resource already read. Every collection is
+    created closed, and this is the one writer, for the API and the portal
+    alike (Mike, Q19). Opening it lets the circle's contributors POST; each
+    POST is still a ``submitted`` submission for review, under the AI gate,
+    the disclosure split and the per-organisation allowance (SF-69). The
+    caller's authority is checked by the caller: an editor's.
+    """
+    collection = await session.scalar(
+        select(TaxiiCollection)
+        # The circle's one active collection: a retired one serves nothing,
+        # and its replacement is created closed, like every collection.
+        .where(TaxiiCollection.circle_id == circle_id, TaxiiCollection.is_active.is_(True))
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    if collection is None:
+        return False
+    previous = collection.can_write
+    collection.can_write = enabled
+    await record(
+        session,
+        action=AuditAction.CIRCLE_TAXII_INBOX_SET,
+        ctx=ctx,
+        resource_type="circle",
+        resource_id=str(circle_id),
+        details={"enabled": enabled, "previous": previous},
+    )
+    return True

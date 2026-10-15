@@ -17,12 +17,13 @@ from sqlalchemy import select
 from aivs_schemas.enums import (
     TLP,
     DiscoveryScope,
+    OperatorRole,
     SubmissionLane,
     SubmissionSource,
     SubmissionState,
 )
 from aivs_server.audit.log import AuditAction
-from aivs_server.db.models import AuditLog, Submission, TaxiiStatus
+from aivs_server.db.models import AuditLog, Circle, Submission, TaxiiCollection, TaxiiStatus
 from tests.authz_matrix.world import inbox_note
 from tests.conftest import proxy_headers
 from tests.unit.contribution_world import STAMP
@@ -87,6 +88,12 @@ async def post(client, world: SharingWorld, headers, objects, *, content_type=TA
         f"/taxii2/aivs/collections/{world.collection.id}/objects/",
         content=json.dumps({"objects": objects}),
         headers={**headers, "content-type": content_type},
+    )
+
+
+async def _switch(client, world: SharingWorld, headers, *, enabled: bool):
+    return await client.put(
+        f"{API}/circles/{world.circle.id}/taxii-inbox", json={"enabled": enabled}, headers=headers
     )
 
 
@@ -209,9 +216,7 @@ async def test_a_contributor_is_refused_with_taxiis_403_where_the_collection_tak
 
     The member contributes to the circle, so only the flag refuses it here.
     """
-    world.collection.can_write = False
-    session.add(world.collection)
-    await session.commit()
+    await _switch(client, world, world.editor, enabled=False)
 
     response = await post(client, world, world.member.machine, [note_about(world.published)])
 
@@ -306,3 +311,96 @@ async def test_an_envelope_the_database_cannot_store_is_the_platforms_400(client
 
     assert response.status_code == 400
     assert await _filed(session, world.member.org.id) == []
+
+
+# ---------------------------------------------------------------------------
+# The switch (Mike, Q19)
+# ---------------------------------------------------------------------------
+@pytest.mark.requirement("SF-69")
+async def test_a_circle_made_through_the_api_starts_with_its_inbox_closed(client, session, world):
+    made = await client.post(
+        f"{API}/circles", json={"slug": "new-circle", "name": "New circle"}, headers=world.editor
+    )
+    assert made.status_code == 201, made.text
+    can_write = await session.scalar(
+        select(TaxiiCollection.can_write)
+        .join(Circle, Circle.id == TaxiiCollection.circle_id)
+        .where(Circle.slug == "new-circle")
+    )
+    assert can_write is False
+
+
+@pytest.mark.requirement("SF-69")
+async def test_an_editor_opens_and_closes_the_inbox_and_each_post_follows_it(
+    client, session, world
+):
+    """Closed refuses with TAXII's 403, as the inbox refuses any unwritable
+    collection; open files the post for review; closed again refuses again."""
+    closed = await _switch(client, world, world.editor, enabled=False)
+    refused = await post(client, world, world.member.machine, [note_about(world.published)])
+    opened = await _switch(client, world, world.editor, enabled=True)
+    accepted = await post(client, world, world.member.machine, [note_about(world.published)])
+    await _switch(client, world, world.editor, enabled=False)
+    refused_again = await post(client, world, world.member.machine, [note_about(world.published)])
+
+    assert (closed.status_code, opened.status_code) == (204, 204)
+    reader_refused = await post(client, world, world.reader.machine, [note_about(world.published)])
+    assert refused.status_code == 403
+    assert refused.content == reader_refused.content, "the inbox's one refusal"
+    assert accepted.status_code == 202, accepted.text
+    assert refused_again.status_code == 403
+    assert [s.state for s in await _filed(session, world.member.org.id)] == [
+        SubmissionState.SUBMITTED
+    ]
+
+
+@pytest.mark.requirement("SF-69")
+async def test_the_audit_row_names_who_switched_the_inbox_and_which_way(client, session, world):
+    await _switch(client, world, world.editor, enabled=False)
+    await _switch(client, world, world.editor, enabled=True)
+    rows = (
+        await session.scalars(
+            select(AuditLog)
+            .where(AuditLog.action == AuditAction.CIRCLE_TAXII_INBOX_SET)
+            .order_by(AuditLog.id)
+        )
+    ).all()
+    assert [(row.details["enabled"], row.details["previous"]) for row in rows] == [
+        (False, True),
+        (True, False),
+    ]
+    assert {row.actor_type for row in rows} == {"operator"}
+    assert all(row.actor_id for row in rows)
+    assert {row.resource_id for row in rows} == {str(world.circle.id)}
+
+
+@pytest.mark.requirement("SF-69")
+@pytest.mark.parametrize("who", ["member machine", "member person", "isac analyst"])
+async def test_only_an_editor_switches_the_inbox(
+    client, session, world, who, isac_org, make_operator, make_cert, human_headers
+):
+    if who == "isac analyst":
+        analyst, _ = await make_operator(isac_org, roles=(OperatorRole.ISAC_ANALYST,))
+        pem, _ = await make_cert(isac_org)
+        headers = await human_headers(analyst, pem)
+    else:
+        headers = world.member.machine if who == "member machine" else world.member.person
+    refused = await _switch(client, world, headers, enabled=False)
+    reasons = [
+        row.details["reason"]
+        for row in await session.scalars(
+            select(AuditLog).where(AuditLog.action == AuditAction.ACCESS_DENIED)
+        )
+    ]
+    still_open = await post(client, world, world.member.machine, [note_about(world.published)])
+
+    assert refused.status_code == 403
+    assert reasons == ["taxii_inbox_requires_isac_editor"]
+    assert still_open.status_code == 202, "the refused switch changed nothing"
+
+
+async def test_switching_an_unknown_circles_inbox_is_not_found(client, world):
+    response = await client.put(
+        f"{API}/circles/{uuid.uuid4()}/taxii-inbox", json={"enabled": True}, headers=world.editor
+    )
+    assert response.status_code == 404

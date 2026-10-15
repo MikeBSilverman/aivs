@@ -373,13 +373,12 @@ async def create_circle(
             description=payload.description,
             alias=payload.slug,
             can_read=True,
-            # False until a TAXII write endpoint exists. There is no POST route
-            # under the api root -- submissions go through /api/v1/submissions --
-            # so advertising can_write led off-the-shelf TAXII clients to enable
-            # their add-objects path and POST bundles that returned 405. The
-            # member concludes the instance is broken; the ISAC concludes the
-            # member never submitted. Better to advertise nothing than a door
-            # that is not there.
+            # Closed by default: the inbox (POST .../objects/) takes a circle's
+            # contributions only once an editor opens it
+            # (PUT /api/v1/circles/{id}/taxii-inbox, services.circles.
+            # set_taxii_inbox; Mike, Q19). Every collection starts closed so
+            # that nobody's client is invited to post before the ISAC has
+            # decided the circle takes machine contributions.
             can_write=False,
         )
     )

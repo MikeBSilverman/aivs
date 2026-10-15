@@ -1,0 +1,17 @@
+Mutation M374: a circle made through the API takes TAXII posts before anyone decided it should
+Re-applies: T13 (Mike, Q19; finding P2-C3)
+
+Expect red: packages/aivs-server/tests/unit/test_taxii_inbox.py::test_a_circle_made_through_the_api_starts_with_its_inbox_closed
+
+diff --git a/packages/aivs-server/src/aivs_server/api/admin.py b/packages/aivs-server/src/aivs_server/api/admin.py
+--- a/packages/aivs-server/src/aivs_server/api/admin.py
++++ b/packages/aivs-server/src/aivs_server/api/admin.py
+@@ -379,7 +379,7 @@
+             # set_taxii_inbox; Mike, Q19). Every collection starts closed so
+             # that nobody's client is invited to post before the ISAC has
+             # decided the circle takes machine contributions.
+-            can_write=False,
++            can_write=True,
+         )
+     )
+     await record(

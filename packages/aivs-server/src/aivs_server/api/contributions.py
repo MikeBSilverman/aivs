@@ -45,6 +45,7 @@ from aivs_server.auth.policy import (
 from aivs_server.config import Settings
 from aivs_server.db.clock import database_now
 from aivs_server.db.models import Circle
+from aivs_server.services.circles import set_taxii_inbox
 from aivs_server.services.contributions import (
     ISAC_CLICK_NEEDS_AN_EDITOR,
     ContributionRateLimitedError,
@@ -357,6 +358,21 @@ async def set_post_moderation(
         resource_id=str(circle.id),
         details={"enabled": payload.enabled},
     )
+    await session.commit()
+
+
+@router.put("/circles/{circle_id}/taxii-inbox", status_code=status.HTTP_204_NO_CONTENT)
+async def set_taxii_inbox_switch(
+    circle_id: uuid.UUID, payload: PostModerationIn, ctx: AuthenticatedContext, session: SessionDep
+) -> None:
+    """Open or close a circle's TAXII inbox (Mike, Q19). Editors only; closed by default.
+
+    Opening it lets the circle's contributors POST to its collection, each
+    POST still a submission for review (SF-69); it publishes nothing.
+    """
+    require(is_isac_editor(ctx), "taxii_inbox_requires_isac_editor")
+    if not await set_taxii_inbox(session, ctx, circle_id, enabled=payload.enabled):
+        raise _NOT_FOUND
     await session.commit()
 
 

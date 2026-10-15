@@ -1,0 +1,18 @@
+Mutation M375: the TAXII POST ignores the circle's switch and takes posts while the inbox is closed
+Re-applies: T13 (Mike, Q19; finding P2-C3)
+
+Expect red: packages/aivs-server/tests/unit/test_taxii_inbox.py::test_an_editor_opens_and_closes_the_inbox_and_each_post_follows_it
+Expect red: packages/aivs-server/tests/unit/test_taxii_inbox.py::test_a_contributor_is_refused_with_taxiis_403_where_the_collection_takes_no_writes
+
+diff --git a/packages/aivs-server/src/aivs_server/taxii/router.py b/packages/aivs-server/src/aivs_server/taxii/router.py
+--- a/packages/aivs-server/src/aivs_server/taxii/router.py
++++ b/packages/aivs-server/src/aivs_server/taxii/router.py
+@@ -652,7 +652,7 @@
+     for what a POST becomes.
+     """
+     collection, circle, _intervals = await _load_readable_collection(session, ctx, collection_id)
+-    if not (collection.can_write and can_submit_to_circle(ctx, circle.id)):
++    if not can_submit_to_circle(ctx, circle.id):
+         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not writable")
+     # After authorization, so a caller who may not write learns nothing more
+     # from a wrong media type than from a right one.

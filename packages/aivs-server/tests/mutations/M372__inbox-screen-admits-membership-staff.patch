@@ -1,0 +1,17 @@
+Mutation M372: the portal's inbox switch admits ISAC membership staff, a softer door than the API's
+Re-applies: T13 (Mike, Q19; finding P2-C3)
+
+Expect red: packages/aivs-server/tests/authz_matrix/test_principal_matrix.py::test_each_principal_gets_exactly_its_row
+
+diff --git a/packages/aivs-server/src/aivs_server/portal/admin_routes.py b/packages/aivs-server/src/aivs_server/portal/admin_routes.py
+--- a/packages/aivs-server/src/aivs_server/portal/admin_routes.py
++++ b/packages/aivs-server/src/aivs_server/portal/admin_routes.py
+@@ -594,7 +594,7 @@
+     """Open or close the circle's TAXII inbox, through the API's one writer."""
+     ctx, csrf_hash = await current_session(request, settings, session)
+     require_csrf(csrf_token, csrf_hash)
+-    require(is_isac_editor(ctx), "taxii_inbox_requires_isac_editor")
++    require(is_isac_editor(ctx) or is_isac_membership(ctx), "taxii_inbox_requires_isac_editor")
+     if enabled not in {"on", "off"}:
+         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="enabled must be on or off")
+     opening = enabled == "on"

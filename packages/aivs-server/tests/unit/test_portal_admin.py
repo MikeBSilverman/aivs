@@ -19,7 +19,13 @@ from sqlalchemy import select
 from aivs_schemas.enums import CircleRole, OperatorRole, OrgStatus, OrgType
 from aivs_server.auth.passwords import hash_password
 from aivs_server.auth.secretbox import SecretPurpose
-from aivs_server.db.models import Circle, CircleMembership, Operator, Organization
+from aivs_server.db.models import (
+    Circle,
+    CircleMembership,
+    Operator,
+    Organization,
+    TaxiiCollection,
+)
 from tests.conftest import proxy_headers
 
 pytestmark = pytest.mark.db
@@ -407,3 +413,50 @@ async def test_the_portal_refuses_a_rule_naming_an_ineligible_type(
     slugs = set((await session.execute(select(Circle.slug))).scalars().all())
     assert "everyone" not in slugs
     assert "section9" in slugs
+
+
+# ---------------------------------------------------------------------------
+# The TAXII inbox switch (Mike, Q19)
+# ---------------------------------------------------------------------------
+@pytest.mark.requirement("SF-69")
+async def test_an_editor_opens_a_circles_inbox_from_its_page(client, signed_in_admin, session):
+    """The screen goes through the API's one writer, so it is no softer door:
+    the circle starts closed, the button opens it, and the page says so."""
+    _org, pem = signed_in_admin
+    made = await client.post(
+        f"{ADMIN}/circles",
+        data={"csrf_token": csrf(client), "slug": "inbox", "name": "Inbox", "minimum_tlp": "amber"},
+        headers=proxy_headers(pem),
+    )
+    assert made.status_code == 303, made.text
+    circle_id = await session.scalar(select(Circle.id).where(Circle.slug == "inbox"))
+    before = await client.get(f"{ADMIN}/circles/{circle_id}", headers=proxy_headers(pem))
+
+    opened = await client.post(
+        f"{ADMIN}/circles/{circle_id}/taxii-inbox",
+        data={"csrf_token": csrf(client), "enabled": "on"},
+        headers=proxy_headers(pem),
+    )
+    after = await client.get(f"{ADMIN}/circles/{circle_id}", headers=proxy_headers(pem))
+    can_write = await session.scalar(
+        select(TaxiiCollection.can_write).where(TaxiiCollection.circle_id == circle_id)
+    )
+
+    assert "<strong>Closed.</strong>" in before.text
+    assert opened.status_code == 303, opened.text
+    assert "<strong>Open.</strong>" in after.text
+    assert can_write is True
+
+
+async def test_the_inbox_switch_screen_refuses_a_value_that_is_not_on_or_off(
+    client, signed_in_admin, session, make_circle, make_collection
+):
+    _org, pem = signed_in_admin
+    circle = await make_circle("inbox-bad")
+    await make_collection(circle, can_write=False)
+    response = await client.post(
+        f"{ADMIN}/circles/{circle.id}/taxii-inbox",
+        data={"csrf_token": csrf(client), "enabled": "yes"},
+        headers=proxy_headers(pem),
+    )
+    assert response.status_code == 400

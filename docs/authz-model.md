@@ -474,6 +474,7 @@ which it versions (KEV status) and cannot reach through a circle.
 | taxii inbox | ✓ | ✓ | ✓ | 403 | 404 | 404 | 404 | 404 | 404 | 404 |
 | isac records | 404 | 404 | 404 | 404 | 404 | ✓ | 404 | 404 | 404 | 404 |
 | post moderation | 403 | 403 | 403 | 403 | 403 | 403 | 403 | ✓ | 403 | 403 |
+| inbox switch | 403 | 403 | 403 | 403 | 403 | 403 | 403 | ✓ | 403 | 403 |
 | proxy filing | 403 | 403 | 403 | 403 | 403 | 403 | 403 | ✓ | 403 | 403 |
 | proxy confirm | 403 | ✓ | ✓ | 404 | 404 | 404 | 403 | 403 | 404 | 404 |
 | webhook register | ✓ | 403 | ✓ | ✓ | 403 | ✓ | 403 | 403 | 403 | ✓ |

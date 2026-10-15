@@ -1,0 +1,16 @@
+Mutation M371: anyone signed in may open or close a circle's TAXII inbox over the API
+Re-applies: T13 (Mike, Q19; finding P2-C3)
+
+Expect red: packages/aivs-server/tests/unit/test_taxii_inbox.py::test_only_an_editor_switches_the_inbox
+
+diff --git a/packages/aivs-server/src/aivs_server/api/contributions.py b/packages/aivs-server/src/aivs_server/api/contributions.py
+--- a/packages/aivs-server/src/aivs_server/api/contributions.py
++++ b/packages/aivs-server/src/aivs_server/api/contributions.py
+@@ -343,7 +343,6 @@
+     Opening it lets the circle's contributors POST to its collection, each
+     POST still a submission for review (SF-69); it publishes nothing.
+     """
+-    require(is_isac_editor(ctx), "taxii_inbox_requires_isac_editor")
+     if not await set_taxii_inbox(session, ctx, circle_id, enabled=payload.enabled):
+         raise _NOT_FOUND
+     await session.commit()

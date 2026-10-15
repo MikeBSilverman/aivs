@@ -409,10 +409,22 @@ The old content **stays readable**. `VISIBLE_SUBMISSION_STATES` is
 it would silently break their `added_after` polling by shortening the sequence
 behind their cursor.
 
+### 4.4a Returned submissions
+
+The first pass (the `triage` component on the status page) reads each
+submission when its member submits it. When a member's own filing has
+something the member can fix (a timestamp in the future, an affected product
+with neither a purl nor a CPE, a vendor fix with no fixed version), it is
+returned to the member with the notes, and never reaches your queue in that
+form. Everything else arrives in the `submitted` queue with any notes
+attached. Nothing urgent (KEV-listed, or an SSVC "Act") is returned, and the
+same content is never returned twice. Nothing is returned while distribution
+is paused. You cannot return a submission yourself; write to the member.
+
 ### 4.5 Withdrawing
 
-`withdrawn` is reachable from `draft`, `submitted`, and `validated` — never from
-`distributed`. Use it when a submission should not have been made or was
+`withdrawn` is reachable from `draft`, `submitted`, `returned` and `validated` —
+never from `distributed`. Use it when a submission should not have been made or was
 duplicated. Record the reason.
 
 ---

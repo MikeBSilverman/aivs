@@ -105,6 +105,7 @@ from aivs_server.services.submissions import (
     is_isac_filing,
     load_submission,
 )
+from aivs_server.services.triage import latest_triage, shown_findings
 
 __all__ = ["router"]
 
@@ -687,11 +688,26 @@ async def submission_detail(
             "receipts": receipts,
             "telemetry": await telemetry_rows(session, ctx, submission),
             "lint_hits": await lint_hits(session, ctx, submission),
+            "first_pass": await _first_pass_view(session, ctx, submission),
             "csrf_token": request.cookies.get("aivs_csrf", ""),
         }
     )
     del csrf_hash
     return render(request, "submission_detail.html", context)
+
+
+async def _first_pass_view(
+    session: SessionDep, ctx: AuthContext, submission: Submission
+) -> dict[str, Any] | None:
+    """The first pass's latest notes, as this reader may see them."""
+    row = await latest_triage(session, submission.id)
+    if row is None:
+        return None
+    return {
+        "returned": submission.state is SubmissionState.RETURNED,
+        "findings": shown_findings(row, reviewer=can_review_submissions(ctx)),
+        "at": stamp(row.created_at),
+    }
 
 
 def _confirm_by_for(ctx: AuthContext, submission: Submission) -> str | None:

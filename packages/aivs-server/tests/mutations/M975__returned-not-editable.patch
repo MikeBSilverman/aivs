@@ -1,0 +1,18 @@
+Mutation M975: a returned submission cannot be changed
+Re-applies: returned added to the machine but not to what may be edited: the member is told to fix what it cannot touch
+
+Expect red: packages/aivs-server/tests/unit/test_returns.py::test_a_returned_submission_can_be_fixed_and_resubmitted
+
+diff --git a/packages/aivs-schemas/src/aivs_schemas/enums.py b/packages/aivs-schemas/src/aivs_schemas/enums.py
+index 4d07994..ed4383a 100644
+--- a/packages/aivs-schemas/src/aivs_schemas/enums.py
++++ b/packages/aivs-schemas/src/aivs_schemas/enums.py
+@@ -485,7 +485,7 @@ SUBMISSION_TRANSITIONS: Final[Mapping[SubmissionState, frozenset[SubmissionState
+ #: States in which the submitter may change the content: before the ISAC has
+ #: it, and when the ISAC has handed it back.
+ EDITABLE_SUBMISSION_STATES: Final[frozenset[SubmissionState]] = frozenset(
+-    {SubmissionState.DRAFT, SubmissionState.RETURNED}
++    {SubmissionState.DRAFT}
+ )
+ 
+ TERMINAL_SUBMISSION_STATES: Final[frozenset[SubmissionState]] = frozenset(

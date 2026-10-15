@@ -49,7 +49,8 @@ E. Later phases are described, as built, in their own sections below:
 
 - **Submissions** are a member's filing: a STIX bundle plus title, summary,
   TLP, discovery scope, anonymity flag, and a workflow state (`draft →
-  submitted → validated → distributed`, with `withdrawn` and `superseded`).
+  submitted → validated → distributed`, with `returned`, `withdrawn` and
+  `superseded`).
   The state machine is declared once, in `aivs-schemas`.
 - **STIX objects** are stored as received (`raw`) with a few indexed columns
   (`cve_id` among them). Every object in a bundle is validated, and the

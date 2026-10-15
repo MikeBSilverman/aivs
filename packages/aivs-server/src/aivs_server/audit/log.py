@@ -146,6 +146,8 @@ class AuditAction:
     SUBMISSION_BULK_VALIDATED = "submission.bulk_validated"
     SUBMISSION_FILED_ON_BEHALF = "submission.filed_on_behalf"
     SUBMISSION_PROXY_CONFIRMED = "submission.proxy_confirmed"
+    #: The first pass read a submission: its disposition and finding codes.
+    SUBMISSION_TRIAGED = "submission.triaged"
     CONTRIBUTION_PUBLISHED = "contribution.published"
     CONTRIBUTION_RATE_LIMITED = "contribution.rate_limited"
     CONTRIBUTION_SENT_TO_REVIEW = "contribution.sent_to_review"

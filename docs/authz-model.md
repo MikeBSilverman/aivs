@@ -235,6 +235,8 @@ caller's org belongs to, at the role shown.
 | Amend a draft | N | own | own | own | `isac_editor`, the ISAC's own drafts¹ | N¹ |
 | `draft` → `submitted` | N | own | own | own | `isac_editor`, the ISAC's own¹ | N¹ |
 | `submitted` → `validated` | N | N | N | N | **`isac_editor`** | **N** |
+| `submitted` → `returned` | N | N | N | N | N (the first pass only) | N |
+| `returned` → `submitted` | N | own | own | own | N | N |
 | `validated` → `distributed` | N | N | N | N | **`isac_editor`** | **N** |
 | any → `withdrawn` (where legal) | N | own | own | own | `isac_editor` | N¹ |
 | `distributed` → `superseded` | N | own | own | own | `isac_editor` | N¹ |

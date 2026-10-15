@@ -43,6 +43,7 @@ from aivs_schemas.enums import (
     OrgType,
     QuarantineBacklog,
     SubmissionState,
+    TriageDisposition,
 )
 
 __all__ = [
@@ -54,6 +55,8 @@ __all__ = [
     "DistributeRequest",
     "EmbargoOut",
     "EmbargoUpsert",
+    "FindingOut",
+    "FirstPassOut",
     "OrganizationCreate",
     "OrganizationOut",
     "ReceiptOut",
@@ -309,6 +312,28 @@ class TransitionOut(_Out):
     at: dt.datetime
 
 
+class FindingOut(_Out):
+    """One thing the first pass noticed: where to look, and what to change."""
+
+    code: str
+    #: The object's id and the field.
+    path: str
+    detail: str
+
+
+class FirstPassOut(_Out):
+    """The first pass's latest read of a submission (Phase O).
+
+    ``needs_changes`` returned it to the submitter; ``ready_for_review`` sent
+    it on to the ISAC, with these notes for the reviewer and the submitter.
+    """
+
+    disposition: TriageDisposition
+    findings: list[FindingOut]
+    rules_version: str
+    at: dt.datetime
+
+
 class SubmissionDetail(SubmissionOut):
     """Full view, including workflow history and the object inventory."""
 
@@ -317,6 +342,8 @@ class SubmissionDetail(SubmissionOut):
     circle_ids: list[uuid.UUID]
     transitions: list[TransitionOut]
     embargo: EmbargoOut | None
+    #: ``None`` until the first pass has read it.
+    first_pass: FirstPassOut | None = None
 
 
 # ---------------------------------------------------------------------------

@@ -363,6 +363,7 @@ _ALL_TABLES = (
     "distributions",
     "taxii_status",
     "stix_objects",
+    "submission_triage",
     "submission_transitions",
     "audit_stream_modes",
     "embargoes",

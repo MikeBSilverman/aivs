@@ -77,6 +77,7 @@ from aivs_server.services.embargo import sweep_due_embargoes
 from aivs_server.services.posture import publish_postures
 from aivs_server.services.publication import PublicationPausedError
 from aivs_server.services.telemetry import publish_telemetry
+from aivs_server.services.triage import triage_pending
 from aivs_server.taxii import router as taxii_router
 
 __all__ = ["create_app"]
@@ -199,6 +200,11 @@ def background_components(settings: Settings) -> list[BackgroundComponent]:
             lambda: _run_detections(settings),
         ),
         BackgroundComponent(
+            "triage",
+            dt.timedelta(seconds=settings.triage_interval_seconds),
+            _triage_submissions,
+        ),
+        BackgroundComponent(
             "audit_read_summary",
             dt.timedelta(seconds=settings.audit_read_summary_interval_seconds),
             _summarise_audit_reads,
@@ -216,6 +222,12 @@ async def _publish_counts() -> None:
         now = await database_now(session)
         await publish_telemetry(session, now=now)
         await publish_postures(session, now=now)
+
+
+async def _triage_submissions() -> None:
+    """Read what members handed to the ISAC, and return what they can fix themselves."""
+    async with session_scope() as session:
+        await triage_pending(session, now=await database_now(session))
 
 
 async def _summarise_audit_reads() -> None:

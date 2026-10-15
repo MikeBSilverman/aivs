@@ -21,6 +21,29 @@
 </div>
 {% endif %}
 
+{% if first_pass and (first_pass.returned or first_pass.findings) %}
+<div class="card" data-first-pass="{{ 'returned' if first_pass.returned else 'notes' }}">
+  {% if first_pass.returned %}
+    <h2>Needs changes</h2>
+    <p>
+      The ISAC's first check sent this back before anyone reviewed it. Change
+      what is listed below and submit it again. If you think it is right as it
+      is, submit it unchanged: it then goes to the ISAC's reviewers with these
+      notes, and is not sent back again.
+    </p>
+  {% else %}
+    <h2>Notes from the first check</h2>
+    <p class="muted">The ISAC's reviewers see these too.</p>
+  {% endif %}
+  <ul>
+    {% for finding in first_pass.findings %}
+      <li><span class="mono">{{ finding.path }}</span>: {{ finding.detail }}</li>
+    {% endfor %}
+  </ul>
+  <p class="muted">Checked <span class="mono">{{ first_pass.at }}</span>.</p>
+</div>
+{% endif %}
+
 <div class="card">
   <h2>Summary</h2>
   <p>{{ submission.summary or "No summary supplied." }}</p>

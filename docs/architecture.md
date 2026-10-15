@@ -98,8 +98,11 @@ there is no implicit self-transition.
 
 ```
 draft ──► submitted ──► validated ──► distributed ──► superseded
-  │           │             │
-  └───────────┴─────────────┴──────► withdrawn
+  │        ▲  │  │          │
+  │        │  ▼  │          │
+  │      returned│          │
+  │          │   │          │
+  └──────────┴───┴──────────┴──────► withdrawn
 ```
 
 | From | To | Who may perform it |
@@ -107,11 +110,21 @@ draft ──► submitted ──► validated ──► distributed ──► su
 | `draft` | `submitted` | the submitter org |
 | `draft` | `withdrawn` | the submitter org, or the hosting ISAC |
 | `submitted` | `validated` | **the hosting ISAC only** |
+| `submitted` | `returned` | **the first pass only**, never a person (`services.triage`) |
 | `submitted` | `withdrawn` | the submitter org, or the hosting ISAC |
+| `returned` | `submitted` | the submitter org |
+| `returned` | `withdrawn` | the submitter org, or the hosting ISAC |
 | `validated` | `distributed` | **the hosting ISAC only** |
 | `validated` | `withdrawn` | the submitter org, or the hosting ISAC |
 | `distributed` | `superseded` | the submitter org, or the hosting ISAC |
 | `superseded`, `withdrawn` | — | terminal |
+
+`returned` is Phase O's: the first pass reads every submit, and sends a
+member's own filing back with what to change when the content is wrong or no
+tool can use it (SF-87). It is editable like a draft. Resubmitted unchanged,
+it goes to review with its notes and is never returned twice for the same
+content. No person is offered the move, so a return always means "the rules
+found this".
 
 Two properties of this diagram are structural controls, not conveniences:
 

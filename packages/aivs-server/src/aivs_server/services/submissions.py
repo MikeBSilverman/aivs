@@ -30,6 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from aivs_schemas.enums import (
+    EDITABLE_SUBMISSION_STATES,
     TLP,
     OrgType,
     SubmissionSource,
@@ -488,8 +489,8 @@ async def replace_submission_objects(
     draft needs. Only ever called for drafts: once a submission is distributed
     its objects are referenced by distribution rows and are immutable.
     """
-    if submission.state is not SubmissionState.DRAFT:
-        msg = "objects may only be replaced while a submission is a draft"
+    if submission.state not in EDITABLE_SUBMISSION_STATES:
+        msg = "objects may only be replaced while a submission is a draft or returned"
         raise SubmissionError(msg)
 
     # Validates every object in the bundle, including ones AIVS does not read,
@@ -773,13 +774,14 @@ async def update_submission(
     *,
     changes: dict[str, Any],
 ) -> Submission:
-    """Amend a draft submission.
+    """Amend a draft or returned submission.
 
-    Refuses outside the draft state. Once a submission has been handed to the
+    Refuses in every other state. Once a submission has been handed to the
     ISAC for validation, changing it underneath that review would mean the
-    content approved is not the content distributed.
+    content approved is not the content distributed; a returned one has been
+    handed back, and the change is the point.
     """
-    if submission.state is not SubmissionState.DRAFT:
+    if submission.state not in EDITABLE_SUBMISSION_STATES:
         msg = f"a submission in state '{submission.state.value}' can no longer be edited"
         raise SubmissionError(msg)
     owner_is_isac = await is_isac_filing(session, submission)
@@ -918,7 +920,7 @@ async def apply_transition(
 
 async def record_transition(
     session: AsyncSession,
-    ctx: AuthContext,
+    ctx: AuthContext | None,
     submission: Submission,
     target: SubmissionState,
     *,
@@ -926,13 +928,18 @@ async def record_transition(
 ) -> None:
     """Make the move and write its history, in the caller's transaction.
 
-    No authorization: :func:`apply_transition` checks the editorial right, and
-    the one other caller, the fast lane (``services.contributions``), checks the
-    lane rule that stands in for it. Legality in the state machine is checked
-    here, because no path may skip it.
+    No authorization: :func:`apply_transition` checks the editorial right, the
+    fast lane (``services.contributions``) checks the lane rule that stands in
+    for it, and the first pass (``services.triage``) returns a submission with
+    no caller at all (``ctx`` is ``None``), which is permitted for a return and
+    nothing else. Legality in the state machine is checked here, because no
+    path may skip it.
     """
     if not is_transition_allowed(submission.state, target):
         msg = f"cannot move a submission from '{submission.state.value}' to '{target.value}'"
+        raise SubmissionError(msg)
+    if ctx is None and target is not SubmissionState.RETURNED:
+        msg = f"moving a submission to '{target.value}' needs a caller"
         raise SubmissionError(msg)
     previous = submission.state
     submission.state = target
@@ -946,8 +953,8 @@ async def record_transition(
             submission_id=submission.id,
             from_state=previous,
             to_state=target,
-            actor_org_id=ctx.org_id,
-            actor_operator_id=ctx.operator_id,
+            actor_org_id=ctx.org_id if ctx else None,
+            actor_operator_id=ctx.operator_id if ctx else None,
             reason=reason,
         )
     )

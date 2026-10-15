@@ -1,0 +1,22 @@
+Mutation M971: an automation's filing and a proxy filing are returned to their owner
+Re-applies: returnable read as 'not the ISAC's': the member gets work it never wrote
+
+Expect red: packages/aivs-server/tests/unit/test_returns.py::test_only_a_members_own_filing_is_sent_back_to_its_writer
+
+diff --git a/packages/aivs-server/src/aivs_server/services/triage.py b/packages/aivs-server/src/aivs_server/services/triage.py
+index 9f765f2..7445bd0 100644
+--- a/packages/aivs-server/src/aivs_server/services/triage.py
++++ b/packages/aivs-server/src/aivs_server/services/triage.py
+@@ -241,11 +241,7 @@ async def _own_names(session: AsyncSession, submission: Submission) -> list[str]
+ # ---------------------------------------------------------------------------
+ async def _returnable(session: AsyncSession, submission: Submission) -> bool:
+     """A member's own filing, written by the member: the only kind sent back to its writer."""
+-    return (
+-        submission.source is SubmissionSource.MEMBER
+-        and submission.filed_by_operator_id is None
+-        and not await is_isac_filing(session, submission)
+-    )
++    return not await is_isac_filing(session, submission)
+ 
+ 
+ def _is_urgent(objects: Iterable[Mapping[str, Any]]) -> bool:

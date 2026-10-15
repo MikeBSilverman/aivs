@@ -14,7 +14,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from aivs_schemas.enums import SubmissionState
+from aivs_schemas.enums import EDITABLE_SUBMISSION_STATES
 from aivs_server.auth.context import AuthContext
 from aivs_server.db.models import Organization, StixObject, Submission
 from aivs_server.services.sanitisation import free_text_of, lint
@@ -77,10 +77,13 @@ async def lint_hits(
 ) -> list[dict[str, str]] | None:
     """Spans in the submitter's own draft worth a second look, or ``None``.
 
-    Only while it is a draft, when the submitter can still change it; after
+    Only while it is a draft or returned, when the submitter can still change it; after
     that the answer would be a worry with nothing to do about it.
     """
-    if submission.submitter_org_id != ctx.org_id or submission.state != SubmissionState.DRAFT:
+    if (
+        submission.submitter_org_id != ctx.org_id
+        or submission.state not in EDITABLE_SUBMISSION_STATES
+    ):
         return None
     organisation = await session.get(Organization, ctx.org_id)
     own_names = [ctx.org_slug, organisation.name] if organisation else [ctx.org_slug]

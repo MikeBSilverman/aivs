@@ -26,6 +26,8 @@ from aivs_schemas.extension.builders import (
 from aivs_schemas.models import (
     DistributeRequest,
     EmbargoOut,
+    FindingOut,
+    FirstPassOut,
     RevealOut,
     RevealRequest,
     RevokeOut,
@@ -57,6 +59,7 @@ from aivs_server.db.models import (
     StixObject,
     Submission,
     SubmissionTransition,
+    SubmissionTriage,
 )
 from aivs_server.notify.events import (
     circle_ids_for_submission,
@@ -74,6 +77,7 @@ from aivs_server.services.submissions import (
     load_submission,
     update_submission,
 )
+from aivs_server.services.triage import latest_triage, shown_findings
 
 __all__ = ["router"]
 
@@ -235,6 +239,22 @@ async def get_submission(
         circle_ids=circle_ids,
         transitions=[TransitionOut.model_validate(t) for t in transitions],
         embargo=EmbargoOut.model_validate(embargo) if embargo else None,
+        first_pass=_first_pass(ctx, await latest_triage(session, submission.id)),
+    )
+
+
+def _first_pass(ctx: AuthContext, row: SubmissionTriage | None) -> FirstPassOut | None:
+    """The latest read, with only the codes the caller may be shown (the oracle rule)."""
+    if row is None:
+        return None
+    return FirstPassOut(
+        disposition=row.disposition,
+        findings=[
+            FindingOut.model_validate(finding)
+            for finding in shown_findings(row, reviewer=can_review_submissions(ctx))
+        ],
+        rules_version=row.rules_version,
+        at=row.created_at,
     )
 
 

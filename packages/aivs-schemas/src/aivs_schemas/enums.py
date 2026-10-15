@@ -20,6 +20,7 @@ from typing import Final
 __all__ = [
     "ACCEPTED_DISCOVERY_SCOPES",
     "CONTRIBUTING_BY_DEFAULT_ORG_TYPES",
+    "EDITABLE_SUBMISSION_STATES",
     "SUBMISSION_TRANSITIONS",
     "TERMINAL_SUBMISSION_STATES",
     "THIRD_PARTY_DISCOVERY_SCOPES",
@@ -45,6 +46,7 @@ __all__ = [
     "SubmissionLane",
     "SubmissionSource",
     "SubmissionState",
+    "TriageDisposition",
     "VexJustification",
     "default_circle_role",
     "is_transition_allowed",
@@ -213,10 +215,26 @@ class CircleRole(StrEnum):
 class SubmissionState(StrEnum):
     DRAFT = "draft"
     SUBMITTED = "submitted"
+    #: Sent back to the submitter by the first pass, with what to change
+    #: (Phase O). Editable again, like a draft; resubmitting goes to review.
+    RETURNED = "returned"
     VALIDATED = "validated"
     DISTRIBUTED = "distributed"
     SUPERSEDED = "superseded"
     WITHDRAWN = "withdrawn"
+
+
+class TriageDisposition(StrEnum):
+    """What the first pass did with a submission it read (Phase O).
+
+    A recommendation and a route, never a decision about members: only an
+    ISAC editor validates or distributes.
+    """
+
+    #: To the review queue, with any findings attached.
+    READY_FOR_REVIEW = "ready_for_review"
+    #: Back to the submitter, with what to change.
+    NEEDS_CHANGES = "needs_changes"
 
 
 class TLP(StrEnum):
@@ -444,7 +462,12 @@ SUBMISSION_TRANSITIONS: Final[Mapping[SubmissionState, frozenset[SubmissionState
                 {SubmissionState.SUBMITTED, SubmissionState.WITHDRAWN}
             ),
             SubmissionState.SUBMITTED: frozenset(
-                {SubmissionState.VALIDATED, SubmissionState.WITHDRAWN}
+                {SubmissionState.VALIDATED, SubmissionState.RETURNED, SubmissionState.WITHDRAWN}
+            ),
+            # Only the first pass returns a submission, and only once per
+            # content: resubmitted unchanged, it goes to review with its notes.
+            SubmissionState.RETURNED: frozenset(
+                {SubmissionState.SUBMITTED, SubmissionState.WITHDRAWN}
             ),
             SubmissionState.VALIDATED: frozenset(
                 {SubmissionState.DISTRIBUTED, SubmissionState.WITHDRAWN}
@@ -457,6 +480,12 @@ SUBMISSION_TRANSITIONS: Final[Mapping[SubmissionState, frozenset[SubmissionState
             SubmissionState.WITHDRAWN: frozenset(),
         }
     )
+)
+
+#: States in which the submitter may change the content: before the ISAC has
+#: it, and when the ISAC has handed it back.
+EDITABLE_SUBMISSION_STATES: Final[frozenset[SubmissionState]] = frozenset(
+    {SubmissionState.DRAFT, SubmissionState.RETURNED}
 )
 
 TERMINAL_SUBMISSION_STATES: Final[frozenset[SubmissionState]] = frozenset(

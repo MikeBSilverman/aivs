@@ -1,0 +1,19 @@
+Mutation M970: the same content is returned every time it is submitted
+Re-applies: the loop: a member who believes its content is right can never reach a reviewer
+
+Expect red: packages/aivs-server/tests/unit/test_returns.py::test_resubmitted_unchanged_it_goes_to_review_and_is_not_returned_again
+Expect red: packages/aivs-server/tests/unit/test_returns.py::test_a_submission_is_returned_only_when_every_condition_holds
+
+diff --git a/packages/aivs-server/src/aivs_server/services/triage.py b/packages/aivs-server/src/aivs_server/services/triage.py
+index 9f765f2..d7f013a 100644
+--- a/packages/aivs-server/src/aivs_server/services/triage.py
++++ b/packages/aivs-server/src/aivs_server/services/triage.py
+@@ -153,7 +153,7 @@ def decide(
+ ) -> TriageDisposition:
+     """Back to the member only when every condition for a return holds; review otherwise."""
+     blocking = {finding.code for finding in findings} & RETURNING
+-    if blocking and returnable and not urgent and not returned_before:
++    if blocking and returnable and not urgent:
+         return TriageDisposition.NEEDS_CHANGES
+     return TriageDisposition.READY_FOR_REVIEW
+ 

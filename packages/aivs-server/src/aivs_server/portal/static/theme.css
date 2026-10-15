@@ -260,6 +260,7 @@ tbody tr:hover { background: var(--mist); }
 
 .state-draft       { background: var(--mist);        color: var(--muted); border: 1px solid var(--line); }
 .state-submitted   { background: #eaf1f8;            color: var(--brand-deep); }
+.state-returned    { background: #fbf3e4;            color: var(--warn); }
 .state-validated   { background: #e6f2ec;            color: var(--ok); }
 .state-distributed { background: var(--brand);       color: var(--white); }
 .state-superseded  { background: var(--mist);        color: var(--muted); border: 1px solid var(--line); }

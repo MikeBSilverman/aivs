@@ -1,0 +1,19 @@
+Mutation M974: any move may be made with no caller
+Re-applies: the no-caller form of record_transition opened beyond the return it exists for
+
+Expect red: packages/aivs-server/tests/unit/test_returns.py::test_a_move_with_no_caller_is_a_return_and_nothing_else
+
+diff --git a/packages/aivs-server/src/aivs_server/services/submissions.py b/packages/aivs-server/src/aivs_server/services/submissions.py
+index d2e9e0a..d1b8223 100644
+--- a/packages/aivs-server/src/aivs_server/services/submissions.py
++++ b/packages/aivs-server/src/aivs_server/services/submissions.py
+@@ -887,9 +887,6 @@ async def record_transition(
+     if not is_transition_allowed(submission.state, target):
+         msg = f"cannot move a submission from '{submission.state.value}' to '{target.value}'"
+         raise SubmissionError(msg)
+-    if ctx is None and target is not SubmissionState.RETURNED:
+-        msg = f"moving a submission to '{target.value}' needs a caller"
+-        raise SubmissionError(msg)
+     previous = submission.state
+     submission.state = target
+     if target is SubmissionState.DISTRIBUTED and submission.distributed_at is None:

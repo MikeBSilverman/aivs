@@ -62,6 +62,7 @@ from aivs_schemas.enums import (
     SubmissionLane,
     SubmissionSource,
     SubmissionState,
+    TriageDisposition,
     VexJustification,
 )
 from aivs_server.db.base import Base, TimestampMixin, pg_enum
@@ -89,6 +90,7 @@ __all__ = [
     "StixObject",
     "Submission",
     "SubmissionTransition",
+    "SubmissionTriage",
     "TaxiiCollection",
     "TaxiiStatus",
     "Webhook",
@@ -646,6 +648,40 @@ class SubmissionTransition(Base):
     actor_operator_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class SubmissionTriage(Base):
+    """What the first pass found when a submission was handed to the ISAC (Phase O).
+
+    One row per submit, keyed by the transition into ``submitted`` that it
+    read, so a resubmission is read again and a crashed run never reads one
+    twice. Rows are the record of what the ISAC told a member, and of every
+    automated return: kept, never updated.
+    """
+
+    __tablename__ = "submission_triage"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        primary_key=True, server_default=func.gen_random_uuid(), default=uuid.uuid4
+    )
+    submission_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("submissions.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    transition_id: Mapped[int] = mapped_column(
+        ForeignKey("submission_transitions.id", ondelete="RESTRICT"), nullable=False, unique=True
+    )
+    #: SHA-256 over the content read, so returning the same content twice can be refused.
+    content_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    disposition: Mapped[TriageDisposition] = mapped_column(
+        pg_enum(TriageDisposition, "triage_disposition"), nullable=False
+    )
+    #: ``[{"code", "path", "detail"}]``, as ``services.first_pass`` produced them.
+    findings: Mapped[list[dict[str, str]]] = mapped_column(JSONB, nullable=False)
+    #: Which rules ran: stored output says how it was made (CLAUDE.md section 5).
+    rules_version: Mapped[str] = mapped_column(String(40), nullable=False)
+    created_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 

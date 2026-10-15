@@ -35,6 +35,7 @@ rather than deleting rows.
 | `embargoes` | content | Release policy and time, and free-text coordination notes. |
 | `distributions` | evidence | Which object became visible to which circle, and from when (`date_added`). |
 | `submission_transitions` | evidence | Every workflow state change, by whom and when. Append-only. |
+| `submission_triage` | evidence | What the first pass found each time a submission was handed to the ISAC, and whether it returned it (Phase O): finding codes, field paths and the member-facing wording, never anything from another member. The record of what the ISAC told a member and of every automated return. |
 | `acknowledgments` | evidence | Receipts: retrieved, acknowledged, actioned, per organisation. |
 | `audit_log` | evidence | Every security-relevant decision. Append-only. |
 | `audit_stream_modes` | evidence | Each choice of what the audit stream serves of its own reading, and who made it. Append-only: the stream judges each read by the mode in force when it was written. |

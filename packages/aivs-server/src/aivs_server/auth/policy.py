@@ -602,6 +602,12 @@ def can_transition_submission(
             return is_submitter or admin
         case SubmissionState.SUPERSEDED:
             return is_submitter or admin
+        case SubmissionState.RETURNED:
+            # Only the first pass returns, through ``record_transition`` with
+            # no caller (``services.triage``). No person is offered the verb,
+            # so a return always means "the rules found this", never a
+            # reviewer's judgement wearing the rules' name.
+            return False
         case _:  # pragma: no cover - exhaustive over SubmissionState
             return False
 

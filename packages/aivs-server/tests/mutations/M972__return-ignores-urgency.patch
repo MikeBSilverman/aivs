@@ -1,0 +1,19 @@
+Mutation M972: KEV-listed content is returned for tidiness
+Re-applies: urgency left out of the rule: an exploited vulnerability waits on a member's paperwork
+
+Expect red: packages/aivs-server/tests/unit/test_returns.py::test_urgent_content_goes_to_review_with_its_notes
+Expect red: packages/aivs-server/tests/unit/test_returns.py::test_a_submission_is_returned_only_when_every_condition_holds
+
+diff --git a/packages/aivs-server/src/aivs_server/services/triage.py b/packages/aivs-server/src/aivs_server/services/triage.py
+index 9f765f2..b9a9a45 100644
+--- a/packages/aivs-server/src/aivs_server/services/triage.py
++++ b/packages/aivs-server/src/aivs_server/services/triage.py
+@@ -153,7 +153,7 @@ def decide(
+ ) -> TriageDisposition:
+     """Back to the member only when every condition for a return holds; review otherwise."""
+     blocking = {finding.code for finding in findings} & RETURNING
+-    if blocking and returnable and not urgent and not returned_before:
++    if blocking and returnable and not returned_before:
+         return TriageDisposition.NEEDS_CHANGES
+     return TriageDisposition.READY_FOR_REVIEW
+ 

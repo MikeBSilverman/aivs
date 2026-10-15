@@ -79,8 +79,12 @@ async def test_delete_is_refused(session, table, seeded_audit_row):
 @pytest.mark.parametrize("table", APPEND_ONLY_TABLES)
 @pytest.mark.requirement("NFR-S6")
 async def test_truncate_is_refused(session, table, seeded_audit_row):
+    """With CASCADE, as anyone erasing history would write it: a table another
+    references (``submission_triage`` references the transitions) refuses a
+    plain TRUNCATE on the foreign key, before the trigger is reached, and the
+    refusal would then say nothing about the trigger."""
     with pytest.raises(DBAPIError, match=REFUSAL):
-        await session.execute(text(f"TRUNCATE {table}"))
+        await session.execute(text(f"TRUNCATE {table} CASCADE"))
     await session.rollback()
 
 

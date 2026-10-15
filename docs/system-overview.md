@@ -124,7 +124,7 @@ Each condition says how to check it and which VEX justification applies if it do
 **Postures.** A member's VEX statement per vulnerability has a status (`not_affected`, `affected`, `fixed`, `under_investigation`), a justification, impact and action statements, plus three fields of ours: `detection_deployed`, `validated_at` and an evidence note. It exports as OpenVEX. One-click posture defaults to `under_investigation`, never `affected`.
 
 **Versioning and review.**
-- A submission moves `draft → submitted → validated → distributed`, with `withdrawn` and `superseded` as the other states. In contribution terms, validated means accepted, withdrawn means rejected, a newer `modified` is a new version, and `revoked` is a retraction.
+- A submission moves `draft → submitted → validated → distributed`, with `returned`, `withdrawn` and `superseded` as the other states. `returned` is the first pass sending a member's own filing back with what to change. In contribution terms, validated means accepted, withdrawn means rejected, a newer `modified` is a new version, and `revoked` is a retraction.
 - An ISAC editor validates. The review queue groups submissions by source and orders them by SSVC-derived priority.
 - An editor may bulk-validate a group, but a consequential change made by a machine (for example a lowered score) stops the whole group for human attention.
 - **Fast lane:** a member's one-click, no-free-text response on an already-public object publishes at once.

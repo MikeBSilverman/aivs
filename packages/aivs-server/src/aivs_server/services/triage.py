@@ -7,7 +7,7 @@ for the reviewers and shown to the submitter. When a finding means the
 content is wrong or no tool can use it, a member's own submission is
 returned to it with what to change, before an analyst spends a minute on it.
 
-What may be returned, and when, is deliberately narrow (Q38, draft):
+What may be returned, and when, is deliberately narrow (Q38, as Mike confirmed it):
 
 - only the codes in :data:`RETURNING`, which the member can fix by itself;
 - only a member's own filing: the ISAC's, an automation's and a proxy filing
@@ -76,7 +76,7 @@ __all__ = [
 #: Which rules produced a row. Bump it when a check changes what it finds.
 RULES_VERSION: Final[str] = "first-pass/1"
 
-#: Findings that send a member's own submission back (Q38, draft): wrong, or
+#: Findings that send a member's own submission back (Q38, as Mike confirmed it): wrong, or
 #: unusable by any tool. Every other finding goes to review with the notes.
 RETURNING: Final[frozenset[FindingCode]] = frozenset(
     {

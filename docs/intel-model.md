@@ -358,9 +358,14 @@ In progress. Built:
   `unavailable` when it is contested or absent, never `none_available`,
   which would be a statement that nobody made.
 
+- **The page** shows the view at standard and technical depth ("What makes
+  this exploitable"). From a condition with an `if_absent`, "this doesn't
+  hold for us" opens the posture form filled in from it; nothing is saved
+  until the member's person saves the form, and a condition the caller cannot
+  see fills in nothing.
+
 Planned: intake from CVE 5.x and OSV records through the KEV/NVD script; the
-OSV export; the page sections at each depth; and the posture form pre-filled
-from a condition that does not hold.
+OSV export; and guided depth's wording of the view.
 
 ### 3.6 Phase I: documents
 

@@ -43,8 +43,9 @@ async def queued(make_org, session, secret_box):
 
     async def _build(
         url: str = "https://example.com/hook",
+        org_type: OrgType = OrgType.GSIB,
     ) -> tuple[Webhook, WebhookDelivery]:
-        org = await make_org(f"firm-{uuid.uuid4().hex[:8]}", org_type=OrgType.GSIB)
+        org = await make_org(f"firm-{uuid.uuid4().hex[:8]}", org_type=org_type)
         # Explicit id: the signing key is sealed against it, and the column
         # default is not applied until flush.
         webhook_id = uuid.uuid4()
@@ -87,6 +88,23 @@ async def test_a_successful_delivery_is_recorded_once(session, settings, queued,
 
     # A delivered notification is not sent again on the next pass.
     assert await dispatch_pending(session, settings) == 0
+    assert len(endpoint.requests) == 1
+
+
+@pytest.mark.requirement("SF-92")
+async def test_the_automations_deliveries_wait_until_the_instance_offers_them(
+    session, settings, queued, member_endpoint
+):
+    _webhook, delivery = await queued(org_type=OrgType.AUTOMATION)
+    endpoint = member_endpoint(StubEndpoint(status_code=204))
+    assert settings.automation_webhooks_enabled is False
+
+    assert await dispatch_pending(session, settings) == 0
+    await session.refresh(delivery)
+    assert (delivery.attempts, delivery.delivered_at) == (0, None)  # held, not spent
+
+    offered = settings.model_copy(update={"automation_webhooks_enabled": True})
+    assert await dispatch_pending(session, offered) == 1
     assert len(endpoint.requests) == 1
 
 

@@ -73,6 +73,7 @@ __all__ = [
     "can_read_own_lead_time",
     "can_reconnect_org",
     "can_register_certificate",
+    "can_register_webhook",
     "can_resume_distribution",
     "can_reveal_submitter",
     "can_review_submissions",
@@ -308,6 +309,19 @@ def can_manage_own_webhooks(ctx: AuthContext) -> bool:
     if ctx.auth_method is AuthMethod.MTLS and ctx.operator_id is None:
         return True
     return is_org_admin(ctx)
+
+
+def can_register_webhook(ctx: AuthContext, *, automation_webhooks_enabled: bool) -> bool:
+    """Register a webhook for the caller's own organisation.
+
+    As :func:`can_manage_own_webhooks`, except that the ISAC's automation has
+    webhooks only where the instance offers them (``automation_webhooks_enabled``).
+    Deleting one stays open to it either way, so switching the option off never
+    leaves a registration its owner cannot remove.
+    """
+    if ctx.org_type is OrgType.AUTOMATION and not automation_webhooks_enabled:
+        return False
+    return can_manage_own_webhooks(ctx)
 
 
 def can_reveal_submitter(ctx: AuthContext) -> bool:

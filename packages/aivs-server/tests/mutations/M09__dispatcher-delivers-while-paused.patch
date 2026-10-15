@@ -4,14 +4,15 @@ Re-applies: ebfda69 "Close the publication-surface findings from the Phase A rev
 Expect red: packages/aivs-server/tests/unit/test_publication_guards.py::test_a_pause_holds_members_deliveries_but_not_the_isacs
 
 diff --git a/packages/aivs-server/src/aivs_server/notify/dispatcher.py b/packages/aivs-server/src/aivs_server/notify/dispatcher.py
+index 7bb6c27..a49b53f 100644
 --- a/packages/aivs-server/src/aivs_server/notify/dispatcher.py
 +++ b/packages/aivs-server/src/aivs_server/notify/dispatcher.py
-@@ -92,7 +92,7 @@
-     # the detection alert that someone pressed the stop button.
-     recipients = (
-         Organization.org_type == OrgType.ADMIN
--        if await _distribution_paused(session)
-+        if False
-         else Organization.org_type.is_not(None)
-     )
- 
+@@ -145,7 +145,7 @@ def _receiving_types(*, paused: bool, automation_webhooks_enabled: bool) -> froz
+     (``automation_webhooks_enabled``), so switching the option off stops them
+     whatever was registered before.
+     """
+-    if paused:
++    if False:
+         return frozenset({OrgType.ADMIN})
+     if automation_webhooks_enabled:
+         return frozenset(OrgType)

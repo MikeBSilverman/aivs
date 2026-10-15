@@ -4,10 +4,10 @@ Re-applies: webhook management with no role check (before this commit)
 Expect red: packages/aivs-server/tests/authz_matrix/test_principal_matrix.py::test_each_principal_gets_exactly_its_row[member_analyst]
 
 diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs-server/src/aivs_server/auth/policy.py
-index be57bc3..a437390 100644
+index 91f443c..0d92673 100644
 --- a/packages/aivs-server/src/aivs_server/auth/policy.py
 +++ b/packages/aivs-server/src/aivs_server/auth/policy.py
-@@ -202,7 +202,7 @@ def can_manage_own_webhooks(ctx: AuthContext) -> bool:
+@@ -308,7 +308,7 @@ def can_manage_own_webhooks(ctx: AuthContext) -> bool:
          return is_system_admin(ctx)
      if ctx.auth_method is AuthMethod.MTLS and ctx.operator_id is None:
          return True
@@ -15,4 +15,4 @@ index be57bc3..a437390 100644
 +    return is_active(ctx)
  
  
- def can_reveal_submitter(ctx: AuthContext) -> bool:
+ def can_register_webhook(ctx: AuthContext, *, automation_webhooks_enabled: bool) -> bool:

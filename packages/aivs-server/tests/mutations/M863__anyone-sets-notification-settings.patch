@@ -5,13 +5,17 @@ Expect red: packages/aivs-server/tests/authz_matrix/test_principal_matrix.py::te
 Expect red: packages/aivs-server/tests/authz_matrix/test_principal_matrix.py::test_each_principal_gets_exactly_its_row[admin_certificate]
 
 diff --git a/packages/aivs-server/src/aivs_server/api/notification_settings.py b/packages/aivs-server/src/aivs_server/api/notification_settings.py
+index c0ee0a2..3a72571 100644
 --- a/packages/aivs-server/src/aivs_server/api/notification_settings.py
 +++ b/packages/aivs-server/src/aivs_server/api/notification_settings.py
-@@ -61,7 +61,7 @@
+@@ -64,10 +64,7 @@ async def change_settings(
      A mailbox needs a digest cadence: email is a digest channel, and one email
      per submission is the flood the cadence exists to stop.
      """
--    require(can_manage_own_webhooks(ctx), "notification_settings")
+-    require(
+-        can_register_webhook(ctx, automation_webhooks_enabled=settings.automation_webhooks_enabled),
+-        "notification_settings",
+-    )
 +    require(True, "notification_settings")
      if payload.digest_email is not None:
          if _MAILBOX.match(payload.digest_email) is None:

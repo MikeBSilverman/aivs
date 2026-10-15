@@ -1,0 +1,19 @@
+Mutation M996: the automation registers webhooks on an instance that does not offer them
+Re-applies: Q2 (2026-10-15): webhook registration before the option existed
+
+Expect red: packages/aivs-server/tests/unit/test_webhooks.py::TestWebhookRegistration::test_the_automation_registers_only_where_the_instance_offers_it
+Expect red: packages/aivs-server/tests/authz_matrix/test_principal_matrix.py::test_each_principal_gets_exactly_its_row[automation_machine]
+
+diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs-server/src/aivs_server/auth/policy.py
+index 91f443c..0d834f5 100644
+--- a/packages/aivs-server/src/aivs_server/auth/policy.py
++++ b/packages/aivs-server/src/aivs_server/auth/policy.py
+@@ -319,8 +319,6 @@ def can_register_webhook(ctx: AuthContext, *, automation_webhooks_enabled: bool)
+     Deleting one stays open to it either way, so switching the option off never
+     leaves a registration its owner cannot remove.
+     """
+-    if ctx.org_type is OrgType.AUTOMATION and not automation_webhooks_enabled:
+-        return False
+     return can_manage_own_webhooks(ctx)
+ 
+ 

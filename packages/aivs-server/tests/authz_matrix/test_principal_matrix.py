@@ -180,14 +180,14 @@ EXPECTED: Mapping[RouteClass, Mapping[Principal, Outcome]] = {
         P.ISAC_ANALYST: F,
         P.ISAC_EDITOR: F,
     },
-    # The automation registers its own like any machine certificate: its events
-    # are telemetry on its own filings, not the ISAC's detection alerts, which
-    # are the admin organisation's.
+    # The automation's webhooks (telemetry on its own filings, not the ISAC's
+    # detection alerts) are an option an instance switches on, off by default;
+    # this matrix runs with it off. On, it registers like any machine
+    # certificate (unit/test_webhooks.py).
     RouteClass.WEBHOOK_REGISTER: _allow(
         P.MEMBER_MACHINE,
         P.MEMBER_ORG_ADMIN,
         P.PEER_MACHINE,
-        P.AUTOMATION_MACHINE,
         P.SYSTEM_ADMIN,
         otherwise=F,
     ),

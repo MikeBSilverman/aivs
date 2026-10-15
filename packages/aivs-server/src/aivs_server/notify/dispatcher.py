@@ -90,10 +90,11 @@ async def dispatch_pending(
     # members are told nothing exists, and their queue resumes with
     # distribution. The ISAC's own endpoints still hear -- among other things,
     # the detection alert that someone pressed the stop button.
-    recipients = (
-        Organization.org_type == OrgType.ADMIN
-        if await _distribution_paused(session)
-        else Organization.org_type.is_not(None)
+    recipients = Organization.org_type.in_(
+        _receiving_types(
+            paused=await _distribution_paused(session),
+            automation_webhooks_enabled=settings.automation_webhooks_enabled,
+        )
     )
 
     due = (
@@ -135,6 +136,20 @@ async def dispatch_pending(
 
     await session.commit()
     return delivered
+
+
+def _receiving_types(*, paused: bool, automation_webhooks_enabled: bool) -> frozenset[OrgType]:
+    """Whose deliveries go out on this pass; the rest are held, never dropped.
+
+    The automation's are held while the instance does not offer it webhooks
+    (``automation_webhooks_enabled``), so switching the option off stops them
+    whatever was registered before.
+    """
+    if paused:
+        return frozenset({OrgType.ADMIN})
+    if automation_webhooks_enabled:
+        return frozenset(OrgType)
+    return frozenset(OrgType) - {OrgType.AUTOMATION}
 
 
 async def _distribution_paused(session: AsyncSession) -> bool:

@@ -1,0 +1,18 @@
+Mutation M998: the automation sets notification settings for webhooks the instance does not offer
+Re-applies: Q2 (2026-10-15): the settings route not reading the option
+
+Expect red: packages/aivs-server/tests/authz_matrix/test_principal_matrix.py::test_each_principal_gets_exactly_its_row[automation_machine]
+
+diff --git a/packages/aivs-server/src/aivs_server/api/notification_settings.py b/packages/aivs-server/src/aivs_server/api/notification_settings.py
+index c0ee0a2..b889590 100644
+--- a/packages/aivs-server/src/aivs_server/api/notification_settings.py
++++ b/packages/aivs-server/src/aivs_server/api/notification_settings.py
+@@ -65,7 +65,7 @@ async def change_settings(
+     per submission is the flood the cadence exists to stop.
+     """
+     require(
+-        can_register_webhook(ctx, automation_webhooks_enabled=settings.automation_webhooks_enabled),
++        can_register_webhook(ctx, automation_webhooks_enabled=True),
+         "notification_settings",
+     )
+     if payload.digest_email is not None:

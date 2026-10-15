@@ -48,6 +48,7 @@ from aivs_server.auth.policy import (
     can_pause_distribution,
     can_quarantine_org,
     can_reconnect_org,
+    can_register_webhook,
     can_resume_distribution,
     can_set_audit_stream_mode,
     can_set_legal_hold,
@@ -541,7 +542,10 @@ async def register_webhook(
     finds out immediately that they have pointed it somewhere unreachable rather
     than discovering it from a silent absence of notifications.
     """
-    require(can_manage_own_webhooks(ctx), "webhook_register")
+    require(
+        can_register_webhook(ctx, automation_webhooks_enabled=settings.automation_webhooks_enabled),
+        "webhook_register",
+    )
     try:
         resolve_delivery_target(
             payload.url, allow_private=settings.dev_allow_private_webhook_targets

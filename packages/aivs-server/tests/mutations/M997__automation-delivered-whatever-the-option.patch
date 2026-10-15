@@ -1,0 +1,20 @@
+Mutation M997: webhooks the automation registered while the option was on keep being delivered after it is switched off
+Re-applies: Q2 (2026-10-15): delivery before the option existed
+
+Expect red: packages/aivs-server/tests/unit/test_dispatcher.py::test_the_automations_deliveries_wait_until_the_instance_offers_them
+
+diff --git a/packages/aivs-server/src/aivs_server/notify/dispatcher.py b/packages/aivs-server/src/aivs_server/notify/dispatcher.py
+index 7bb6c27..11b5a74 100644
+--- a/packages/aivs-server/src/aivs_server/notify/dispatcher.py
++++ b/packages/aivs-server/src/aivs_server/notify/dispatcher.py
+@@ -147,9 +147,7 @@ def _receiving_types(*, paused: bool, automation_webhooks_enabled: bool) -> froz
+     """
+     if paused:
+         return frozenset({OrgType.ADMIN})
+-    if automation_webhooks_enabled:
+-        return frozenset(OrgType)
+-    return frozenset(OrgType) - {OrgType.AUTOMATION}
++    return frozenset(OrgType)
+ 
+ 
+ async def _distribution_paused(session: AsyncSession) -> bool:

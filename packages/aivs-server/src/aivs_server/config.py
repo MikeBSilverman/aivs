@@ -336,6 +336,13 @@ class Settings(BaseSettings):
     #: Allow webhook delivery to private/loopback addresses. Dev only; in any
     #: real deployment this being true is an SSRF hole.
     dev_allow_private_webhook_targets: bool = False
+    #: Whether the ISAC's automation (the KEV script's certificate) may have
+    #: webhooks: telemetry on its own filings, pushed rather than polled. Off by
+    #: default because it is an option an ISAC may be charged for (Mike,
+    #: 2026-10-15), so an instance offers it only when it is switched on. Off,
+    #: registration is refused and any webhook registered while it was on is
+    #: held, not dropped, as a pause holds members' deliveries.
+    automation_webhooks_enabled: bool = False
     #: How often the dispatcher drains queued notifications. Short, because the
     #: whole point of pushing is that a member hears sooner than their next poll.
     webhook_dispatch_interval_seconds: int = Field(default=10, ge=1, le=600)

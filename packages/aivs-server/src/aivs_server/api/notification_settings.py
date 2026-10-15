@@ -1,6 +1,6 @@
 """An organisation's own notification settings: how often it is told, and where.
 
-Changed by the same people who manage its webhooks (``can_manage_own_webhooks``):
+Changed by the same people who may register its webhooks (``can_register_webhook``):
 the cadence decides when its collectors and people hear about content, which
 is the same decision as where they hear it.
 """
@@ -15,8 +15,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from aivs_schemas.enums import NotificationCadence
 from aivs_server.audit.log import AuditAction, record
-from aivs_server.auth.deps import AuthenticatedContext, SessionDep
-from aivs_server.auth.policy import can_manage_own_webhooks, require
+from aivs_server.auth.deps import AuthenticatedContext, SessionDep, SettingsDep
+from aivs_server.auth.policy import can_register_webhook, require
 from aivs_server.db.models import Organization
 from aivs_server.services.member_settings import change_notification_settings
 
@@ -54,14 +54,20 @@ async def read_settings(ctx: AuthenticatedContext, session: SessionDep) -> Notif
 
 @router.put("/notification-settings", response_model=NotificationSettingsOut)
 async def change_settings(
-    payload: NotificationSettingsIn, ctx: AuthenticatedContext, session: SessionDep
+    payload: NotificationSettingsIn,
+    ctx: AuthenticatedContext,
+    session: SessionDep,
+    settings: SettingsDep,
 ) -> NotificationSettingsOut:
     """Set the cadence, and the digest mailbox if the organisation wants one.
 
     A mailbox needs a digest cadence: email is a digest channel, and one email
     per submission is the flood the cadence exists to stop.
     """
-    require(can_manage_own_webhooks(ctx), "notification_settings")
+    require(
+        can_register_webhook(ctx, automation_webhooks_enabled=settings.automation_webhooks_enabled),
+        "notification_settings",
+    )
     if payload.digest_email is not None:
         if _MAILBOX.match(payload.digest_email) is None:
             raise HTTPException(

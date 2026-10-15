@@ -1,0 +1,19 @@
+Mutation M999: the registration route offers the automation webhooks whatever the instance says
+Re-applies: Q2 (2026-10-15): the route not reading the option
+
+Expect red: packages/aivs-server/tests/unit/test_webhooks.py::TestWebhookRegistration::test_the_automation_registers_only_where_the_instance_offers_it
+Expect red: packages/aivs-server/tests/authz_matrix/test_principal_matrix.py::test_each_principal_gets_exactly_its_row[automation_machine]
+
+diff --git a/packages/aivs-server/src/aivs_server/api/admin.py b/packages/aivs-server/src/aivs_server/api/admin.py
+index 9d0a361..b15acec 100644
+--- a/packages/aivs-server/src/aivs_server/api/admin.py
++++ b/packages/aivs-server/src/aivs_server/api/admin.py
+@@ -543,7 +543,7 @@ async def register_webhook(
+     than discovering it from a silent absence of notifications.
+     """
+     require(
+-        can_register_webhook(ctx, automation_webhooks_enabled=settings.automation_webhooks_enabled),
++        can_register_webhook(ctx, automation_webhooks_enabled=True),
+         "webhook_register",
+     )
+     try:

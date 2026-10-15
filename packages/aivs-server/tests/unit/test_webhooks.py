@@ -18,8 +18,13 @@ import hmac
 import ipaddress
 
 import pytest
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
 
 from aivs_schemas.enums import OrgType
+from aivs_server.audit.log import AuditAction
+from aivs_server.db.models import AuditLog
+from aivs_server.main import create_app
 from aivs_server.notify.webhooks import (
     SIGNATURE_VERSION,
     WebhookRejectedError,
@@ -183,6 +188,29 @@ class TestWebhookRegistration:
         org = await make_org("meridian-global", org_type=OrgType.GSIB)
         pem, _ = await make_cert(org)
         return org, pem
+
+    @pytest.mark.requirement("SF-92")
+    async def test_the_automation_registers_only_where_the_instance_offers_it(
+        self, client, session, settings, make_org, make_cert
+    ):
+        """The same certificate either way: what refuses it is the option alone."""
+        automation = await make_org("kev-automation", org_type=OrgType.AUTOMATION)
+        pem, _ = await make_cert(automation)
+        body = {"url": self.PUBLIC_TARGET}
+
+        refused = await client.post(self.API, json=body, headers=proxy_headers(pem))
+        assert refused.status_code == 403
+        denial = await session.scalar(
+            select(AuditLog).where(AuditLog.action == AuditAction.ACCESS_DENIED)
+        )
+        assert denial is not None
+        assert denial.details["reason"] == "webhook_register"
+
+        offered = create_app(settings.model_copy(update={"automation_webhooks_enabled": True}))
+        transport = ASGITransport(app=offered, client=("127.0.0.1", 0))
+        async with AsyncClient(transport=transport, base_url="https://aivs.test") as http:
+            accepted = await http.post(self.API, json=body, headers=proxy_headers(pem))
+        assert accepted.status_code == 201, accepted.text
 
     async def test_an_unreachable_target_is_refused_at_registration(self, client, member):
         """Found out now, rather than from a silent absence of notifications."""

@@ -482,7 +482,7 @@ which it versions (KEV status) and cannot reach through a circle.
 | inbox switch | 403 | 403 | 403 | 403 | 403 | 403 | 403 | ✓ | 403 | 403 |
 | proxy filing | 403 | 403 | 403 | 403 | 403 | 403 | 403 | ✓ | 403 | 403 |
 | proxy confirm | 403 | ✓ | ✓ | 404 | 404 | 404 | 403 | 403 | 404 | 404 |
-| webhook register | ✓ | 403 | ✓ | ✓ | 403 | ✓ | 403 | 403 | 403 | ✓ |
+| webhook register | ✓ | 403 | ✓ | ✓ | 403 | 403 | 403 | 403 | 403 | ✓ |
 | webhook delete | ✓ | 403 | ✓ | 404 | 403 | 404 | 403 | 403 | 403 | 404 |
 
 How to read the deny cells:
@@ -494,6 +494,12 @@ How to read the deny cells:
 - **Each class is one policy.** Where two routes under one heading answer
   differently, such as `withdraw` (which admits an editor) and `submit` (which
   does not), they are separate classes rather than one class with exceptions.
+- **The table is the default configuration.** The automation's `webhook
+  register` cell is 403 because `AIVS_AUTOMATION_WEBHOOKS_ENABLED` is off by
+  default. Webhooks for the automation are an option an instance may charge
+  for. Switched on, it registers like any machine certificate, and switched
+  off again, its deliveries are held rather than sent (SF-92). It may delete
+  its webhooks either way.
 
 The matrix does not claim:
 

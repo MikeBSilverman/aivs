@@ -94,6 +94,13 @@ gitleaks dir . --config .gitleaks.toml    # before any commit that adds files
 the workflows and gitleaks over the full history. Fast checks first, so
 a formatting mistake fails in a minute rather than after the full suite.
 
+**A gate is its exit status, not its output.** Two sessions landed a commit
+with bandit red, each having read bandit through `tail`: the last lines said
+`High: 0`, and the low-severity B106 above them failed the gate with exit 1.
+A summary line is the tool describing its findings, not deciding the gate.
+Record each gate's exit status (`cmd; echo "exit=$?"`, or a runner that stops
+on the first non-zero) and read the output only to see why.
+
 **Audit the lockfile, not the installed environment.** The gate was
 `pip-audit --skip-editable --strict`, which in a uv workspace can only ever
 fail: uv installs the three workspace members as editable, and `--strict` counts

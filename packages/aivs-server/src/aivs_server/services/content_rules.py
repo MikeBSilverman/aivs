@@ -1,6 +1,7 @@
 """The content rules that hold at the moment content becomes readable.
 
-Owner-only versioning (SF-48), the disclosure split (SF-7), TLP inheritance
+Owner-only versioning (SF-48), newest-version-only (SF-82), the disclosure
+split (SF-7), TLP inheritance
 (SF-49) and identifiers registered to another organisation are each checked at
 validate. They are checked again when content becomes readable, because what
 they are decided by can change in between -- a disclosure withdrawn, a
@@ -26,7 +27,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aivs_server.db.models import Submission
-from aivs_server.services.ownership import foreign_owned_versions_problem
+from aivs_server.services.ownership import foreign_owned_versions_problem, stale_version_problem
 from aivs_server.services.submissions import contribution_problem, foreign_identity_ids
 
 __all__ = ["content_problem"]
@@ -46,6 +47,9 @@ async def content_problem(
     )
     if owned is not None:
         return owned
+    stale = await stale_version_problem(session, submission)
+    if stale is not None:
+        return stale
     contribution = await contribution_problem(session, submission, raws, visible_to=None, now=now)
     if contribution is not None:
         return contribution

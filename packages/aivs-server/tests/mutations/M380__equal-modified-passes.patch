@@ -1,0 +1,17 @@
+Mutation M380: a version with the same modified as a distributed one passes, and TIPs keep whichever they saw first
+Re-applies: T14 (finding R2-P2, widened)
+
+Expect red: packages/aivs-server/tests/unit/test_stale_versions.py::test_a_version_no_later_than_a_distributed_one_is_refused_at_validate[equal]
+
+diff --git a/packages/aivs-server/src/aivs_server/services/ownership.py b/packages/aivs-server/src/aivs_server/services/ownership.py
+--- a/packages/aivs-server/src/aivs_server/services/ownership.py
++++ b/packages/aivs-server/src/aivs_server/services/ownership.py
+@@ -161,7 +161,7 @@
+                     other,
+                     (other.stix_id == own.stix_id)
+                     & (other.submission_id != own.submission_id)
+-                    & (other.modified >= own.modified),
++                    & (other.modified > own.modified),
+                 )
+                 .join(Distribution, Distribution.stix_object_id == other.id)
+                 .join(other_submission, other_submission.id == other.submission_id)

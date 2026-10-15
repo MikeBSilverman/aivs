@@ -183,6 +183,19 @@
     <div class="empty">None.</div>
   {% endif %}
 
+  <h3>Held embargoes</h3>
+  <p class="muted small">Taken off their timer because the content no longer passes a rule it passed at distribution. Members cannot read it until an editor releases or withdraws it.</p>
+  {% if status.held_embargoes %}
+    <ul>
+      {% for held in status.held_embargoes %}
+        <li data-held="{{ held.submission_id }}"><span class="mono">{{ held.submission_id }}</span>,
+            held {{ held.held_at.strftime("%Y-%m-%d %H:%M") }}: {{ held.reason }}</li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <div class="empty">None.</div>
+  {% endif %}
+
   <h3>Failing webhook endpoints</h3>
   {% if status.failing_webhooks %}
     <ul>

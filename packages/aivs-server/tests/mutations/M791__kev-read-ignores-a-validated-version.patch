@@ -6,10 +6,10 @@ Expect red: packages/aivs-server/tests/unit/test_enrich_kev.py::test_a_record_wi
 diff --git a/packages/aivs-server/src/aivs_server/services/isac_records.py b/packages/aivs-server/src/aivs_server/services/isac_records.py
 --- a/packages/aivs-server/src/aivs_server/services/isac_records.py
 +++ b/packages/aivs-server/src/aivs_server/services/isac_records.py
-@@ -37,7 +37,7 @@ from aivs_server.services.ownership import ISAC_OWNER, owner_key
- __all__ = ["latest_isac_vulnerabilities"]
- 
- #: States in which a version is on its way to distribution and may still get there.
+@@ -42,7 +42,7 @@
+ #: version is not lost silently either: newest-version-only (SF-82,
+ #: ``ownership.stale_version_problem``) refuses it at validate and distribution,
+ #: and the editor refiles it with a later ``modified``.
 -_IN_REVIEW_STATES = (SubmissionState.SUBMITTED, SubmissionState.VALIDATED)
 +_IN_REVIEW_STATES = (SubmissionState.SUBMITTED,)
  

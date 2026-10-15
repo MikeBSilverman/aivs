@@ -37,6 +37,11 @@ from aivs_server.services.ownership import ISAC_OWNER, owner_key
 __all__ = ["latest_isac_vulnerabilities"]
 
 #: States in which a version is on its way to distribution and may still get there.
+#: Not DRAFT, deliberately: a draft nobody sends would otherwise hold the KEV
+#: script back from that record forever. A draft correction overtaken by a KEV
+#: version is not lost silently either: newest-version-only (SF-82,
+#: ``ownership.stale_version_problem``) refuses it at validate and distribution,
+#: and the editor refiles it with a later ``modified``.
 _IN_REVIEW_STATES = (SubmissionState.SUBMITTED, SubmissionState.VALIDATED)
 
 

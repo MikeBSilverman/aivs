@@ -1,0 +1,24 @@
+Mutation M383: a content rule's refusal at validate or distribution leaves no audit row
+Re-applies: T14 (finding R2-P2, widened)
+
+Expect red: packages/aivs-server/tests/unit/test_stale_versions.py::test_a_version_no_later_than_a_distributed_one_is_refused_at_validate
+Expect red: packages/aivs-server/tests/unit/test_stale_versions.py::test_a_version_overtaken_after_validate_is_refused_at_distribution
+
+diff --git a/packages/aivs-server/src/aivs_server/api/submissions.py b/packages/aivs-server/src/aivs_server/api/submissions.py
+--- a/packages/aivs-server/src/aivs_server/api/submissions.py
++++ b/packages/aivs-server/src/aivs_server/api/submissions.py
+@@ -273,14 +273,6 @@
+     content rule's refusal at validate or distribution is evidence of what the
+     ISAC declined to publish and why, and a 409 alone left no trace of it.
+     """
+-    await record_independently(
+-        action=AuditAction.SUBMISSION_TRANSITION_REFUSED,
+-        ctx=ctx,
+-        outcome="failure",
+-        resource_type="submission",
+-        resource_id=str(submission_id),
+-        details={"verb": verb, "reason": str(exc)},
+-    )
+     return HTTPException(status.HTTP_409_CONFLICT, detail=str(exc))
+ 
+ 

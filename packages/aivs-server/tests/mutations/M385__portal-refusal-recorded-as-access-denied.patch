@@ -1,0 +1,17 @@
+Mutation M385: the portal records a content rule's refusal of a verb as an authorization failure, not the row the API writes
+Re-applies: the portal verb route's ACCESS_DENIED row (main's T14 review)
+
+Expect red: packages/aivs-server/tests/unit/test_stale_versions.py::test_the_portal_records_the_same_refusal_and_no_authorization_failure
+
+diff --git a/packages/aivs-server/src/aivs_server/portal/routes.py b/packages/aivs-server/src/aivs_server/portal/routes.py
+--- a/packages/aivs-server/src/aivs_server/portal/routes.py
++++ b/packages/aivs-server/src/aivs_server/portal/routes.py
+@@ -853,7 +853,7 @@
+         # the other door, so the same row: a content rule declining a verb is
+         # not an authorization failure, and authz.denied stays for require().
+         await record_independently(
+-            action=AuditAction.SUBMISSION_TRANSITION_REFUSED,
++            action=AuditAction.ACCESS_DENIED,
+             ctx=ctx,
+             outcome="failure",
+             resource_type="submission",

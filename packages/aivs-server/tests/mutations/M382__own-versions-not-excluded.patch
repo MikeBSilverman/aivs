@@ -1,0 +1,18 @@
+Mutation M382: a submission is compared with its own distributed versions, so its embargo release is held against itself
+Re-applies: T14 (finding R2-P2, widened)
+
+Expect red: packages/aivs-server/tests/unit/test_stale_versions.py::test_an_embargo_is_not_refused_against_its_own_versions
+
+diff --git a/packages/aivs-server/src/aivs_server/services/ownership.py b/packages/aivs-server/src/aivs_server/services/ownership.py
+--- a/packages/aivs-server/src/aivs_server/services/ownership.py
++++ b/packages/aivs-server/src/aivs_server/services/ownership.py
+@@ -160,8 +160,7 @@
+                 .join(
+                     other,
+                     (other.stix_id == own.stix_id)
+-                    & (other.submission_id != own.submission_id)
+-                    & (other.modified >= own.modified),
++                        & (other.modified >= own.modified),
+                 )
+                 .join(Distribution, Distribution.stix_object_id == other.id)
+                 .join(other_submission, other_submission.id == other.submission_id)

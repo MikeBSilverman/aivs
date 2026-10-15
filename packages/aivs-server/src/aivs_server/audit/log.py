@@ -164,6 +164,7 @@ class AuditAction:
     EMBARGO_RELEASED = "embargo.released"
     EMBARGO_EXTENDED = "embargo.extended"
     EMBARGO_HELD = "embargo.held"
+    SUBMISSION_TRANSITION_REFUSED = "submission.transition_refused"
 
     # Content access
     OBJECTS_RETRIEVED = "taxii.objects_retrieved"

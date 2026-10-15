@@ -6,7 +6,7 @@ Expect red: packages/aivs-server/tests/unit/test_post_moderation.py::test_a_note
 diff --git a/packages/aivs-server/src/aivs_server/services/content_rules.py b/packages/aivs-server/src/aivs_server/services/content_rules.py
 --- a/packages/aivs-server/src/aivs_server/services/content_rules.py
 +++ b/packages/aivs-server/src/aivs_server/services/content_rules.py
-@@ -41,9 +41,7 @@ async def content_problem(
+@@ -42,9 +42,7 @@
  ) -> str | None:
      """Why ``submission``'s ``objects`` may not become readable now, or ``None``."""
      raws = list(objects)
@@ -16,17 +16,17 @@ diff --git a/packages/aivs-server/src/aivs_server/services/content_rules.py b/pa
 +    owned = None
      if owned is not None:
          return owned
-     contribution = await contribution_problem(session, submission, raws, visible_to=None, now=now)
+     stale = await stale_version_problem(session, submission)
 diff --git a/packages/aivs-server/src/aivs_server/services/submissions.py b/packages/aivs-server/src/aivs_server/services/submissions.py
 --- a/packages/aivs-server/src/aivs_server/services/submissions.py
 +++ b/packages/aivs-server/src/aivs_server/services/submissions.py
-@@ -870,9 +870,6 @@ async def check_content_rules(session: AsyncSession, submission: Submission) ->
+@@ -897,9 +897,6 @@
      """
      raws = await _stored_raws(session, submission)
      for problem in (
 -        await foreign_owned_versions_problem(
 -            session, raws, owner_org_id=submission.submitter_org_id
 -        ),
+         await stale_version_problem(session, submission),
          await contribution_problem(
              session, submission, raws, visible_to=None, now=await database_now(session)
-         ),

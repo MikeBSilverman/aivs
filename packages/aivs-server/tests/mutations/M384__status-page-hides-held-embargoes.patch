@@ -1,0 +1,17 @@
+Mutation M384: the status page lists no held embargo, so a held timer waits silently
+Re-applies: T14 (finding R2-P2, widened)
+
+Expect red: packages/aivs-server/tests/unit/test_stale_versions.py::test_an_embargoed_version_overtaken_before_release_is_held_and_shown
+
+diff --git a/packages/aivs-server/src/aivs_server/services/instance_status.py b/packages/aivs-server/src/aivs_server/services/instance_status.py
+--- a/packages/aivs-server/src/aivs_server/services/instance_status.py
++++ b/packages/aivs-server/src/aivs_server/services/instance_status.py
+@@ -359,7 +359,7 @@
+         stale_connections=await stale_connections(session, now),
+         failing_webhooks=await _failing_webhooks(session),
+         undelivered_email=await _undelivered_email(session, email_max_attempts),
+-        held_embargoes=await _held_embargoes(session),
++        held_embargoes=[],
+         detections=await _recent_detections(session, now),
+         proposed_quarantines=await _proposed_quarantines(session, now),
+         key_fingerprint=box.active_fingerprint,

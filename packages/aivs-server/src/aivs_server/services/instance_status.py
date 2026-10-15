@@ -16,10 +16,10 @@ from dataclasses import dataclass
 from typing import Any, Final
 from urllib.parse import urlsplit
 
-from sqlalchemy import String, func, select
+from sqlalchemy import String, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from aivs_schemas.enums import AckType, CertStatus, EmbargoStatus, OrgStatus, OrgType
+from aivs_schemas.enums import AckType, CertStatus, EmbargoPolicy, EmbargoStatus, OrgStatus, OrgType
 from aivs_server.audit.log import AuditAction
 from aivs_server.auth.secretbox import SecretBox
 from aivs_server.db.models import (
@@ -73,6 +73,10 @@ class InstanceStatus:
     stale_connections: list[StaleConnection]
     failing_webhooks: list[dict[str, Any]]
     undelivered_email: list[dict[str, Any]]
+    #: Timers the sweeper took off their clock because the content no longer
+    #: passed, still waiting for an editor: a hold nobody sees is a release
+    #: that silently never happens.
+    held_embargoes: list[dict[str, Any]]
     detections: list[dict[str, Any]]
     proposed_quarantines: list[dict[str, Any]]
     key_fingerprint: str
@@ -242,6 +246,37 @@ async def _undelivered_email(session: AsyncSession, max_attempts: int) -> list[d
     ]
 
 
+async def _held_embargoes(session: AsyncSession) -> list[dict[str, Any]]:
+    """Each held, unreleased embargo, with the reason its latest hold recorded."""
+    held = (
+        select(
+            AuditLog.resource_id,
+            AuditLog.at,
+            AuditLog.details,
+            func.row_number()
+            .over(partition_by=AuditLog.resource_id, order_by=AuditLog.id.desc())
+            .label("latest"),
+        )
+        .where(AuditLog.action == AuditAction.EMBARGO_HELD)
+        .subquery()
+    )
+    rows = await session.execute(
+        select(held.c.resource_id, held.c.at, held.c.details)
+        .join(Embargo, cast(Embargo.submission_id, String) == held.c.resource_id)
+        .where(held.c.latest == 1, _unreleased(), Embargo.policy == EmbargoPolicy.MANUAL)
+        .order_by(held.c.at.desc())
+    )
+    return [
+        {
+            "submission_id": submission_id,
+            "held_at": at,
+            "reason": str((details or {}).get("reason", "")),
+            "originally_due": (details or {}).get("originally_due"),
+        }
+        for submission_id, at, details in rows.all()
+    ]
+
+
 async def _recent_detections(session: AsyncSession, now: dt.datetime) -> list[dict[str, Any]]:
     rows = await session.execute(
         select(AuditLog.at, AuditLog.details)
@@ -324,6 +359,7 @@ async def gather_status(
         stale_connections=await stale_connections(session, now),
         failing_webhooks=await _failing_webhooks(session),
         undelivered_email=await _undelivered_email(session, email_max_attempts),
+        held_embargoes=await _held_embargoes(session),
         detections=await _recent_detections(session, now),
         proposed_quarantines=await _proposed_quarantines(session, now),
         key_fingerprint=box.active_fingerprint,

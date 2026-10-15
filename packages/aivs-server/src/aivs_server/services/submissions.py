@@ -54,7 +54,7 @@ from aivs_server.db.models import Organization, StixObject, Submission, Submissi
 from aivs_server.services.disclosure import DisclosureScope, disclosure_problem
 from aivs_server.services.indexing import intel_index_fields
 from aivs_server.services.markings import granular_tlp_problem, looser_than_referents_problem
-from aivs_server.services.ownership import foreign_owned_versions_problem
+from aivs_server.services.ownership import foreign_owned_versions_problem, stale_version_problem
 from aivs_server.services.provenance import (
     consequential_changes,
     reviewer_identity_id,
@@ -767,7 +767,8 @@ async def _prepare_validation(
 ) -> None:
     """Refuse content the ISAC may not accept, then record who reviewed it.
 
-    In order: owner-only versioning (SF-48), the disclosure split and TLP
+    In order: owner-only versioning (SF-48), newest-version-only (SF-82),
+    the disclosure split and TLP
     inheritance from the ISAC's view of everything (SF-7, SF-49), the AI gate
     (SF-6). Only then is the reviewer stamped, so a refused validation writes
     nothing.
@@ -783,6 +784,7 @@ async def _prepare_validation(
         await foreign_owned_versions_problem(
             session, raws, owner_org_id=submission.submitter_org_id
         ),
+        await stale_version_problem(session, submission),
         await contribution_problem(session, submission, raws, visible_to=None, now=now),
         unacknowledged_changes_problem(
             await consequential_changes(session, submission, raws), acknowledged_changes
@@ -887,7 +889,7 @@ async def record_transition(
 
 
 async def check_content_rules(session: AsyncSession, submission: Submission) -> None:
-    """Owner-only versioning, the disclosure split and TLP inheritance, from the ISAC's view.
+    """Owner-only and newest-only versioning, the disclosure split and TLP inheritance.
 
     What validate checks of any submission's content, without the parts that
     need a human reviewer (the AI gate, the reviewer stamp). The fast lane runs
@@ -898,6 +900,7 @@ async def check_content_rules(session: AsyncSession, submission: Submission) -> 
         await foreign_owned_versions_problem(
             session, raws, owner_org_id=submission.submitter_org_id
         ),
+        await stale_version_problem(session, submission),
         await contribution_problem(
             session, submission, raws, visible_to=None, now=await database_now(session)
         ),

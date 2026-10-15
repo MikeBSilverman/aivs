@@ -39,6 +39,7 @@ from typing import Any, Final
 
 from sqlalchemy import String, case, cast, literal, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 from sqlalchemy.sql.elements import ColumnElement
 
 from aivs_schemas.enums import OrgType
@@ -47,9 +48,11 @@ from aivs_server.db.models import Distribution, Organization, StixObject, Submis
 __all__ = [
     "ISAC_OWNER",
     "ISAC_OWNER_TYPES",
+    "STALE_VERSION",
     "foreign_owned_versions_problem",
     "is_isac_owner",
     "owner_key",
+    "stale_version_problem",
 ]
 
 #: The organisations that are the ISAC, for ownership: its own, and its machine.
@@ -117,3 +120,61 @@ async def foreign_owned_versions_problem(
         "only the organisation that first distributed an object may publish a new "
         f"version of it; reference it instead (a relationship or an opinion): {', '.join(foreign)}"
     )
+
+
+#: The editor's refusal. One sentence and the ids: the editor sees the ISAC's
+#: view of everything, so naming them confirms nothing it could not see.
+STALE_VERSION: Final[str] = (
+    "a version must be later than every version of the same object already "
+    "distributed by its owner; file it with a later modified"
+)
+
+
+async def stale_version_problem(session: AsyncSession, submission: Submission) -> str | None:
+    """Why some of ``submission``'s versions would not be the newest, or ``None``.
+
+    Members' TIPs keep the version with the latest ``modified``. A version
+    published with a ``modified`` no later than one its owner already
+    distributed is therefore published and never shown: a late correction
+    loses silently to the version it corrects -- the "warning a member would
+    swear they never received" (CLAUDE.md section 5) -- and an equal one is
+    taken for the same version and dropped.
+
+    Compared with every version of the same object, by the same owner (the
+    ISAC and its automation are one owner, so a KEV version filed over an ISAC
+    draft correction counts), that has any distribution: embargoed and not yet
+    readable, withdrawn or superseded since. Members hold what was delivered,
+    and an embargo will be. The submission's own rows are left out, so its
+    embargo release is not refused against itself. Stored versions on both
+    sides, so the comparison is the one the database's uniqueness uses.
+    """
+    own = aliased(StixObject)
+    other = aliased(StixObject)
+    other_submission = aliased(Submission)
+    owners = await _owners_like(session, submission.submitter_org_id)
+    stale = (
+        (
+            await session.execute(
+                select(own.stix_id)
+                .distinct()
+                .join(
+                    other,
+                    (other.stix_id == own.stix_id)
+                    & (other.submission_id != own.submission_id)
+                    & (other.modified >= own.modified),
+                )
+                .join(Distribution, Distribution.stix_object_id == other.id)
+                .join(other_submission, other_submission.id == other.submission_id)
+                .where(
+                    own.submission_id == submission.id,
+                    other_submission.submitter_org_id.in_(owners),
+                )
+                .order_by(own.stix_id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if not stale:
+        return None
+    return f"{STALE_VERSION}: {', '.join(stale)}"

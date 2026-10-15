@@ -38,7 +38,7 @@ from aivs_schemas.models import (
     TransitionRequest,
     ValidateRequest,
 )
-from aivs_server.audit.log import AuditAction, record
+from aivs_server.audit.log import AuditAction, record, record_independently
 from aivs_server.auth.context import AuthContext
 from aivs_server.auth.deps import AuthenticatedContext, SessionDep, SettingsDep
 from aivs_server.auth.policy import (
@@ -264,6 +264,26 @@ async def amend(
     return _present(submission, ctx)
 
 
+async def _refused(
+    ctx: AuthContext, submission_id: uuid.UUID, verb: str, exc: Exception
+) -> HTTPException:
+    """The editor's 409, recorded with its reason.
+
+    Independently of the request's transaction, which is rolled back: a
+    content rule's refusal at validate or distribution is evidence of what the
+    ISAC declined to publish and why, and a 409 alone left no trace of it.
+    """
+    await record_independently(
+        action=AuditAction.SUBMISSION_TRANSITION_REFUSED,
+        ctx=ctx,
+        outcome="failure",
+        resource_type="submission",
+        resource_id=str(submission_id),
+        details={"verb": verb, "reason": str(exc)},
+    )
+    return HTTPException(status.HTTP_409_CONFLICT, detail=str(exc))
+
+
 async def _transition(
     session: SessionDep,
     ctx: AuthenticatedContext,
@@ -276,7 +296,7 @@ async def _transition(
         await apply_transition(session, ctx, submission, target, reason=reason)
         await session.commit()
     except _CLIENT_ERRORS as exc:
-        raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+        raise await _refused(ctx, submission_id, target.value, exc) from exc
     await session.refresh(submission)
     return submission
 
@@ -338,7 +358,7 @@ async def validate(
         )
         await session.commit()
     except _CLIENT_ERRORS as exc:
-        raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+        raise await _refused(ctx, submission_id, "validated", exc) from exc
     await session.refresh(submission)
     return _present(submission, ctx)
 
@@ -406,7 +426,7 @@ async def distribute(
         # and the audit trail.
         await session.commit()
     except _CLIENT_ERRORS as exc:
-        raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+        raise await _refused(ctx, submission_id, "distributed", exc) from exc
     await session.refresh(submission)
     return _present(submission, ctx)
 

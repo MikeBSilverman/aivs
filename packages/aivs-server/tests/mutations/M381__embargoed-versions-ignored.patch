@@ -1,0 +1,30 @@
+Mutation M381: only versions already readable count, so an embargoed newer version is overtaken by an older one
+Re-applies: T14 (finding R2-P2, widened)
+
+Expect red: packages/aivs-server/tests/unit/test_stale_versions.py::test_an_embargoed_newer_version_counts
+
+diff --git a/packages/aivs-server/src/aivs_server/services/ownership.py b/packages/aivs-server/src/aivs_server/services/ownership.py
+--- a/packages/aivs-server/src/aivs_server/services/ownership.py
++++ b/packages/aivs-server/src/aivs_server/services/ownership.py
+@@ -37,7 +37,7 @@
+ from collections.abc import Iterable, Mapping
+ from typing import Any, Final
+ 
+-from sqlalchemy import String, case, cast, literal, select
++from sqlalchemy import String, case, cast, func, literal, select
+ from sqlalchemy.ext.asyncio import AsyncSession
+ from sqlalchemy.orm import aliased
+ from sqlalchemy.sql.elements import ColumnElement
+@@ -163,7 +163,11 @@
+                     & (other.submission_id != own.submission_id)
+                     & (other.modified >= own.modified),
+                 )
+-                .join(Distribution, Distribution.stix_object_id == other.id)
++                .join(
++                Distribution,
++                (Distribution.stix_object_id == other.id)
++                & (Distribution.date_added <= func.now()),
++            )
+                 .join(other_submission, other_submission.id == other.submission_id)
+                 .where(
+                     own.submission_id == submission.id,

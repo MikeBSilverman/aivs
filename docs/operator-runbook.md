@@ -449,13 +449,18 @@ Operationally this means:
 - A sweeper outage means members are not **notified**. Alert on it, but do not
   treat it as a disclosure incident.
 - The sweeper also re-checks every embargo still on its timer against the
-  content rules distribution checked (ownership, the disclosure split, TLP
-  inheritance, others' registered identifiers). One that no longer passes --
-  the target moved back out of disclosure, a referent re-marked stricter -- is
-  **held**: an `embargo.held` audit row and a warning name the rule, the
-  embargo's policy becomes `manual` with no release time, and its content
-  waits. Decide: fix the cause and release it early (which checks again and
-  says why if it still refuses), or extend it to put it back on a timer.
+  content rules distribution checked (ownership, newest-version-only, the
+  disclosure split, TLP inheritance, others' registered identifiers). One that
+  no longer passes -- the target moved back out of disclosure, a referent
+  re-marked stricter, a newer version of the same object distributed by its
+  owner in the meantime -- is **held**: an `embargo.held` audit row and a
+  warning name the rule, the embargo's policy becomes `manual` with no release
+  time, its content waits, and it is listed under **Held embargoes** on the
+  status page with its reason. Decide: fix the cause and release it early
+  (which checks again and says why if it still refuses), or extend it to put it
+  back on a timer. A version overtaken by a newer one cannot be fixed in place:
+  withdraw it, and refile the change with a later `modified` if it is still
+  needed.
 - A rule that stops holding within one sweep interval of the release time, or
   while the sweeper is down, cannot be caught before the clock releases the
   content. The release's `embargo.released` row then carries

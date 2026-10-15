@@ -849,13 +849,16 @@ async def perform_action(
         await session.commit()
     except (SubmissionError, DistributionError, PublicationPausedError, ValueError) as exc:
         await session.rollback()
+        # The same refusal the API records (api.submissions._refused), through
+        # the other door, so the same row: a content rule declining a verb is
+        # not an authorization failure, and authz.denied stays for require().
         await record_independently(
-            action=AuditAction.ACCESS_DENIED,
+            action=AuditAction.SUBMISSION_TRANSITION_REFUSED,
             ctx=ctx,
             outcome="failure",
             resource_type="submission",
             resource_id=str(submission_id),
-            details={"verb": verb, "error": str(exc)},
+            details={"verb": verb, "reason": str(exc)},
         )
         set_notice(response, settings, "error", str(exc))
 

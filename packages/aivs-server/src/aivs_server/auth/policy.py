@@ -572,8 +572,8 @@ def holds_submitter_rights(ctx: AuthContext, *, owner_is_isac: bool, owner_is_ca
     automation filed, so refusing the automation alone would have stranded
     its drafts.
 
-    ``owner_is_isac`` is the caller's to state, from the filing's owner
-    (``services.submissions.is_isac_filing``, which fails closed), and so is
+    ``owner_is_isac`` is the caller's to state, from the filing's owner tag
+    (``services.submissions.is_isac_filing``), and so is
     ``owner_is_caller``, whether the caller's organisation filed it
     (``services.attribution.is_submitted_by``).
     """

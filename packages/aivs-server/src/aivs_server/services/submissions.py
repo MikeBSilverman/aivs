@@ -57,11 +57,10 @@ from aivs_server.db.models import Organization, StixObject, Submission, Submissi
 from aivs_server.services.anonymity import anonymity_change_problem
 from aivs_server.services.attribution import (
     FilingRecord,
+    filer_known_to,
     is_submitted_by,
     owner_tokens_for,
     record_filing,
-    submitter_column,
-    submitter_of,
 )
 from aivs_server.services.disclosure import DisclosureScope, disclosure_problem
 from aivs_server.services.indexing import intel_index_fields
@@ -379,7 +378,7 @@ async def foreign_identity_ids(
 
 
 async def _reject_stored_self_identifying_content(
-    session: AsyncSession, submission: Submission
+    session: AsyncSession, submission: Submission, filer: uuid.UUID
 ) -> None:
     """Run the anonymity check against the objects already stored.
 
@@ -397,9 +396,7 @@ async def _reject_stored_self_identifying_content(
     )
     reject_self_identifying_content(
         raws,
-        own_identity_id=await submitter_identity_id(
-            session, await submitter_of(session, submission)
-        ),
+        own_identity_id=await submitter_identity_id(session, filer),
     )
 
 
@@ -472,11 +469,10 @@ def _check_column_bounds(stix_id: str, stix_type: str) -> None:
 
 
 async def _reject_identity_problems(
-    session: AsyncSession, submission: Submission, objects: list[Any]
+    session: AsyncSession, submission: Submission, objects: list[Any], filer: uuid.UUID
 ) -> None:
     """Refuse a bundle that names its anonymous submitter, or impersonates a peer."""
-    submitter = await submitter_of(session, submission)
-    own_identity_id = await submitter_identity_id(session, submitter)
+    own_identity_id = await submitter_identity_id(session, filer)
     if submission.distribute_anonymously:
         reject_self_identifying_content(objects, own_identity_id=own_identity_id)
     else:
@@ -484,7 +480,7 @@ async def _reject_identity_problems(
         if located_elsewhere is not None:
             raise SubmissionError(located_elsewhere)
 
-    impersonated = await foreign_identity_ids(session, objects, submitter_org_id=submitter)
+    impersonated = await foreign_identity_ids(session, objects, submitter_org_id=filer)
     if impersonated:
         msg = (
             "identity objects may not use an identifier registered to another "
@@ -494,9 +490,18 @@ async def _reject_identity_problems(
 
 
 async def replace_submission_objects(
-    session: AsyncSession, submission: Submission, bundle: dict[str, Any], *, key: AttributionKey
+    session: AsyncSession,
+    submission: Submission,
+    bundle: dict[str, Any],
+    *,
+    key: AttributionKey,
+    filer: uuid.UUID,
 ) -> int:
-    """Validate a bundle and store its objects against ``submission``.
+    """Validate a bundle and store its objects against ``submission``, filed by ``filer``.
+
+    ``filer`` is the caller's to state (``create_submission``, ``_filer``)
+    rather than read back: the member login cannot read who filed what, and a
+    submission being created is not yet committed for a staff session to see.
 
     Replaces any objects the submission already had, which is what an amended
     draft needs. Only ever called for drafts: once a submission is distributed
@@ -510,7 +515,7 @@ async def replace_submission_objects(
     # and enforces the extension allowlist.
     validate_bundle(bundle)
     objects = bundle.get("objects") or []
-    await _reject_identity_problems(session, submission, objects)
+    await _reject_identity_problems(session, submission, objects, filer)
 
     await session.execute(delete(StixObject).where(StixObject.submission_id == submission.id))
 
@@ -533,9 +538,9 @@ async def replace_submission_objects(
 
     tokens = owner_tokens_for(
         key,
-        await submitter_of(session, submission),
+        filer,
         (parsed.stix_id for parsed, _obj in parsed_objects),
-        owner_is_isac=await is_isac_filing(session, submission),
+        owner_is_isac=await is_isac_filing(session, key, submission),
     )
     rows = [
         StixObject(
@@ -578,6 +583,7 @@ async def contribution_problem(
     *,
     visible_to: AuthContext | None,
     now: dt.datetime,
+    key: AttributionKey,
 ) -> str | None:
     """Why this content may not be filed under this submission's scope and TLP, or ``None``.
 
@@ -593,6 +599,7 @@ async def contribution_problem(
         discovery_scope=submission.discovery_scope,
         objects=objects,
         scope=DisclosureScope(visible_to=visible_to, exclude_submission_id=submission.id, now=now),
+        key=key,
     )
     if disclosure is not None:
         return disclosure
@@ -622,9 +629,15 @@ async def _refuse_contribution_problem(
     visible_to: AuthContext | None,
     submission: Submission,
     objects: list[Any],
+    key: AttributionKey,
 ) -> None:
     problem = await contribution_problem(
-        session, submission, objects, visible_to=visible_to, now=await database_now(session)
+        session,
+        submission,
+        objects,
+        visible_to=visible_to,
+        now=await database_now(session),
+        key=key,
     )
     if problem is not None:
         raise SubmissionError(problem)
@@ -742,13 +755,16 @@ async def create_submission(
         title=title,
         summary=summary,
     )
-    await record_filing(session, key, submission, _filing_record(ctx, filed_for))
+    filing = _filing_record(ctx, filed_for)
+    await record_filing(session, key, submission, filing)
 
-    object_count = await replace_submission_objects(session, submission, bundle, key=key)
+    object_count = await replace_submission_objects(
+        session, submission, bundle, key=key, filer=filing.org_id
+    )
     # An analyst filing for a member is ISAC staff, who see everything; the
     # rules are then checked from that view, as validate will check them.
     await _refuse_contribution_problem(
-        session, None if filed_for else ctx, submission, bundle.get("objects") or []
+        session, None if filed_for else ctx, submission, bundle.get("objects") or [], key
     )
     await _refuse_anonymity_change(session, submission)
 
@@ -781,22 +797,23 @@ async def create_submission(
     return submission
 
 
-async def is_isac_filing(session: AsyncSession, submission: Submission) -> bool:
+async def is_isac_filing(
+    session: AsyncSession, key: AttributionKey, submission: Submission
+) -> bool:
     """Whether ``submission``'s owner is the ISAC or its automation, whose
     verbs are an editor's (``policy.holds_submitter_rights``).
 
-    Fails closed: an owner it cannot find is not taken for a member, because
-    the member's answer would give the submitter's verbs to whoever shares the
-    filing's organisation id, and the editor's answer gives them to nobody but
-    an editor.
+    Asked of the tag, against the few organisations that file as the ISAC,
+    rather than of ``attribution``: the member login cannot read who filed
+    what (Phase P), and the answer must hold inside the transaction that
+    filed the submission. A tag that matches no organisation is taken for a
+    member's, which no caller's tag matches either, so nobody holds the
+    submitter's verbs on it.
     """
-    owner_type = await session.scalar(
-        select(Organization.org_type)
-        .select_from(Submission)
-        .join(Organization, Organization.id == submitter_column(Submission))
-        .where(Submission.id == submission.id)
+    isac_filers = await session.scalars(
+        select(Organization.id).where(Organization.org_type.in_(ISAC_FILER_TYPES))
     )
-    return owner_type is None or owner_type in ISAC_FILER_TYPES
+    return any(is_submitted_by(key, submission, org_id) for org_id in isac_filers)
 
 
 def _submitter_refusal(ctx: AuthContext, *, owner_is_isac: bool) -> str:
@@ -824,7 +841,7 @@ async def update_submission(
     if submission.state not in EDITABLE_SUBMISSION_STATES:
         msg = f"a submission in state '{submission.state.value}' can no longer be edited"
         raise SubmissionError(msg)
-    owner_is_isac = await is_isac_filing(session, submission)
+    owner_is_isac = await is_isac_filing(session, key, submission)
     owner_is_caller = is_submitted_by(key, submission, ctx.org_id)
     require(
         holds_submitter_rights(ctx, owner_is_isac=owner_is_isac, owner_is_caller=owner_is_caller),
@@ -839,8 +856,10 @@ async def update_submission(
     for field, value in changes.items():
         setattr(submission, field, value)
 
+    # The caller holds the submitter's rights, so a member here is the filer.
+    filer = await filer_known_to(session, key, ctx, submission)
     if bundle is not None:
-        await replace_submission_objects(session, submission, bundle, key=key)
+        await replace_submission_objects(session, submission, bundle, key=key, filer=filer)
     elif submission.distribute_anonymously:
         # Anonymity is a property of the submission as it stands, not of the
         # write that happened to carry a bundle. PATCH {"distribute_anonymously":
@@ -849,7 +868,7 @@ async def update_submission(
         # own identity SDO, which is allowed for an attributed submission. Left
         # unchecked, that name is redistributed verbatim to every circle member
         # alongside a finding the submitter was told was anonymous.
-        await _reject_stored_self_identifying_content(session, submission)
+        await _reject_stored_self_identifying_content(session, submission, filer)
 
     # Checked against the submission as it now stands, whatever the change was:
     # a PATCH of the scope or the TLP alone changes what the stored objects may
@@ -859,7 +878,7 @@ async def update_submission(
         if bundle is not None
         else await _stored_raws(session, submission)
     )
-    await _refuse_contribution_problem(session, ctx, submission, objects)
+    await _refuse_contribution_problem(session, ctx, submission, objects, key)
     await _refuse_anonymity_change(session, submission)
 
     await record(
@@ -878,6 +897,7 @@ async def _prepare_validation(
     ctx: AuthContext,
     submission: Submission,
     acknowledged_changes: frozenset[str],
+    key: AttributionKey,
 ) -> None:
     """Refuse content the ISAC may not accept, then record who reviewed it.
 
@@ -898,7 +918,7 @@ async def _prepare_validation(
         await foreign_owned_versions_problem(session, submission),
         await stale_version_problem(session, submission),
         await anonymity_change_problem(session, submission),
-        await contribution_problem(session, submission, raws, visible_to=None, now=now),
+        await contribution_problem(session, submission, raws, visible_to=None, now=now, key=key),
         unacknowledged_changes_problem(
             await consequential_changes(session, submission, raws), acknowledged_changes
         ),
@@ -943,7 +963,7 @@ async def apply_transition(
         msg = f"cannot move a submission from '{submission.state.value}' to '{target.value}'"
         raise SubmissionError(msg)
 
-    owner_is_isac = await is_isac_filing(session, submission)
+    owner_is_isac = await is_isac_filing(session, key, submission)
     owner_is_caller = is_submitted_by(key, submission, ctx.org_id)
     require(
         can_transition_submission(
@@ -959,7 +979,7 @@ async def apply_transition(
     )
 
     if target is SubmissionState.VALIDATED:
-        await _prepare_validation(session, ctx, submission, acknowledged_changes)
+        await _prepare_validation(session, ctx, submission, acknowledged_changes, key)
 
     await record_transition(session, ctx, submission, target, reason=reason)
     return submission
@@ -1015,7 +1035,9 @@ async def record_transition(
     )
 
 
-async def check_content_rules(session: AsyncSession, submission: Submission) -> None:
+async def check_content_rules(
+    session: AsyncSession, submission: Submission, key: AttributionKey
+) -> None:
     """Versioning (owner-only, newest-only, anonymity kept), the disclosure split, TLP inheritance.
 
     What validate checks of any submission's content, without the parts that
@@ -1028,7 +1050,7 @@ async def check_content_rules(session: AsyncSession, submission: Submission) -> 
         await stale_version_problem(session, submission),
         await anonymity_change_problem(session, submission),
         await contribution_problem(
-            session, submission, raws, visible_to=None, now=await database_now(session)
+            session, submission, raws, visible_to=None, now=await database_now(session), key=key
         ),
     ):
         if problem is not None:

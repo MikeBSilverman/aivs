@@ -29,7 +29,7 @@ from aivs_server.db import models
 from aivs_server.services.distribution import distribute_submission
 from aivs_server.services.embargo import release_embargo_now
 from aivs_server.services.publication import wait_for_publications
-from tests.conftest import is_blocked, runs_unblocked
+from tests.conftest import TEST_ATTRIBUTION_KEY, is_blocked, runs_unblocked
 
 pytestmark = pytest.mark.db
 
@@ -39,7 +39,9 @@ async def _distribute(
 ) -> None:
     submission = await session.get(models.Submission, submission_id)
     assert submission is not None
-    await distribute_submission(session, ctx, submission, circle_ids=[circle_id])
+    await distribute_submission(
+        session, ctx, submission, key=TEST_ATTRIBUTION_KEY, circle_ids=[circle_id]
+    )
 
 
 @pytest.mark.requirement("SF-10")
@@ -130,6 +132,7 @@ async def test_an_early_embargo_release_waits_for_an_open_publication(
         embargoed,
         circle_ids=[circle.id],
         release_at=dt.datetime.now(dt.UTC) + dt.timedelta(days=7),
+        key=TEST_ATTRIBUTION_KEY,
     )
     await session.commit()
 
@@ -137,7 +140,9 @@ async def test_an_early_embargo_release_waits_for_an_open_publication(
     await _distribute(writer, isac_ctx, in_flight_id, circle.id)
 
     blocked, task = await is_blocked(
-        release_embargo_now(releaser, isac_ctx, submission_id=embargoed_id)
+        release_embargo_now(
+            releaser, isac_ctx, submission_id=embargoed_id, key=TEST_ATTRIBUTION_KEY
+        )
     )
     assert blocked, "an early release stamped while a distribution was uncommitted"
 

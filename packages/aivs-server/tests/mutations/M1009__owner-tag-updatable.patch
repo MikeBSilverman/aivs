@@ -1,0 +1,17 @@
+Mutation M1009: the member login may UPDATE submissions.owner_tag, so SQL can copy one firm's tag onto another's filing (R25)
+Re-applies: Phase P slice 3c (SF-91)
+
+Expect red: packages/aivs-server/tests/migrations/test_member_login_grants.py::test_only_the_classified_columns_are_updatable
+Expect red: packages/aivs-server/tests/migrations/test_member_login_grants.py::test_the_member_login_is_refused_what_its_grants_withhold[owner-tag]
+
+diff --git a/packages/aivs-server/src/aivs_server/db/grants.py b/packages/aivs-server/src/aivs_server/db/grants.py
+--- a/packages/aivs-server/src/aivs_server/db/grants.py
++++ b/packages/aivs-server/src/aivs_server/db/grants.py
+@@ -122,6 +122,7 @@
+         "public.submissions": TableGrant(
+             ("SELECT", "INSERT"),
+             update_columns=(
++                "owner_tag",
+                 "state",
+                 "tlp",
+                 "discovery_scope",

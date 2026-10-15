@@ -1,16 +1,17 @@
-Mutation M414: a TAXII status is readable by any organisation
+Mutation M414: a TAXII status is readable by any organisation, and since slice 3c on the staff login
 Re-applies: Phase E slice 4 (T7) -- the guard's absence
 
 Expect red: packages/aivs-server/tests/unit/test_taxii_inbox.py::test_the_status_is_readable_by_the_poster_alone
 
-diff --git a/packages/aivs-server/src/aivs_server/services/inbox.py b/packages/aivs-server/src/aivs_server/services/inbox.py
---- a/packages/aivs-server/src/aivs_server/services/inbox.py
-+++ b/packages/aivs-server/src/aivs_server/services/inbox.py
-@@ -145,6 +145,6 @@
- ) -> TaxiiStatus | None:
-     """The status resource, if the caller's organisation made the request; else ``None``."""
-     row = await session.get(TaxiiStatus, status_id)
--    if row is None or row.org_id != ctx.org_id:
-+    if row is None:
-         return None
-     return row
+diff --git a/packages/aivs-server/src/aivs_server/services/member_staff_reads.py b/packages/aivs-server/src/aivs_server/services/member_staff_reads.py
+--- a/packages/aivs-server/src/aivs_server/services/member_staff_reads.py
++++ b/packages/aivs-server/src/aivs_server/services/member_staff_reads.py
+@@ -155,7 +155,7 @@
+     query = select(TaxiiStatus).where(TaxiiStatus.id == status_id)
+     async with _reader(ctx) as staff:
+         reader = session if staff is None else staff
+-        row: TaxiiStatus | None = await reader.scalar(query.where(TaxiiStatus.org_id == ctx.org_id))
++        row: TaxiiStatus | None = await reader.scalar(query)
+         return row
+ 
+ 

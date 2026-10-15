@@ -6,10 +6,10 @@ Expect red: packages/aivs-server/tests/unit/test_submission_workflow.py::test_di
 diff --git a/packages/aivs-server/src/aivs_server/services/content_rules.py b/packages/aivs-server/src/aivs_server/services/content_rules.py
 --- a/packages/aivs-server/src/aivs_server/services/content_rules.py
 +++ b/packages/aivs-server/src/aivs_server/services/content_rules.py
-@@ -68,7 +68,7 @@
-     impersonated = await foreign_identity_ids(
-         session, objects, submitter_org_id=await submitter_of(session, submission)
-     )
+@@ -70,7 +70,7 @@
+ ) -> str | None:
+     """Identity objects whose identifier is registered to another organisation than ``filer``."""
+     impersonated = await foreign_identity_ids(session, objects, submitter_org_id=filer)
 -    if impersonated:
 +    if False:
          return (

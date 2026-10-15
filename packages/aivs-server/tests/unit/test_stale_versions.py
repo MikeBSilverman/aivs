@@ -22,7 +22,7 @@ from aivs_server.db.models import AuditLog, Distribution, Embargo
 from aivs_server.services.embargo import HELD_UNTIL_RELEASED, sweep_due_embargoes
 from aivs_server.services.instance_status import gather_status
 from aivs_server.services.ownership import STALE_VERSION
-from tests.conftest import ISAC_STAFF_ROLES, proxy_headers
+from tests.conftest import ISAC_STAFF_ROLES, TEST_ATTRIBUTION_KEY, proxy_headers
 from tests.unit.contribution_world import (
     LATER,
     STAMP,
@@ -169,7 +169,7 @@ async def test_an_embargoed_version_overtaken_before_release_is_held_and_shown(
     )
     await _published(client, world, LATER, "Gateway bypass, revised again")
 
-    await sweep_due_embargoes(session)
+    await sweep_due_embargoes(session, TEST_ATTRIBUTION_KEY)
 
     stamps = await session.scalars(
         select(Distribution.date_added).where(Distribution.submission_id == uuid.UUID(held_id))
@@ -197,7 +197,7 @@ async def test_an_embargo_is_not_refused_against_its_own_versions(client, sessio
         client, world, LATER, "Gateway bypass", release_at=later.isoformat()
     )
 
-    await sweep_due_embargoes(session)
+    await sweep_due_embargoes(session, TEST_ATTRIBUTION_KEY)
 
     embargo = await session.scalar(
         select(Embargo).where(Embargo.submission_id == uuid.UUID(embargoed_id))

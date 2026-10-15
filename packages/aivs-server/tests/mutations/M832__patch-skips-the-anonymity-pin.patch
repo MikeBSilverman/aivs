@@ -6,10 +6,10 @@ Expect red: packages/aivs-server/tests/unit/test_anonymity.py::test_patching_the
 diff --git a/packages/aivs-server/src/aivs_server/services/submissions.py b/packages/aivs-server/src/aivs_server/services/submissions.py
 --- a/packages/aivs-server/src/aivs_server/services/submissions.py
 +++ b/packages/aivs-server/src/aivs_server/services/submissions.py
-@@ -817,7 +817,6 @@
+@@ -879,7 +879,6 @@
          else await _stored_raws(session, submission)
      )
-     await _refuse_contribution_problem(session, ctx, submission, objects)
+     await _refuse_contribution_problem(session, ctx, submission, objects, key)
 -    await _refuse_anonymity_change(session, submission)
  
      await record(

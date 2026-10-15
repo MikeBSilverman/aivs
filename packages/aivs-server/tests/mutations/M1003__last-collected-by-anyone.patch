@@ -1,0 +1,16 @@
+Mutation M1003: a peer's collection is shown as the member's last collection
+Re-applies: Phase P slice 3c (SF-91)
+
+Expect red: packages/aivs-server/tests/unit/test_connection_health.py::test_a_peers_collection_is_not_the_members
+
+diff --git a/packages/aivs-server/src/aivs_server/services/member_staff_reads.py b/packages/aivs-server/src/aivs_server/services/member_staff_reads.py
+--- a/packages/aivs-server/src/aivs_server/services/member_staff_reads.py
++++ b/packages/aivs-server/src/aivs_server/services/member_staff_reads.py
+@@ -184,7 +184,6 @@
+     what it did.
+     """
+     query = select(func.max(AuditLog.at)).where(
+-        AuditLog.org_id == ctx.org_id,
+         AuditLog.action == AuditAction.OBJECTS_RETRIEVED,
+         AuditLog.resource_type == "collection",
+         AuditLog.resource_id == str(collection_id),

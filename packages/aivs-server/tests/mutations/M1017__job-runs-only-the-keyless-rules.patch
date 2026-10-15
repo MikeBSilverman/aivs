@@ -1,0 +1,17 @@
+Mutation M1017: the detection job runs RULES, so a rule built with the key is one only a test runs
+Re-applies: Phase P slice 3c (SF-91)
+
+Expect red: packages/aivs-server/tests/unit/test_rules_from_real_rows.py::test_the_detection_job_raises_a_tag_no_filer_matches
+
+diff --git a/packages/aivs-server/src/aivs_server/main.py b/packages/aivs-server/src/aivs_server/main.py
+--- a/packages/aivs-server/src/aivs_server/main.py
++++ b/packages/aivs-server/src/aivs_server/main.py
+@@ -304,7 +304,7 @@
+             session,
+             now=dt.datetime.now(dt.UTC),
+             quarantine_policy=settings.detection_quarantine_policy,
+-            rules=detection_rules(AttributionKey.from_settings(settings)),
++
+         )
+ 
+ 

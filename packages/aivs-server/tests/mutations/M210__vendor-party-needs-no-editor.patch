@@ -6,11 +6,11 @@ Expect red: packages/aivs-server/tests/unit/test_disclosure_split.py::test_a_ven
 diff --git a/packages/aivs-server/src/aivs_server/services/disclosure.py b/packages/aivs-server/src/aivs_server/services/disclosure.py
 --- a/packages/aivs-server/src/aivs_server/services/disclosure.py
 +++ b/packages/aivs-server/src/aivs_server/services/disclosure.py
-@@ -164,6 +164,7 @@ async def _vendor_party_acknowledges(
+@@ -181,6 +181,7 @@
              StixObject.stix_id == stix_id,
          )
      )
 +    vendors_in_case = select(Organization.id).where(Organization.org_type == OrgType.VENDOR)
      agreeing = (
-         select(StixObject.id)
+         select(StixObject.stix_id, StixObject.owner_token)
          .join(Submission, Submission.id == StixObject.submission_id)

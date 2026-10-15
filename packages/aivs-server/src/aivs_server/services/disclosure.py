@@ -49,6 +49,7 @@ from aivs_schemas.enums import (
     SubmissionState,
 )
 from aivs_schemas.extension.builders import AIVS_EXTENSION_ID, AIVS_INTEL_EXTENSION_ID
+from aivs_server.auth.attribution_key import AttributionKey
 from aivs_server.auth.context import AuthContext
 from aivs_server.auth.policy import distribution_visibility_clause
 from aivs_server.db.models import (
@@ -58,8 +59,7 @@ from aivs_server.db.models import (
     StixObject,
     Submission,
 )
-from aivs_server.services.attribution import submitter_column
-from aivs_server.services.ownership import ISAC_OWNER_TYPES
+from aivs_server.services.attribution import ISAC_OWNER
 from aivs_server.services.references import external_references_by_type
 
 __all__ = ["DisclosureScope", "cve_status", "disclosure_problem", "published_in_the_isacs_view"]
@@ -124,10 +124,11 @@ async def _canonical_current(
     query = (
         select(StixObject.raw)
         .join(Submission, Submission.id == StixObject.submission_id)
-        .join(Organization, Organization.id == submitter_column(Submission))
         .where(
             StixObject.stix_id == stix_id,
-            Organization.org_type.in_(tuple(ISAC_OWNER_TYPES)),
+            # The ISAC's own versions: stored with the ISAC's owner token, which
+            # says so without reading who filed what (Phase P).
+            StixObject.owner_token == ISAC_OWNER,
             Submission.state.in_(tuple(_CANONICAL_STATES)),
             Submission.id != scope.exclude_submission_id,
         )
@@ -158,7 +159,7 @@ async def published_in_the_isacs_view(
 
 
 async def _vendor_party_acknowledges(
-    session: AsyncSession, stix_id: str, scope: DisclosureScope
+    session: AsyncSession, key: AttributionKey, stix_id: str, scope: DisclosureScope
 ) -> bool:
     """A vendor an editor put in a circle the target reached agreed, in a distributed opinion.
 
@@ -181,7 +182,7 @@ async def _vendor_party_acknowledges(
         )
     )
     agreeing = (
-        select(StixObject.id)
+        select(StixObject.stix_id, StixObject.owner_token)
         .join(Submission, Submission.id == StixObject.submission_id)
         .where(
             StixObject.type == "opinion",
@@ -189,7 +190,6 @@ async def _vendor_party_acknowledges(
             StixObject.raw["opinion"].astext.in_(tuple(_AGREEING_OPINIONS)),
             Submission.state == SubmissionState.DISTRIBUTED,
         )
-        .limit(1)
     )
     if scope.visible_to is not None:
         caller_reads = distribution_visibility_clause(scope.visible_to, scope.now)
@@ -197,14 +197,28 @@ async def _vendor_party_acknowledges(
         agreeing = agreeing.join(Distribution, Distribution.stix_object_id == StixObject.id).where(
             caller_reads
         )
-    found = await session.scalar(
-        agreeing.where(submitter_column(Submission).in_(vendors_in_case.correlate(None)))
-    )
-    return found is not None
+    vendors = set((await session.scalars(vendors_in_case)).all())
+    opinions = (await session.execute(agreeing)).all()
+    return any(_owned_by_one_of(key, vendors, row.stix_id, row.owner_token) for row in opinions)
+
+
+def _owned_by_one_of(
+    key: AttributionKey, org_ids: set[uuid.UUID], stix_id: str, owner_token: str
+) -> bool:
+    """Whether ``owner_token`` is the token one of ``org_ids`` stores its ``stix_id`` under.
+
+    Who filed an opinion, asked of its token rather than of ``attribution``,
+    which the member login cannot read (Phase P).
+    """
+    return any(key.owner_token(org_id, stix_id) == owner_token for org_id in org_ids)
 
 
 async def _target_problem(
-    session: AsyncSession, scope_value: DiscoveryScope, stix_id: str, scope: DisclosureScope
+    session: AsyncSession,
+    key: AttributionKey,
+    scope_value: DiscoveryScope,
+    stix_id: str,
+    scope: DisclosureScope,
 ) -> str | None:
     current = await _canonical_current(session, stix_id, scope)
     if current is None:
@@ -216,7 +230,9 @@ async def _target_problem(
             f"{stix_id} is not public yet; a contribution before disclosure is "
             "coordinated_disclosure, which needs the vendor as a party to the case"
         )
-    if _has_coordination_case(current) or await _vendor_party_acknowledges(session, stix_id, scope):
+    if _has_coordination_case(current) or await _vendor_party_acknowledges(
+        session, key, stix_id, scope
+    ):
         return None
     return (
         f"{stix_id} has no coordination case: the ISAC records the vendor as a party, or a "
@@ -230,6 +246,7 @@ async def disclosure_problem(
     discovery_scope: DiscoveryScope,
     objects: Iterable[Mapping[str, Any]],
     scope: DisclosureScope,
+    key: AttributionKey,
 ) -> str | None:
     """Why a submission's scope is not legal for what it refers to, or ``None``."""
     if discovery_scope not in THIRD_PARTY_DISCOVERY_SCOPES:
@@ -245,7 +262,7 @@ async def disclosure_problem(
     if not targets:
         return UNKNOWN_TARGET
     for stix_id in targets:
-        problem = await _target_problem(session, discovery_scope, stix_id, scope)
+        problem = await _target_problem(session, key, discovery_scope, stix_id, scope)
         if problem is not None:
             return problem
     return None

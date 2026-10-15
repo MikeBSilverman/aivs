@@ -52,7 +52,7 @@ async def telemetry_rows(
     """The submitter's telemetry, or ``None`` for anyone else or before distribution."""
     if not is_submitted_by(key, submission, ctx.org_id):
         return None
-    telemetry = await submission_telemetry(session, submission)
+    telemetry = await submission_telemetry(session, ctx, submission)
     if not telemetry.distributed:
         return None
     return {

@@ -1,0 +1,17 @@
+Mutation M1014: a login granted more by an earlier release keeps it: the grants only add
+Re-applies: Phase P slice 3c (SF-91)
+
+Expect red: packages/aivs-server/tests/migrations/test_member_login_grants.py::test_a_login_granted_more_by_an_earlier_release_is_narrowed
+
+diff --git a/packages/aivs-server/src/aivs_server/db/grants.py b/packages/aivs-server/src/aivs_server/db/grants.py
+--- a/packages/aivs-server/src/aivs_server/db/grants.py
++++ b/packages/aivs-server/src/aivs_server/db/grants.py
+@@ -228,7 +228,7 @@
+             "the member path must have a login of its own"
+         )
+         raise UnsafeAppRoleError(msg)
+-    statements = _member_revoke_statements(role, _member_column_grants(connection, role))
++    statements: list[str] = []
+     statements += _member_grant_statements(
+         role, _existing_tables(connection), _owned_sequences(connection)
+     )

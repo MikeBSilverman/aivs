@@ -7,10 +7,10 @@ Expect red: packages/aivs-server/tests/unit/test_one_click.py::test_a_newer_isac
 diff --git a/packages/aivs-server/src/aivs_server/services/contributions.py b/packages/aivs-server/src/aivs_server/services/contributions.py
 --- a/packages/aivs-server/src/aivs_server/services/contributions.py
 +++ b/packages/aivs-server/src/aivs_server/services/contributions.py
-@@ -397,7 +397,6 @@ async def _validate_and_distribute(
-     circle_ids: Iterable[uuid.UUID],
+@@ -416,7 +416,6 @@
+     key: AttributionKey,
  ) -> None:
-     await check_content_rules(session, submission)
+     await check_content_rules(session, submission, key)
 -    await _refuse_unless_published_in_the_isacs_view(session, submission)
      reason = f"{lane.value} lane: published without review"
      if submission.state is SubmissionState.DRAFT:

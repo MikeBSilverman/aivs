@@ -1,0 +1,17 @@
+Mutation M1002: every organisation's inbox posts spend one member's allowance
+Re-applies: Phase P slice 3c (SF-91)
+
+Expect red: packages/aivs-server/tests/unit/test_taxii_inbox.py::test_a_peers_posts_do_not_spend_the_members_allowance
+
+diff --git a/packages/aivs-server/src/aivs_server/services/member_staff_reads.py b/packages/aivs-server/src/aivs_server/services/member_staff_reads.py
+--- a/packages/aivs-server/src/aivs_server/services/member_staff_reads.py
++++ b/packages/aivs-server/src/aivs_server/services/member_staff_reads.py
+@@ -170,7 +170,7 @@
+         count = await staff.scalar(
+             select(func.count())
+             .select_from(TaxiiStatus)
+-            .where(TaxiiStatus.org_id == org_id, TaxiiStatus.request_timestamp >= since)
++            .where(TaxiiStatus.request_timestamp >= since)
+         )
+     return count or 0
+ 

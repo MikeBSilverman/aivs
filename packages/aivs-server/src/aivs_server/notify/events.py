@@ -52,6 +52,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aivs_schemas.enums import TLP, NotificationCadence, OrgStatus
+from aivs_server.auth.attribution_key import AttributionKey
 from aivs_server.db.models import (
     Circle,
     CircleMembership,
@@ -65,7 +66,7 @@ from aivs_server.db.models import (
     WebhookDelivery,
 )
 from aivs_server.db.webhook_lock import deliverable_webhooks
-from aivs_server.services.attribution import submitter_of
+from aivs_server.services.attribution import is_submitted_by
 from aivs_server.services.guidance import affected_product_names
 from aivs_server.services.sector_events import subjects_in_open_events
 
@@ -116,6 +117,7 @@ async def circle_ids_for_submission(
 async def queue_visibility_notifications(
     session: AsyncSession,
     *,
+    key: AttributionKey,
     submission_id: uuid.UUID,
     circle_ids: list[uuid.UUID],
     visible_at: dt.datetime,
@@ -149,10 +151,11 @@ async def queue_visibility_notifications(
     if submission is None:
         return 0
     facts = await notice_facts(session, submission)
-    submitter = await submitter_of(session, submission)
     queued = 0
     for org, collection_id in await entitled_readers(session, circle_ids, visible_at):
-        if org.id == submitter:
+        # Asked of the tag, which a one-click publishing on the member login
+        # can answer and the mapping cannot (Phase P).
+        if is_submitted_by(key, submission, org.id):
             # They filed it; being told about their own submission is noise, and
             # for an anonymous submission it would be a small confirmation that
             # the anonymised item is theirs.

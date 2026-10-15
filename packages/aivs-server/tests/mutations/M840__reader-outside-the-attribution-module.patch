@@ -6,11 +6,11 @@ Expect red: packages/aivs-server/tests/unit/test_attribution_boundary.py::test_n
 diff --git a/packages/aivs-server/src/aivs_server/notify/events.py b/packages/aivs-server/src/aivs_server/notify/events.py
 --- a/packages/aivs-server/src/aivs_server/notify/events.py
 +++ b/packages/aivs-server/src/aivs_server/notify/events.py
-@@ -152,7 +152,7 @@
-     submitter = await submitter_of(session, submission)
-     queued = 0
+@@ -155,7 +155,7 @@
      for org, collection_id in await entitled_readers(session, circle_ids, visible_at):
--        if org.id == submitter:
+         # Asked of the tag, which a one-click publishing on the member login
+         # can answer and the mapping cannot (Phase P).
+-        if is_submitted_by(key, submission, org.id):
 +        if org.id == submission.submitter_org_id:
              # They filed it; being told about their own submission is noise, and
              # for an anonymous submission it would be a small confirmation that

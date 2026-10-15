@@ -21,7 +21,7 @@ from __future__ import annotations
 import datetime as dt
 import uuid
 from enum import StrEnum
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Final
 
 from sqlalchemy import (
     BigInteger,
@@ -107,6 +107,12 @@ _SHA256_HEX = "^[0-9a-f]{64}$"
 
 #: The current transaction's id as a bigint, for ``xact_id`` columns.
 _CURRENT_XACT_ID = "(pg_current_xact_id())::text::bigint"
+
+#: For a table the member login may write and not read (``db.grants``).
+#: SQLAlchemy otherwise appends ``RETURNING id`` to every insert, which
+#: Postgres refuses without SELECT on the column; without it, the key is taken
+#: from the sequence first, which the member login may use.
+_WRITE_WITHOUT_READING: Final = {"implicit_returning": False}
 
 
 class Organization(TimestampMixin, Base):
@@ -634,6 +640,7 @@ class SubmissionTransition(Base):
     """
 
     __tablename__ = "submission_transitions"
+    __table_args__ = _WRITE_WITHOUT_READING
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     submission_id: Mapped[uuid.UUID] = mapped_column(
@@ -1054,6 +1061,7 @@ class WebhookDelivery(Base):
             "id",
             postgresql_where=text("delivered_at IS NULL"),
         ),
+        _WRITE_WITHOUT_READING,
     )
 
 
@@ -1123,7 +1131,10 @@ class PendingNotice(Base):
     versions: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
-    __table_args__ = (UniqueConstraint("org_id", "subject", name="uq_pending_notices_org_subject"),)
+    __table_args__ = (
+        UniqueConstraint("org_id", "subject", name="uq_pending_notices_org_subject"),
+        _WRITE_WITHOUT_READING,
+    )
 
 
 class EmailDelivery(Base):
@@ -1360,6 +1371,7 @@ class AuditLog(Base):
         CheckConstraint("outcome IN ('success', 'failure', 'denied')", name="outcome_valid"),
         Index("ix_audit_log_org_at", "org_id", "at"),
         Index("ix_audit_log_stream", "xact_id", "id"),
+        _WRITE_WITHOUT_READING,
     )
 
 

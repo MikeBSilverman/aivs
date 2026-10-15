@@ -4,11 +4,10 @@ Re-applies: submission_telemetry before snapshots (review R2-C1)
 Expect red: packages/aivs-server/tests/unit/test_telemetry.py::test_suspending_one_firm_moves_no_published_count
 
 diff --git a/packages/aivs-server/src/aivs_server/services/telemetry.py b/packages/aivs-server/src/aivs_server/services/telemetry.py
-index 7320b19..4e136a6 100644
 --- a/packages/aivs-server/src/aivs_server/services/telemetry.py
 +++ b/packages/aivs-server/src/aivs_server/services/telemetry.py
-@@ -245,7 +245,9 @@ async def submission_telemetry(session: AsyncSession, submission: Submission) ->
-     snapshot = await published(session, CountSubject.TELEMETRY, str(submission.id))
+@@ -255,7 +255,9 @@
+     snapshot = await telemetry_snapshot(session, ctx, submission.id)
      if snapshot is None:
          return _telemetry_from(submission, {}, None)
 -    return _telemetry_from(submission, snapshot.basis, snapshot.taken_at)

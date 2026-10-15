@@ -1,0 +1,18 @@
+Mutation M1013: a write-only table is readable after all: the classification is not what Postgres grants
+Re-applies: Phase P slice 3c (SF-91)
+
+Expect red: packages/aivs-server/tests/migrations/test_member_login_grants.py::test_every_table_is_classified_and_granted_as_classified
+Expect red: packages/aivs-server/tests/migrations/test_member_login_grants.py::test_the_member_login_is_refused_what_its_grants_withhold[the-audit-log]
+
+diff --git a/packages/aivs-server/src/aivs_server/db/grants.py b/packages/aivs-server/src/aivs_server/db/grants.py
+--- a/packages/aivs-server/src/aivs_server/db/grants.py
++++ b/packages/aivs-server/src/aivs_server/db/grants.py
+@@ -430,6 +430,8 @@
+     for table, grant in MEMBER_GRANTS.items():
+         if table not in existing_tables:
+             continue
++        if table == "public.audit_log":
++            statements.append(f"GRANT SELECT ON public.audit_log TO {quoted_role}")
+         qualified = _qualified(table)
+         statements.append(f"GRANT {', '.join(grant.privileges)} ON {qualified} TO {quoted_role}")
+         if grant.update_columns:

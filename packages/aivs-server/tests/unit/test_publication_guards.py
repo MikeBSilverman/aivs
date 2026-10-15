@@ -25,7 +25,13 @@ from aivs_server.services.distribution import distribute_submission
 from aivs_server.services.embargo import release_embargo_now, sweep_due_embargoes
 from aivs_server.services.publication import hold_publication_lock
 from aivs_server.taxii.resources import truncate_to_taxii_precision
-from tests.conftest import StubEndpoint, is_blocked, proxy_headers, runs_unblocked
+from tests.conftest import (
+    TEST_ATTRIBUTION_KEY,
+    StubEndpoint,
+    is_blocked,
+    proxy_headers,
+    runs_unblocked,
+)
 
 pytestmark = pytest.mark.db
 
@@ -72,6 +78,7 @@ async def test_a_distribution_is_stamped_after_the_current_millisecond(
         await session.get(models.Submission, now_id),
         circle_ids=[circle.id],
         now=NOW,
+        key=TEST_ATTRIBUTION_KEY,
     )
     embargoed = await distribute_submission(
         session,
@@ -80,6 +87,7 @@ async def test_a_distribution_is_stamped_after_the_current_millisecond(
         circle_ids=[circle.id],
         release_at=later,
         now=NOW,
+        key=TEST_ATTRIBUTION_KEY,
     )
 
     assert immediate.date_added == truncate_to_taxii_precision(NOW) + dt.timedelta(milliseconds=1)
@@ -95,7 +103,7 @@ async def test_the_sweeper_waits_for_an_open_publication(open_session, session, 
     holder, sweeper = open_session(), open_session()
 
     await hold_publication_lock(holder, refuse_while_paused=True)
-    blocked, task = await is_blocked(sweep_due_embargoes(sweeper))
+    blocked, task = await is_blocked(sweep_due_embargoes(sweeper, TEST_ATTRIBUTION_KEY))
     await holder.rollback()
     released = await asyncio.wait_for(task, timeout=5)
 
@@ -113,9 +121,9 @@ async def test_a_paused_instance_releases_and_announces_nothing(
     embargo_id = embargo.id
 
     await _pause(session)
-    while_paused = await sweep_due_embargoes(session)
+    while_paused = await sweep_due_embargoes(session, TEST_ATTRIBUTION_KEY)
     await _pause(session, paused=False)
-    after_resume = await sweep_due_embargoes(session)
+    after_resume = await sweep_due_embargoes(session, TEST_ATTRIBUTION_KEY)
 
     assert while_paused == 0
     assert after_resume == 1
@@ -130,8 +138,12 @@ async def test_releasing_an_elapsed_embargo_records_when_it_really_became_visibl
     await _embargoed(session, elapsed_id, NOW - dt.timedelta(minutes=1))
     await _embargoed(session, pending_id, NOW + dt.timedelta(days=1))
 
-    elapsed = await release_embargo_now(session, isac_ctx, submission_id=elapsed_id, now=NOW)
-    early = await release_embargo_now(session, isac_ctx, submission_id=pending_id, now=NOW)
+    elapsed = await release_embargo_now(
+        session, isac_ctx, key=TEST_ATTRIBUTION_KEY, submission_id=elapsed_id, now=NOW
+    )
+    early = await release_embargo_now(
+        session, isac_ctx, key=TEST_ATTRIBUTION_KEY, submission_id=pending_id, now=NOW
+    )
 
     assert (elapsed.status, elapsed.released_at) == (
         EmbargoStatus.RELEASED,
@@ -179,6 +191,7 @@ async def test_only_organisations_that_can_read_it_are_notified(
 
     await queue_visibility_notifications(
         session,
+        key=TEST_ATTRIBUTION_KEY,
         submission_id=submission.id,
         circle_ids=[circle.id],
         visible_at=dt.datetime.now(dt.UTC) - dt.timedelta(seconds=1),
@@ -204,6 +217,7 @@ async def test_a_deactivated_circle_notifies_nobody(
 
     queued = await queue_visibility_notifications(
         session,
+        key=TEST_ATTRIBUTION_KEY,
         submission_id=submission.id,
         circle_ids=[circle.id],
         visible_at=dt.datetime.now(dt.UTC) - dt.timedelta(seconds=1),
@@ -321,7 +335,9 @@ async def test_a_pause_still_allows_moving_an_embargo_later_and_nothing_sooner(
         session, isac_ctx, submission_id=held, release_at=NOW + dt.timedelta(days=7), now=NOW
     )
     with pytest.raises(PublicationPausedError):
-        await release_embargo_now(session, isac_ctx, submission_id=other, now=NOW)
+        await release_embargo_now(
+            session, isac_ctx, key=TEST_ATTRIBUTION_KEY, submission_id=other, now=NOW
+        )
 
     assert extended.status is EmbargoStatus.EXTENDED
 

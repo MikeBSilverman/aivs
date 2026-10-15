@@ -8,10 +8,10 @@ Expect red: packages/aivs-server/tests/unit/test_embargo_release_rechecks.py::te
 diff --git a/packages/aivs-server/src/aivs_server/services/embargo.py b/packages/aivs-server/src/aivs_server/services/embargo.py
 --- a/packages/aivs-server/src/aivs_server/services/embargo.py
 +++ b/packages/aivs-server/src/aivs_server/services/embargo.py
-@@ -421,7 +421,7 @@ async def _hold_timers_that_no_longer_pass(session: AsyncSession, *, now: dt.dat
+@@ -434,7 +434,7 @@
      held = 0
      for embargo in pending:
-         problem = await release_problem(session, embargo.submission_id, now=now)
+         problem = await release_problem(session, key, embargo.submission_id, now=now)
 -        if problem is not None:
 +        if False:
              await _hold(session, embargo, problem=problem, now=now)

@@ -60,7 +60,6 @@ from aivs_server.db.models import (
     Organization,
     StixObject,
     Submission,
-    SubmissionTransition,
     SubmissionTriage,
 )
 from aivs_server.notify.events import (
@@ -76,6 +75,7 @@ from aivs_server.services.attribution import (
 from aivs_server.services.contributions import submit_submission
 from aivs_server.services.distribution import DistributionError, distribute_submission
 from aivs_server.services.embargo import EmbargoError, extend_embargo, release_embargo_now
+from aivs_server.services.member_staff_reads import first_pass_of, submission_history
 from aivs_server.services.revocation import revoke_contribution
 from aivs_server.services.submissions import (
     STORAGE_ERRORS,
@@ -85,7 +85,7 @@ from aivs_server.services.submissions import (
     load_submission,
     update_submission,
 )
-from aivs_server.services.triage import latest_triage, shown_findings
+from aivs_server.services.triage import shown_findings
 
 __all__ = ["router"]
 
@@ -134,7 +134,7 @@ async def _require_visible_submission(
 
 
 async def present_submission(
-    session: AsyncSession, submission: Submission, ctx: AuthContext
+    session: AsyncSession, submission: Submission, ctx: AuthContext, key: AttributionKey
 ) -> SubmissionOut:
     """The submission as this caller may see it.
 
@@ -149,7 +149,7 @@ async def present_submission(
         for name in SubmissionOut.model_fields
         if name != "submitter_org_id"
     }
-    shown = await submitter_shown_to(session, submission, ctx.org_id)
+    shown = await submitter_shown_to(session, key, submission, ctx)
     return SubmissionOut.model_validate({**fields, "submitter_org_id": shown})
 
 
@@ -184,13 +184,14 @@ async def create(
         ) from exc
 
     await session.refresh(submission)
-    return await present_submission(session, submission, ctx)
+    return await present_submission(session, submission, ctx, key)
 
 
 @router.get("", response_model=list[SubmissionOut])
 async def list_submissions(
     ctx: AuthenticatedContext,
     session: SessionDep,
+    key: AttributionKeyDep,
     state: Annotated[SubmissionState | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
 ) -> list[SubmissionOut]:
@@ -205,7 +206,7 @@ async def list_submissions(
     if state is not None:
         query = query.where(Submission.state == state)
     rows = (await session.execute(query)).scalars().all()
-    return [await present_submission(session, row, ctx) for row in rows]
+    return [await present_submission(session, row, ctx, key) for row in rows]
 
 
 @router.get("/{submission_id}", response_model=SubmissionDetail)
@@ -246,26 +247,16 @@ async def get_submission(
         await session.execute(select(Embargo).where(Embargo.submission_id == submission.id))
     ).scalar_one_or_none()
 
-    transitions = list(
-        (
-            await session.execute(
-                select(SubmissionTransition)
-                .where(SubmissionTransition.submission_id == submission.id)
-                .order_by(SubmissionTransition.at)
-            )
-        )
-        .scalars()
-        .all()
-    )
+    transitions = await submission_history(session, ctx, submission.id)
 
     return SubmissionDetail(
-        **(await present_submission(session, submission, ctx)).model_dump(),
+        **(await present_submission(session, submission, ctx, key)).model_dump(),
         object_count=len(stix_ids),
         stix_ids=stix_ids,
         circle_ids=circle_ids,
         transitions=[TransitionOut.model_validate(t) for t in transitions],
         embargo=EmbargoOut.model_validate(embargo) if embargo else None,
-        first_pass=_first_pass(ctx, await latest_triage(session, submission.id)),
+        first_pass=_first_pass(ctx, await first_pass_of(session, ctx, submission.id)),
     )
 
 
@@ -310,7 +301,7 @@ async def amend(
         ) from exc
 
     await session.refresh(submission)
-    return await present_submission(session, submission, ctx)
+    return await present_submission(session, submission, ctx, key)
 
 
 async def _refused(
@@ -384,7 +375,7 @@ async def submit(
     except _CLIENT_ERRORS as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     await session.refresh(submission)
-    return await present_submission(session, submission, ctx)
+    return await present_submission(session, submission, ctx, key)
 
 
 @router.post("/{submission_id}/validate", response_model=SubmissionOut)
@@ -420,7 +411,7 @@ async def validate(
     except _CLIENT_ERRORS as exc:
         raise await _refused(ctx, submission_id, "validated", exc) from exc
     await session.refresh(submission)
-    return await present_submission(session, submission, ctx)
+    return await present_submission(session, submission, ctx, key)
 
 
 @router.post("/{submission_id}/withdraw", response_model=SubmissionOut)
@@ -439,7 +430,7 @@ async def withdraw(
     withdrawn = await _transition(
         session, ctx, submission_id, SubmissionState.WITHDRAWN, payload.reason, key=key
     )
-    return await present_submission(session, withdrawn, ctx)
+    return await present_submission(session, withdrawn, ctx, key)
 
 
 @router.post("/{submission_id}/distribute", response_model=SubmissionOut)
@@ -469,6 +460,7 @@ async def distribute(
             submission,
             circle_ids=payload.circle_ids,
             release_at=payload.release_at,
+            key=key,
         )
         await apply_transition(
             session, ctx, submission, SubmissionState.DISTRIBUTED, reason=payload.reason, key=key
@@ -481,6 +473,7 @@ async def distribute(
         if not result.embargoed:
             await queue_visibility_notifications(
                 session,
+                key=key,
                 submission_id=submission.id,
                 circle_ids=list(payload.circle_ids),
                 visible_at=result.date_added,
@@ -492,7 +485,7 @@ async def distribute(
     except _CLIENT_ERRORS as exc:
         raise await _refused(ctx, submission_id, "distributed", exc) from exc
     await session.refresh(submission)
-    return await present_submission(session, submission, ctx)
+    return await present_submission(session, submission, ctx, key)
 
 
 @router.post("/{submission_id}/embargo/release", response_model=SubmissionOut)
@@ -514,7 +507,9 @@ async def release_embargo(
     require(can_change_embargo(ctx), "embargo_release_requires_isac_editor")
 
     try:
-        await release_embargo_now(session, ctx, submission_id=submission.id, reason=payload.reason)
+        await release_embargo_now(
+            session, ctx, key=key, submission_id=submission.id, reason=payload.reason
+        )
         # Early release is the second moment content becomes visible, and the
         # one where telling members promptly matters most: the reason to release
         # early is that something is being exploited now. On the database's
@@ -522,6 +517,7 @@ async def release_embargo(
         released_at = await database_now(session)
         await queue_visibility_notifications(
             session,
+            key=key,
             submission_id=submission.id,
             circle_ids=await circle_ids_for_submission(session, submission.id),
             visible_at=released_at,
@@ -533,7 +529,7 @@ async def release_embargo(
         raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
     await session.refresh(submission)
-    return await present_submission(session, submission, ctx)
+    return await present_submission(session, submission, ctx, key)
 
 
 @router.post("/{submission_id}/embargo/extend", response_model=SubmissionOut)
@@ -573,7 +569,7 @@ async def extend_embargo_endpoint(
         raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
     await session.refresh(submission)
-    return await present_submission(session, submission, ctx)
+    return await present_submission(session, submission, ctx, key)
 
 
 @router.post("/{submission_id}/revoke", response_model=RevokeOut)
@@ -593,7 +589,7 @@ async def revoke(
         session, ctx, submission_id, for_update=True, key=key
     )
     try:
-        result = await revoke_contribution(session, ctx, submission, reason=payload.reason)
+        result = await revoke_contribution(session, ctx, submission, key=key, reason=payload.reason)
         await session.commit()
     except SubmissionError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc

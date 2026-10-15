@@ -80,7 +80,7 @@ from aivs_server.portal import sso_routes as portal_sso_routes
 from aivs_server.portal import vulnerability_routes as portal_vulnerability_routes
 from aivs_server.services.attribution import values_under_other_keys
 from aivs_server.services.audit_read_summary import summarise_audit_reads
-from aivs_server.services.detections import run_detections
+from aivs_server.services.detections import detection_rules, run_detections
 from aivs_server.services.embargo import sweep_due_embargoes
 from aivs_server.services.posture import publish_postures
 from aivs_server.services.publication import PublicationPausedError
@@ -255,8 +255,9 @@ async def _publish_counts() -> None:
 
 async def _triage_submissions() -> None:
     """Read what members handed to the ISAC, and return what they can fix themselves."""
+    key = AttributionKey.from_settings(get_settings())
     async with session_scope() as session:
-        await triage_pending(session, now=await database_now(session))
+        await triage_pending(session, key, now=await database_now(session))
 
 
 async def _summarise_audit_reads() -> None:
@@ -269,8 +270,9 @@ async def _sweep_embargoes() -> None:
     """Hold pending embargoes whose content no longer passes, and mark due ones
     released. Releasing is bookkeeping: content becomes visible the instant its
     ``date_added`` passes, whether or not this runs. See services.embargo."""
+    key = AttributionKey.from_settings(get_settings())
     async with session_scope() as session:
-        await sweep_due_embargoes(session)
+        await sweep_due_embargoes(session, key)
 
 
 async def _dispatch_webhooks(settings: Settings) -> None:
@@ -302,6 +304,7 @@ async def _run_detections(settings: Settings) -> None:
             session,
             now=dt.datetime.now(dt.UTC),
             quarantine_policy=settings.detection_quarantine_policy,
+            rules=detection_rules(AttributionKey.from_settings(settings)),
         )
 
 

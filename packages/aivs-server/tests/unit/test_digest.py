@@ -371,3 +371,24 @@ async def test_offboarding_deletes_held_notices_queued_email_and_the_mailbox(
         select(Organization.digest_email).where(Organization.id == reader_id)
     )
     assert mailbox is None
+
+
+@pytest.mark.requirement("SF-91")
+async def test_settings_written_staff_side_reach_the_callers_own_organisation_alone(
+    client, session, make_org, make_cert
+):
+    """Written on the staff login (``member_staff_writes``), where the
+    organisation it keys on is the one guard: a peer's mailbox never moves."""
+    own = await make_org("settings-own", org_type=OrgType.GSIB)
+    peer = await make_org("settings-peer", org_type=OrgType.GSIB)
+    pem, _ = await make_cert(own)
+
+    changed = await client.put(
+        "/api/v1/notification-settings",
+        json={"cadence": "daily", "digest_email": "soc@own.example"},
+        headers=proxy_headers(pem),
+    )
+
+    assert changed.status_code == 200, changed.text
+    stored = dict((await session.execute(select(Organization.id, Organization.digest_email))).all())
+    assert (stored[own.id], stored[peer.id]) == ("soc@own.example", None)

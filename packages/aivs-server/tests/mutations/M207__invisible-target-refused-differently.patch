@@ -6,8 +6,8 @@ Expect red: packages/aivs-server/tests/unit/test_disclosure_split.py::test_an_in
 diff --git a/packages/aivs-server/src/aivs_server/services/disclosure.py b/packages/aivs-server/src/aivs_server/services/disclosure.py
 --- a/packages/aivs-server/src/aivs_server/services/disclosure.py
 +++ b/packages/aivs-server/src/aivs_server/services/disclosure.py
-@@ -172,6 +172,8 @@
-     session: AsyncSession, scope_value: DiscoveryScope, stix_id: str, scope: DisclosureScope
+@@ -221,6 +221,8 @@
+     scope: DisclosureScope,
  ) -> str | None:
      current = await _canonical_current(session, stix_id, scope)
 +    if current is None and await _canonical_current(session, stix_id, DisclosureScope(None, scope.exclude_submission_id, scope.now)) is not None:

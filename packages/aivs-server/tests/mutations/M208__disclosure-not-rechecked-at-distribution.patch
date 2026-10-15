@@ -6,12 +6,14 @@ Expect red: packages/aivs-server/tests/unit/test_disclosure_split.py::test_a_tar
 diff --git a/packages/aivs-server/src/aivs_server/services/content_rules.py b/packages/aivs-server/src/aivs_server/services/content_rules.py
 --- a/packages/aivs-server/src/aivs_server/services/content_rules.py
 +++ b/packages/aivs-server/src/aivs_server/services/content_rules.py
-@@ -55,7 +55,7 @@
+@@ -57,9 +57,7 @@
      anonymity = await anonymity_change_problem(session, submission)
      if anonymity is not None:
          return anonymity
--    contribution = await contribution_problem(session, submission, raws, visible_to=None, now=now)
+-    contribution = await contribution_problem(
+-        session, submission, raws, visible_to=None, now=now, key=key
+-    )
 +    contribution = None
      if contribution is not None:
          return contribution
-     return await _foreign_identity_problem(session, submission, raws)
+     return await _foreign_identity_problem(session, raws, filer)

@@ -82,6 +82,7 @@ from aivs_server.services.circles import (
 )
 from aivs_server.services.enrolment import enrolment_problem
 from aivs_server.services.instance import pause_distribution, resume_distribution
+from aivs_server.services.member_staff_writes import quarantine_organisation
 from aivs_server.services.offboarding import (
     OffboardingError,
     lift_legal_hold,
@@ -93,7 +94,7 @@ from aivs_server.services.org_status import (
     change_org_status,
     load_org_for_update,
 )
-from aivs_server.services.quarantine import QuarantineError, quarantine_org, reconnect_org
+from aivs_server.services.quarantine import QuarantineError, reconnect_org
 
 __all__ = ["router"]
 
@@ -689,21 +690,17 @@ async def quarantine(
 ) -> Organization:
     """Cut an organisation off now: status, certificates and sessions. See services.quarantine."""
     require(can_quarantine_org(ctx, org_id), "quarantine")
-    organisation = await load_org_for_update(session, org_id)
-    if organisation is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Organisation not found")
     try:
-        await quarantine_org(
-            session,
-            ctx,
-            organisation=organisation,
-            reason=payload.reason,
-            now=await database_now(session),
+        # A member quarantining itself does so on the staff login, which alone
+        # may change an organisation's status (``member_staff_writes``).
+        organisation = await quarantine_organisation(
+            session, ctx, org_id=org_id, reason=payload.reason
         )
     except QuarantineError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    if organisation is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Organisation not found")
     await session.commit()
-    await session.refresh(organisation)
     return organisation
 
 

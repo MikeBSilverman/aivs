@@ -15,4 +15,4 @@ diff --git a/packages/aivs-server/src/aivs_server/services/contributions.py b/pa
 +
          )
      )
-     inbox = await session.scalar(
+     inbox = await inbox_posts_since(org_id, since)

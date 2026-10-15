@@ -6,16 +6,16 @@ Expect red: packages/aivs-server/tests/unit/test_returns.py::test_only_a_members
 diff --git a/packages/aivs-server/src/aivs_server/services/triage.py b/packages/aivs-server/src/aivs_server/services/triage.py
 --- a/packages/aivs-server/src/aivs_server/services/triage.py
 +++ b/packages/aivs-server/src/aivs_server/services/triage.py
-@@ -243,11 +243,7 @@
+@@ -232,11 +232,7 @@
  # ---------------------------------------------------------------------------
- async def _returnable(session: AsyncSession, submission: Submission) -> bool:
+ async def _returnable(session: AsyncSession, key: AttributionKey, submission: Submission) -> bool:
      """A member's own filing, written by the member: the only kind sent back to its writer."""
 -    return (
 -        submission.source is SubmissionSource.MEMBER
 -        and not is_proxy_filing(submission)
--        and not await is_isac_filing(session, submission)
+-        and not await is_isac_filing(session, key, submission)
 -    )
-+    return not await is_isac_filing(session, submission)
++    return not await is_isac_filing(session, key, submission)
  
  
  def _is_urgent(objects: Iterable[Mapping[str, Any]]) -> bool:

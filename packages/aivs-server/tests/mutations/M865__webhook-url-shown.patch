@@ -6,8 +6,8 @@ Expect red: packages/aivs-server/tests/unit/test_connection_health.py::test_a_we
 diff --git a/packages/aivs-server/src/aivs_server/services/connection_health.py b/packages/aivs-server/src/aivs_server/services/connection_health.py
 --- a/packages/aivs-server/src/aivs_server/services/connection_health.py
 +++ b/packages/aivs-server/src/aivs_server/services/connection_health.py
-@@ -223,7 +223,7 @@
-     ).all()
+@@ -204,7 +204,7 @@
+     rows = await webhook_delivery_counts(session, ctx)
      return tuple(
          WebhookHealth(
 -            host=urlsplit(webhook.url).hostname or "",

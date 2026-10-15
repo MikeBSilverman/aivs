@@ -1,0 +1,14 @@
+Mutation M1005: a member's auditor reads the whole instance's trail, on the staff login
+Re-applies: Phase P slice 3c (SF-91)
+
+Expect red: packages/aivs-server/tests/unit/test_auditor.py::test_a_members_auditor_reads_only_its_own_organisations_rows
+
+diff --git a/packages/aivs-server/src/aivs_server/services/member_staff_reads.py b/packages/aivs-server/src/aivs_server/services/member_staff_reads.py
+--- a/packages/aivs-server/src/aivs_server/services/member_staff_reads.py
++++ b/packages/aivs-server/src/aivs_server/services/member_staff_reads.py
+@@ -230,4 +230,4 @@
+     async with _reader(ctx) as staff:
+         if staff is None:
+             return await audit_events(session, scope=audit_scope(ctx), after=after, limit=limit)
+-        return await audit_events(staff, scope=audit_scope(ctx), after=after, limit=limit)
++        return await audit_events(staff, scope=None, after=after, limit=limit)

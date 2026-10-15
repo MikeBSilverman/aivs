@@ -49,6 +49,7 @@ from sqlalchemy import Select, and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aivs_schemas.enums import AckType, OrgStatus
+from aivs_server.auth.context import AuthContext
 from aivs_server.db.models import (
     Acknowledgment,
     Circle,
@@ -64,7 +65,8 @@ from aivs_server.db.models import (
 )
 from aivs_server.db.webhook_lock import deliverable_webhooks
 from aivs_server.services.attribution import submitter_of
-from aivs_server.services.count_snapshots import K_ANONYMITY, publish_if_changed, published
+from aivs_server.services.count_snapshots import K_ANONYMITY, publish_if_changed
+from aivs_server.services.member_staff_reads import telemetry_snapshot
 from aivs_server.services.ownership import ISAC_OWNER_TYPES
 
 __all__ = [
@@ -242,9 +244,15 @@ def _telemetry_from(
     )
 
 
-async def submission_telemetry(session: AsyncSession, submission: Submission) -> Telemetry:
-    """What the submitter may see about its own submission, as last published. Reads only."""
-    snapshot = await published(session, CountSubject.TELEMETRY, str(submission.id))
+async def submission_telemetry(
+    session: AsyncSession, ctx: AuthContext, submission: Submission
+) -> Telemetry:
+    """What the submitter may see about its own submission, as last published. Reads only.
+
+    The snapshot is read staff side for a member (``member_staff_reads``): it
+    says who was in reach, which leaves out the submitter.
+    """
+    snapshot = await telemetry_snapshot(session, ctx, submission.id)
     if snapshot is None:
         return _telemetry_from(submission, {}, None)
     return _telemetry_from(submission, snapshot.basis, snapshot.taken_at)

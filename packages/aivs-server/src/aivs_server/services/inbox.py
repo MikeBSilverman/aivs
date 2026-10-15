@@ -54,7 +54,7 @@ from aivs_server.services.contributions import (
 )
 from aivs_server.services.submissions import SubmissionError, apply_transition, create_submission
 
-__all__ = ["INBOX_SCOPE", "receive_envelope", "status_of"]
+__all__ = ["INBOX_SCOPE", "receive_envelope"]
 
 #: The scope every inbox filing carries; see the module docstring.
 INBOX_SCOPE: Final[DiscoveryScope] = DiscoveryScope.DISCLOSED_THIRD_PARTY
@@ -142,13 +142,3 @@ async def receive_envelope(
         details={"collection_id": str(collection.id), "objects": len(objects)},
     )
     return status
-
-
-async def status_of(
-    session: AsyncSession, ctx: AuthContext, status_id: uuid.UUID
-) -> TaxiiStatus | None:
-    """The status resource, if the caller's organisation made the request; else ``None``."""
-    row = await session.get(TaxiiStatus, status_id)
-    if row is None or row.org_id != ctx.org_id:
-        return None
-    return row

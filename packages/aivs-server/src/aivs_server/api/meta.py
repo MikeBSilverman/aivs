@@ -107,19 +107,24 @@ async def readyz(session: SessionDep, settings: SettingsDep, response: Response)
 
 
 @public_router.get("/metrics", response_class=PlainTextResponse)
-async def metrics(session: SessionDep) -> str:
+async def metrics() -> str:
     """Prometheus text exposition: component health and the work waiting.
 
     Counts and timestamps only. A scraper reaches it on the app's own port over
     the compose ``backend`` network, as the app's healthcheck does -- the
     proxy's internal listener answers ``/healthz`` from nginx itself and nothing
     else. The member-facing listener answers it with 404, as for the probes.
+
+    Counted on the staff login: the request is not authenticated, so its own
+    session is the member login's, which may not read the delivery queue (each
+    delivery names the submission it announces). Two counts leave; no row does.
     """
     now = dt.datetime.now(dt.UTC)
+    async with get_sessionmaker()() as staff_session:
+        deliveries = await pending_deliveries(staff_session)
+        embargoes = await pending_embargoes(staff_session)
     return render_metrics(
-        HEARTBEATS.report(now=now),
-        pending_deliveries=await pending_deliveries(session),
-        pending_embargoes=await pending_embargoes(session),
+        HEARTBEATS.report(now=now), pending_deliveries=deliveries, pending_embargoes=embargoes
     )
 
 

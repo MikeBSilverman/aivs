@@ -6,17 +6,15 @@ Expect red: packages/aivs-server/tests/unit/test_submission_workflow.py::test_tu
 diff --git a/packages/aivs-server/src/aivs_server/services/submissions.py b/packages/aivs-server/src/aivs_server/services/submissions.py
 --- a/packages/aivs-server/src/aivs_server/services/submissions.py
 +++ b/packages/aivs-server/src/aivs_server/services/submissions.py
-@@ -390,12 +390,7 @@
+@@ -394,10 +394,7 @@
          .scalars()
          .all()
      )
 -    reject_self_identifying_content(
 -        raws,
--        own_identity_id=await submitter_identity_id(
--            session, await submitter_of(session, submission)
--        ),
+-        own_identity_id=await submitter_identity_id(session, filer),
 -    )
-+    del raws
++    del raws, filer
  
  
  @dataclass(frozen=True, slots=True)

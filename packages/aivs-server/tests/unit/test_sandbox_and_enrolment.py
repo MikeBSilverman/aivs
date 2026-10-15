@@ -7,12 +7,14 @@ both sides and, for enrolment, at both doors.
 from __future__ import annotations
 
 import datetime as dt
+import uuid
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 
-from aivs_schemas.enums import OrgType
+from aivs_schemas.enums import OrgStatus, OrgType
+from aivs_server.auth.context import AuthContext, AuthMethod
 from aivs_server.db.models import Organization, Submission
 from aivs_server.main import create_app
 from aivs_server.services.enrolment import enrolment_problem
@@ -20,6 +22,17 @@ from aivs_server.services.lead_time import Quarter, sector_median
 from aivs_server.services.telemetry import K_ANONYMITY, publish_telemetry, submission_telemetry
 from tests.unit.sharing import vulnerability_intel
 from tests.unit.test_portal_admin import ADMIN, csrf, signed_in_admin  # noqa: F401 - fixture
+
+#: The counts as the ISAC reads them, on the test's own session. What a member
+#: may read of them, and on which login, is asserted through the routes
+#: (``test_only_the_submitter_may_read_it``, ``test_member_staff_reads``).
+_COUNTER = AuthContext(
+    org_id=uuid.UUID(int=1),
+    org_slug="isac",
+    org_type=OrgType.ADMIN,
+    org_status=OrgStatus.ACTIVE,
+    auth_method=AuthMethod.MTLS,
+)
 
 pytestmark = pytest.mark.db
 
@@ -41,7 +54,9 @@ async def test_what_reaches_a_sandbox_is_no_reach(
     submission, _obj, _row = await publish(submitter, circle, name="Exercise")
 
     await publish_telemetry(session, now=dt.datetime.now(dt.UTC))
-    telemetry = await submission_telemetry(session, await session.get(Submission, submission.id))
+    telemetry = await submission_telemetry(
+        session, _COUNTER, await session.get(Submission, submission.id)
+    )
     assert telemetry.reach.value == reach
 
 

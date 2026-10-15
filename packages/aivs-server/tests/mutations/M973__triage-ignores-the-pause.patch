@@ -4,10 +4,9 @@ Re-applies: a stop button that leaves the announcements running (CLAUDE.md secti
 Expect red: packages/aivs-server/tests/unit/test_returns.py::test_nothing_is_read_or_returned_while_the_instance_is_paused
 
 diff --git a/packages/aivs-server/src/aivs_server/services/triage.py b/packages/aivs-server/src/aivs_server/services/triage.py
-index 9f765f2..7521e4c 100644
 --- a/packages/aivs-server/src/aivs_server/services/triage.py
 +++ b/packages/aivs-server/src/aivs_server/services/triage.py
-@@ -97,8 +97,6 @@ async def triage_pending(session: AsyncSession, *, now: dt.datetime) -> int:
+@@ -99,8 +99,6 @@
  
      Each is committed on its own, so one that fails does not hold back the rest.
      """
@@ -15,4 +14,4 @@ index 9f765f2..7521e4c 100644
 -        return 0
      read = 0
      for submission_id in await _pending(session):
-         if await triage_submission(session, submission_id, now=now) is not None:
+         if await triage_submission(session, key, submission_id, now=now) is not None:

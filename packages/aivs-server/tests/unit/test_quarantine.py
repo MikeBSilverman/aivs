@@ -24,6 +24,7 @@ from aivs_server.auth.context import AuthContext, AuthMethod
 from aivs_server.auth.policy import PolicyDeniedError, can_reconnect_org
 from aivs_server.db.models import CircleMembership, ClientCertificate, Organization
 from aivs_server.services.certificates import register_certificate
+from aivs_server.services.member_staff_writes import quarantine_organisation
 from aivs_server.services.org_status import OrgStatusError, change_org_status, load_org_for_update
 from aivs_server.services.quarantine import quarantine_org, reconnect_org
 from tests.conftest import is_blocked, proxy_headers
@@ -100,6 +101,35 @@ async def test_a_member_may_quarantine_itself_but_not_another_firm(
 
     assert refused.status_code == 403
     assert accepted.status_code == 200
+
+
+@pytest.mark.requirement("SF-91")
+async def test_a_members_quarantine_on_the_staff_login_reaches_its_own_row_alone(
+    app, client, session, make_org, make_cert, make_operator, human_headers
+):
+    """Written staff side (``member_staff_writes``): the organisation it keys on
+    is the one guard there. Through the route a peer's id is refused first, so
+    the second half calls the function as a route that forgot to check would."""
+    own = await make_org("staff-written-own", org_type=OrgType.GSIB)
+    peer = await make_org("staff-written-peer", org_type=OrgType.GSIB)
+    own_pem, _ = await make_cert(own)
+    admin, _seed = await make_operator(own, roles=(OperatorRole.ORG_ADMIN,))
+    headers = await human_headers(admin, own_pem)
+    accepted = await client.post(f"{API}/orgs/{own.id}/quarantine", json=REASON, headers=headers)
+    assert accepted.status_code == 200, accepted.text
+
+    member = AuthContext(
+        org_id=peer.id,
+        org_slug=peer.slug,
+        org_type=OrgType.GSIB,
+        org_status=OrgStatus.ACTIVE,
+        auth_method=AuthMethod.MTLS,
+    )
+    await quarantine_organisation(session, member, org_id=own.id, reason="aimed at a peer")
+
+    statuses = dict((await session.execute(select(Organization.id, Organization.status))).all())
+    assert statuses[own.id] is OrgStatus.QUARANTINED
+    assert statuses[peer.id] is OrgStatus.QUARANTINED, "a member's write lands on its own row"
 
 
 async def test_reconnection_needs_a_fresh_certificate_and_never_revives_the_old(

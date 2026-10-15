@@ -6,12 +6,12 @@ Expect red: packages/aivs-server/tests/unit/test_enrich_kev.py::test_the_kev_ver
 diff --git a/packages/aivs-server/src/aivs_server/services/distribution.py b/packages/aivs-server/src/aivs_server/services/distribution.py
 --- a/packages/aivs-server/src/aivs_server/services/distribution.py
 +++ b/packages/aivs-server/src/aivs_server/services/distribution.py
-@@ -146,7 +146,7 @@
-             Organization.id == await submitter_of(session, submission)
-         )
+@@ -141,7 +141,7 @@
+     submitter_type = await session.scalar(
+         select(Organization.org_type).where(Organization.id == filer)
      )
 -    if not is_isac_owner(submitter_type):
 +    if True:
-         return await _submitter_identity(session, submission)
+         return await _submitter_identity(session, filer)
      identity = await _isac_identity(session)
      if identity is None:

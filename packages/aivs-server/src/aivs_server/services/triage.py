@@ -48,6 +48,7 @@ from aivs_schemas.enums import (
 )
 from aivs_schemas.extension.builders import AIVS_EXTENSION_ID, AIVS_INTEL_EXTENSION_ID
 from aivs_server.audit.log import AuditAction, record
+from aivs_server.auth.attribution_key import AttributionKey
 from aivs_server.db.models import (
     Organization,
     StixObject,
@@ -67,7 +68,6 @@ __all__ = [
     "RULES_VERSION",
     "content_digest",
     "decide",
-    "latest_triage",
     "shown_findings",
     "triage_pending",
     "triage_submission",
@@ -94,7 +94,7 @@ MEMBER_FACING: Final[frozenset[FindingCode]] = frozenset(FindingCode)
 _BATCH: Final[int] = 50
 
 
-async def triage_pending(session: AsyncSession, *, now: dt.datetime) -> int:
+async def triage_pending(session: AsyncSession, key: AttributionKey, *, now: dt.datetime) -> int:
     """Read each submission handed to the ISAC since it was last read; how many were read.
 
     Each is committed on its own, so one that fails does not hold back the rest.
@@ -103,14 +103,14 @@ async def triage_pending(session: AsyncSession, *, now: dt.datetime) -> int:
         return 0
     read = 0
     for submission_id in await _pending(session):
-        if await triage_submission(session, submission_id, now=now) is not None:
+        if await triage_submission(session, key, submission_id, now=now) is not None:
             read += 1
         await session.commit()
     return read
 
 
 async def triage_submission(
-    session: AsyncSession, submission_id: uuid.UUID, *, now: dt.datetime
+    session: AsyncSession, key: AttributionKey, submission_id: uuid.UUID, *, now: dt.datetime
 ) -> SubmissionTriage | None:
     """Read one submission under its row lock, or ``None`` if there is nothing to read.
 
@@ -129,7 +129,7 @@ async def triage_submission(
     findings = first_pass(objects, own_names=await _own_names(session, submission), now=now)
     disposition = decide(
         findings,
-        returnable=await _returnable(session, submission),
+        returnable=await _returnable(session, key, submission),
         urgent=_is_urgent(objects),
         returned_before=await _returned_before(session, submission.id, digest),
     )
@@ -164,17 +164,6 @@ def content_digest(objects: Sequence[Mapping[str, Any]]) -> str:
     """The same objects, in any order, give the same digest."""
     canonical = sorted(json.dumps(obj, sort_keys=True, separators=(",", ":")) for obj in objects)
     return hashlib.sha256("\n".join(canonical).encode("utf-8")).hexdigest()
-
-
-async def latest_triage(session: AsyncSession, submission_id: uuid.UUID) -> SubmissionTriage | None:
-    """The newest read of a submission, if it has been read."""
-    row: SubmissionTriage | None = await session.scalar(
-        select(SubmissionTriage)
-        .where(SubmissionTriage.submission_id == submission_id)
-        .order_by(SubmissionTriage.transition_id.desc())
-        .limit(1)
-    )
-    return row
 
 
 def shown_findings(row: SubmissionTriage, *, reviewer: bool) -> list[dict[str, str]]:
@@ -241,12 +230,12 @@ async def _own_names(session: AsyncSession, submission: Submission) -> list[str]
 # ---------------------------------------------------------------------------
 # Whether a return is allowed
 # ---------------------------------------------------------------------------
-async def _returnable(session: AsyncSession, submission: Submission) -> bool:
+async def _returnable(session: AsyncSession, key: AttributionKey, submission: Submission) -> bool:
     """A member's own filing, written by the member: the only kind sent back to its writer."""
     return (
         submission.source is SubmissionSource.MEMBER
         and not is_proxy_filing(submission)
-        and not await is_isac_filing(session, submission)
+        and not await is_isac_filing(session, key, submission)
     )
 
 

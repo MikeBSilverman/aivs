@@ -1,0 +1,16 @@
+Mutation M1004: a member's connection health lists every firm's webhooks
+Re-applies: Phase P slice 3c (SF-91)
+
+Expect red: packages/aivs-server/tests/unit/test_connection_health.py::test_a_peers_webhook_is_not_shown
+
+diff --git a/packages/aivs-server/src/aivs_server/services/member_staff_reads.py b/packages/aivs-server/src/aivs_server/services/member_staff_reads.py
+--- a/packages/aivs-server/src/aivs_server/services/member_staff_reads.py
++++ b/packages/aivs-server/src/aivs_server/services/member_staff_reads.py
+@@ -208,7 +208,6 @@
+     query = (
+         select(Webhook, delivered, undelivered)
+         .outerjoin(WebhookDelivery, WebhookDelivery.webhook_id == Webhook.id)
+-        .where(Webhook.org_id == ctx.org_id)
+         .group_by(Webhook.id)
+         .order_by(Webhook.created_at)
+     )

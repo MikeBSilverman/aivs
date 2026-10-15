@@ -14,11 +14,10 @@ from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from aivs_schemas.enums import NotificationCadence
-from aivs_server.audit.log import AuditAction, record
 from aivs_server.auth.deps import AuthenticatedContext, SessionDep, SettingsDep
 from aivs_server.auth.policy import can_register_webhook, require
 from aivs_server.db.models import Organization
-from aivs_server.services.member_settings import change_notification_settings
+from aivs_server.services.member_staff_writes import set_notification_settings
 
 __all__ = ["router"]
 
@@ -78,21 +77,12 @@ async def change_settings(
                 status.HTTP_400_BAD_REQUEST,
                 detail="A digest mailbox needs an hourly or daily cadence.",
             )
-    org = await change_notification_settings(
+    # On the staff login for a member: its login may not change any
+    # organisation's settings, or SQL on it could redirect a peer's digest.
+    org = await set_notification_settings(
         session, ctx, cadence=payload.cadence, digest_email=payload.digest_email
     )
     if org is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Not found")
-    await record(
-        session,
-        action=AuditAction.NOTIFICATION_SETTINGS_SET,
-        ctx=ctx,
-        resource_type="organization",
-        resource_id=str(org.id),
-        details={
-            "cadence": payload.cadence.value,
-            "digest_email": payload.digest_email is not None,
-        },
-    )
     await session.commit()
     return NotificationSettingsOut(cadence=org.notification_cadence, digest_email=org.digest_email)

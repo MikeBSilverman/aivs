@@ -56,7 +56,7 @@ async def get_telemetry(
     submission = await session.get(Submission, submission_id)
     if submission is None or not is_submitted_by(key, submission, ctx.org_id):
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Submission not found")
-    telemetry = await submission_telemetry(session, submission)
+    telemetry = await submission_telemetry(session, ctx, submission)
     return TelemetryOut(
         submission_id=telemetry.submission_id,
         distributed=telemetry.distributed,

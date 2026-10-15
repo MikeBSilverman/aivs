@@ -28,6 +28,7 @@ from aivs_server.portal import routes as portal_routes
 from aivs_server.services import circles as circles_service
 from aivs_server.services import distribution as distribution_service
 from aivs_server.services import embargo as embargo_service
+from aivs_server.services import member_staff_writes
 from aivs_server.services import submissions as submissions_service
 from aivs_server.services.circles import reconcile_circle
 from aivs_server.services.distribution import distribute_submission
@@ -39,7 +40,7 @@ from aivs_server.services.embargo import (
 )
 from aivs_server.services.submissions import record_transition
 from aivs_server.taxii import router as taxii_router
-from tests.conftest import proxy_headers
+from tests.conftest import TEST_ATTRIBUTION_KEY, proxy_headers
 from tests.unit.test_portal import make_operator as make_portal_operator
 from tests.unit.test_portal import sign_in
 
@@ -84,7 +85,9 @@ async def test_distribution_stamps_date_added_on_the_database_clock(
     skew_clock(monkeypatch, distribution_service, -HOUR)
 
     before = await database_now(session)
-    result = await distribute_submission(session, isac_ctx, submission, circle_ids=[circle.id])
+    result = await distribute_submission(
+        session, isac_ctx, submission, key=TEST_ATTRIBUTION_KEY, circle_ids=[circle.id]
+    )
 
     assert result.date_added > before, "stamped below an instant the database had passed"
     assert close_to(result.date_added, before)
@@ -97,7 +100,12 @@ async def embargoed(session, isac_ctx, make_validated, make_circle):
     submission = await session.get(models.Submission, await make_validated("held"))
     release_at = dt.datetime.now(dt.UTC) + dt.timedelta(days=3)
     await distribute_submission(
-        session, isac_ctx, submission, circle_ids=[circle.id], release_at=release_at
+        session,
+        isac_ctx,
+        submission,
+        circle_ids=[circle.id],
+        release_at=release_at,
+        key=TEST_ATTRIBUTION_KEY,
     )
     await session.commit()
     return submission.id, circle
@@ -113,7 +121,9 @@ async def test_early_release_stamps_on_the_database_clock(
     skew_clock(monkeypatch, embargo_service, -HOUR)
 
     before = await database_now(session)
-    embargo = await release_embargo_now(session, isac_ctx, submission_id=submission_id)
+    embargo = await release_embargo_now(
+        session, isac_ctx, key=TEST_ATTRIBUTION_KEY, submission_id=submission_id
+    )
     stamps = (
         await session.execute(
             select(models.Distribution.date_added).where(
@@ -188,7 +198,7 @@ async def test_the_sweeper_decides_what_is_due_on_the_database_clock(
     await session.commit()
     skew_clock(monkeypatch, embargo_service, -HOUR)
 
-    assert await sweep_due_embargoes(session) == 1
+    assert await sweep_due_embargoes(session, TEST_ATTRIBUTION_KEY) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -365,6 +375,7 @@ async def test_quarantine_and_reconnection_stamp_the_database_clock(
     circle = await make_circle("sector")
     await join_circle(member, circle)
     skew_clock(monkeypatch, admin_api, HOUR)
+    skew_clock(monkeypatch, member_staff_writes, HOUR)
 
     quarantined = await client.post(
         f"/api/v1/orgs/{member.id}/quarantine",

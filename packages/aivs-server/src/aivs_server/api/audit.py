@@ -31,10 +31,10 @@ from aivs_server.services.audit_stream import (
     MAX_PAGE,
     CursorError,
     Page,
-    audit_events,
     decode_cursor,
     receipt_events,
 )
+from aivs_server.services.member_staff_reads import audit_page
 
 __all__ = ["router"]
 
@@ -71,7 +71,12 @@ async def events(
     """
     await _require_auditor(session, ctx)
     after = _parse(cursor, "audit")
-    page = await audit_events(session, scope=audit_scope(ctx), after=after, limit=limit)
+    # A member's auditor reads its own organisation's rows on a staff session
+    # (the member login may only write the audit log); the read is recorded
+    # on this request's own session and committed before the page is
+    # returned, so a page served is a read recorded and a failed read records
+    # nothing.
+    page = await audit_page(session, ctx, after=after, limit=limit)
     return await _served(session, ctx, "audit", page)
 
 

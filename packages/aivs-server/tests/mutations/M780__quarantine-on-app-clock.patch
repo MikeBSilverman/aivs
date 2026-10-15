@@ -1,17 +1,25 @@
 Mutation M780: the API starts a quarantine, the edge of a withheld gap, on the app process's clock
-Re-applies: L-P3, api/admin.py before bbd8ff7
+Re-applies: L-P3, api/admin.py before bbd8ff7; the quarantine now runs in member_staff_writes (Phase P slice 3c)
 
 Expect red: packages/aivs-server/tests/unit/test_one_clock.py::test_quarantine_and_reconnection_stamp_the_database_clock
 
-diff --git a/packages/aivs-server/src/aivs_server/api/admin.py b/packages/aivs-server/src/aivs_server/api/admin.py
---- a/packages/aivs-server/src/aivs_server/api/admin.py
-+++ b/packages/aivs-server/src/aivs_server/api/admin.py
-@@ -627,7 +627,7 @@ async def quarantine(
-             ctx,
-             organisation=organisation,
-             reason=payload.reason,
--            now=await database_now(session),
-+            now=dt.datetime.now(dt.UTC),
+diff --git a/packages/aivs-server/src/aivs_server/services/member_staff_writes.py b/packages/aivs-server/src/aivs_server/services/member_staff_writes.py
+--- a/packages/aivs-server/src/aivs_server/services/member_staff_writes.py
++++ b/packages/aivs-server/src/aivs_server/services/member_staff_writes.py
+@@ -24,6 +24,7 @@
+ 
+ from __future__ import annotations
+ 
++import datetime as dt
+ import uuid
+ from collections.abc import AsyncIterator
+ from contextlib import asynccontextmanager
+@@ -80,7 +81,7 @@
+         if organisation is None:
+             return None
+         await quarantine_org(
+-            writer, ctx, organisation=organisation, reason=reason, now=await database_now(writer)
++            writer, ctx, organisation=organisation, reason=reason, now=dt.datetime.now(dt.UTC)
          )
-     except QuarantineError as exc:
-         raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+         return organisation
+ 

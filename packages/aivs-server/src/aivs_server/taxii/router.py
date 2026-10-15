@@ -42,7 +42,8 @@ from aivs_server.config import Settings
 from aivs_server.db.clock import database_now
 from aivs_server.db.models import Circle, TaxiiCollection
 from aivs_server.services.contributions import ContributionRateLimitedError
-from aivs_server.services.inbox import receive_envelope, status_of
+from aivs_server.services.inbox import receive_envelope
+from aivs_server.services.member_staff_reads import taxii_status_of
 from aivs_server.services.publication import wait_for_publications
 from aivs_server.services.receipts import record_retrievals
 from aivs_server.services.submissions import STORAGE_ERRORS, SubmissionError
@@ -696,7 +697,7 @@ async def get_status(
     status_id: uuid.UUID, _: TaxiiAccept, ctx: AuthenticatedContext, session: SessionDep
 ) -> Response:
     """A POST's status (section 4.3): the organisation that made it only; others 404."""
-    found = await status_of(session, ctx, status_id)
+    found = await taxii_status_of(session, ctx, status_id)
     if found is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Status not found")
     return _taxii_response(_status_payload(found))

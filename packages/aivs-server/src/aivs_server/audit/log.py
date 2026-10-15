@@ -36,7 +36,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from aivs_server.auth.context import AuthContext
 from aivs_server.config import Settings
-from aivs_server.db.engine import get_sessionmaker
+from aivs_server.db.engine import get_member_sessionmaker
 from aivs_server.db.models import AuditLog
 
 __all__ = [
@@ -342,7 +342,10 @@ async def record_independently(
         details=details,
     )
     try:
-        factory = get_sessionmaker()
+        # On the member login, whoever the caller: it is one INSERT, which the
+        # member login may make, and a member's refused request then never
+        # reaches the staff login at all (Phase P).
+        factory = get_member_sessionmaker()
         async with factory() as session:
             await session.execute(insert(AuditLog).values(**row))
             await session.commit()

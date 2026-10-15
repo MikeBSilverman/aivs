@@ -1,0 +1,17 @@
+Mutation M1016: a tag that is not its filer's is not raised; only a filing with no filer is
+Re-applies: Phase P slice 3c (SF-91)
+
+Expect red: packages/aivs-server/tests/unit/test_rules_from_real_rows.py::test_the_detection_job_raises_a_tag_no_filer_matches
+
+diff --git a/packages/aivs-server/src/aivs_server/services/attribution.py b/packages/aivs-server/src/aivs_server/services/attribution.py
+--- a/packages/aivs-server/src/aivs_server/services/attribution.py
++++ b/packages/aivs-server/src/aivs_server/services/attribution.py
+@@ -322,7 +322,7 @@
+     return [
+         (submission_id, filer)
+         for submission_id, tag, filer in rows.all()
+-        if filer is None or tag != key.owner_tag(filer, submission_id)
++        if filer is None
+     ]
+ 
+ 

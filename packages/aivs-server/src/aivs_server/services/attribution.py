@@ -32,25 +32,35 @@ startup asks before it serves anything.
 
 from __future__ import annotations
 
+import datetime as dt
 import uuid
 from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any, Final, cast
 
-from sqlalchemy import select, update
+from sqlalchemy import String, func, select, update
+from sqlalchemy import cast as sql_cast
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
+from aivs_server.audit.log import AuditAction
 from aivs_server.auth.attribution_key import AttributionKey
+from aivs_server.auth.context import AuthContext
+from aivs_server.auth.policy import uses_staff_database
 from aivs_server.db.engine import get_sessionmaker
-from aivs_server.db.models import StixObject, Submission, SubmissionFiler
+from aivs_server.db.models import AuditLog, StixObject, Submission, SubmissionFiler
 
 __all__ = [
     "ISAC_OWNER",
+    "FilerNotKnownToCallerError",
     "FilingRecord",
     "RekeyCounts",
     "creator_column",
+    "filed_by",
+    "filer_known_to",
     "filing_record",
+    "filings_with_a_wrong_tag",
+    "filings_without_their_record",
     "is_submitted_by",
     "owner_tokens_for",
     "record_filing",
@@ -151,18 +161,52 @@ async def filing_record(session: AsyncSession, submission: Submission) -> Filing
     )
 
 
+class FilerNotKnownToCallerError(LookupError):
+    """A member's request asked who filed a submission it did not file.
+
+    The member path cannot read the mapping (Phase P), and every route checks
+    the caller's rights before it gets here, so this is a fault in the route,
+    not a refusal to report.
+    """
+
+
+async def filer_known_to(
+    session: AsyncSession, key: AttributionKey, ctx: AuthContext, submission: Submission
+) -> uuid.UUID:
+    """Who filed ``submission``, learned the way ``ctx`` may learn it.
+
+    The caller itself when the tag says so, without reading the mapping, which
+    holds inside the transaction that filed it and on the member login. Read
+    from the mapping only on the staff login, for the ISAC acting on another
+    organisation's filing.
+    """
+    if is_submitted_by(key, submission, ctx.org_id):
+        return ctx.org_id
+    if not uses_staff_database(ctx):
+        msg = f"organisation {ctx.org_id} did not file submission {submission.id}"
+        raise FilerNotKnownToCallerError(msg)
+    filer: uuid.UUID = await submitter_of(session, submission)
+    return filer
+
+
 async def submitter_shown_to(
-    session: AsyncSession, submission: Submission, org_id: uuid.UUID
+    session: AsyncSession, key: AttributionKey, submission: Submission, ctx: AuthContext
 ) -> uuid.UUID | None:
-    """The submitter as a caller at ``org_id`` sees it on an ordinary read, or ``None``.
+    """The submitter as ``ctx`` sees it on an ordinary read, or ``None``.
 
     An anonymous submission's submitter is shown to that submitter alone.
     Every other reader -- ISAC staff included -- names it only through the
     reveal, which is audited with its reason (``POST /submissions/{id}/reveal``).
+
+    A member is answered from the tag and never reads the mapping (Phase P):
+    the submitter it may be shown is itself. It sees no other firm's filing
+    (``policy.can_view_submission``), so for one it is shown nobody.
     """
-    submitter = await submitter_of(session, submission)
-    if submission.distribute_anonymously and submitter != org_id:
+    if is_submitted_by(key, submission, ctx.org_id):
+        return ctx.org_id
+    if not uses_staff_database(ctx) or submission.distribute_anonymously:
         return None
+    submitter: uuid.UUID = await submitter_of(session, submission)
     return submitter
 
 
@@ -206,6 +250,80 @@ def submitter_column(entity: Any = Submission) -> ColumnElement[uuid.UUID]:
         .where(SubmissionFiler.submission_id == entity.id)
         .scalar_subquery()
     )
+
+
+def filed_by(org_id: uuid.UUID, submission_id: Any) -> ColumnElement[bool]:
+    """``submission_id`` was filed by ``org_id``, in SQL. Staff side only.
+
+    The organisation filter on each of ``member_staff_reads``' reads of a
+    member's own submission: the one guard on a staff connection opened on a
+    member's behalf.
+    """
+    return (
+        select(SubmissionFiler.submission_id)
+        .where(SubmissionFiler.submission_id == submission_id, SubmissionFiler.org_id == org_id)
+        .exists()
+    )
+
+
+async def filings_without_their_record(
+    session: AsyncSession, *, since: dt.datetime
+) -> list[tuple[uuid.UUID, uuid.UUID]]:
+    """Filings since ``since`` whose filer is not the one their creation was audited for.
+
+    ``(submission id, recorded filer)``. Staff side only. The member login may
+    insert into ``attribution.submitters`` -- it records its own filings -- and
+    may not read it, so SQL injected on the member path could record a filing
+    in another firm's name, or a whole submission with no audit row at all.
+    Every filing the application makes goes through ``create_submission``,
+    which writes the filer and a ``submission.created`` row naming the
+    authenticated organisation, or the member a proxy filing is for, in one
+    transaction; a filer that no such row names was not recorded by it.
+    """
+    audited_filer = func.coalesce(
+        AuditLog.details["filed_for"].astext, sql_cast(AuditLog.org_id, String)
+    )
+    its_creation = (
+        select(AuditLog.id)
+        .where(
+            AuditLog.action == AuditAction.SUBMISSION_CREATED,
+            AuditLog.resource_id == sql_cast(SubmissionFiler.submission_id, String),
+            audited_filer == sql_cast(SubmissionFiler.org_id, String),
+        )
+        .exists()
+    )
+    rows = await session.execute(
+        select(SubmissionFiler.submission_id, SubmissionFiler.org_id)
+        .join(Submission, Submission.id == SubmissionFiler.submission_id)
+        .where(Submission.created_at >= since, ~its_creation)
+        .order_by(SubmissionFiler.submission_id)
+    )
+    return [(submission_id, org_id) for submission_id, org_id in rows.all()]
+
+
+async def filings_with_a_wrong_tag(
+    session: AsyncSession, key: AttributionKey, *, since: dt.datetime
+) -> list[tuple[uuid.UUID, uuid.UUID | None]]:
+    """Submissions since ``since`` whose owner tag is not their recorded filer's.
+
+    ``(submission id, recorded filer or None)``. Staff side only. A tag that
+    names no organisation gives nobody the submitter's verbs
+    (``submissions.is_isac_filing``), which is safe and silent; this is where
+    the corruption is noticed instead. The member login may write a tag and
+    cannot compute one, so a wrong tag is a row the application did not write,
+    or a filing with no filer at all.
+    """
+    rows = await session.execute(
+        select(Submission.id, Submission.owner_tag, SubmissionFiler.org_id)
+        .outerjoin(SubmissionFiler, SubmissionFiler.submission_id == Submission.id)
+        .where(Submission.created_at >= since)
+        .order_by(Submission.id)
+    )
+    return [
+        (submission_id, filer)
+        for submission_id, tag, filer in rows.all()
+        if filer is None or tag != key.owner_tag(filer, submission_id)
+    ]
 
 
 def creator_column(entity: Any = Submission) -> ColumnElement[uuid.UUID | None]:

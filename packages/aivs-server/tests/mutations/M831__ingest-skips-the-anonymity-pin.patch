@@ -7,9 +7,9 @@ Expect red: packages/aivs-server/tests/unit/test_anonymity.py::test_a_later_vers
 diff --git a/packages/aivs-server/src/aivs_server/services/submissions.py b/packages/aivs-server/src/aivs_server/services/submissions.py
 --- a/packages/aivs-server/src/aivs_server/services/submissions.py
 +++ b/packages/aivs-server/src/aivs_server/services/submissions.py
-@@ -713,7 +713,6 @@
+@@ -766,7 +766,6 @@
      await _refuse_contribution_problem(
-         session, None if filed_for else ctx, submission, bundle.get("objects") or []
+         session, None if filed_for else ctx, submission, bundle.get("objects") or [], key
      )
 -    await _refuse_anonymity_change(session, submission)
  

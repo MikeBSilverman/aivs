@@ -30,7 +30,7 @@ from aivs_server.services.embargo import (
     sweep_due_embargoes,
 )
 from aivs_server.services.publication import release_out_of_range
-from tests.conftest import proxy_headers
+from tests.conftest import TEST_ATTRIBUTION_KEY, proxy_headers
 
 pytestmark = pytest.mark.db
 
@@ -275,7 +275,7 @@ async def test_an_extension_past_the_latest_release_is_refused_and_the_sweeper_s
 
     assert response.status_code == 409
     assert "release_at" in response.text
-    await sweep_due_embargoes(session, now=dt.datetime.now(dt.UTC))
+    await sweep_due_embargoes(session, TEST_ATTRIBUTION_KEY, now=dt.datetime.now(dt.UTC))
 
 
 def test_a_release_inside_the_range_is_accepted():
@@ -294,7 +294,7 @@ async def test_the_sweeper_marks_due_embargoes_released(session, embargoed):
     row.release_at = dt.datetime.now(dt.UTC) - dt.timedelta(minutes=1)
     await session.commit()
 
-    swept = await sweep_due_embargoes(session)
+    swept = await sweep_due_embargoes(session, TEST_ATTRIBUTION_KEY)
     assert swept == 1
 
     await session.refresh(row)
@@ -303,7 +303,7 @@ async def test_the_sweeper_marks_due_embargoes_released(session, embargoed):
 
 
 async def test_the_sweeper_leaves_pending_embargoes_alone(session, embargoed):
-    assert await sweep_due_embargoes(session) == 0
+    assert await sweep_due_embargoes(session, TEST_ATTRIBUTION_KEY) == 0
     row = (await session.execute(select(Embargo))).scalar_one()
     assert row.status is EmbargoStatus.PENDING
 
@@ -337,8 +337,8 @@ async def test_the_sweeper_is_idempotent(session, embargoed):
     row.release_at = dt.datetime.now(dt.UTC) - dt.timedelta(minutes=1)
     await session.commit()
 
-    assert await sweep_due_embargoes(session) == 1
-    assert await sweep_due_embargoes(session) == 0
+    assert await sweep_due_embargoes(session, TEST_ATTRIBUTION_KEY) == 1
+    assert await sweep_due_embargoes(session, TEST_ATTRIBUTION_KEY) == 0
 
 
 # ---------------------------------------------------------------------------
@@ -355,7 +355,9 @@ async def test_releasing_a_submission_with_no_embargo_is_refused(session, make_o
         auth_method=AuthMethod.MTLS,
     )
     with pytest.raises(EmbargoError, match="not under embargo"):
-        await release_embargo_now(session, ctx, submission_id=uuid.uuid4())
+        await release_embargo_now(
+            session, ctx, key=TEST_ATTRIBUTION_KEY, submission_id=uuid.uuid4()
+        )
 
 
 async def test_extending_with_a_naive_time_is_refused(session, make_org):
@@ -404,12 +406,14 @@ async def test_an_immediate_distribution_is_not_an_embargo(
     circle = await make_circle("sector")
     submission = await session.get(Submission, await make_validated("immediate"))
 
-    result = await distribute_submission(session, isac_ctx, submission, circle_ids=[circle.id])
+    result = await distribute_submission(
+        session, isac_ctx, submission, key=TEST_ATTRIBUTION_KEY, circle_ids=[circle.id]
+    )
     await session.commit()
 
     assert result.embargoed is False
     assert (await session.execute(select(Embargo))).scalar_one_or_none() is None
-    assert await sweep_due_embargoes(session) == 0
+    assert await sweep_due_embargoes(session, TEST_ATTRIBUTION_KEY) == 0
 
 
 async def test_a_distribution_held_past_the_next_millisecond_is_an_embargo(
@@ -424,6 +428,7 @@ async def test_a_distribution_held_past_the_next_millisecond_is_an_embargo(
         submission,
         circle_ids=[circle.id],
         release_at=dt.datetime.now(dt.UTC) + dt.timedelta(minutes=1),
+        key=TEST_ATTRIBUTION_KEY,
     )
     await session.commit()
 

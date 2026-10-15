@@ -21,8 +21,8 @@ from aivs_server.audit.log import AuditAction
 from aivs_server.auth.secretbox import SecretPurpose
 from aivs_server.db.models import Acknowledgment, AuditLog, Submission, Webhook, WebhookDelivery
 from aivs_server.observability import HEARTBEATS, Heartbeats, render_metrics
-from aivs_server.services.detections import RULES, Rule, run_detections
-from tests.conftest import seed_filing
+from aivs_server.services.detections import RULES, Rule, detection_rules, run_detections
+from tests.conftest import TEST_ATTRIBUTION_KEY, seed_filing
 
 pytestmark = pytest.mark.db
 
@@ -300,4 +300,5 @@ def test_every_rule_is_in_the_runbooks_table():
         encoding="utf-8"
     )
     documented = set(re.findall(r"^\| `([a-z_]+)` \|", runbook, flags=re.MULTILINE))
-    assert {rule.name for rule in RULES} <= documented
+    run = detection_rules(TEST_ATTRIBUTION_KEY)
+    assert {rule.name for rule in run} <= documented

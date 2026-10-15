@@ -1,0 +1,17 @@
+Mutation M1018: every filing is raised as a mismatch, audited or not
+Re-applies: Phase P slice 3c (SF-91)
+
+Expect red: packages/aivs-server/tests/unit/test_rules_from_real_rows.py::test_filer_mismatch_from_a_real_filing_and_a_forged_one
+
+diff --git a/packages/aivs-server/src/aivs_server/services/attribution.py b/packages/aivs-server/src/aivs_server/services/attribution.py
+--- a/packages/aivs-server/src/aivs_server/services/attribution.py
++++ b/packages/aivs-server/src/aivs_server/services/attribution.py
+@@ -295,7 +295,7 @@
+     rows = await session.execute(
+         select(SubmissionFiler.submission_id, SubmissionFiler.org_id)
+         .join(Submission, Submission.id == SubmissionFiler.submission_id)
+-        .where(Submission.created_at >= since, ~its_creation)
++        .where(Submission.created_at >= since)
+         .order_by(SubmissionFiler.submission_id)
+     )
+     return [(submission_id, org_id) for submission_id, org_id in rows.all()]

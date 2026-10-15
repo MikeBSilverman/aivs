@@ -1,0 +1,16 @@
+Mutation M1006: a member reads any submission's history, on the staff login
+Re-applies: Phase P slice 3c (SF-91)
+
+Expect red: packages/aivs-server/tests/unit/test_member_staff_reads.py::test_a_submissions_history_is_its_filers_alone
+
+diff --git a/packages/aivs-server/src/aivs_server/services/member_staff_reads.py b/packages/aivs-server/src/aivs_server/services/member_staff_reads.py
+--- a/packages/aivs-server/src/aivs_server/services/member_staff_reads.py
++++ b/packages/aivs-server/src/aivs_server/services/member_staff_reads.py
+@@ -98,7 +98,6 @@
+     async with _reader(ctx) as staff:
+         if staff is None:
+             return list((await session.execute(query)).scalars())
+-        query = query.where(filed_by(ctx.org_id, submission_id))
+         return list((await staff.execute(query)).scalars())
+ 
+ 

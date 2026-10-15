@@ -6,13 +6,13 @@ Expect red: packages/aivs-server/tests/unit/test_anonymity.py::test_a_version_va
 diff --git a/packages/aivs-server/src/aivs_server/services/content_rules.py b/packages/aivs-server/src/aivs_server/services/content_rules.py
 --- a/packages/aivs-server/src/aivs_server/services/content_rules.py
 +++ b/packages/aivs-server/src/aivs_server/services/content_rules.py
-@@ -52,9 +52,6 @@
+@@ -54,9 +54,6 @@
      stale = await stale_version_problem(session, submission)
      if stale is not None:
          return stale
 -    anonymity = await anonymity_change_problem(session, submission)
 -    if anonymity is not None:
 -        return anonymity
-     contribution = await contribution_problem(session, submission, raws, visible_to=None, now=now)
-     if contribution is not None:
-         return contribution
+     contribution = await contribution_problem(
+         session, submission, raws, visible_to=None, now=now, key=key
+     )

@@ -6,7 +6,7 @@ Expect red: packages/aivs-server/tests/unit/test_ownership.py::test_a_newer_vers
 diff --git a/packages/aivs-server/src/aivs_server/services/submissions.py b/packages/aivs-server/src/aivs_server/services/submissions.py
 --- a/packages/aivs-server/src/aivs_server/services/submissions.py
 +++ b/packages/aivs-server/src/aivs_server/services/submissions.py
-@@ -891,7 +891,7 @@
+@@ -915,7 +915,7 @@
      raws = [row.raw for row in rows]
      now = await database_now(session)
      for problem in (
@@ -14,4 +14,4 @@ diff --git a/packages/aivs-server/src/aivs_server/services/submissions.py b/pack
 +        None,
          await stale_version_problem(session, submission),
          await anonymity_change_problem(session, submission),
-         await contribution_problem(session, submission, raws, visible_to=None, now=now),
+         await contribution_problem(session, submission, raws, visible_to=None, now=now, key=key),

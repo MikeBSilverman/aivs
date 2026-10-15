@@ -304,6 +304,21 @@ async def test_posts_past_the_hourly_allowance_are_refused_and_the_refusal_is_ke
     assert refusal.details["lane"] == "taxii_inbox"
 
 
+@pytest.mark.requirement("SF-91")
+async def test_a_peers_posts_do_not_spend_the_members_allowance(client, world):
+    """Counted staff side (``member_staff_reads.inbox_posts_since``): the
+    organisation filter is the one guard on that connection."""
+    for _ in range(HOURLY_LIMIT):
+        spent = await post(client, world, world.vendor.machine, [note_about(world.published)])
+        assert spent.status_code == 202, spent.text
+
+    own = await post(client, world, world.member.machine, [note_about(world.published)])
+    peers_next = await post(client, world, world.vendor.machine, [note_about(world.published)])
+
+    assert own.status_code == 202, own.text
+    assert peers_next.status_code == 429, "the pair: the peer's own posts are counted"
+
+
 @pytest.mark.requirement("SF-69")
 async def test_an_envelope_the_database_cannot_store_is_the_platforms_400(client, session, world):
     """A NUL reached PostgreSQL as a server error; every other ingest path answers 400."""

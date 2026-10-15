@@ -1,0 +1,17 @@
+Mutation M1020: a member's quarantine on the staff login reaches whatever organisation the path names
+Re-applies: Phase P slice 3c (SF-91)
+
+Expect red: packages/aivs-server/tests/unit/test_quarantine.py::test_a_members_quarantine_on_the_staff_login_reaches_its_own_row_alone
+
+diff --git a/packages/aivs-server/src/aivs_server/services/member_staff_writes.py b/packages/aivs-server/src/aivs_server/services/member_staff_writes.py
+--- a/packages/aivs-server/src/aivs_server/services/member_staff_writes.py
++++ b/packages/aivs-server/src/aivs_server/services/member_staff_writes.py
+@@ -75,7 +75,7 @@
+     row out of reach.
+     """
+     async with _writer(session, ctx) as writer:
+-        target = org_id if uses_staff_database(ctx) else ctx.org_id
++        target = org_id
+         organisation = await load_org_for_update(writer, target)
+         if organisation is None:
+             return None

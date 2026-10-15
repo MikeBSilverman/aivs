@@ -4,13 +4,18 @@ The ISAC's organisations run on the staff login, every member organisation
 and every request not yet authenticated on the member login; authentication
 itself, before the caller is known, on the member login. Two engines over the
 one test database stand in for the two logins, each labelling the statements
-it runs, so a test can say which login served which request.
+it runs, so a test can say which login served which request. The member one
+connects as the suite's real member login: a read the grants refuse it fails
+the request, where a label alone would only move.
 
 What the logins may read is slice 3c's to narrow. This proves the routing that
 narrowing will rely on: a member request that reached the staff engine would
-reach whatever the staff login can, whatever the grants say. The one staff
-read a member's request makes is ``attribution.submissions_filed_by``: its own
-list of filings, from ``attribution.submitters``, on a session of its own.
+reach whatever the staff login can, whatever the grants say. The staff reads
+a member's request makes are of its own records, on sessions of their own,
+through two modules (``services.attribution`` and
+``services.member_staff_reads``): here their sessionmakers are given a third
+engine, labelled ``own``, so a staff statement on a member's request that
+neither made shows up on the routed ``staff`` engine and fails.
 """
 
 from __future__ import annotations
@@ -25,9 +30,10 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async
 from aivs_schemas.enums import OperatorRole, OrgType
 from aivs_server.auth.context import AuthContext, AuthMethod
 from aivs_server.auth.policy import uses_staff_database
-from tests.conftest import proxy_headers
+from tests.conftest import TEST_MEMBER_DATABASE_URL, proxy_headers
 from tests.unit.test_portal import make_operator as portal_make_operator
 from tests.unit.test_portal import sign_in
+from tests.unit.test_submission_workflow import create_draft
 
 pytestmark = pytest.mark.db
 
@@ -35,55 +41,33 @@ API = "/api/v1/submissions"
 
 
 class Seen(list[str]):
-    """Which login ran each statement, and what each staff statement was."""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.staff_statements: list[str] = []
-
-    def clear(self) -> None:
-        super().clear()
-        self.staff_statements.clear()
+    """Which engine ran each statement: ``staff``, ``member``, or ``own`` (the two
+    modules' staff reads of a member's own records)."""
 
 
 def _labelled(url: str, label: str, seen: Seen) -> AsyncEngine:
     engine = create_async_engine(url)
 
     @event.listens_for(engine.sync_engine, "before_cursor_execute")
-    def _seen(_conn: Any, _cursor: Any, statement: str, *_args: Any) -> None:
+    def _seen(_conn: Any, _cursor: Any, _statement: str, *_args: Any) -> None:
         seen.append(label)
-        if label == "staff":
-            seen.staff_statements.append(" ".join(statement.split()))
 
     return engine
 
 
-#: The member path's one staff read: its own filings' ids.
-_OWN_FILINGS = (
-    "SELECT attribution.submitters.submission_id FROM attribution.submitters "
-    "WHERE attribution.submitters.org_id ="
-)
-
-
-def _only_its_own_filings(seen: Seen) -> list[str]:
-    """Every staff statement a member request ran that was not that read."""
-    return [
-        statement
-        for statement in seen.staff_statements
-        if not statement.startswith(_OWN_FILINGS)
-        and statement not in {"BEGIN (implicit)", "ROLLBACK", "COMMIT"}
-    ]
-
-
 @pytest.fixture
-async def logins(app, settings) -> Iterator[Seen]:
+async def logins(app, settings, monkeypatch) -> Iterator[Seen]:
     """Separate staff and member engines on the test database, recording which ran."""
     from aivs_server.db import engine as engine_module  # noqa: PLC0415 - the fixture's own swap
 
     seen = Seen()
     url = settings.database_url.get_secret_value()
     staff = _labelled(url, "staff", seen)
-    member = _labelled(url, "member", seen)
+    member = _labelled(TEST_MEMBER_DATABASE_URL, "member", seen)
+    own = _labelled(url, "own", seen)
+    own_records = async_sessionmaker(bind=own, expire_on_commit=False, autoflush=False)
+    for module in ("attribution", "member_staff_reads"):
+        monkeypatch.setattr(f"aivs_server.services.{module}.get_sessionmaker", lambda: own_records)
     engine_module._engine = staff
     engine_module._sessionmaker = async_sessionmaker(
         bind=staff, expire_on_commit=False, autoflush=False
@@ -93,8 +77,8 @@ async def logins(app, settings) -> Iterator[Seen]:
         bind=member, expire_on_commit=False, autoflush=False
     )
     yield seen
-    await staff.dispose()
-    await member.dispose()
+    for engine in (staff, member, own):
+        await engine.dispose()
 
 
 # ---------------------------------------------------------------------------
@@ -139,8 +123,26 @@ async def test_a_members_api_request_reads_only_its_own_filings_on_the_staff_log
 
     assert listed.status_code == 200, listed.text
     assert "member" in logins
-    assert logins.staff_statements, "the list was read staff side"
-    assert _only_its_own_filings(logins) == []
+    assert "own" in logins, "the list was read staff side"
+    assert "staff" not in logins
+
+
+@pytest.mark.requirement("SF-89")
+async def test_a_members_own_submission_reads_staff_side_only_through_the_two_modules(
+    client, logins, make_org, make_cert
+):
+    """Its history, first pass and telemetry are read staff side (Phase P, slice 3c)."""
+    member = await make_org("routed-detail-member")
+    pem, _ = await make_cert(member)
+    created = await create_draft(client, pem)
+    logins.clear()
+
+    detail = await client.get(f"{API}/{created['id']}", headers=proxy_headers(pem))
+    telemetry = await client.get(f"{API}/{created['id']}/telemetry", headers=proxy_headers(pem))
+
+    assert (detail.status_code, telemetry.status_code) == (200, 200), detail.text
+    assert "own" in logins, "its own records were read staff side"
+    assert "staff" not in logins
 
 
 @pytest.mark.requirement("SF-89")
@@ -167,8 +169,8 @@ async def test_a_members_portal_page_reads_only_its_own_filings_on_the_staff_log
     page = await client.get("/portal/submissions", headers=proxy_headers(pem))
 
     assert page.status_code == 200, page.text
-    assert logins.staff_statements, "the list was read staff side"
-    assert _only_its_own_filings(logins) == []
+    assert "own" in logins, "the list was read staff side"
+    assert "staff" not in logins
 
 
 @pytest.mark.requirement("SF-89")

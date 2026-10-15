@@ -1,0 +1,19 @@
+Mutation M1007: a member reads any submission's first pass, on the staff login
+Re-applies: Phase P slice 3c (SF-91)
+
+Expect red: packages/aivs-server/tests/unit/test_member_staff_reads.py::test_a_first_pass_is_its_filers_alone
+
+diff --git a/packages/aivs-server/src/aivs_server/services/member_staff_reads.py b/packages/aivs-server/src/aivs_server/services/member_staff_reads.py
+--- a/packages/aivs-server/src/aivs_server/services/member_staff_reads.py
++++ b/packages/aivs-server/src/aivs_server/services/member_staff_reads.py
+@@ -120,9 +120,7 @@
+         if staff is None:
+             row: SubmissionTriage | None = await session.scalar(query)
+             return row
+-        own: SubmissionTriage | None = await staff.scalar(
+-            query.where(filed_by(ctx.org_id, submission_id))
+-        )
++        own: SubmissionTriage | None = await staff.scalar(query)
+         return own
+ 
+ 

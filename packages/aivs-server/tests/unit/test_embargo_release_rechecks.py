@@ -28,7 +28,7 @@ from aivs_schemas.enums import TLP, EmbargoPolicy, EmbargoStatus, OrgType
 from aivs_server.db.models import AuditLog, Distribution, Embargo, Submission
 from aivs_server.services.distribution import distribute_submission
 from aivs_server.services.embargo import sweep_due_embargoes
-from tests.conftest import proxy_headers
+from tests.conftest import TEST_ATTRIBUTION_KEY, proxy_headers
 from tests.unit.contribution_world import (
     LATER,
     course_of_action_about,
@@ -172,7 +172,7 @@ async def test_the_sweeper_holds_an_embargo_whose_content_no_longer_passes(
     due = (await embargo_of(session, held["submission_id"])).release_at
     await withdraw_disclosure(session, world, held["target"])
 
-    await sweep_due_embargoes(session)
+    await sweep_due_embargoes(session, TEST_ATTRIBUTION_KEY)
 
     embargo = await embargo_of(session, held["submission_id"])
     assert embargo.policy is EmbargoPolicy.MANUAL, "still on its timer"
@@ -186,7 +186,7 @@ async def test_the_sweeper_holds_an_embargo_whose_content_no_longer_passes(
 async def test_the_sweeper_leaves_an_embargo_that_still_passes_on_its_timer(session, world, held):
     due = (await embargo_of(session, held["submission_id"])).release_at
 
-    await sweep_due_embargoes(session)
+    await sweep_due_embargoes(session, TEST_ATTRIBUTION_KEY)
 
     embargo = await embargo_of(session, held["submission_id"])
     assert embargo.policy is EmbargoPolicy.TIMER
@@ -206,6 +206,7 @@ async def test_a_held_embargo_does_not_stop_the_sweeper_releasing_another(
         other,
         circle_ids=[world["circle"].id],
         release_at=dt.datetime.now(dt.UTC) + DAY,
+        key=TEST_ATTRIBUTION_KEY,
     )
     await session.commit()
     elapsed = dt.datetime.now(dt.UTC) - dt.timedelta(minutes=1)
@@ -220,7 +221,7 @@ async def test_a_held_embargo_does_not_stop_the_sweeper_releasing_another(
     await session.commit()
     await withdraw_disclosure(session, world, held["target"])
 
-    released = await sweep_due_embargoes(session)
+    released = await sweep_due_embargoes(session, TEST_ATTRIBUTION_KEY)
 
     assert released == 1
     assert (await embargo_of(session, other_id)).status is EmbargoStatus.RELEASED
@@ -239,14 +240,14 @@ async def test_a_pause_does_not_postpone_a_hold(client, session, world, held):
     assert paused.status_code == 200, paused.text
     await withdraw_disclosure(session, world, held["target"])
 
-    await sweep_due_embargoes(session)
+    await sweep_due_embargoes(session, TEST_ATTRIBUTION_KEY)
 
     assert (await embargo_of(session, held["submission_id"])).policy is EmbargoPolicy.MANUAL
 
 
 async def test_extending_a_held_embargo_puts_it_back_on_a_timer(client, session, world, held):
     await withdraw_disclosure(session, world, held["target"])
-    await sweep_due_embargoes(session)
+    await sweep_due_embargoes(session, TEST_ATTRIBUTION_KEY)
     later = dt.datetime.now(dt.UTC) + 10 * DAY
 
     extended = await client.post(
@@ -277,7 +278,7 @@ async def test_an_elapsed_embargo_whose_content_no_longer_passes_is_reported(ses
     await session.commit()
     await withdraw_disclosure(session, world, held["target"])
 
-    await sweep_due_embargoes(session)
+    await sweep_due_embargoes(session, TEST_ATTRIBUTION_KEY)
 
     [released] = await audit_rows(session, "embargo.released")
     assert "not public yet" in released.details["content_problem"]
@@ -319,7 +320,7 @@ async def test_the_sweeper_holds_an_embargo_whose_referent_was_re_marked_stricte
         tlp=TLP.RED,
     )
 
-    await sweep_due_embargoes(session)
+    await sweep_due_embargoes(session, TEST_ATTRIBUTION_KEY)
 
     assert (await embargo_of(session, submission_id)).policy is EmbargoPolicy.MANUAL
     [told] = await audit_rows(session, "embargo.held")

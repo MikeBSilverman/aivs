@@ -1,0 +1,18 @@
+Mutation M1010: the member login may UPDATE stix_objects.owner_token
+Re-applies: Phase P slice 3c (SF-91)
+
+Expect red: packages/aivs-server/tests/migrations/test_member_login_grants.py::test_only_the_classified_columns_are_updatable
+Expect red: packages/aivs-server/tests/migrations/test_member_login_grants.py::test_the_member_login_is_refused_what_its_grants_withhold[owner-token]
+
+diff --git a/packages/aivs-server/src/aivs_server/db/grants.py b/packages/aivs-server/src/aivs_server/db/grants.py
+--- a/packages/aivs-server/src/aivs_server/db/grants.py
++++ b/packages/aivs-server/src/aivs_server/db/grants.py
+@@ -137,7 +137,7 @@
+         ),
+         # Replacing a draft's bundle deletes and inserts; distribution sets
+         # ``created_by_ref`` and the marking in ``raw``.
+-        "public.stix_objects": TableGrant(("SELECT", "INSERT", "DELETE"), update_columns=("raw",)),
++        "public.stix_objects": TableGrant(("SELECT", "INSERT", "DELETE"), update_columns=("raw", "owner_token")),
+         "public.acknowledgments": TableGrant(("SELECT", "INSERT")),
+         "public.distributions": TableGrant(("SELECT", "INSERT")),
+         # Queuing a notification row-locks the webhooks it reads

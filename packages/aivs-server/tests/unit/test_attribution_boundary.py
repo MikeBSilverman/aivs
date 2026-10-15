@@ -23,13 +23,15 @@ REPO = Path(__file__).resolve().parents[4]
 #: Where application code lives. Tests and migrations are left out: a test
 #: builds the rows it reads, and a migration moves them.
 SCANNED = (REPO / "packages" / "aivs-server" / "src", REPO / "demo", REPO / "scripts")
-#: The module that owns the mapping, the model that declares it, and the key
-#: that makes and checks its tags (SF-90).
+#: The module that owns the mapping, the model that declares it, the key
+#: that makes and checks its tags (SF-90), and the grants that say which login
+#: may read it (Phase P, slice 3c), which name its table to refuse it.
 OWNERS = frozenset(
     {
         REPO / "packages/aivs-server/src/aivs_server/services/attribution.py",
         REPO / "packages/aivs-server/src/aivs_server/db/models.py",
         REPO / "packages/aivs-server/src/aivs_server/auth/attribution_key.py",
+        REPO / "packages/aivs-server/src/aivs_server/db/grants.py",
     }
 )
 #: Who filed a submission, for whom, and on what consent; and the tag that

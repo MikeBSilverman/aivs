@@ -1,17 +1,24 @@
-Mutation M389: an owner that cannot be found is taken for a member
-Re-applies: T15 (Mike, Q35) (main's review)
+Mutation M389: an owner that cannot be found gives someone the submitter's verbs: read from the tag, a tag naming no organisation is taken for the ISAC's, and an editor holds them
+Re-applies: T15 (Mike, Q35) (main's review); the fail-open is the other way round under the tag (Phase P slice 3c)
 
-Expect red: packages/aivs-server/tests/unit/test_isac_filings.py::test_a_filing_whose_owner_cannot_be_found_needs_an_editor
+Expect red: packages/aivs-server/tests/unit/test_isac_filings.py::test_a_filing_whose_tag_names_no_organisation_gives_no_one_its_verbs
 
 diff --git a/packages/aivs-server/src/aivs_server/services/submissions.py b/packages/aivs-server/src/aivs_server/services/submissions.py
 --- a/packages/aivs-server/src/aivs_server/services/submissions.py
 +++ b/packages/aivs-server/src/aivs_server/services/submissions.py
-@@ -793,7 +793,7 @@
-         .join(Organization, Organization.id == submitter_column(Submission))
-         .where(Submission.id == submission.id)
+@@ -813,7 +813,14 @@
+     isac_filers = await session.scalars(
+         select(Organization.id).where(Organization.org_type.in_(ISAC_FILER_TYPES))
      )
--    return owner_type is None or owner_type in ISAC_FILER_TYPES
-+    return owner_type is not None and owner_type in ISAC_FILER_TYPES
+-    return any(is_submitted_by(key, submission, org_id) for org_id in isac_filers)
++    ids = list(isac_filers)
++    return not any(
++        is_submitted_by(key, submission, org_id) for org_id in await _all_org_ids(session)
++    ) or any(is_submitted_by(key, submission, org_id) for org_id in ids)
++
++
++async def _all_org_ids(session: AsyncSession) -> list[uuid.UUID]:
++    return list(await session.scalars(select(Organization.id)))
  
  
  def _submitter_refusal(ctx: AuthContext, *, owner_is_isac: bool) -> str:

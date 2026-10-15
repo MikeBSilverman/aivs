@@ -406,7 +406,7 @@ async def file_for_member(
             status.HTTP_400_BAD_REQUEST, detail="Submission content rejected by storage"
         ) from exc
     await session.refresh(submission)
-    return await present_submission(session, submission, ctx)
+    return await present_submission(session, submission, ctx, key)
 
 
 @router.post("/submissions/{submission_id}/confirm", response_model=SubmissionOut)
@@ -428,4 +428,4 @@ async def confirm(
         raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     await session.commit()
     await session.refresh(submission)
-    return await present_submission(session, submission, ctx)
+    return await present_submission(session, submission, ctx, key)

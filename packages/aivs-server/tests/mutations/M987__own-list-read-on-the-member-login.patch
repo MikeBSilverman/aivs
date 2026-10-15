@@ -7,16 +7,16 @@ Expect red: packages/aivs-server/tests/unit/test_database_logins.py::test_a_memb
 diff --git a/packages/aivs-server/src/aivs_server/services/attribution.py b/packages/aivs-server/src/aivs_server/services/attribution.py
 --- a/packages/aivs-server/src/aivs_server/services/attribution.py
 +++ b/packages/aivs-server/src/aivs_server/services/attribution.py
-@@ -42,7 +42,7 @@
- from sqlalchemy.sql.elements import ColumnElement
- 
+@@ -47,7 +47,7 @@
  from aivs_server.auth.attribution_key import AttributionKey
+ from aivs_server.auth.context import AuthContext
+ from aivs_server.auth.policy import uses_staff_database
 -from aivs_server.db.engine import get_sessionmaker
-+from aivs_server.db.engine import get_member_sessionmaker
- from aivs_server.db.models import StixObject, Submission, SubmissionFiler
++from aivs_server.db.engine import get_member_sessionmaker, get_sessionmaker
+ from aivs_server.db.models import AuditLog, StixObject, Submission, SubmissionFiler
  
  __all__ = [
-@@ -187,7 +187,7 @@
+@@ -231,7 +231,7 @@
      filing made earlier in the caller's own, uncommitted transaction is not
      in the list: no caller asks for one.
      """

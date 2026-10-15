@@ -7,11 +7,11 @@ Expect red: packages/aivs-server/tests/abuse/test_sharing_abuse.py::test_a_platf
 diff --git a/packages/aivs-server/src/aivs_server/services/contributions.py b/packages/aivs-server/src/aivs_server/services/contributions.py
 --- a/packages/aivs-server/src/aivs_server/services/contributions.py
 +++ b/packages/aivs-server/src/aivs_server/services/contributions.py
-@@ -203,7 +203,7 @@
-         .select_from(TaxiiStatus)
-         .where(TaxiiStatus.org_id == org_id, TaxiiStatus.request_timestamp >= since)
+@@ -297,7 +297,7 @@
+         )
      )
--    return (unreviewed or 0) + (inbox or 0) < limit
+     inbox = await inbox_posts_since(org_id, since)
+-    return (unreviewed or 0) + inbox < limit
 +    return (unreviewed or 0) < limit
  
  

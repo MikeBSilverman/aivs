@@ -6,10 +6,10 @@ Expect red: packages/aivs-server/tests/unit/test_markings.py::test_every_distrib
 diff --git a/packages/aivs-server/src/aivs_server/services/distribution.py b/packages/aivs-server/src/aivs_server/services/distribution.py
 --- a/packages/aivs-server/src/aivs_server/services/distribution.py
 +++ b/packages/aivs-server/src/aivs_server/services/distribution.py
-@@ -332,7 +332,6 @@
- 
-     await _refuse_content_problems(session, submission, objects, now=now)
-     await _apply_attribution(session, submission, objects)
+@@ -358,7 +358,6 @@
+     filer = await filer_known_to(session, key, ctx, submission)
+     await _refuse_content_problems(session, submission, objects, filer, key, now=now)
+     await _apply_attribution(session, submission, objects, filer)
 -    _stamp_markings(submission, objects)
  
      # Rows for *these* objects that are already live in a target circle, so a

@@ -65,12 +65,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from aivs_schemas.enums import EmbargoPolicy, EmbargoStatus
 from aivs_server.audit.log import AuditAction, record
+from aivs_server.auth.attribution_key import AttributionKey
 from aivs_server.auth.context import AuthContext
 from aivs_server.db.models import Distribution, Embargo, StixObject, Submission
 from aivs_server.notify.events import (
     circle_ids_for_submission,
     queue_visibility_notifications,
 )
+from aivs_server.services.attribution import submitter_of
 from aivs_server.services.content_rules import content_problem
 from aivs_server.services.publication import (
     earliest_publication_instant,
@@ -144,6 +146,7 @@ async def release_embargo_now(
     session: AsyncSession,
     ctx: AuthContext,
     *,
+    key: AttributionKey,
     submission_id: uuid.UUID,
     reason: str | None = None,
     now: dt.datetime | None = None,
@@ -190,7 +193,7 @@ async def release_embargo_now(
         # release_at. Recording an *early* release now would misstate when they
         # could, in the record that exists to say exactly that.
         return await _record_elapsed_release(session, ctx, embargo, reason=reason)
-    problem = await release_problem(session, submission_id, now=now)
+    problem = await release_problem(session, key, submission_id, now=now)
     if problem is not None:
         logger.warning(
             "early release refused: the content no longer passes the rules distribution checked",
@@ -348,7 +351,7 @@ async def extend_embargo(
 
 
 async def release_problem(
-    session: AsyncSession, submission_id: uuid.UUID, *, now: dt.datetime
+    session: AsyncSession, key: AttributionKey, submission_id: uuid.UUID, *, now: dt.datetime
 ) -> str | None:
     """Why this submission's held content may not become readable now, or ``None``."""
     submission = await session.get(Submission, submission_id)
@@ -361,10 +364,14 @@ async def release_problem(
             )
         ).scalars()
     )
-    return await content_problem(session, submission, raws, now=now)
+    # The sweeper runs on the staff login, which reads who filed what.
+    filer = await submitter_of(session, submission)
+    return await content_problem(session, submission, raws, filer=filer, now=now, key=key)
 
 
-async def sweep_due_embargoes(session: AsyncSession, *, now: dt.datetime | None = None) -> int:
+async def sweep_due_embargoes(
+    session: AsyncSession, key: AttributionKey, *, now: dt.datetime | None = None
+) -> int:
     """Hold what no longer passes, then mark what has come due released. Returns the count released.
 
     Releasing is bookkeeping. The content became visible the instant its
@@ -391,8 +398,8 @@ async def sweep_due_embargoes(session: AsyncSession, *, now: dt.datetime | None 
     locked_at = await hold_publication_lock(session, refuse_while_paused=False)
     now = now or locked_at
 
-    held = await _hold_timers_that_no_longer_pass(session, now=now)
-    released = 0 if await publication_paused(session) else await _release_due(session, now=now)
+    held = await _hold_timers_that_no_longer_pass(session, key, now=now)
+    released = 0 if await publication_paused(session) else await _release_due(session, key, now=now)
 
     # Always: the commit is also what releases the publication lock.
     await session.commit()
@@ -401,7 +408,9 @@ async def sweep_due_embargoes(session: AsyncSession, *, now: dt.datetime | None 
     return released
 
 
-async def _hold_timers_that_no_longer_pass(session: AsyncSession, *, now: dt.datetime) -> int:
+async def _hold_timers_that_no_longer_pass(
+    session: AsyncSession, key: AttributionKey, *, now: dt.datetime
+) -> int:
     """Hold every embargo still on its timer whose content no longer passes. Returns the count.
 
     One embargo's refusal is a hold, never an exception, so it cannot stop the
@@ -424,7 +433,7 @@ async def _hold_timers_that_no_longer_pass(session: AsyncSession, *, now: dt.dat
     )
     held = 0
     for embargo in pending:
-        problem = await release_problem(session, embargo.submission_id, now=now)
+        problem = await release_problem(session, key, embargo.submission_id, now=now)
         if problem is not None:
             await _hold(session, embargo, problem=problem, now=now)
             held += 1
@@ -458,7 +467,7 @@ async def _hold(session: AsyncSession, embargo: Embargo, *, problem: str, now: d
     )
 
 
-async def _release_due(session: AsyncSession, *, now: dt.datetime) -> int:
+async def _release_due(session: AsyncSession, key: AttributionKey, *, now: dt.datetime) -> int:
     """Record and announce every embargo whose time has arrived. Returns the count."""
     due = (
         (
@@ -476,12 +485,12 @@ async def _release_due(session: AsyncSession, *, now: dt.datetime) -> int:
         .all()
     )
     for embargo in due:
-        await _record_timed_release(session, embargo, now=now)
+        await _record_timed_release(session, key, embargo, now=now)
     return len(due)
 
 
 async def _record_timed_release(
-    session: AsyncSession, embargo: Embargo, *, now: dt.datetime
+    session: AsyncSession, key: AttributionKey, embargo: Embargo, *, now: dt.datetime
 ) -> None:
     """Mark one elapsed embargo released, announce it, and report a rule it now fails."""
     embargo.status = EmbargoStatus.RELEASED
@@ -491,6 +500,7 @@ async def _record_timed_release(
     # the sweeper does not queue the notification, nothing does.
     await queue_visibility_notifications(
         session,
+        key=key,
         submission_id=embargo.submission_id,
         circle_ids=await circle_ids_for_submission(session, embargo.submission_id),
         visible_at=embargo.release_at or now,
@@ -503,7 +513,7 @@ async def _record_timed_release(
     # Already readable by the clock, so not retracted; but a rule that stopped
     # holding inside the last sweep interval (or while this was down) is the
     # ISAC's to know about.
-    problem = await release_problem(session, embargo.submission_id, now=now)
+    problem = await release_problem(session, key, embargo.submission_id, now=now)
     if problem is not None:
         details["content_problem"] = problem
         logger.warning(

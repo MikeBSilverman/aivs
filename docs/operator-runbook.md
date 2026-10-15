@@ -983,6 +983,8 @@ Each finding is raised **once per rule window** and goes three ways:
 | `operator_bootstrapped` | The bootstrap command created an operator | Confirm who ran it on the host and why. An unexplained one is a host compromise (§7.5). |
 | `org_offboarded` | Any offboarding | Irreversible: confirm it was the agreed end of membership, not a mistyped quarantine. A stolen membership session offboarding a member is §7.5. |
 | `org_quarantined` | Any quarantine, including self-quarantine | Confirm the member knows, and start reconnection planning. |
+| `filer_mismatch` | A filing recorded in a firm's name that no audited creation names (checked over 24 h) | Only SQL on the member path can write one. Treat it as §7.5: find the request in the audit log by time, and do not distribute the submission. |
+| `owner_tag_mismatch` | A submission whose owner tag is not its recorded filer's, or that has no filer (checked over 24 h) | Nobody can act on it as its submitter, so it is inert, not harmful. Treat it as `filer_mismatch` if one was raised for the same submission; otherwise check for a half-finished rekey (§7.4a) and re-run it. |
 | `component_degraded` | A background job (embargo sweeper, webhook dispatcher, detections, published counts) has not succeeded for two of its intervals | Read the app log for that component's exception; `/readyz` names it and the error type. |
 
 **Who acts on a proposed quarantine** is the ISAC's choice, set once in

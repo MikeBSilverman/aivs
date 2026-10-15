@@ -17,7 +17,7 @@ from aivs_schemas.enums import OrgType
 from aivs_server.auth.secretbox import SecretBox, SecretPurpose
 from aivs_server.db.models import CircleMembership, Webhook, WebhookDelivery
 from aivs_server.notify.events import EVENT_SUBMISSION_VISIBLE
-from tests.conftest import proxy_headers
+from tests.conftest import TEST_ATTRIBUTION_KEY, proxy_headers
 
 
 def _seal(secret_box: SecretBox, webhook_id: uuid.UUID) -> bytes:
@@ -473,6 +473,7 @@ async def test_a_webhook_deleted_mid_distribution_is_skipped_not_a_failure(
     async def notify_and_commit() -> int:
         queued = await queue_visibility_notifications(
             distributing,
+            key=TEST_ATTRIBUTION_KEY,
             submission_id=submission.id,
             circle_ids=[circle.id],
             visible_at=dt.datetime.now(dt.UTC) - dt.timedelta(seconds=1),

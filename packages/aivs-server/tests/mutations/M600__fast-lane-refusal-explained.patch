@@ -7,20 +7,22 @@ Expect red: packages/aivs-server/tests/unit/test_post_moderation.py::test_a_note
 diff --git a/packages/aivs-server/src/aivs_server/services/contributions.py b/packages/aivs-server/src/aivs_server/services/contributions.py
 --- a/packages/aivs-server/src/aivs_server/services/contributions.py
 +++ b/packages/aivs-server/src/aivs_server/services/contributions.py
-@@ -356,15 +356,7 @@
+@@ -352,15 +352,9 @@
      """
      # The objects were added in this transaction and autoflush is off.
      await session.flush()
 -    try:
 -        async with session.begin_nested():
 -            await _validate_and_distribute(
--                session, ctx, submission, lane=lane, circle_ids=circle_ids
+-                session, ctx, submission, lane=lane, circle_ids=circle_ids, key=key
 -            )
 -    except _REVIEW_INSTEAD as refusal:
 -        await _file_for_review(session, ctx, submission, key=key)
 -        await _keep_the_reason(session, ctx, submission, lane=lane, refusal=refusal)
 -        return False
-+    await _validate_and_distribute(session, ctx, submission, lane=lane, circle_ids=circle_ids)
++    await _validate_and_distribute(
++        session, ctx, submission, lane=lane, circle_ids=circle_ids, key=key
++    )
      return True
  
  

@@ -76,12 +76,13 @@ from aivs_server.services.circles import (
 )
 from aivs_server.services.enrolment import enrolment_problem
 from aivs_server.services.instance_status import gather_status
+from aivs_server.services.member_staff_writes import quarantine_organisation
 from aivs_server.services.org_status import (
     OrgStatusError,
     change_org_status,
     load_org_for_update,
 )
-from aivs_server.services.quarantine import QuarantineError, quarantine_org
+from aivs_server.services.quarantine import QuarantineError
 
 __all__ = ["router"]
 
@@ -239,18 +240,15 @@ async def quarantine_screen(
     require_csrf(csrf_token, csrf_hash)
     require(can_quarantine_org(ctx, org_id), "portal_quarantine")
 
-    organization = await load_org_for_update(session, org_id)
-    if organization is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Not found")
     response = redirect_within_portal("/portal/admin/status")
     try:
-        await quarantine_org(
-            session, ctx, organisation=organization, reason=reason, now=await database_now(session)
-        )
+        organization = await quarantine_organisation(session, ctx, org_id=org_id, reason=reason)
     except QuarantineError as exc:
         await session.rollback()
         set_notice(response, settings, "error", f"Not quarantined: {exc}.")
         return response
+    if organization is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Not found")
     await session.commit()
     set_notice(response, settings, "info", f"{organization.slug} is quarantined.")
     return response

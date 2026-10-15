@@ -6,10 +6,10 @@ Expect red: packages/aivs-server/tests/unit/test_embargo_release_rechecks.py::te
 diff --git a/packages/aivs-server/src/aivs_server/services/embargo.py b/packages/aivs-server/src/aivs_server/services/embargo.py
 --- a/packages/aivs-server/src/aivs_server/services/embargo.py
 +++ b/packages/aivs-server/src/aivs_server/services/embargo.py
-@@ -190,7 +190,7 @@ async def release_embargo_now(
+@@ -194,7 +194,7 @@
          # could, in the record that exists to say exactly that.
          return await _record_elapsed_release(session, ctx, embargo, reason=reason)
-     problem = await release_problem(session, submission_id, now=now)
+     problem = await release_problem(session, key, submission_id, now=now)
 -    if problem is not None:
 +    if False:
          logger.warning(

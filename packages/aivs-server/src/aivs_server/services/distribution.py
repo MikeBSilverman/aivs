@@ -47,6 +47,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from aivs_schemas.enums import TLP, OrgType, SubmissionState, tlp_at_least_as_restrictive
 from aivs_server.audit.log import AuditAction, record
+from aivs_server.auth.attribution_key import AttributionKey
 from aivs_server.auth.context import AuthContext
 from aivs_server.db.models import (
     Circle,
@@ -55,7 +56,7 @@ from aivs_server.db.models import (
     StixObject,
     Submission,
 )
-from aivs_server.services.attribution import submitter_of
+from aivs_server.services.attribution import filer_known_to
 from aivs_server.services.content_rules import content_problem
 from aivs_server.services.embargo import record_embargo
 from aivs_server.services.markings import stamp_tlp_marking
@@ -109,7 +110,7 @@ async def _isac_identity(session: AsyncSession) -> str | None:
     ).scalar_one_or_none()
 
 
-async def _submitter_identity(session: AsyncSession, submission: Submission) -> str:
+async def _submitter_identity(session: AsyncSession, filer: uuid.UUID) -> str:
     """Return the submitting organisation's STIX identity.
 
     Every enrolled organisation is given one at enrolment, so this is expected to
@@ -117,11 +118,7 @@ async def _submitter_identity(session: AsyncSession, submission: Submission) -> 
     honestly and is refused rather than distributed unattributed.
     """
     identity = (
-        await session.execute(
-            select(Organization.stix_identity_id).where(
-                Organization.id == await submitter_of(session, submission)
-            )
-        )
+        await session.execute(select(Organization.stix_identity_id).where(Organization.id == filer))
     ).scalar_one_or_none()
 
     if not identity:
@@ -133,7 +130,7 @@ async def _submitter_identity(session: AsyncSession, submission: Submission) -> 
     return identity
 
 
-async def _attributed_identity(session: AsyncSession, submission: Submission) -> str:
+async def _attributed_identity(session: AsyncSession, filer: uuid.UUID) -> str:
     """The identity a named (not anonymous) submission is attributed to: its owner's.
 
     The submitter's own, except for the ISAC's automation, which files as the
@@ -142,12 +139,10 @@ async def _attributed_identity(session: AsyncSession, submission: Submission) ->
     than a machine's.
     """
     submitter_type = await session.scalar(
-        select(Organization.org_type).where(
-            Organization.id == await submitter_of(session, submission)
-        )
+        select(Organization.org_type).where(Organization.id == filer)
     )
     if not is_isac_owner(submitter_type):
-        return await _submitter_identity(session, submission)
+        return await _submitter_identity(session, filer)
     identity = await _isac_identity(session)
     if identity is None:
         msg = (
@@ -159,7 +154,7 @@ async def _attributed_identity(session: AsyncSession, submission: Submission) ->
 
 
 async def _apply_attribution(
-    session: AsyncSession, submission: Submission, objects: list[StixObject]
+    session: AsyncSession, submission: Submission, objects: list[StixObject], filer: uuid.UUID
 ) -> None:
     """Set ``created_by_ref`` on every object to what the server knows to be true.
 
@@ -185,7 +180,7 @@ async def _apply_attribution(
         # envelope claims the ISAC authored it.
         problem = self_identifying_problem(
             (stored.raw for stored in objects),
-            own_identity_id=await _submitter_identity(session, submission),
+            own_identity_id=await _submitter_identity(session, filer),
         )
         if problem is not None:
             raise DistributionError(problem)
@@ -198,7 +193,7 @@ async def _apply_attribution(
             )
             raise DistributionError(msg)
     else:
-        identity = await _attributed_identity(session, submission)
+        identity = await _attributed_identity(session, filer)
 
     for stored in objects:
         if stored.raw.get("created_by_ref") != identity:
@@ -206,11 +201,17 @@ async def _apply_attribution(
 
 
 async def _refuse_content_problems(
-    session: AsyncSession, submission: Submission, objects: list[StixObject], *, now: dt.datetime
+    session: AsyncSession,
+    submission: Submission,
+    objects: list[StixObject],
+    filer: uuid.UUID,
+    key: AttributionKey,
+    *,
+    now: dt.datetime,
 ) -> None:
     """The content rules as they stand now: see ``services.content_rules``."""
     problem = await content_problem(
-        session, submission, [stored.raw for stored in objects], now=now
+        session, submission, [stored.raw for stored in objects], filer=filer, now=now, key=key
     )
     if problem is not None:
         raise DistributionError(problem)
@@ -301,6 +302,7 @@ async def distribute_submission(
     ctx: AuthContext,
     submission: Submission,
     *,
+    key: AttributionKey,
     circle_ids: Sequence[uuid.UUID],
     release_at: dt.datetime | None = None,
     now: dt.datetime | None = None,
@@ -353,8 +355,9 @@ async def distribute_submission(
         msg = "submission carries no STIX objects to distribute"
         raise DistributionError(msg)
 
-    await _refuse_content_problems(session, submission, objects, now=now)
-    await _apply_attribution(session, submission, objects)
+    filer = await filer_known_to(session, key, ctx, submission)
+    await _refuse_content_problems(session, submission, objects, filer, key, now=now)
+    await _apply_attribution(session, submission, objects, filer)
     _stamp_markings(submission, objects)
 
     # Rows for *these* objects that are already live in a target circle, so a

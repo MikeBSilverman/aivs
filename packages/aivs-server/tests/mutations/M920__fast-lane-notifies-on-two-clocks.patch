@@ -6,8 +6,8 @@ Expect red: packages/aivs-server/tests/unit/test_one_click.py::test_a_click_publ
 diff --git a/packages/aivs-server/src/aivs_server/services/contributions.py b/packages/aivs-server/src/aivs_server/services/contributions.py
 --- a/packages/aivs-server/src/aivs_server/services/contributions.py
 +++ b/packages/aivs-server/src/aivs_server/services/contributions.py
-@@ -414,8 +414,7 @@ async def _validate_and_distribute(
-         session,
+@@ -433,8 +433,7 @@
+         key=key,
          submission_id=submission.id,
          circle_ids=targets,
 -        visible_at=result.date_added,

@@ -42,10 +42,9 @@ from aivs_server.db.models import (
     Organization,
     Submission,
     TaxiiCollection,
-    Webhook,
-    WebhookDelivery,
 )
 from aivs_server.services.attribution import submissions_filed_by, submitter_column
+from aivs_server.services.member_staff_reads import last_retrieval, webhook_delivery_counts
 
 __all__ = [
     "CERTIFICATE_WARNING",
@@ -135,7 +134,7 @@ async def member_health(session: AsyncSession, ctx: AuthContext, now: dt.datetim
     """The caller's own organisation's connection, as the caller may see it."""
     return MemberHealth(
         collections=await _collections(session, ctx, now),
-        webhooks=await _webhooks(session, ctx.org_id),
+        webhooks=await _webhooks(session, ctx),
         certificates=await _certificates(session, ctx.org_id, now),
     )
 
@@ -178,20 +177,11 @@ async def _collections(
                 collection_id=collection_id,
                 title=title,
                 is_sandbox=is_sandbox,
-                last_collected=await _last_collected(session, ctx.org_id, collection_id),
+                last_collected=await last_retrieval(session, ctx, collection_id),
                 newest_available=await _newest_available(session, ctx, circle_id, now),
             )
         )
     return tuple(health)
-
-
-async def _last_collected(
-    session: AsyncSession, org_id: uuid.UUID, collection_id: uuid.UUID
-) -> dt.datetime | None:
-    last: dt.datetime | None = await session.scalar(
-        select(func.max(_AUDIT_AT)).where(_retrieval(org_id, str(collection_id)))
-    )
-    return last
 
 
 async def _newest_available(
@@ -210,18 +200,8 @@ async def _newest_available(
     return newest
 
 
-async def _webhooks(session: AsyncSession, org_id: uuid.UUID) -> tuple[WebhookHealth, ...]:
-    delivered = func.max(WebhookDelivery.delivered_at)
-    undelivered = func.count(WebhookDelivery.id).filter(WebhookDelivery.delivered_at.is_(None))
-    rows = (
-        await session.execute(
-            select(Webhook, delivered, undelivered)
-            .outerjoin(WebhookDelivery, WebhookDelivery.webhook_id == Webhook.id)
-            .where(Webhook.org_id == org_id)
-            .group_by(Webhook.id)
-            .order_by(Webhook.created_at)
-        )
-    ).all()
+async def _webhooks(session: AsyncSession, ctx: AuthContext) -> tuple[WebhookHealth, ...]:
+    rows = await webhook_delivery_counts(session, ctx)
     return tuple(
         WebhookHealth(
             host=urlsplit(webhook.url).hostname or "",

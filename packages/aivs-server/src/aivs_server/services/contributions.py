@@ -70,12 +70,12 @@ from aivs_server.db.models import (
     Distribution,
     StixObject,
     Submission,
-    TaxiiStatus,
 )
 from aivs_server.notify.events import queue_visibility_notifications
 from aivs_server.services.attribution import submissions_filed_by
 from aivs_server.services.disclosure import cve_status, published_in_the_isacs_view
 from aivs_server.services.distribution import DistributionError, distribute_submission
+from aivs_server.services.member_staff_reads import inbox_posts_since
 from aivs_server.services.ownership import ISAC_OWNER
 from aivs_server.services.publication import PublicationPausedError
 from aivs_server.services.references import external_references_by_type, referenced_ids
@@ -296,12 +296,8 @@ async def within_hourly_allowance(
             Submission.distributed_at >= since,
         )
     )
-    inbox = await session.scalar(
-        select(func.count())
-        .select_from(TaxiiStatus)
-        .where(TaxiiStatus.org_id == org_id, TaxiiStatus.request_timestamp >= since)
-    )
-    return (unreviewed or 0) + (inbox or 0) < limit
+    inbox = await inbox_posts_since(org_id, since)
+    return (unreviewed or 0) + inbox < limit
 
 
 async def record_rate_limited(ctx: AuthContext, *, lane: str, limit: int) -> None:
@@ -359,7 +355,7 @@ async def publish_without_review(
     try:
         async with session.begin_nested():
             await _validate_and_distribute(
-                session, ctx, submission, lane=lane, circle_ids=circle_ids
+                session, ctx, submission, lane=lane, circle_ids=circle_ids, key=key
             )
     except _REVIEW_INSTEAD as refusal:
         await _file_for_review(session, ctx, submission, key=key)
@@ -417,8 +413,9 @@ async def _validate_and_distribute(
     *,
     lane: SubmissionLane,
     circle_ids: Iterable[uuid.UUID],
+    key: AttributionKey,
 ) -> None:
-    await check_content_rules(session, submission)
+    await check_content_rules(session, submission, key)
     await _refuse_unless_published_in_the_isacs_view(session, submission)
     reason = f"{lane.value} lane: published without review"
     if submission.state is SubmissionState.DRAFT:
@@ -426,13 +423,14 @@ async def _validate_and_distribute(
     await record_transition(session, ctx, submission, SubmissionState.VALIDATED, reason=reason)
     submission.lane = lane
     targets = sorted(circle_ids, key=str)
-    result = await distribute_submission(session, ctx, submission, circle_ids=targets)
+    result = await distribute_submission(session, ctx, submission, circle_ids=targets, key=key)
     await record_transition(session, ctx, submission, SubmissionState.DISTRIBUTED, reason=reason)
     # The distribution's own stamp, as "now" too: a database-clock instant
     # compared with the notifier's default app-clock "now" read as "not yet
     # visible" on a replica running behind, and nobody was told.
     await queue_visibility_notifications(
         session,
+        key=key,
         submission_id=submission.id,
         circle_ids=targets,
         visible_at=result.date_added,

@@ -34,6 +34,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from aivs_schemas.enums import SubmissionLane, SubmissionState
 from aivs_schemas.extension.builders import format_stix_timestamp
 from aivs_server.audit.log import AuditAction, record
+from aivs_server.auth.attribution_key import AttributionKey
 from aivs_server.auth.context import AuthContext
 from aivs_server.auth.policy import is_isac_editor, require
 from aivs_server.db.models import Distribution, StixObject, Submission
@@ -121,6 +122,7 @@ async def revoke_contribution(
     ctx: AuthContext,
     submission: Submission,
     *,
+    key: AttributionKey,
     reason: str,
     now: dt.datetime | None = None,
 ) -> RevocationResult:
@@ -167,6 +169,7 @@ async def revoke_contribution(
 
     await queue_visibility_notifications(
         session,
+        key=key,
         submission_id=submission.id,
         circle_ids=sorted(circles, key=str),
         visible_at=stamp,

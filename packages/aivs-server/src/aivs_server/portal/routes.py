@@ -70,7 +70,6 @@ from aivs_server.db.models import (
     Organization,
     StixObject,
     Submission,
-    SubmissionTransition,
 )
 from aivs_server.notify.events import queue_visibility_notifications
 from aivs_server.portal.shared import (
@@ -94,6 +93,7 @@ from aivs_server.services.bulk_validation import GroupMemberNotFoundError, valid
 from aivs_server.services.contributions import submit_submission
 from aivs_server.services.distribution import DistributionError, distribute_submission
 from aivs_server.services.isac_drafts import WaitingDraft, waiting_isac_drafts
+from aivs_server.services.member_staff_reads import first_pass_of, submission_history
 from aivs_server.services.provenance import consequential_changes
 from aivs_server.services.proxy_filing import awaiting_confirmation, confirm_proxy_filing
 from aivs_server.services.publication import PublicationPausedError
@@ -108,7 +108,7 @@ from aivs_server.services.submissions import (
     is_isac_filing,
     load_submission,
 )
-from aivs_server.services.triage import latest_triage, shown_findings
+from aivs_server.services.triage import shown_findings
 
 __all__ = ["router"]
 
@@ -635,17 +635,7 @@ async def submission_detail(
         )
     ) or 0
 
-    transitions = (
-        (
-            await session.execute(
-                select(SubmissionTransition)
-                .where(SubmissionTransition.submission_id == submission.id)
-                .order_by(SubmissionTransition.at)
-            )
-        )
-        .scalars()
-        .all()
-    )
+    transitions = await submission_history(session, ctx, submission.id)
 
     actions, circles = await _available_actions(session, ctx, submission, key=key)
 
@@ -714,7 +704,7 @@ async def _first_pass_view(
     session: SessionDep, ctx: AuthContext, submission: Submission
 ) -> dict[str, Any] | None:
     """The first pass's latest notes, as this reader may see them."""
-    row = await latest_triage(session, submission.id)
+    row = await first_pass_of(session, ctx, submission.id)
     if row is None:
         return None
     return {
@@ -746,7 +736,7 @@ async def _available_actions(
     Derived from the policy predicates rather than restated, so a button never
     appears for something the API would refuse.
     """
-    owner_is_isac = await is_isac_filing(session, submission)
+    owner_is_isac = await is_isac_filing(session, key, submission)
     owner_is_caller = is_submitted_by(key, submission, ctx.org_id)
     verbs = [
         (SubmissionState.SUBMITTED, "submit", "Send for review", True),
@@ -913,7 +903,7 @@ async def perform_action(
                 ctx,
                 submission,
                 SubmissionState.DISTRIBUTED,
-                owner_is_isac=await is_isac_filing(session, submission),
+                owner_is_isac=await is_isac_filing(session, key, submission),
                 owner_is_caller=is_submitted_by(key, submission, ctx.org_id),
             ),
             "portal_distribute",
@@ -968,7 +958,7 @@ async def _perform_verb(
         await confirm_proxy_filing(session, ctx, submission, now=now, key=key)
     elif verb == "revoke":
         reason = str((await request.form()).get("reason", "")).strip()
-        await revoke_contribution(session, ctx, submission, reason=reason)
+        await revoke_contribution(session, ctx, submission, key=key, reason=reason)
     elif verb == "submit":
         await submit_submission(
             session,
@@ -999,7 +989,7 @@ async def _distribute_from_portal(
 ) -> None:
     circle_ids, release_at = _parse_distribute_form(await request.form())
     result = await distribute_submission(
-        session, ctx, submission, circle_ids=circle_ids, release_at=release_at
+        session, ctx, submission, circle_ids=circle_ids, release_at=release_at, key=key
     )
     await apply_transition(session, ctx, submission, SubmissionState.DISTRIBUTED, key=key)
     # The same queue the API path writes, in the same transaction as the
@@ -1012,6 +1002,7 @@ async def _distribute_from_portal(
     if not result.embargoed:
         await queue_visibility_notifications(
             session,
+            key=key,
             submission_id=submission.id,
             circle_ids=list(circle_ids),
             visible_at=result.date_added,

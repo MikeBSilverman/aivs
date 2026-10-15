@@ -108,6 +108,48 @@ async def test_a_webhook_is_shown_by_host_never_by_url(client, world, session, s
     assert "SECRET-TOKEN" not in str(health)
 
 
+@pytest.mark.requirement("SF-91")
+async def test_a_peers_collection_is_not_the_members(client, world, make_cert):
+    """Read staff side from the audit log (``member_staff_reads``): the
+    organisation filter is the one guard on that connection."""
+    await world["publish"](world["vendor"], world["circle"], name="Collected by both")
+    peer_pem, _ = await make_cert(world["vendor"])
+    collected = await client.get(
+        f"/taxii2/aivs/collections/{world['collection'].id}/objects/",
+        headers=proxy_headers(peer_pem),
+    )
+    assert collected.status_code == 200, collected.text
+
+    [mine] = (await _health(client, world))["collections"]
+    assert mine["last_collected"] is None
+
+    await _collect(client, world)
+    [after] = (await _health(client, world))["collections"]
+    assert after["last_collected"] is not None, "the pair: its own collection is shown"
+
+
+@pytest.mark.requirement("SF-91")
+async def test_a_peers_webhook_is_not_shown(client, world, session, secret_box):
+    """Deliveries are read staff side (``member_staff_reads``), by the caller's webhooks."""
+    for org, host in ((world["vendor"], "peer"), (world["member"], "mine")):
+        webhook_id = uuid.uuid4()
+        session.add(
+            Webhook(
+                id=webhook_id,
+                org_id=org.id,
+                url=f"https://{host}.example/hook",
+                hmac_secret_encrypted=secret_box.seal(
+                    "webhook-signing-secret", purpose=SecretPurpose.WEBHOOK_HMAC, subject=webhook_id
+                ),
+                events=[],
+            )
+        )
+    await session.commit()
+
+    health = await _health(client, world)
+    assert [w["host"] for w in health["webhooks"]] == ["mine.example"]
+
+
 # ---------------------------------------------------------------------------
 # The ISAC's view
 # ---------------------------------------------------------------------------

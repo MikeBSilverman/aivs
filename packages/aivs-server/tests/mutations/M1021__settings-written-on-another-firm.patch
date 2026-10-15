@@ -1,0 +1,17 @@
+Mutation M1021: notification settings are written on another organisation's row, on the staff login
+Re-applies: Phase P slice 3c (SF-91)
+
+Expect red: packages/aivs-server/tests/unit/test_digest.py::test_settings_written_staff_side_reach_the_callers_own_organisation_alone
+
+diff --git a/packages/aivs-server/src/aivs_server/services/member_settings.py b/packages/aivs-server/src/aivs_server/services/member_settings.py
+--- a/packages/aivs-server/src/aivs_server/services/member_settings.py
++++ b/packages/aivs-server/src/aivs_server/services/member_settings.py
+@@ -35,7 +35,7 @@
+     committed first is seen.
+     """
+     org = await session.scalar(
+-        select(Organization).where(Organization.id == ctx.org_id).with_for_update()
++        select(Organization).where(Organization.id != ctx.org_id).with_for_update()
+     )
+     if org is None or org.status is not OrgStatus.ACTIVE:
+         return None

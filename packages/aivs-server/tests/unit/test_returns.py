@@ -37,7 +37,7 @@ from aivs_server.services.triage import (
     decide,
     triage_pending,
 )
-from tests.conftest import proxy_headers
+from tests.conftest import TEST_ATTRIBUTION_KEY, proxy_headers
 from tests.unit.sharing import intel as sharing_intel
 from tests.unit.test_vulnerability_page import _get, _reader
 
@@ -186,7 +186,7 @@ async def test_a_member_is_told_what_to_change_and_nothing_else_happens(client, 
     _org, pem = member
     submission_id = await _submitted(client, pem, _bundle(**UNMATCHABLE))
 
-    assert await triage_pending(session, now=NOW) == 1
+    assert await triage_pending(session, TEST_ATTRIBUTION_KEY, now=NOW) == 1
 
     detail = await _detail(client, pem, submission_id)
     assert detail["state"] == "returned"
@@ -213,7 +213,7 @@ async def test_the_audit_row_names_the_rules_and_codes_and_quotes_no_content(
     _org, pem = member
     submission_id = await _submitted(client, pem, _bundle(**UNMATCHABLE))
 
-    await triage_pending(session, now=NOW)
+    await triage_pending(session, TEST_ATTRIBUTION_KEY, now=NOW)
 
     row = await session.scalar(
         select(AuditLog).where(
@@ -234,10 +234,10 @@ async def test_resubmitted_unchanged_it_goes_to_review_and_is_not_returned_again
 ):
     _org, pem = member
     submission_id = await _submitted(client, pem, _bundle(**UNMATCHABLE))
-    await triage_pending(session, now=NOW)
+    await triage_pending(session, TEST_ATTRIBUTION_KEY, now=NOW)
 
     await _submit(client, pem, submission_id)
-    await triage_pending(session, now=NOW)
+    await triage_pending(session, TEST_ATTRIBUTION_KEY, now=NOW)
 
     detail = await _detail(client, pem, submission_id)
     assert detail["state"] == "submitted"
@@ -250,14 +250,14 @@ async def test_resubmitted_unchanged_it_goes_to_review_and_is_not_returned_again
 async def test_a_returned_submission_can_be_fixed_and_resubmitted(client, session, member):
     _org, pem = member
     submission_id = await _submitted(client, pem, _bundle(**UNMATCHABLE))
-    await triage_pending(session, now=NOW)
+    await triage_pending(session, TEST_ATTRIBUTION_KEY, now=NOW)
 
     amended = await client.patch(
         f"{API}/{submission_id}", json={"bundle": _bundle(**MATCHABLE)}, headers=proxy_headers(pem)
     )
     assert amended.status_code == 200, amended.text
     await _submit(client, pem, submission_id)
-    await triage_pending(session, now=NOW)
+    await triage_pending(session, TEST_ATTRIBUTION_KEY, now=NOW)
 
     detail = await _detail(client, pem, submission_id)
     assert (detail["state"], detail["first_pass"]["disposition"]) == (
@@ -274,7 +274,7 @@ async def test_urgent_content_goes_to_review_with_its_notes(client, session, mem
         client, pem, _bundle(kev_listed=True, kev_date_added="2026-10-01")
     )
 
-    await triage_pending(session, now=NOW)
+    await triage_pending(session, TEST_ATTRIBUTION_KEY, now=NOW)
 
     detail = await _detail(client, pem, submission_id)
     assert detail["state"] == "submitted"
@@ -302,7 +302,7 @@ async def test_only_a_members_own_filing_is_sent_back_to_its_writer(
     else:
         submission_id = await _filed_for_the_member(client, isac, org)
 
-    await triage_pending(session, now=NOW)
+    await triage_pending(session, TEST_ATTRIBUTION_KEY, now=NOW)
 
     state = await session.scalar(
         select(Submission.state).where(Submission.id == uuid.UUID(submission_id))
@@ -316,8 +316,8 @@ async def test_each_submit_is_read_once(client, session, member):
     _org, pem = member
     submission_id = await _submitted(client, pem, _bundle(**MATCHABLE))
 
-    await triage_pending(session, now=NOW)
-    await triage_pending(session, now=NOW)
+    await triage_pending(session, TEST_ATTRIBUTION_KEY, now=NOW)
+    await triage_pending(session, TEST_ATTRIBUTION_KEY, now=NOW)
 
     reads = await session.scalar(
         select(func.count()).where(SubmissionTriage.submission_id == uuid.UUID(submission_id))
@@ -334,7 +334,7 @@ async def test_nothing_is_read_or_returned_while_the_instance_is_paused(client, 
     await session.merge(InstanceControl(id=1, distribution_paused=True))
     await session.commit()
 
-    assert await triage_pending(session, now=NOW) == 0
+    assert await triage_pending(session, TEST_ATTRIBUTION_KEY, now=NOW) == 0
 
     assert (await _detail(client, pem, submission_id))["state"] == "submitted"
 
@@ -358,7 +358,7 @@ async def test_the_member_reads_needs_changes_on_its_page(
 ):
     org, pem = member
     submission_id = await _submitted(client, pem, _bundle(**UNMATCHABLE))
-    await triage_pending(session, now=NOW)
+    await triage_pending(session, TEST_ATTRIBUTION_KEY, now=NOW)
     reader = await _reader(
         session, settings, make_operator, org, pem, roles=(OperatorRole.ANALYST,)
     )

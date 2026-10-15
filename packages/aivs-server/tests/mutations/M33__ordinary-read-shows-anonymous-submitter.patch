@@ -6,12 +6,12 @@ Expect red: packages/aivs-server/tests/unit/test_submission_workflow.py::test_an
 diff --git a/packages/aivs-server/src/aivs_server/services/attribution.py b/packages/aivs-server/src/aivs_server/services/attribution.py
 --- a/packages/aivs-server/src/aivs_server/services/attribution.py
 +++ b/packages/aivs-server/src/aivs_server/services/attribution.py
-@@ -100,7 +100,7 @@
-     reveal, which is audited with its reason (``POST /submissions/{id}/reveal``).
+@@ -204,7 +204,7 @@
      """
-     submitter = await submitter_of(session, submission)
--    if submission.distribute_anonymously and submitter != org_id:
-+    if False:
+     if is_submitted_by(key, submission, ctx.org_id):
+         return ctx.org_id
+-    if not uses_staff_database(ctx) or submission.distribute_anonymously:
++    if not uses_staff_database(ctx):
          return None
+     submitter: uuid.UUID = await submitter_of(session, submission)
      return submitter
- 

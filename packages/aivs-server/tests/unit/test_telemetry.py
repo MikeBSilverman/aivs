@@ -23,6 +23,7 @@ import pytest
 from sqlalchemy import select
 
 from aivs_schemas.enums import AckType, AckVia, OrgStatus, OrgType
+from aivs_server.auth.context import AuthContext, AuthMethod
 from aivs_server.auth.secretbox import SecretPurpose
 from aivs_server.db.models import Acknowledgment, Webhook, WebhookDelivery
 from aivs_server.services.telemetry import (
@@ -32,6 +33,17 @@ from aivs_server.services.telemetry import (
     submission_telemetry,
 )
 from tests.conftest import proxy_headers
+
+#: The counts as the ISAC reads them, on the test's own session. What a member
+#: may read of them, and on which login, is asserted through the routes
+#: (``test_only_the_submitter_may_read_it``, ``test_member_staff_reads``).
+_COUNTER = AuthContext(
+    org_id=uuid.UUID(int=1),
+    org_slug="isac",
+    org_type=OrgType.ADMIN,
+    org_status=OrgStatus.ACTIVE,
+    auth_method=AuthMethod.MTLS,
+)
 
 pytestmark = pytest.mark.db
 
@@ -66,7 +78,7 @@ async def shared(
 async def _published(session, submission):
     """The submitter's telemetry once the publishing job has run."""
     await publish_telemetry(session, now=dt.datetime.now(dt.UTC))
-    return await submission_telemetry(session, submission)
+    return await submission_telemetry(session, _COUNTER, submission)
 
 
 async def _receipt(session, org, submission, ack_type=AckType.RETRIEVED):
@@ -378,7 +390,7 @@ async def test_before_the_first_publication_nothing_is_counted(session, shared):
     """A distributed submission the job has not reached yet reads as not counted, not as zero."""
     submission, _s, _pem, _readers, _c = await shared(2 * K_ANONYMITY)
 
-    telemetry = await submission_telemetry(session, submission)
+    telemetry = await submission_telemetry(session, _COUNTER, submission)
 
     assert telemetry.as_of is None
     assert telemetry.reach.value is None

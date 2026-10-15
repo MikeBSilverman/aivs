@@ -32,6 +32,7 @@ from sqlalchemy.orm import aliased
 
 from aivs_schemas.enums import AckType, OrgType
 from aivs_server.audit.log import AuditAction, record
+from aivs_server.auth.attribution_key import AttributionKey
 from aivs_server.db.clock import database_now
 from aivs_server.db.models import (
     Acknowledgment,
@@ -44,6 +45,10 @@ from aivs_server.db.models import (
 from aivs_server.db.webhook_lock import deliverable_webhooks
 from aivs_server.notify.dispatcher import KEY_UNAVAILABLE_ERROR
 from aivs_server.observability import HEARTBEATS
+from aivs_server.services.attribution import (
+    filings_with_a_wrong_tag,
+    filings_without_their_record,
+)
 from aivs_server.services.org_status import load_org_for_update
 from aivs_server.services.quarantine import QuarantineError, quarantine_org_automatically
 
@@ -53,6 +58,7 @@ __all__ = [
     "RULES",
     "Finding",
     "QuarantinePolicy",
+    "detection_rules",
     "run_detections",
 ]
 
@@ -483,6 +489,59 @@ async def _component_degraded(
     ]
 
 
+async def _filer_mismatch(
+    session: AsyncSession, now: dt.datetime, window: dt.timedelta, threshold: int
+) -> list[Finding]:
+    """A filing recorded in a firm's name that no audited creation names (Phase P).
+
+    The member login may record filings and not read them, so the one way a
+    filing appears in another firm's name is SQL on the member path; this is
+    where that is noticed. Each finding names the submission and the firm it
+    was recorded for, which only the ISAC sees.
+    """
+    del threshold
+    return [
+        Finding(
+            rule="filer_mismatch",
+            severity="critical",
+            subject=str(submission_id),
+            summary="a filing is recorded in a firm's name that no audited creation names",
+            details={"submission": str(submission_id), "recorded_filer": str(org_id)},
+        )
+        for submission_id, org_id in await filings_without_their_record(session, since=now - window)
+    ]
+
+
+def _owner_tag_mismatch(key: AttributionKey) -> RuleCheck:
+    """A submission whose owner tag is not its recorded filer's, or that has no filer (SF-90).
+
+    Such a filing is inert -- its tag answers "yours" to nobody -- and that is
+    why it has to be raised: nothing else would ever show it.
+    """
+
+    async def check(
+        session: AsyncSession, now: dt.datetime, window: dt.timedelta, threshold: int
+    ) -> list[Finding]:
+        del threshold
+        return [
+            Finding(
+                rule="owner_tag_mismatch",
+                severity="critical",
+                subject=str(submission_id),
+                summary="a submission's owner tag is not its recorded filer's",
+                details={
+                    "submission": str(submission_id),
+                    "recorded_filer": None if filer is None else str(filer),
+                },
+            )
+            for submission_id, filer in await filings_with_a_wrong_tag(
+                session, key, since=now - window
+            )
+        ]
+
+    return check
+
+
 def _every_occurrence(rule: str, action: str, severity: str, summary: str) -> RuleCheck:
     """A rule that raises on each audit row of ``action`` -- acts worth an alert every time."""
 
@@ -525,6 +584,7 @@ RULES: Final[tuple[Rule, ...]] = (
     ),
     Rule("not_found_burst", "medium", dt.timedelta(minutes=10), 50, _not_found_burst),
     Rule("contribution_flood", "medium", dt.timedelta(hours=1), 1, _contribution_flood),
+    Rule("filer_mismatch", "critical", dt.timedelta(hours=24), 1, _filer_mismatch),
     Rule("posture_export_burst", "high", dt.timedelta(hours=1), 20, _posture_export_burst),
     Rule("evidence_pack_burst", "medium", dt.timedelta(hours=1), 20, _evidence_pack_burst),
     Rule("auditor_bulk_read", "medium", dt.timedelta(hours=1), 20000, _auditor_bulk_read),
@@ -597,6 +657,20 @@ RULES: Final[tuple[Rule, ...]] = (
         ),
     ),
 )
+
+
+def detection_rules(key: AttributionKey) -> tuple[Rule, ...]:
+    """Every rule the detection job runs: ``RULES``, and those that check a keyed value."""
+    return (
+        *RULES,
+        Rule(
+            "owner_tag_mismatch",
+            "critical",
+            dt.timedelta(hours=24),
+            1,
+            _owner_tag_mismatch(key),
+        ),
+    )
 
 
 async def _already_raised(

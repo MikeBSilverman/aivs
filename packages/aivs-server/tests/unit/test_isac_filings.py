@@ -18,10 +18,12 @@ from sqlalchemy import select
 
 from aivs_schemas.enums import TLP, DiscoveryScope, OperatorRole, OrgType, SubmissionState
 from aivs_server.audit.log import AuditAction
+from aivs_server.auth.policy import holds_submitter_rights
 from aivs_server.auth.sessions import establish_session
 from aivs_server.db.models import AuditLog, Submission
+from aivs_server.services.attribution import is_submitted_by
 from aivs_server.services.submissions import is_isac_filing
-from tests.conftest import proxy_headers
+from tests.conftest import TEST_ATTRIBUTION_KEY, proxy_headers
 
 pytestmark = pytest.mark.db
 
@@ -239,14 +241,24 @@ async def test_an_isac_analyst_holds_no_verb_on_the_automations_draft(client, se
 
 
 @pytest.mark.requirement("SF-81")
-async def test_a_filing_whose_owner_cannot_be_found_needs_an_editor(session):
-    """``is_isac_filing`` fails closed: an owner it cannot find is not taken for
-    a member, whose answer would hand the submitter's verbs to whoever shares
-    the filing's organisation id."""
+async def test_a_filing_whose_tag_names_no_organisation_gives_no_one_its_verbs(session, isac_ctx):
+    """``is_isac_filing`` answers from the tag (Phase P): a tag that matches no
+    organisation is not taken for the ISAC's, and no caller's tag matches it
+    either, so nobody holds the submitter's verbs on it, an editor included.
+    Before the tag it read the owner from ``attribution`` and took an owner it
+    could not find for the ISAC's, so an editor held them."""
+    orphan_id = uuid.uuid4()
     orphan = Submission(
+        id=orphan_id,
+        owner_tag=TEST_ATTRIBUTION_KEY.owner_tag(uuid.uuid4(), orphan_id),
         state=SubmissionState.DRAFT,
         tlp=TLP.AMBER,
         discovery_scope=DiscoveryScope.OWN_ESTATE,
         title="no owner",
     )
-    assert await is_isac_filing(session, orphan) is True
+    owner_is_isac = await is_isac_filing(session, TEST_ATTRIBUTION_KEY, orphan)
+    owner_is_caller = is_submitted_by(TEST_ATTRIBUTION_KEY, orphan, isac_ctx.org_id)
+    assert (owner_is_isac, owner_is_caller) == (False, False)
+    assert not holds_submitter_rights(
+        isac_ctx, owner_is_isac=owner_is_isac, owner_is_caller=owner_is_caller
+    )

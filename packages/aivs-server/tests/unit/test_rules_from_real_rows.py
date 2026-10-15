@@ -11,10 +11,15 @@ from __future__ import annotations
 
 import datetime as dt
 import re
+import uuid
 
 import pytest
+from sqlalchemy import select, text
 
 from aivs_schemas.enums import OrgType
+from aivs_server import main as main_module
+from aivs_server.audit.log import AuditAction
+from aivs_server.db.models import AuditLog, Submission
 from aivs_server.services.detections import RULES, Rule, run_detections
 from tests.conftest import proxy_headers
 from tests.unit.test_notifications import distribute
@@ -112,3 +117,76 @@ async def test_first_distribution_to_a_circle_from_a_real_distribution(
 
     assert [subject.rsplit(":", 1)[1] for subject in first] == [str(circle.id)]
     assert second == [], "the same operator to the same circle again is routine"
+
+
+#: Every column of a submission but its identity and the stamps the server sets.
+_COPIED = ", ".join(
+    column.name
+    for column in Submission.__table__.columns
+    if column.name not in {"id", "created_at", "updated_at"}
+)
+
+
+async def _forge_filing(member_engine, *, like: str, named: uuid.UUID) -> uuid.UUID:
+    """What SQL on the member path can do: as the member login, a submission and
+    its filer row in another firm's name, with no audited creation."""
+    forged = uuid.uuid4()
+    async with member_engine.begin() as connection:
+        await connection.execute(
+            text(
+                f"INSERT INTO submissions (id, {_COPIED}) "  # noqa: S608 - column names from the model
+                f"SELECT :forged, {_COPIED} FROM submissions WHERE id = :like"
+            ),
+            {"forged": forged, "like": like},
+        )
+        await connection.execute(
+            text("INSERT INTO attribution.submitters (submission_id, org_id) VALUES (:id, :org)"),
+            {"id": forged, "org": named},
+        )
+    return forged
+
+
+@pytest.mark.requirement("SF-91")
+async def test_filer_mismatch_from_a_real_filing_and_a_forged_one(
+    client, session, member_engine, make_org, make_cert
+):
+    filer = await make_org("filing-firm", org_type=OrgType.GSIB)
+    named = await make_org("named-firm", org_type=OrgType.GSIB)
+    pem, _ = await make_cert(filer)
+
+    real = await create_draft(client, pem)
+    assert await _raised(session, "filer_mismatch") == [], "an audited filing is not a finding"
+
+    forged = await _forge_filing(member_engine, like=real["id"], named=named.id)
+    assert await _raised(session, "filer_mismatch") == [str(forged)]
+
+
+@pytest.mark.requirement("SF-91")
+async def test_the_detection_job_raises_a_tag_no_filer_matches(
+    app, client, session, settings, member_engine, make_org, make_cert
+):
+    """Driven through the background job itself, which is what must pass the
+    keyed rules: a rule only a test names is a rule production never runs."""
+    filer = await make_org("tagging-firm", org_type=OrgType.GSIB)
+    named = await make_org("tag-named-firm", org_type=OrgType.GSIB)
+    pem, _ = await make_cert(filer)
+    real = await create_draft(client, pem)
+    # The forged row copies the real row's tag, which is the filer's, not the
+    # named firm's: SQL cannot compute the named firm's.
+    forged = await _forge_filing(member_engine, like=real["id"], named=named.id)
+
+    await main_module._run_detections(settings)
+
+    raised = (
+        (
+            await session.execute(
+                select(AuditLog.details["submission"].astext).where(
+                    AuditLog.action == AuditAction.DETECTION_RAISED,
+                    AuditLog.resource_id == "owner_tag_mismatch",
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert raised == [str(forged)]

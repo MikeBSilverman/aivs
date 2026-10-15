@@ -22,14 +22,15 @@ the ISAC, and nothing here is shown to a member.
 from __future__ import annotations
 
 import datetime as dt
+import uuid
 from collections.abc import Mapping, Sequence
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from aivs_server.auth.attribution_key import AttributionKey
 from aivs_server.db.models import Submission
 from aivs_server.services.anonymity import anonymity_change_problem
-from aivs_server.services.attribution import submitter_of
 from aivs_server.services.ownership import foreign_owned_versions_problem, stale_version_problem
 from aivs_server.services.submissions import contribution_problem, foreign_identity_ids
 
@@ -41,7 +42,9 @@ async def content_problem(
     submission: Submission,
     objects: Sequence[Mapping[str, Any]],
     *,
+    filer: uuid.UUID,
     now: dt.datetime,
+    key: AttributionKey,
 ) -> str | None:
     """Why ``submission``'s ``objects`` may not become readable now, or ``None``."""
     raws = list(objects)
@@ -54,19 +57,19 @@ async def content_problem(
     anonymity = await anonymity_change_problem(session, submission)
     if anonymity is not None:
         return anonymity
-    contribution = await contribution_problem(session, submission, raws, visible_to=None, now=now)
+    contribution = await contribution_problem(
+        session, submission, raws, visible_to=None, now=now, key=key
+    )
     if contribution is not None:
         return contribution
-    return await _foreign_identity_problem(session, submission, raws)
+    return await _foreign_identity_problem(session, raws, filer)
 
 
 async def _foreign_identity_problem(
-    session: AsyncSession, submission: Submission, objects: list[Mapping[str, Any]]
+    session: AsyncSession, objects: list[Mapping[str, Any]], filer: uuid.UUID
 ) -> str | None:
-    """Identity objects whose identifier is registered to another organisation."""
-    impersonated = await foreign_identity_ids(
-        session, objects, submitter_org_id=await submitter_of(session, submission)
-    )
+    """Identity objects whose identifier is registered to another organisation than ``filer``."""
+    impersonated = await foreign_identity_ids(session, objects, submitter_org_id=filer)
     if impersonated:
         return (
             "identity objects may not use an identifier registered to another "

@@ -6,7 +6,7 @@ Expect red: packages/aivs-server/tests/unit/test_one_click.py::test_no_member_co
 diff --git a/packages/aivs-server/src/aivs_server/api/contributions.py b/packages/aivs-server/src/aivs_server/api/contributions.py
 --- a/packages/aivs-server/src/aivs_server/api/contributions.py
 +++ b/packages/aivs-server/src/aivs_server/api/contributions.py
-@@ -139,7 +139,7 @@ def _present(submission: Any, ctx: Any) -> SubmissionOut:
+@@ -201,7 +201,7 @@
  # ---------------------------------------------------------------------------
  # One click
  # ---------------------------------------------------------------------------
@@ -14,4 +14,4 @@ diff --git a/packages/aivs-server/src/aivs_server/api/contributions.py b/package
 +@router.post("/objects/{stix_id}/contributions", status_code=status.HTTP_201_CREATED, response_model=ContributionOut)
  async def one_click(
      payload: ContributionIn,
-     ctx: AuthenticatedContext,
+     request: Request,

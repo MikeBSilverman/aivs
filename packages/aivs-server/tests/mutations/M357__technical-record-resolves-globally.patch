@@ -7,7 +7,7 @@ diff --git a/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py
 --- a/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py
 +++ b/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py
 @@ -40,7 +40,7 @@
- from aivs_server.auth.deps import SessionDep, SettingsDep
+ from aivs_server.auth.deps import SessionDep, SettingsDep, request_source_ip
  from aivs_server.auth.policy import can_hold_evidence_pack, can_review_submissions
  from aivs_server.db.clock import database_now
 -from aivs_server.db.models import OrgPosture
@@ -15,7 +15,7 @@ diff --git a/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py
  from aivs_server.portal.shared import (
      base_context,
      current_session,
-@@ -189,7 +189,13 @@
+@@ -191,7 +191,13 @@
      if depth is ReadingDepth.GUIDED:
          rendering["guidance"] = await _guidance(session, ctx, page, now=now)
      elif depth is ReadingDepth.TECHNICAL:

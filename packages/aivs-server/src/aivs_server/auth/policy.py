@@ -85,9 +85,12 @@ __all__ = [
     "can_view_submission",
     "can_view_submission_receipts",
     "distribution_visibility_clause",
+    "files_through_an_editor",
+    "holds_submitter_rights",
     "is_active",
     "is_auditor",
     "is_isac_editor",
+    "is_isac_filing_needing_an_editor",
     "is_isac_membership",
     "is_isac_staff",
     "is_org_admin",
@@ -519,6 +522,40 @@ def can_confirm_proxy_filing(ctx: AuthContext, submission: Submission) -> bool:
     )
 
 
+def holds_submitter_rights(ctx: AuthContext, submission: Submission) -> bool:
+    """Whether the caller may act as ``submission``'s submitter: amend its
+    draft, submit, withdraw or supersede it.
+
+    A member firm holds these for what it filed, by certificate or by session.
+    A filing whose owner is the ISAC's own organisation is the instance's
+    record, so each of its verbs needs a human ``isac_editor``, as validating
+    already did (Mike, Q15). Until then the submitter's rights applied to it
+    as to any member's: an ISAC analyst's session, or the admin
+    organisation's certificate alone, could amend a draft or withdraw a
+    validated advisory.
+    """
+    if submission.submitter_org_id != ctx.org_id:
+        return False
+    return not is_isac_filing_needing_an_editor(ctx, submission)
+
+
+def is_isac_filing_needing_an_editor(ctx: AuthContext, submission: Submission) -> bool:
+    """The caller is at the ISAC, the filing is the ISAC's, and the caller is
+    not a signed-in editor: the refusal ``holds_submitter_rights`` makes, named
+    so the refusal can say which rule refused."""
+    return submission.submitter_org_id == ctx.org_id and files_through_an_editor(ctx)
+
+
+def files_through_an_editor(ctx: AuthContext) -> bool:
+    """ISAC staff without the editor role, or the ISAC's certificate alone.
+
+    Whatever they file is the ISAC's own, and sending it on is an editor's
+    verb (Mike, Q15), so a shortcut that would file and submit in one step
+    refuses them before filing anything.
+    """
+    return ctx.org_type is OrgType.ADMIN and not is_isac_editor(ctx)
+
+
 def can_transition_submission(
     ctx: AuthContext, submission: Submission, target: SubmissionState
 ) -> bool:
@@ -540,7 +577,7 @@ def can_transition_submission(
     if not is_transition_allowed(submission.state, target):
         return False
 
-    is_submitter = submission.submitter_org_id == ctx.org_id
+    is_submitter = holds_submitter_rights(ctx, submission)
     admin = is_isac_editor(ctx)
 
     match target:

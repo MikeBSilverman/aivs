@@ -58,7 +58,11 @@ from aivs_schemas.enums import (
 from aivs_schemas.extension.builders import format_stix_timestamp
 from aivs_server.audit.log import AuditAction, record, record_independently
 from aivs_server.auth.context import AuthContext
-from aivs_server.auth.policy import distribution_visibility_clause, writable_circle_ids
+from aivs_server.auth.policy import (
+    distribution_visibility_clause,
+    files_through_an_editor,
+    writable_circle_ids,
+)
 from aivs_server.db.clock import database_now
 from aivs_server.db.models import (
     Circle,
@@ -82,7 +86,9 @@ from aivs_server.services.submissions import (
 )
 
 __all__ = [
+    "ISAC_CLICK_NEEDS_AN_EDITOR",
     "ContributionRateLimitedError",
+    "FilingNeedsAnEditorError",
     "OneClick",
     "Target",
     "TargetNotFoundError",
@@ -144,6 +150,18 @@ class TargetNotFoundError(LookupError):
 
 class ContributionRateLimitedError(Exception):
     """The organisation has used its hourly allowance."""
+
+
+#: What ISAC staff without the editor role are told when they click. ISAC
+#: staff, not an outsider, so saying what to do confirms nothing.
+ISAC_CLICK_NEEDS_AN_EDITOR: Final[str] = (
+    "The ISAC's own contributions are filed by an ISAC editor; ask one to file this."
+)
+
+
+class FilingNeedsAnEditorError(PermissionError):
+    """ISAC staff without the editor role clicked: filing it would submit an
+    ISAC filing, which is an editor's verb (Mike, Q15)."""
 
 
 class OneClick(enum.StrEnum):
@@ -471,6 +489,9 @@ async def contribute(
     target = await resolve_target(session, ctx, target_id, now=now)
     if target is None:
         raise TargetNotFoundError(target_id)
+    # After the lookup, so a target the caller cannot see still answers 404.
+    if files_through_an_editor(ctx):
+        raise FilingNeedsAnEditorError(target_id)
     built = _one_click_object(kind, target_id, now)
     lane_problem = fast_lane_problem(ctx, target, object_type=str(built["type"]))
     if lane_problem is None and not await within_hourly_allowance(

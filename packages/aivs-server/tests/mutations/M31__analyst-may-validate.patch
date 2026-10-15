@@ -6,10 +6,10 @@ Expect red: packages/aivs-server/tests/unit/test_isac_roles.py::test_an_isac_ana
 diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs-server/src/aivs_server/auth/policy.py
 --- a/packages/aivs-server/src/aivs_server/auth/policy.py
 +++ b/packages/aivs-server/src/aivs_server/auth/policy.py
-@@ -332,7 +332,7 @@
+@@ -563,7 +563,7 @@
          return False
  
-     is_submitter = submission.submitter_org_id == ctx.org_id
+     is_submitter = holds_submitter_rights(ctx, submission)
 -    admin = is_isac_editor(ctx)
 +    admin = can_review_submissions(ctx)
  

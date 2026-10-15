@@ -12,7 +12,7 @@ import datetime as dt
 import uuid
 from typing import Annotated, Any
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from aivs_schemas.enums import (
@@ -28,18 +28,27 @@ from aivs_schemas.extension.builders import (
     UnknownExtensionError,
 )
 from aivs_schemas.models import SubmissionCreate, SubmissionOut
-from aivs_server.audit.log import AuditAction, record
-from aivs_server.auth.deps import AuthenticatedContext, SessionDep, SettingsDep
+from aivs_server.audit.log import AuditAction, record, record_denial
+from aivs_server.auth.context import AuthContext
+from aivs_server.auth.deps import (
+    AuthenticatedContext,
+    SessionDep,
+    SettingsDep,
+    request_source_ip,
+)
 from aivs_server.auth.policy import (
     can_review_submissions,
     can_view_submission,
     is_isac_editor,
     require,
 )
+from aivs_server.config import Settings
 from aivs_server.db.clock import database_now
 from aivs_server.db.models import Circle
 from aivs_server.services.contributions import (
+    ISAC_CLICK_NEEDS_AN_EDITOR,
     ContributionRateLimitedError,
+    FilingNeedsAnEditorError,
     OneClick,
     TargetNotFoundError,
     contribute,
@@ -195,6 +204,7 @@ def _present(submission: Any, ctx: Any) -> SubmissionOut:
 @router.post("/contributions", status_code=status.HTTP_201_CREATED, response_model=ContributionOut)
 async def one_click(
     payload: ContributionIn,
+    request: Request,
     ctx: AuthenticatedContext,
     session: SessionDep,
     settings: SettingsDep,
@@ -217,10 +227,27 @@ async def one_click(
         raise _NOT_FOUND from None
     except ContributionRateLimitedError:
         raise _RATE_LIMITED from None
+    except FilingNeedsAnEditorError:
+        await _record_isac_click_refused(request, settings, ctx)
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail=ISAC_CLICK_NEEDS_AN_EDITOR) from None
     except _CLIENT_ERRORS as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     return ContributionOut(
         submission_id=submission.id, state=submission.state, lane=submission.lane.value
+    )
+
+
+async def _record_isac_click_refused(
+    request: Request, settings: Settings, ctx: AuthContext
+) -> None:
+    """The refusal the policy handler would record, recorded here because this
+    one tells the caller what to do instead of saying nothing useful."""
+    await record_denial(
+        reason="isac_filing_requires_isac_editor",
+        ctx=ctx,
+        request_id=request.scope.get("aivs_request_id"),
+        source_ip=request_source_ip(request, settings),
+        route=request.url.path,
     )
 
 

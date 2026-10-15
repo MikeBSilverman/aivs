@@ -43,7 +43,12 @@ from aivs_schemas.extension.builders import (
 )
 from aivs_server.audit.log import AuditAction, record
 from aivs_server.auth.context import AuthContext
-from aivs_server.auth.policy import PolicyDeniedError, can_transition_submission, require
+from aivs_server.auth.policy import (
+    can_transition_submission,
+    holds_submitter_rights,
+    is_isac_filing_needing_an_editor,
+    require,
+)
 from aivs_server.db.clock import database_now
 from aivs_server.db.models import Organization, StixObject, Submission, SubmissionTransition
 from aivs_server.services.disclosure import DisclosureScope, disclosure_problem
@@ -692,6 +697,13 @@ async def create_submission(
     return submission
 
 
+def _submitter_refusal(ctx: AuthContext, submission: Submission) -> str:
+    """Which rule refused a submitter's verb, for the audit row."""
+    if is_isac_filing_needing_an_editor(ctx, submission):
+        return "isac_filing_requires_isac_editor"
+    return "submission_not_owned"
+
+
 async def update_submission(
     session: AsyncSession,
     ctx: AuthContext,
@@ -708,9 +720,7 @@ async def update_submission(
     if submission.state is not SubmissionState.DRAFT:
         msg = f"a submission in state '{submission.state.value}' can no longer be edited"
         raise SubmissionError(msg)
-    if submission.submitter_org_id != ctx.org_id:
-        denial = "submission_not_owned"
-        raise PolicyDeniedError(denial)
+    require(holds_submitter_rights(ctx, submission), _submitter_refusal(ctx, submission))
 
     bundle = changes.pop("bundle", None)
     for field, value in changes.items():
@@ -819,7 +829,9 @@ async def apply_transition(
 
     require(
         can_transition_submission(ctx, submission, target),
-        f"transition_{submission.state.value}_to_{target.value}",
+        "isac_filing_requires_isac_editor"
+        if is_isac_filing_needing_an_editor(ctx, submission)
+        else f"transition_{submission.state.value}_to_{target.value}",
     )
 
     if target is SubmissionState.VALIDATED:

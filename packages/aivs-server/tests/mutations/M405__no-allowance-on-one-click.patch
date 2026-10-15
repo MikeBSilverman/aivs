@@ -7,8 +7,8 @@ Expect red: packages/aivs-server/tests/abuse/test_sharing_abuse.py::test_a_scrip
 diff --git a/packages/aivs-server/src/aivs_server/services/contributions.py b/packages/aivs-server/src/aivs_server/services/contributions.py
 --- a/packages/aivs-server/src/aivs_server/services/contributions.py
 +++ b/packages/aivs-server/src/aivs_server/services/contributions.py
-@@ -297,7 +297,7 @@
-         raise TargetNotFoundError(target_id)
+@@ -494,7 +494,7 @@
+         raise FilingNeedsAnEditorError(target_id)
      built = _one_click_object(kind, target_id, now)
      lane_problem = fast_lane_problem(ctx, target, object_type=str(built["type"]))
 -    if lane_problem is None and not await within_hourly_allowance(

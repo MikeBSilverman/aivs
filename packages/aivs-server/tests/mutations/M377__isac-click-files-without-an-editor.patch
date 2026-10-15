@@ -1,0 +1,18 @@
+Mutation M377: ISAC staff without the editor role click and are refused only by the generic policy handler, which tells them nothing about what to do
+Re-applies: T12 (Mike, Q15; Q36 option A)
+
+Expect red: packages/aivs-server/tests/unit/test_one_click.py::test_the_isacs_staff_without_the_editor_role_cannot_file_by_clicking
+
+diff --git a/packages/aivs-server/src/aivs_server/services/contributions.py b/packages/aivs-server/src/aivs_server/services/contributions.py
+--- a/packages/aivs-server/src/aivs_server/services/contributions.py
++++ b/packages/aivs-server/src/aivs_server/services/contributions.py
+@@ -489,9 +489,6 @@
+     target = await resolve_target(session, ctx, target_id, now=now)
+     if target is None:
+         raise TargetNotFoundError(target_id)
+-    # After the lookup, so a target the caller cannot see still answers 404.
+-    if files_through_an_editor(ctx):
+-        raise FilingNeedsAnEditorError(target_id)
+     built = _one_click_object(kind, target_id, now)
+     lane_problem = fast_lane_problem(ctx, target, object_type=str(built["type"]))
+     if lane_problem is None and not await within_hourly_allowance(

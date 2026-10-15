@@ -1,0 +1,17 @@
+Mutation M370: amending a draft checks only that the caller's organisation filed it, so an ISAC analyst may PATCH an ISAC draft
+Re-applies: T12 (Mike, Q15; finding P2-P5)
+
+Expect red: packages/aivs-server/tests/unit/test_isac_filings.py::test_isac_staff_without_the_editor_role_hold_no_verb_on_an_isac_filing
+
+diff --git a/packages/aivs-server/src/aivs_server/services/submissions.py b/packages/aivs-server/src/aivs_server/services/submissions.py
+--- a/packages/aivs-server/src/aivs_server/services/submissions.py
++++ b/packages/aivs-server/src/aivs_server/services/submissions.py
+@@ -720,7 +720,7 @@
+     if submission.state is not SubmissionState.DRAFT:
+         msg = f"a submission in state '{submission.state.value}' can no longer be edited"
+         raise SubmissionError(msg)
+-    require(holds_submitter_rights(ctx, submission), _submitter_refusal(ctx, submission))
++    require(submission.submitter_org_id == ctx.org_id, _submitter_refusal(ctx, submission))
+ 
+     bundle = changes.pop("bundle", None)
+     for field, value in changes.items():

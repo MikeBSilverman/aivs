@@ -1,0 +1,17 @@
+Mutation M369: the admin organisation's certificate alone holds the submitter's verbs on an ISAC filing, withdrawing a validated advisory included
+Re-applies: T12 (Mike, Q15; finding P2-P5)
+
+Expect red: packages/aivs-server/tests/unit/test_isac_filings.py::test_isac_staff_without_the_editor_role_hold_no_verb_on_an_isac_filing
+
+diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs-server/src/aivs_server/auth/policy.py
+--- a/packages/aivs-server/src/aivs_server/auth/policy.py
++++ b/packages/aivs-server/src/aivs_server/auth/policy.py
+@@ -553,7 +553,7 @@
+     verb (Mike, Q15), so a shortcut that would file and submit in one step
+     refuses them before filing anything.
+     """
+-    return ctx.org_type is OrgType.ADMIN and not is_isac_editor(ctx)
++    return ctx.org_type is OrgType.ADMIN and not is_isac_editor(ctx) and ctx.operator_id is not None
+ 
+ 
+ def can_transition_submission(

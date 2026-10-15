@@ -232,11 +232,12 @@ caller's org belongs to, at the role shown.
 | View submission workflow record | N | own only | own only | own only | `isac_analyst`, `isac_editor` (all) | own only |
 | View submission receipts (firm by firm) | N | N | N | N | `isac_analyst`, `isac_editor` (all) | N |
 | View submission telemetry (k-suppressed counts) | N | own only | own only | own only | own only | own only |
-| `draft` → `submitted` | N | own | own | own | N¹ | N¹ |
+| Amend a draft | N | own | own | own | `isac_editor`, the ISAC's own drafts¹ | N¹ |
+| `draft` → `submitted` | N | own | own | own | `isac_editor`, the ISAC's own¹ | N¹ |
 | `submitted` → `validated` | N | N | N | N | **`isac_editor`** | **N** |
 | `validated` → `distributed` | N | N | N | N | **`isac_editor`** | **N** |
-| any → `withdrawn` (where legal) | N | own | own | own | `isac_editor` | own |
-| `distributed` → `superseded` | N | own | own | own | `isac_editor` | own |
+| any → `withdrawn` (where legal) | N | own | own | own | `isac_editor` | N¹ |
+| `distributed` → `superseded` | N | own | own | own | `isac_editor` | N¹ |
 | **Organizations and certificates** |
 | Enrol a new organization | N | N | N | N | `isac_membership` | N |
 | Change an org's `status` | N | N | N | N | `isac_membership` | N |
@@ -255,10 +256,16 @@ caller's org belongs to, at the role shown.
 | Choose what the audit stream serves of its own reading (`full` / `condensed`) | N | N | N | N | `system_admin` | N |
 | Modify the audit log | N | N | N | N | **N — database-enforced** | **N — database-enforced** |
 
-¹ `can_transition_submission` grants `submitted` to `is_submitter` only. A system
-administrator does not submit on a member's behalf; if the ISAC itself is the
-submitter (its own org submitted the content) it qualifies as `is_submitter` on
-that submission like any other org.
+¹ The submitter's verbs (amend, submit, withdraw, supersede) go through
+`policy.holds_submitter_rights`. A member firm holds them for what it filed. On a
+filing whose owner is the ISAC's own organisation each needs a human
+`isac_editor`, as validating does (Mike, Q15; SF-81): an ISAC analyst, a system
+administrator and the admin organisation's certificate alone hold none of them,
+and the refusal is recorded as `isac_filing_requires_isac_editor`. A one-click
+files and submits in one step, so it refuses them before filing anything, with a
+sentence saying an editor has to file it (Q36: refused, not queued). An analyst
+may still create a draft for the ISAC; only an editor then sends, amends or
+withdraws it. A system administrator does not submit on a member's behalf.
 
 ³ `policy.can_read_audit`: an operator holding `auditor` alone, before its
 `role_expires_at`; the whole instance at the ISAC, its own organisation's rows

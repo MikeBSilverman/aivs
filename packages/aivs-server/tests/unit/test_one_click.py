@@ -36,7 +36,12 @@ from aivs_server.db.models import (
     Submission,
     SubmissionTransition,
 )
-from aivs_server.services.contributions import NEEDS_AN_EDITOR, Target, fast_lane_problem
+from aivs_server.services.contributions import (
+    ISAC_CLICK_NEEDS_AN_EDITOR,
+    NEEDS_AN_EDITOR,
+    Target,
+    fast_lane_problem,
+)
 from tests.authz_matrix.test_authz_matrix import walk_routes
 from tests.unit.contribution_world import LATER, STAMP, seed, vulnerability_raw
 from tests.unit.sharing_world import SharingWorld, build_sharing_world, one_click
@@ -158,31 +163,21 @@ async def test_a_vendors_opinion_waits_for_review_though_its_sighting_does_not(
 
 
 @pytest.mark.requirement("SF-66")
-@pytest.mark.parametrize(
-    "role",
-    [
-        OperatorRole.ISAC_ANALYST,
-        OperatorRole.ISAC_MEMBERSHIP,
-        OperatorRole.SYSTEM_ADMIN,
-        OperatorRole.ISAC_EDITOR,
-    ],
-)
-async def test_the_isacs_own_staff_wait_for_review_in_a_circle_the_isac_contributes_to(
-    client, session, isac_org, join_circle, make_cert, make_operator, human_headers, world, role
+async def test_the_isacs_editor_waits_for_review_in_a_circle_the_isac_contributes_to(
+    client, session, isac_org, join_circle, make_cert, make_operator, human_headers, world
 ):
-    """The ISAC files through review, whoever at it clicks.
+    """The ISAC files through review, never published by its own click.
 
     The ISAC's organisation may hold a contributor membership like anyone
-    (``CIRCLE_ELIGIBLE_ORG_TYPES`` admits it, and the runbook suggests it).
-    Its person's click was published at once, in the ISAC's name with no
-    editor -- by an analyst, membership officer or system admin, none of whom
-    may distribute. The pair is the member's identical click, published
-    (first test in this module).
+    (``CIRCLE_ELIGIBLE_ORG_TYPES`` admits it, and the runbook suggests it). Its
+    person's click was published at once, in the ISAC's name with no editor.
+    The pair is the member's identical click, published (first test in this
+    module).
     """
     assert OrgType.ADMIN in CIRCLE_ELIGIBLE_ORG_TYPES
     await join_circle(isac_org, world.circle, role=CircleRole.CONTRIBUTOR)
     pem, _ = await make_cert(isac_org)
-    operator, _seed = await make_operator(isac_org, roles=(role,))
+    operator, _seed = await make_operator(isac_org, roles=(OperatorRole.ISAC_EDITOR,))
     headers = await human_headers(operator, pem)
 
     submission = await _filed(session, await one_click(client, headers, world.published))
@@ -190,6 +185,41 @@ async def test_the_isacs_own_staff_wait_for_review_in_a_circle_the_isac_contribu
     assert submission.state is SubmissionState.SUBMITTED
     assert submission.lane is SubmissionLane.REVIEW
     assert await _distributed_to(session, submission) == set()
+
+
+@pytest.mark.requirement("SF-66", "SF-81")
+@pytest.mark.parametrize(
+    "role", [OperatorRole.ISAC_ANALYST, OperatorRole.ISAC_MEMBERSHIP, OperatorRole.SYSTEM_ADMIN]
+)
+async def test_the_isacs_staff_without_the_editor_role_cannot_file_by_clicking(
+    client, session, isac_org, join_circle, make_cert, make_operator, human_headers, world, role
+):
+    """Filing a click submits it, and on the ISAC's own filing that is an
+    editor's verb (Mike, Q15): refused, by name, with nothing left behind --
+    not published, not queued, not a draft nobody can send."""
+    await join_circle(isac_org, world.circle, role=CircleRole.CONTRIBUTOR)
+    pem, _ = await make_cert(isac_org)
+    operator, _seed = await make_operator(isac_org, roles=(role,))
+    headers = await human_headers(operator, pem)
+
+    count_isacs = (
+        select(func.count())
+        .select_from(Submission)
+        .where(Submission.submitter_org_id == isac_org.id)
+    )
+    before = await session.scalar(count_isacs)
+
+    refused = await one_click(client, headers, world.published)
+
+    assert refused.status_code == 403, refused.text
+    assert ISAC_CLICK_NEEDS_AN_EDITOR in refused.text, "it says what to do"
+    reasons = await session.scalars(
+        select(AuditLog.details["reason"].as_string()).where(
+            AuditLog.action == AuditAction.ACCESS_DENIED
+        )
+    )
+    assert list(reasons) == ["isac_filing_requires_isac_editor"]
+    assert await session.scalar(count_isacs) == before, "nothing filed, not even a draft"
 
 
 #: Every organisation type that is not the ISAC's own. Written out rather than

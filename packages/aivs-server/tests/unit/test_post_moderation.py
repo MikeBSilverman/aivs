@@ -501,10 +501,17 @@ async def test_the_isacs_analyst_cannot_overwrite_an_editors_record_through_post
     headers = await human_headers(analyst, pem)
     overwrite = {**editors, "modified": LATER, "content": "Nothing to see; close the case."}
 
-    submission = await file_and_submit(client, session, headers, [overwrite])
+    filed = await draft(client, headers, [overwrite])
+    refused = await client.post(
+        f"{API}/submissions/{filed.json()['id']}/submit", json={}, headers=headers
+    )
+    submission = await session.get(Submission, uuid.UUID(filed.json()["id"]))
+    await session.refresh(submission)
 
-    assert submission.state is SubmissionState.SUBMITTED
-    assert submission.lane is SubmissionLane.REVIEW
+    # Sending it on at all is an editor's verb on the ISAC's own filing (Q15),
+    # so the overwrite stays a draft and the editor's note stands.
+    assert refused.status_code == 403, refused.text
+    assert submission.state is SubmissionState.DRAFT
 
 
 def observed_data() -> dict:

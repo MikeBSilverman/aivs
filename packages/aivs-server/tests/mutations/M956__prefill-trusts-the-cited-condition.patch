@@ -1,0 +1,22 @@
+Mutation M956: the posture form is filled from any cited condition, seen or not
+Re-applies: a prefill read from the link alone
+
+Expect red: packages/aivs-server/tests/unit/test_exploitability.py::test_a_condition_the_member_cannot_see_suggests_nothing
+
+diff --git a/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py b/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py
+index f2bdc8d..a18d323 100644
+--- a/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py
++++ b/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py
+@@ -359,6 +359,12 @@ def _term_words(kind: str, term: Mapping[str, Any]) -> str:
+ def _posture_prefill(page: VulnerabilityPage, cited: str) -> dict[str, str] | None:
+     """The posture form's suggested values from one visible condition, or nothing."""
+     note_id, _, condition_id = cited.partition("#")
++    if cited:
++        return {
++            "status": PostureStatus.NOT_AFFECTED.value,
++            "justification": "",
++            "impact_statement": f"Condition {condition_id} of {note_id} does not hold here.",
++        }
+     for source in page.exploitability.sources:
+         if source.note_id != note_id:
+             continue

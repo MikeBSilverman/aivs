@@ -1,0 +1,18 @@
+Mutation M957: the submitter reads the first pass before the checks are tuned
+Re-applies: the duplicates route's access rule, copied
+
+Expect red: packages/aivs-server/tests/unit/test_first_pass.py::test_the_submitter_is_not_told_yet
+
+diff --git a/packages/aivs-server/src/aivs_server/api/triage.py b/packages/aivs-server/src/aivs_server/api/triage.py
+index 894fdd8..58efe6f 100644
+--- a/packages/aivs-server/src/aivs_server/api/triage.py
++++ b/packages/aivs-server/src/aivs_server/api/triage.py
+@@ -168,7 +168,7 @@ async def first_pass_findings(
+     anything, and anyone else gets the 404 an absent submission gets.
+     """
+     submission = await load_submission(session, submission_id, for_update=False)
+-    if submission is None or not can_review_submissions(ctx):
++    if submission is None or not can_view_submission(ctx, submission):
+         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Not found")
+     objects = (
+         await session.scalars(

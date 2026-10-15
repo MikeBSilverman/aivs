@@ -1,0 +1,17 @@
+Mutation M958: the first pass leaves out the sanitisation assist's hits
+Re-applies: the checks without the lint
+
+Expect red: packages/aivs-server/tests/unit/test_first_pass.py::test_each_check_fires_on_its_case_and_not_its_pair
+
+diff --git a/packages/aivs-server/src/aivs_server/services/first_pass.py b/packages/aivs-server/src/aivs_server/services/first_pass.py
+index 2411633..0f09de3 100644
+--- a/packages/aivs-server/src/aivs_server/services/first_pass.py
++++ b/packages/aivs-server/src/aivs_server/services/first_pass.py
+@@ -66,7 +66,6 @@ def first_pass(
+     findings = [
+         *_completeness(objects),
+         *_dated_in_future(objects, now),
+-        *_sanitisation(objects, own_names),
+     ]
+     return sorted(findings, key=lambda finding: (finding.path, finding.code))
+ 

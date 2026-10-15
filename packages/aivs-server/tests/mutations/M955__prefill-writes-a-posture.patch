@@ -1,0 +1,28 @@
+Mutation M955: following a condition that does not hold saves the posture
+Re-applies: the convenient version: one click and done (plan, Phase N, property 3)
+
+Expect red: packages/aivs-server/tests/unit/test_exploitability.py::test_a_condition_that_does_not_hold_suggests_a_posture_and_writes_none
+
+diff --git a/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py b/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py
+index f2bdc8d..a81235e 100644
+--- a/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py
++++ b/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py
+@@ -162,6 +162,18 @@ async def show_vulnerability(
+     context.update(rendering)
+     context["exploitability"] = _exploitability_context(page, chosen)
+     context["prefill"] = _posture_prefill(page, not_holding.strip())
++    if context["prefill"]:
++        await record_posture(
++            session,
++            ctx,
++            vulnerability_id=page.vulnerability.stix_id,
++            statement=VexStatement(
++                status=PostureStatus.NOT_AFFECTED,
++                impact_statement=context["prefill"]["impact_statement"],
++            ),
++            now=now,
++        )
++        await session.commit()
+     return render(request, "vulnerability.html", context)
+ 
+ 

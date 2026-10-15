@@ -11,6 +11,7 @@ import uuid
 
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aivs_schemas.enums import OperatorRole, OrgType, SsvcPriority
@@ -19,18 +20,20 @@ from aivs_server.auth.context import AuthContext
 from aivs_server.auth.deps import AuthenticatedContext, SessionDep
 from aivs_server.auth.policy import (
     can_assign_submission,
+    can_review_submissions,
     can_set_priority,
     can_view_submission,
     require,
 )
 from aivs_server.db.clock import database_now
-from aivs_server.db.models import Operator, Organization, Submission
+from aivs_server.db.models import Operator, Organization, StixObject, Submission
 from aivs_server.services.bulk_validation import (
     MAX_GROUP_SIZE,
     GroupMemberNotFoundError,
     validate_group,
 )
 from aivs_server.services.duplicates import duplicate_candidates
+from aivs_server.services.first_pass import FindingCode, first_pass
 from aivs_server.services.submissions import SubmissionError, load_submission
 
 __all__ = ["router"]
@@ -146,6 +149,37 @@ async def duplicates(
             match_on=c.match_on, value=c.value, stix_id=c.stix_id, submission_id=c.submission_id
         )
         for c in found
+    ]
+
+
+class FindingOut(BaseModel):
+    code: FindingCode
+    path: str
+    detail: str
+
+
+@router.get("/submissions/{submission_id}/first-pass", response_model=list[FindingOut])
+async def first_pass_findings(
+    submission_id: uuid.UUID, ctx: AuthenticatedContext, session: SessionDep
+) -> list[FindingOut]:
+    """The deterministic first pass over a submission, for the ISAC's reviewers (Phase O).
+
+    Reviewers only, for now: the checks are tuned before any member is told
+    anything, and anyone else gets the 404 an absent submission gets.
+    """
+    submission = await load_submission(session, submission_id, for_update=False)
+    if submission is None or not can_review_submissions(ctx):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Not found")
+    objects = (
+        await session.scalars(
+            select(StixObject.raw).where(StixObject.submission_id == submission.id)
+        )
+    ).all()
+    submitter = await session.get(Organization, submission.submitter_org_id)
+    own_names = [submitter.name, submitter.slug] if submitter is not None else []
+    return [
+        FindingOut(code=finding.code, path=finding.path, detail=finding.detail)
+        for finding in first_pass(objects, own_names=own_names, now=await database_now(session))
     ]
 
 

@@ -4,9 +4,10 @@ Re-applies: H2-1 (reading depth on the page)
 Expect red: packages/aivs-server/tests/unit/test_reading_depth.py::test_new_since_last_read_is_decided_before_this_read_is_recorded
 
 diff --git a/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py b/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py
+index f2bdc8d..f7533b4 100644
 --- a/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py
 +++ b/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py
-@@ -143,10 +143,8 @@
+@@ -154,10 +154,8 @@ async def show_vulnerability(
      if page is None:
          raise _NOT_FOUND
      chosen = resolve_depth(depth, await stored_default_depth(session, ctx))
@@ -17,4 +18,4 @@ diff --git a/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py
 +    rendering = await _rendering(session, ctx, page, chosen, now=now)
      context.update(await _page_context(session, ctx, page, now=now))
      context.update(rendering)
-     return render(request, "vulnerability.html", context)
+     context["exploitability"] = _exploitability_context(page, chosen)

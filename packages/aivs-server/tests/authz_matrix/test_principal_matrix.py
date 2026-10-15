@@ -100,6 +100,7 @@ EXPECTED: Mapping[RouteClass, Mapping[Principal, Outcome]] = {
     ),
     RouteClass.TELEMETRY: _allow(*_MEMBER, otherwise=N),
     RouteClass.RECEIPT_RECORD: _allow(P.ISAC_ANALYST, P.ISAC_EDITOR, otherwise=N),
+    RouteClass.FIRST_PASS: _allow(P.ISAC_ANALYST, P.ISAC_EDITOR, otherwise=N),
     RouteClass.PRIORITY: {
         **_allow(P.ISAC_EDITOR, otherwise=N),
         **dict.fromkeys(_MEMBER, F),

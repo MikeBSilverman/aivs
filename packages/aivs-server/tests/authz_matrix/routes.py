@@ -67,6 +67,10 @@ class RouteClass(enum.StrEnum):
     #: else 404, the submitter included (each row is the receiving member's
     #: record; the submitter gets telemetry).
     RECEIPT_RECORD = "receipt record"
+    #: The first pass over a submission (Phase O): the ISAC's reviewers; else
+    #: 404, the submitter included, which is not told anything until the
+    #: checks are tuned.
+    FIRST_PASS = "first pass"
     #: Setting a submission's priority: an editor; others who can see it 403.
     PRIORITY = "priority"
     #: Taking or handing over a submission: the ISAC's reviewers.
@@ -424,6 +428,12 @@ ROUTES: tuple[RouteCase, ...] = (
             {"vulnerability": world.object_stix_id, "status": "not_affected"},
         ),
         is_portal=True,
+    ),
+    RouteCase(
+        "GET",
+        "/api/v1/submissions/{submission_id}/first-pass",
+        RouteClass.FIRST_PASS,
+        _sub("read", "/first-pass"),
     ),
     RouteCase(
         "GET",

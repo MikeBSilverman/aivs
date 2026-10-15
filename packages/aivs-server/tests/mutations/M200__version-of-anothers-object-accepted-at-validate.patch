@@ -4,11 +4,12 @@ Re-applies: Phase E slice 2 (T6) -- the guard's absence
 Expect red: packages/aivs-server/tests/unit/test_ownership.py::test_a_newer_version_of_another_firms_object_is_refused_at_validate
 
 diff --git a/packages/aivs-server/src/aivs_server/services/submissions.py b/packages/aivs-server/src/aivs_server/services/submissions.py
+index decc6eb..14933d5 100644
 --- a/packages/aivs-server/src/aivs_server/services/submissions.py
 +++ b/packages/aivs-server/src/aivs_server/services/submissions.py
-@@ -723,9 +723,7 @@
+@@ -770,9 +770,7 @@ async def _prepare_validation(
      raws = [row.raw for row in rows]
-     now = dt.datetime.now(dt.UTC)
+     now = await database_now(session)
      for problem in (
 -        await foreign_owned_versions_problem(
 -            session, raws, owner_org_id=submission.submitter_org_id

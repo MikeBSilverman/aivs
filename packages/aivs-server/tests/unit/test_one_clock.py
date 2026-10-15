@@ -12,6 +12,7 @@ on an honest clock, which the rest of the suite already exercises.
 
 from __future__ import annotations
 
+import ast
 import datetime as dt
 import types
 from typing import Any
@@ -416,3 +417,57 @@ async def test_distributed_at_is_stamped_on_the_database_clock(
     await record_transition(session, isac_ctx, submission, SubmissionState.DISTRIBUTED, reason=None)
 
     assert close_to(submission.distributed_at, await database_now(session))
+
+
+# ---------------------------------------------------------------------------
+# Every door, including ones written later
+# ---------------------------------------------------------------------------
+#: Calls that pass the app's clock as ``now`` on purpose: none of them decides
+#: what content a caller may see. Each names its callee and why; anything not
+#: here must take ``now`` from ``database_now``.
+_APP_CLOCK_ALLOWED: dict[tuple[str, str], str] = {
+    (
+        "api/acknowledgments.py",
+        "assert_receipt",
+    ): "sets the receipt's day; delivery is checked without it",
+    ("api/admin.py", "pause_distribution"): "stamps when an operator paused",
+    ("api/contributions.py", "confirm_proxy_filing"): "the proxy-filing confirmation window",
+    ("auth/deps.py", "resolve_sso_session"): "session expiry, not content",
+    ("api/meta.py", "report"): "component heartbeats for /readyz",
+    ("main.py", "run_detections"): "detection windows over the audit log",
+    ("portal/admin_routes.py", "gather_status"): "the status page's own timestamps",
+    ("portal/sso_routes.py", "establish_sso_session"): "session lifetime, not content",
+}
+
+
+def _app_clock_calls(source: str) -> list[str]:
+    """Callees given ``now=dt.datetime.now(...)`` in ``source``."""
+    found = []
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, ast.Call):
+            continue
+        for keyword in node.keywords:
+            value = keyword.value
+            if (
+                keyword.arg == "now"
+                and isinstance(value, ast.Call)
+                and ast.unparse(value.func) == "dt.datetime.now"
+            ):
+                found.append(ast.unparse(node.func).rsplit(".", 1)[-1])
+    return found
+
+
+@pytest.mark.requirement("SF-10")
+def test_no_call_hands_the_app_clock_to_a_visibility_decision(repo_root):
+    """c6a00ab moved seven readers onto the database clock and the portal's
+    one-click, written later, read the app's again (review T2-C6). A skew test
+    per door only covers the doors someone remembered; this covers the ones
+    written next."""
+    src = repo_root / "packages/aivs-server/src/aivs_server"
+    unexplained = sorted(
+        f"{path.relative_to(src)}: {callee}"
+        for path in src.rglob("*.py")
+        for callee in _app_clock_calls(path.read_text())
+        if (str(path.relative_to(src)), callee) not in _APP_CLOCK_ALLOWED
+    )
+    assert unexplained == []

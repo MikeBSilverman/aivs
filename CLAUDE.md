@@ -436,8 +436,12 @@ compared with one another, so all of them come from `db.clock.database_now`
 return it). They came from each replica's Python clock: a replica an hour fast
 served embargoes an hour early and closed memberships an hour late, and a
 writer behind a fast reader stamped below a cursor already issued. A new
-`dt.datetime.now()` next to anything compared with `date_added` reopens that.
-Residual: a step back of the database host's own clock.
+`dt.datetime.now()` next to anything compared with `date_added` reopens that,
+and one did: the portal's one-click was written after the API's was moved, and
+read the app's clock again. `test_one_clock` now refuses any
+`now=dt.datetime.now(...)` argument whose call is not on its allow-list with a
+reason; add to the list only what decides no visibility. Residual: a step back
+of the database host's own clock.
 
 **A flag derived from a stamp is decided with the stamp, not re-read from a
 clock.** "Embargoed" was `date_added > now` after `date_added` had been set a

@@ -778,7 +778,7 @@ async def _prepare_validation(
         .all()
     )
     raws = [row.raw for row in rows]
-    now = dt.datetime.now(dt.UTC)
+    now = await database_now(session)
     for problem in (
         await foreign_owned_versions_problem(
             session, raws, owner_org_id=submission.submitter_org_id

@@ -1,0 +1,19 @@
+Mutation M944: the portal's one-click decides visibility on the app's clock
+Re-applies: portal/vulnerability_routes.py as H2-1 wrote it (review T2-C6)
+
+Expect red: packages/aivs-server/tests/unit/test_vulnerability_page.py::test_a_fast_app_clock_does_not_let_a_portal_click_find_an_embargo
+Expect red: packages/aivs-server/tests/unit/test_one_clock.py::test_no_call_hands_the_app_clock_to_a_visibility_decision
+
+diff --git a/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py b/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py
+index 91fac43..ef847be 100644
+--- a/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py
++++ b/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py
+@@ -396,7 +396,7 @@ async def one_click(
+             target_id=target_id,
+             kind=kind,
+             hourly_limit=settings.contribution_hourly_limit,
+-            now=await database_now(session),
++            now=dt.datetime.now(dt.UTC),
+         )
+         await session.commit()
+     except TargetNotFoundError:

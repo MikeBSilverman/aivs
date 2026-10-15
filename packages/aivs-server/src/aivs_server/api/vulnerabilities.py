@@ -38,6 +38,9 @@ class ReadinessOut(BaseModel):
     mitigation: Availability
     detection: Availability
     validation: Availability
+    #: Whether the caller can tell if it is affected: the exploitability view's
+    #: conditions agree (``/vulnerabilities/exploitability``).
+    scoping: Availability
     #: For each group that is ``lapsed``: the last day its claim was vouched
     #: for (its ``review_by``), or null when that date was not a date. A
     #: lapsed group is neither available nor stated none -- ask the ISAC.
@@ -50,7 +53,7 @@ async def readiness(
     session: SessionDep,
     stix_id: Annotated[str, Query(alias="id", max_length=100)],
 ) -> ReadinessOut:
-    """Remediation, mitigation, detection and validation: available, none, lapsed, or unknown.
+    """Fix, workaround, detection, check and scoping: available, none, lapsed, or unknown.
 
     ``lapsed`` means a claim the caller can see -- a fix exists, or none does --
     has passed its ``review_by`` and nobody has re-checked it since; it is not a
@@ -75,6 +78,7 @@ async def readiness(
         mitigation=found.mitigation,
         detection=found.detection,
         validation=found.validation,
+        scoping=found.scoping,
         not_confirmed_since=dict(found.not_confirmed_since),
     )
 

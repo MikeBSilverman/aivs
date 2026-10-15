@@ -1,0 +1,16 @@
+Mutation M954: readiness never consults the exploitability view
+Re-applies: readiness before Phase N
+
+Expect red: packages/aivs-server/tests/unit/test_exploitability.py::test_readiness_says_a_member_can_tell_once_its_conditions_agree
+
+diff --git a/packages/aivs-server/src/aivs_server/services/readiness.py b/packages/aivs-server/src/aivs_server/services/readiness.py
+index ac5fe8f..d0008d4 100644
+--- a/packages/aivs-server/src/aivs_server/services/readiness.py
++++ b/packages/aivs-server/src/aivs_server/services/readiness.py
+@@ -273,5 +273,5 @@ async def readiness_for(
+             ) in rows
+         ),
+         now,
+-        exploitability=(await exploitability_in(session, visible, vulnerability_stix_id)).status,
++        exploitability=ExploitabilityStatus.NOT_ESTABLISHED,
+     )

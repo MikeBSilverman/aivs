@@ -14,6 +14,7 @@ from typing import Any
 import pytest
 
 from aivs_schemas.extension.builders import AIVS_INTEL_EXTENSION_ID
+from aivs_server.services.exploitability import ExploitabilityStatus
 from aivs_server.services.readiness import Availability, Readiness, ReadinessInput, assess
 from tests.conftest import proxy_headers
 
@@ -22,6 +23,7 @@ pytestmark = pytest.mark.db
 NOW = dt.datetime(2026, 10, 14, 12, 0, tzinfo=dt.UTC)
 A, N, U = Availability.AVAILABLE, Availability.NONE_AVAILABLE, Availability.UNAVAILABLE
 L = Availability.LAPSED
+NOT_ESTABLISHED = ExploitabilityStatus.NOT_ESTABLISHED
 YESTERDAY, TODAY = "2026-10-13", "2026-10-14"
 API = "/api/v1/submissions"
 STAMP = "2026-08-01T00:00:00.000Z"
@@ -60,26 +62,26 @@ def indicator(
 @pytest.mark.parametrize(
     ("objects", "expected"),
     [
-        ([], Readiness(U, U, U, U)),
-        ([coa("vendor_fix")], Readiness(A, U, U, U)),
-        ([coa("workaround")], Readiness(U, A, U, U)),
-        ([coa("mitigation")], Readiness(U, A, U, U)),
-        ([coa("validation")], Readiness(U, U, U, A)),
-        ([coa("rollback")], Readiness(U, U, U, U)),
-        ([coa("none_available")], Readiness(N, U, U, U)),
-        ([coa("no_fix_planned")], Readiness(N, U, U, U)),
-        ([coa("no_fix_planned"), coa("vendor_fix", stix_id="coa-2")], Readiness(A, U, U, U)),
-        ([indicator(NOW + dt.timedelta(days=1))], Readiness(U, U, A, U)),
-        ([indicator(NOW)], Readiness(U, U, U, U)),  # expired at this instant
-        ([indicator(None)], Readiness(U, U, U, U)),  # no expiry: cannot vouch it is current
-        ([indicator(NOW + dt.timedelta(days=1), pattern_type=None)], Readiness(U, U, U, U)),
-        ([coa("workaround"), coa("rollback", modified=1)], Readiness(U, U, U, U)),  # revised
-        ([coa("workaround", modified=1), coa("rollback")], Readiness(U, A, U, U)),
-        ([coa("vendor_fix", revoked=True)], Readiness(U, U, U, U)),
+        ([], Readiness(U, U, U, U, U)),
+        ([coa("vendor_fix")], Readiness(A, U, U, U, U)),
+        ([coa("workaround")], Readiness(U, A, U, U, U)),
+        ([coa("mitigation")], Readiness(U, A, U, U, U)),
+        ([coa("validation")], Readiness(U, U, U, A, U)),
+        ([coa("rollback")], Readiness(U, U, U, U, U)),
+        ([coa("none_available")], Readiness(N, U, U, U, U)),
+        ([coa("no_fix_planned")], Readiness(N, U, U, U, U)),
+        ([coa("no_fix_planned"), coa("vendor_fix", stix_id="coa-2")], Readiness(A, U, U, U, U)),
+        ([indicator(NOW + dt.timedelta(days=1))], Readiness(U, U, A, U, U)),
+        ([indicator(NOW)], Readiness(U, U, U, U, U)),  # expired at this instant
+        ([indicator(None)], Readiness(U, U, U, U, U)),  # no expiry: cannot vouch it is current
+        ([indicator(NOW + dt.timedelta(days=1), pattern_type=None)], Readiness(U, U, U, U, U)),
+        ([coa("workaround"), coa("rollback", modified=1)], Readiness(U, U, U, U, U)),  # revised
+        ([coa("workaround", modified=1), coa("rollback")], Readiness(U, A, U, U, U)),
+        ([coa("vendor_fix", revoked=True)], Readiness(U, U, U, U, U)),
     ],
 )
 def test_readiness_follows_the_rules(objects, expected):
-    assert assess(objects, NOW) == expected
+    assert assess(objects, NOW, exploitability=NOT_ESTABLISHED) == expected
 
 
 def _lapsed(**since: dt.date | None) -> dict[str, dt.date | None]:
@@ -91,28 +93,28 @@ def _lapsed(**since: dt.date | None) -> dict[str, dt.date | None]:
     ("objects", "expected"),
     [
         # Vouched for through the whole of its review_by day.
-        ([coa("vendor_fix", review_by=TODAY)], Readiness(A, U, U, U)),
+        ([coa("vendor_fix", review_by=TODAY)], Readiness(A, U, U, U, U)),
         # A lapsed claim is stale, not reversed: neither "available" nor "none".
         (
             [coa("vendor_fix", review_by=YESTERDAY)],
-            Readiness(L, U, U, U, _lapsed(remediation=dt.date(2026, 10, 13))),
+            Readiness(L, U, U, U, U, _lapsed(remediation=dt.date(2026, 10, 13))),
         ),
         (
             [coa("none_available", review_by=YESTERDAY)],
-            Readiness(L, U, U, U, _lapsed(remediation=dt.date(2026, 10, 13))),
+            Readiness(L, U, U, U, U, _lapsed(remediation=dt.date(2026, 10, 13))),
         ),
         (
             [coa("workaround", review_by=YESTERDAY)],
-            Readiness(U, L, U, U, _lapsed(mitigation=dt.date(2026, 10, 13))),
+            Readiness(U, L, U, U, U, _lapsed(mitigation=dt.date(2026, 10, 13))),
         ),
         # A current claim answers the group, whichever way it points.
         (
             [coa("vendor_fix", review_by=YESTERDAY), coa("no_fix_planned", stix_id="coa-2")],
-            Readiness(N, U, U, U),
+            Readiness(N, U, U, U, U),
         ),
         (
             [coa("none_available", review_by=YESTERDAY), coa("vendor_fix", stix_id="coa-2")],
-            Readiness(A, U, U, U),
+            Readiness(A, U, U, U, U),
         ),
         # The last day anyone vouched for one of the group's claims.
         (
@@ -120,19 +122,19 @@ def _lapsed(**since: dt.date | None) -> dict[str, dt.date | None]:
                 coa("vendor_fix", review_by="2026-09-01"),
                 coa("vendor_fix", stix_id="coa-2", review_by="2026-10-01"),
             ],
-            Readiness(L, U, U, U, _lapsed(remediation=dt.date(2026, 10, 1))),
+            Readiness(L, U, U, U, U, _lapsed(remediation=dt.date(2026, 10, 1))),
         ),
         # A date that is not one: lapsed, with no date to give.
         (
             [coa("vendor_fix", review_by="2026-13-45")],
-            Readiness(L, U, U, U, _lapsed(remediation=None)),
+            Readiness(L, U, U, U, U, _lapsed(remediation=None)),
         ),
         # Knowing how to undo a fix is no claim, stale or not.
-        ([coa("rollback", review_by=YESTERDAY)], Readiness(U, U, U, U)),
+        ([coa("rollback", review_by=YESTERDAY)], Readiness(U, U, U, U, U)),
     ],
 )
 def test_a_claim_past_its_review_date_is_reported_stale_not_reversed(objects, expected):
-    assert assess(objects, NOW) == expected
+    assert assess(objects, NOW, exploitability=NOT_ESTABLISHED) == expected
 
 
 # ---------------------------------------------------------------------------
@@ -306,3 +308,18 @@ async def test_a_fix_past_its_review_date_reaches_members_as_not_confirmed(
     body = seen.json()
     assert body["remediation"] == "lapsed"
     assert body["not_confirmed_since"] == {"remediation": "2020-01-31"}
+
+
+@pytest.mark.requirement("SF-84")
+@pytest.mark.parametrize(
+    ("exploitability", "scoping"),
+    [
+        (ExploitabilityStatus.AGREED, A),
+        (ExploitabilityStatus.CONTESTED, U),
+        (ExploitabilityStatus.NOT_ESTABLISHED, U),
+    ],
+)
+def test_scoping_is_available_only_when_the_visible_conditions_agree(exploitability, scoping):
+    """Contested conditions do not tell a member whether it is affected, and no
+    conditions is no statement at all: neither is NONE_AVAILABLE."""
+    assert assess([], NOW, exploitability=exploitability).scoping is scoping

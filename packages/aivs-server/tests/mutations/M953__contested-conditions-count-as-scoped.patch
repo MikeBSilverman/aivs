@@ -1,0 +1,18 @@
+Mutation M953: readiness says a member can tell whether it is affected while the sources disagree
+Re-applies: scoping as 'some conditions exist'
+
+Expect red: packages/aivs-server/tests/unit/test_readiness.py::test_scoping_is_available_only_when_the_visible_conditions_agree
+
+diff --git a/packages/aivs-server/src/aivs_server/services/readiness.py b/packages/aivs-server/src/aivs_server/services/readiness.py
+index ac5fe8f..7f6209e 100644
+--- a/packages/aivs-server/src/aivs_server/services/readiness.py
++++ b/packages/aivs-server/src/aivs_server/services/readiness.py
+@@ -144,7 +144,7 @@ def assess(
+         **groups,
+         scoping=(
+             Availability.AVAILABLE
+-            if exploitability is ExploitabilityStatus.AGREED
++            if exploitability is not ExploitabilityStatus.NOT_ESTABLISHED
+             else Availability.UNAVAILABLE
+         ),
+         not_confirmed_since={

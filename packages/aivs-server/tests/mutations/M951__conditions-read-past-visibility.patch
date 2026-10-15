@@ -5,7 +5,7 @@ Expect red: packages/aivs-server/tests/unit/test_exploitability.py::test_conditi
 Expect red: packages/aivs-server/tests/unit/test_exploitability.py::test_an_embargoed_condition_is_not_in_the_view_before_release
 
 diff --git a/packages/aivs-server/src/aivs_server/services/exploitability.py b/packages/aivs-server/src/aivs_server/services/exploitability.py
-index e83f346..4d73ff9 100644
+index ba745b7..5ab5b84 100644
 --- a/packages/aivs-server/src/aivs_server/services/exploitability.py
 +++ b/packages/aivs-server/src/aivs_server/services/exploitability.py
 @@ -31,7 +31,7 @@ from collections.abc import Mapping, Sequence
@@ -17,10 +17,10 @@ index e83f346..4d73ff9 100644
  from sqlalchemy.ext.asyncio import AsyncSession
  
  from aivs_schemas.extension.builders import AIVS_INTEL_EXTENSION_ID
-@@ -111,7 +111,7 @@ async def exploitability_for(
-     """
-     visible = visible_objects(ctx, now)
-     await require_visible_vulnerability(session, visible, vulnerability_stix_id)
+@@ -119,7 +119,7 @@ async def exploitability_in(
+     session: AsyncSession, visible: Select[Any], vulnerability_stix_id: str
+ ) -> ExploitabilityView:
+     """The view from the condition notes in ``visible``, a scope the caller already holds."""
 -    rows = (await session.execute(_condition_notes(visible, vulnerability_stix_id))).scalars()
 +    rows = (await session.execute(_condition_notes(select(StixObject), vulnerability_stix_id))).scalars()
      latest: dict[str, StixObject] = {}

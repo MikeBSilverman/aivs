@@ -78,7 +78,8 @@ E. Later phases are described, as built, in their own sections below:
   existing rows, each held equal to its source by a test:
   `remediation_category`, `pattern_type`, `valid_until` and `cwe_ids`.
   `services/indexing.py` names each column's reader.
-- **Readiness** (SF-8). For remediation, mitigation, detection and validation,
+- **Readiness** (SF-8). For remediation, mitigation, detection and validation
+  (and, since Phase N, scoping: §3.5),
   the value is `available`, `none_available`, `lapsed` or `unavailable`.
   `lapsed` is a claim either way whose `review_by` has passed; it is served
   with the date (`not_confirmed_since`) and shown as "not confirmed since",
@@ -352,9 +353,14 @@ In progress. Built:
   merge would narrow what one of them says exists. Sources are named by
   their note, never by their filer.
 
-Planned: intake from CVE 5.x and OSV records through the KEV/NVD script;
-readiness's fifth group, `scoping`; the OSV export; the page sections at each
-depth; and the posture form pre-filled from a condition that does not hold.
+- **Readiness's fifth group, `scoping`**: "can you tell whether you are
+  affected?". `available` only when the caller's view is `agreed`;
+  `unavailable` when it is contested or absent, never `none_available`,
+  which would be a statement that nobody made.
+
+Planned: intake from CVE 5.x and OSV records through the KEV/NVD script; the
+OSV export; the page sections at each depth; and the posture form pre-filled
+from a condition that does not hold.
 
 ### 3.6 Phase I: documents
 

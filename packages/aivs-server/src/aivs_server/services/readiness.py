@@ -1,6 +1,7 @@
-"""What's available for a vulnerability: remediation, mitigation, detection, validation.
+"""What's available for a vulnerability: remediation, mitigation, detection, validation, scoping.
 
-Readiness is the RFI's maturity framework in four words, and it is computed,
+Readiness is the RFI's maturity framework in four words, plus Phase N's fifth
+(can the member tell whether it is affected), and it is computed,
 never stored (SF-8). It is derived from the objects the *caller* can see: a
 stored, global value would tell a member that content exists in a circle it is
 not in -- "a fix is available" for a vulnerability whose only fix was shared at
@@ -24,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from aivs_server.auth.context import AuthContext
 from aivs_server.db.models import StixObject
+from aivs_server.services.exploitability import ExploitabilityStatus, exploitability_in
 from aivs_server.services.guidance import review_lapsed, stated_review_by
 from aivs_server.services.visible import (
     VulnerabilityNotVisibleError,
@@ -79,6 +81,11 @@ class Readiness:
     mitigation: Availability
     detection: Availability
     validation: Availability
+    #: Whether a member can tell if it is affected: AVAILABLE only when the
+    #: condition notes it can see agree (Phase N). Contested or absent
+    #: conditions are UNAVAILABLE -- never NONE_AVAILABLE, which is a statement
+    #: that there is none, and nobody has made it.
+    scoping: Availability
     #: For each LAPSED group, the latest ``review_by`` among its stale claims:
     #: the last day anyone vouched for one. None when the only date given was
     #: not a date.
@@ -100,8 +107,13 @@ _NO_FIX: Final[frozenset[str]] = frozenset({"none_available", "no_fix_planned"})
 _GROUPS: Final[tuple[str, ...]] = ("remediation", "mitigation", "detection", "validation")
 
 
-def assess(objects: Iterable[ReadinessInput], now: dt.datetime) -> Readiness:
+def assess(
+    objects: Iterable[ReadinessInput], now: dt.datetime, *, exploitability: ExploitabilityStatus
+) -> Readiness:
     """Readiness from the objects a caller can see. ``now`` decides what has expired.
+
+    ``exploitability`` is the status of the caller's exploitability view over
+    the same scope; it decides ``scoping`` and nothing else.
 
     An indicator counts only while it is valid. One with no ``valid_until`` --
     stored before the rule that requires it -- does not count: AIVS cannot say
@@ -130,6 +142,11 @@ def assess(objects: Iterable[ReadinessInput], now: dt.datetime) -> Readiness:
     groups = {group: _availability(group, available, stated_none, lapsed) for group in _GROUPS}
     return Readiness(
         **groups,
+        scoping=(
+            Availability.AVAILABLE
+            if exploitability is ExploitabilityStatus.AGREED
+            else Availability.UNAVAILABLE
+        ),
         not_confirmed_since={
             group: _latest(lapsed[group])
             for group, value in groups.items()
@@ -256,4 +273,5 @@ async def readiness_for(
             ) in rows
         ),
         now,
+        exploitability=(await exploitability_in(session, visible, vulnerability_stix_id)).status,
     )

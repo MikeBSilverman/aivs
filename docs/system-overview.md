@@ -110,7 +110,7 @@ These principles come from the plan's Decisions table, CLAUDE.md §5–§6 and t
 
 **Indicators must expire.** Every inbound indicator states a `valid_until`: at most 90 days for a network address, two years for anything else. Expired indicators drop out of exports and readiness.
 
-**Readiness ("what's available").** For remediation, mitigation, detection and validation, each vulnerability is `available`, `none_available`, `lapsed` or `unavailable`. `lapsed` means a claim is past its review date and is shown as "not confirmed since". Readiness is computed per caller from the objects that caller can see, and is never stored or sent over TAXII. A global value would reveal content the caller cannot see. Phase N plans a fifth group, `scoping`: can you tell whether you are affected?
+**Readiness ("what's available").** For remediation, mitigation, detection, validation and (Phase N) scoping, each vulnerability is `available`, `none_available`, `lapsed` or `unavailable`. `lapsed` means a claim is past its review date and is shown as "not confirmed since". Readiness is computed per caller from the objects that caller can see, and is never stored or sent over TAXII. A global value would reveal content the caller cannot see. Phase N plans a fifth group, `scoping`: can you tell whether you are affected?
 
 **Exploitability conditions (planned, Phase N).** These are typed conditions saying exactly when a vulnerability can be exploited:
 - a vulnerable function, file or module;

@@ -338,7 +338,7 @@ build order, and nothing is built.
 | Federated identity for people (the ISAC's own IdP tenants, passkeys) | Member tenant built (next row); staff tenant and passkeys designed — [`identity-federation.md`](docs/identity-federation.md) |
 | Content sealed to its recipients (BYOK) | Designed; **optional and deferred** — [`encryption-design.md`](docs/encryption-design.md) |
 | GOLD EAGLE CVE handoff and return path | Designed, not scheduled — [`gold-eagle-integration.md`](docs/gold-eagle-integration.md) |
-| Contributions on public CVEs: one canonical page per vulnerability, "what's available" (remediation, mitigation, detection, validation), the split by disclosure, the vendor as a case party, KEV enrichment, telemetry back to the submitter | Built — [`intel-model.md`](docs/intel-model.md) §2 |
+| Contributions on public CVEs: one canonical page per vulnerability, "what's available" (remediation, mitigation, detection, validation; scoping since Phase N), the split by disclosure, the vendor as a case party, KEV enrichment, telemetry back to the submitter | Built — [`intel-model.md`](docs/intel-model.md) §2 |
 | Members sign in with the ISAC's SSO and a second factor over ordinary TLS; certificates stay for machines, ISAC staff and `TLP:RED` | Built — opt-in public listener ([`identity-federation.md`](docs/identity-federation.md) §11) |
 | Depth ("tell me what to do" through raw objects) on the vulnerability page, print, IoC pack | Built — [`intel-model.md`](docs/intel-model.md) §3.3 |
 | Sigma conversion per member SIEM dialect | Planned — every pySigma release depends on a package with an open advisory and no fix |

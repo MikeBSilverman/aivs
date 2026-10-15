@@ -244,7 +244,8 @@ async def test_an_isac_draft_correction_overtaken_by_a_kev_version_is_refused(
     kev = await file(client, automation_pem, [kev_version], scope="ai_system")
     assert kev.status_code == 201, kev.text
     kev_id = kev.json()["id"]
-    assert (await submit_and_validate(client, automation_pem, kev_id, editor)).status_code == 200
+    sent = await submit_and_validate(client, automation_pem, kev_id, editor, sender=editor)
+    assert sent.status_code == 200
     assert (await distribute(client, kev_id, editor, circle)).status_code == 200
 
     draft_id = drafted.json()["id"]

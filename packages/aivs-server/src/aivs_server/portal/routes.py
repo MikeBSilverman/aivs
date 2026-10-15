@@ -100,6 +100,7 @@ from aivs_server.services.submissions import (
     SubmissionError,
     apply_transition,
     create_submission,
+    is_isac_filing,
     load_submission,
 )
 
@@ -684,6 +685,7 @@ async def _available_actions(
     Derived from the policy predicates rather than restated, so a button never
     appears for something the API would refuse.
     """
+    owner_is_isac = await is_isac_filing(session, submission)
     verbs = [
         (SubmissionState.SUBMITTED, "submit", "Send for review", True),
         (SubmissionState.VALIDATED, "validate", "Accept for sharing", True),
@@ -692,7 +694,7 @@ async def _available_actions(
     actions = [
         {"verb": verb, "label": label, "primary": primary, "acknowledge": [], "reason": False}
         for target, verb, label, primary in verbs
-        if can_transition_submission(ctx, submission, target)
+        if can_transition_submission(ctx, submission, target, owner_is_isac=owner_is_isac)
     ]
     if awaiting_confirmation(submission, dt.datetime.now(dt.UTC)) and can_confirm_proxy_filing(
         ctx, submission
@@ -733,7 +735,9 @@ async def _available_actions(
             action["acknowledge"] = await consequential_changes(session, submission, list(raws))
 
     circles: list[dict[str, Any]] = []
-    if can_transition_submission(ctx, submission, SubmissionState.DISTRIBUTED):
+    if can_transition_submission(
+        ctx, submission, SubmissionState.DISTRIBUTED, owner_is_isac=owner_is_isac
+    ):
         rows = (
             (
                 await session.execute(
@@ -834,7 +838,12 @@ async def perform_action(
         # were all written first and then rolled back: correct only for as long as
         # nothing catches that exception.
         require(
-            can_transition_submission(ctx, submission, SubmissionState.DISTRIBUTED),
+            can_transition_submission(
+                ctx,
+                submission,
+                SubmissionState.DISTRIBUTED,
+                owner_is_isac=await is_isac_filing(session, submission),
+            ),
             "portal_distribute",
         )
 

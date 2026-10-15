@@ -41,12 +41,16 @@ async def filers(make_org, make_cert, isac):
     return {"pems": pems, "editor": editor}
 
 
-async def _submitted(client, pem, objects) -> str:
+async def _submitted(client, pem, objects, *, sender=None) -> str:
+    """Filed, then sent for review: by the filer, or by the editor for the
+    automation's filing, whose verbs are an editor's (Q35)."""
     filed = await file(client, pem, objects)
     assert filed.status_code == 201, filed.text
     submission_id = filed.json()["id"]
     sent = await client.post(
-        f"/api/v1/submissions/{submission_id}/submit", json={}, headers=proxy_headers(pem)
+        f"/api/v1/submissions/{submission_id}/submit",
+        json={},
+        headers=sender or proxy_headers(pem),
     )
     assert sent.status_code == 200, sent.text
     return submission_id
@@ -62,7 +66,7 @@ async def _states(session, ids) -> set[SubmissionState]:
 
 async def test_an_editor_validates_a_group_in_one_audited_action(client, session, filers):
     pem = filers["pems"]["robot"]
-    ids = [await _submitted(client, pem, [workaround()]) for _ in range(3)]
+    ids = [await _submitted(client, pem, [workaround()], sender=filers["editor"]) for _ in range(3)]
 
     validated = await client.post(GROUP, json={"submission_ids": ids}, headers=filers["editor"])
 
@@ -81,9 +85,9 @@ async def test_an_editor_validates_a_group_in_one_audited_action(client, session
 async def test_a_consequential_machine_change_stops_the_whole_group(client, session, filers):
     """The pair: the same group with one disruptive restart in it validates nothing."""
     pem = filers["pems"]["robot"]
-    routine = await _submitted(client, pem, [workaround()])
+    routine = await _submitted(client, pem, [workaround()], sender=filers["editor"])
     disruptive_coa = workaround(restart_required="system")
-    disruptive = await _submitted(client, pem, [disruptive_coa])
+    disruptive = await _submitted(client, pem, [disruptive_coa], sender=filers["editor"])
 
     refused = await client.post(
         GROUP, json={"submission_ids": [routine, disruptive]}, headers=filers["editor"]
@@ -123,8 +127,10 @@ async def test_the_portal_says_when_a_group_was_not_validated(
     """A refused group redirects to the queue like a validated one; the notice is
     the only difference the editor sees, so it has to say nothing happened."""
     pem = filers["pems"]["robot"]
-    routine = await _submitted(client, pem, [workaround()])
-    disruptive = await _submitted(client, pem, [workaround(restart_required="system")])
+    routine = await _submitted(client, pem, [workaround()], sender=filers["editor"])
+    disruptive = await _submitted(
+        client, pem, [workaround(restart_required="system")], sender=filers["editor"]
+    )
     editor_pem, _ = await make_cert(isac_org)
     editor, _seed = await make_operator(isac_org, roles=ISAC_STAFF_ROLES)
     certificate = x509.load_pem_x509_certificate(editor_pem.encode("ascii"))

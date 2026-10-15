@@ -1,0 +1,16 @@
+Mutation M390: the automation's waiting KEV draft does not hold its record back, so every run files another
+Re-applies: T15 (Mike, Q35)
+
+Expect red: packages/aivs-server/tests/unit/test_enrich_kev.py::test_run_files_a_kev_version_of_the_isacs_record_and_of_nothing_else
+
+diff --git a/packages/aivs-server/src/aivs_server/services/isac_records.py b/packages/aivs-server/src/aivs_server/services/isac_records.py
+--- a/packages/aivs-server/src/aivs_server/services/isac_records.py
++++ b/packages/aivs-server/src/aivs_server/services/isac_records.py
+@@ -128,6 +128,6 @@
+     )
+     found = rows.all()
+     return IsacRecords(
+-        objects=[dict(raw) for raw, waiting in found if not waiting],
++        objects=[dict(raw) for raw, _waiting in found],
+         waiting_drafts=sum(1 for _raw, waiting in found if waiting),
+     )

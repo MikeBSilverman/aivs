@@ -231,9 +231,10 @@ class NativeClient:
             self._request("POST", f"/submissions/{submission_id}/submit", json={"reason": reason})
         )
 
-    def isac_vulnerabilities(self) -> list[dict[str, Any]]:
-        """The ISAC's own vulnerability records, newest version each: its automation only."""
-        return list(self._request("GET", "/isac-records/vulnerabilities")["objects"])
+    def isac_vulnerabilities(self) -> dict[str, Any]:
+        """The ISAC's own vulnerability records, newest version each, and how many
+        are held back by a draft of the automation's own: its automation only."""
+        return dict(self._request("GET", "/isac-records/vulnerabilities"))
 
     def list_submissions(self, state: str | None = None) -> list[dict[str, Any]]:
         params = {"state": state} if state else None

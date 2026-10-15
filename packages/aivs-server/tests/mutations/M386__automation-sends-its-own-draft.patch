@@ -1,0 +1,17 @@
+Mutation M386: the automation's certificate holds the submitter's verbs on its own draft
+Re-applies: T15 (Mike, Q35)
+
+Expect red: packages/aivs-server/tests/unit/test_isac_filings.py::test_the_automation_holds_no_verb_on_its_own_draft
+
+diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs-server/src/aivs_server/auth/policy.py
+--- a/packages/aivs-server/src/aivs_server/auth/policy.py
++++ b/packages/aivs-server/src/aivs_server/auth/policy.py
+@@ -548,7 +548,7 @@
+     ``owner_is_isac`` is the caller's to state, from the filing's owner
+     (``services.submissions.is_isac_filing``, which fails closed).
+     """
+-    if owner_is_isac:
++    if owner_is_isac and ctx.org_type is not OrgType.AUTOMATION:
+         return is_isac_editor(ctx)
+     return submission.submitter_org_id == ctx.org_id
+ 

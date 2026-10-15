@@ -44,6 +44,7 @@ from aivs_schemas.extension.builders import (
 from aivs_server.audit.log import AuditAction, record
 from aivs_server.auth.context import AuthContext
 from aivs_server.auth.policy import (
+    ISAC_FILER_TYPES,
     can_transition_submission,
     holds_submitter_rights,
     is_isac_filing_needing_an_editor,
@@ -74,6 +75,7 @@ __all__ = [
     "create_submission",
     "foreign_identity_ids",
     "index_columns",
+    "is_isac_filing",
     "record_transition",
     "replace_submission_objects",
     "self_identifying_problem",
@@ -697,9 +699,24 @@ async def create_submission(
     return submission
 
 
-def _submitter_refusal(ctx: AuthContext, submission: Submission) -> str:
+async def is_isac_filing(session: AsyncSession, submission: Submission) -> bool:
+    """Whether ``submission``'s owner is the ISAC or its automation, whose
+    verbs are an editor's (``policy.holds_submitter_rights``).
+
+    Fails closed: an owner it cannot find is not taken for a member, because
+    the member's answer would give the submitter's verbs to whoever shares the
+    filing's organisation id, and the editor's answer gives them to nobody but
+    an editor.
+    """
+    owner_type = await session.scalar(
+        select(Organization.org_type).where(Organization.id == submission.submitter_org_id)
+    )
+    return owner_type is None or owner_type in ISAC_FILER_TYPES
+
+
+def _submitter_refusal(ctx: AuthContext, *, owner_is_isac: bool) -> str:
     """Which rule refused a submitter's verb, for the audit row."""
-    if is_isac_filing_needing_an_editor(ctx, submission):
+    if is_isac_filing_needing_an_editor(ctx, owner_is_isac=owner_is_isac):
         return "isac_filing_requires_isac_editor"
     return "submission_not_owned"
 
@@ -720,7 +737,11 @@ async def update_submission(
     if submission.state is not SubmissionState.DRAFT:
         msg = f"a submission in state '{submission.state.value}' can no longer be edited"
         raise SubmissionError(msg)
-    require(holds_submitter_rights(ctx, submission), _submitter_refusal(ctx, submission))
+    owner_is_isac = await is_isac_filing(session, submission)
+    require(
+        holds_submitter_rights(ctx, submission, owner_is_isac=owner_is_isac),
+        _submitter_refusal(ctx, owner_is_isac=owner_is_isac),
+    )
 
     bundle = changes.pop("bundle", None)
     for field, value in changes.items():
@@ -829,10 +850,11 @@ async def apply_transition(
         msg = f"cannot move a submission from '{submission.state.value}' to '{target.value}'"
         raise SubmissionError(msg)
 
+    owner_is_isac = await is_isac_filing(session, submission)
     require(
-        can_transition_submission(ctx, submission, target),
+        can_transition_submission(ctx, submission, target, owner_is_isac=owner_is_isac),
         "isac_filing_requires_isac_editor"
-        if is_isac_filing_needing_an_editor(ctx, submission)
+        if is_isac_filing_needing_an_editor(ctx, owner_is_isac=owner_is_isac)
         else f"transition_{submission.state.value}_to_{target.value}",
     )
 

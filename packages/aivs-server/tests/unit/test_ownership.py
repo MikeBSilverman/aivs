@@ -54,10 +54,12 @@ async def world(make_org, make_cert, make_circle, make_collection, join_circle, 
     return {"circle": circle, "collection": collection, "editor": editor, **orgs}
 
 
-async def filed_and_validated(client, pem, editor, objects):
+async def filed_and_validated(client, pem, editor, objects, *, sender=None):
     filed = await file(client, pem, objects)
     assert filed.status_code == 201, filed.text
-    return filed.json()["id"], await submit_and_validate(client, pem, filed.json()["id"], editor)
+    return filed.json()["id"], await submit_and_validate(
+        client, pem, filed.json()["id"], editor, sender=sender
+    )
 
 
 async def feed_names(client, world, pem, **params: str):
@@ -182,7 +184,11 @@ async def test_the_isacs_automation_versions_the_isacs_record(
     _org, pem = automation
 
     _id, validated = await filed_and_validated(
-        client, pem, world["editor"], [finding(record, modified=LATER, name="with KEV dates")]
+        client,
+        pem,
+        world["editor"],
+        [finding(record, modified=LATER, name="with KEV dates")],
+        sender=world["editor"],
     )
 
     assert validated.status_code == 200, validated.text
@@ -200,7 +206,11 @@ async def test_the_isacs_automation_cannot_version_a_members_object(client, worl
     _org, pem = automation
 
     _id, refused = await filed_and_validated(
-        client, pem, world["editor"], [finding(shared, modified=LATER, name="automation's")]
+        client,
+        pem,
+        world["editor"],
+        [finding(shared, modified=LATER, name="automation's")],
+        sender=world["editor"],
     )
 
     assert refused.status_code == 409
@@ -222,7 +232,11 @@ async def test_a_kev_version_supersedes_the_isacs_record_in_the_default_feed(
     )
     _org, pem = automation
     submission, validated = await filed_and_validated(
-        client, pem, world["editor"], [finding(record, modified=LATER, name="with KEV dates")]
+        client,
+        pem,
+        world["editor"],
+        [finding(record, modified=LATER, name="with KEV dates")],
+        sender=world["editor"],
     )
     assert validated.status_code == 200, validated.text
     distributed = await distribute(client, submission, world["editor"], world["circle"])

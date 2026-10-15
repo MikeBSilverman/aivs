@@ -101,8 +101,10 @@ def scored(stix_id: str, *, score: float, modified: str) -> dict:
 async def validate_filing(client, world, pem, objects, **validate_body: object):
     filed = await file(client, pem, objects)
     assert filed.status_code == 201, filed.text
+    # The automation's filings are sent by an editor (Q35); a member sends its own.
+    sender = world["editor"] if pem == world["robot_pem"] else None
     return filed.json()["id"], await submit_and_validate(
-        client, pem, filed.json()["id"], world["editor"], **validate_body
+        client, pem, filed.json()["id"], world["editor"], sender=sender, **validate_body
     )
 
 
@@ -382,9 +384,9 @@ async def test_the_portal_refuses_validation_until_the_change_is_ticked(
     coa = workaround(restart_required="system")
     filed = await file(client, world["robot_pem"], [coa])
     submission_id = filed.json()["id"]
-    await client.post(
-        f"{API}/{submission_id}/submit", json={}, headers=proxy_headers(world["robot_pem"])
-    )
+    # The automation's filing is sent by an editor (Q35).
+    sent = await client.post(f"{API}/{submission_id}/submit", json={}, headers=world["editor"])
+    assert sent.status_code == 200, sent.text
 
     detail = await client.get(
         f"/portal/submissions/{submission_id}", headers=proxy_headers(portal_editor)

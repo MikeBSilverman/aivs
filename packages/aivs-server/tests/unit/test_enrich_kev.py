@@ -22,7 +22,7 @@ from typing import Any
 
 import httpx
 import pytest
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from aivs_schemas.enums import TLP, OrgType, SubmissionSource, SubmissionState
 from aivs_schemas.extension.builders import (
@@ -199,7 +199,7 @@ async def test_the_version_the_script_builds_is_validated_by_an_editor(
         tlp=script.tlp_of(record).value,
     )
     assert filed.status_code == 201, filed.text
-    review = await submit_and_validate(client, pem, filed.json()["id"], editor)
+    review = await _sent_and_validated(client, filed.json()["id"], editor)
 
     assert review.status_code == 200, review.text
     submission = await session.get(Submission, uuid.UUID(filed.json()["id"]))
@@ -230,7 +230,7 @@ async def test_the_kev_version_is_distributed_under_the_isacs_name_not_the_machi
         tlp=script.tlp_of(record).value,
     )
     submission_id = filed.json()["id"]
-    assert (await submit_and_validate(client, pem, submission_id, editor)).status_code == 200
+    assert (await _sent_and_validated(client, submission_id, editor)).status_code == 200
 
     distributed = await distribute(client, submission_id, editor, circle)
 
@@ -325,20 +325,32 @@ async def test_a_record_whose_newest_version_is_embargoed_is_left_out(
     assert await _read_records(client, proxy_headers(automation_pem)) == []
 
 
-async def _file_newer_version(client, automation_pem: str, record: dict[str, Any]) -> str:
-    """A newer version of ``record``, filed and submitted for review through the API."""
+async def _file_newer_version(
+    client, automation_pem: str, record: dict[str, Any], *, editor: dict[str, str]
+) -> str:
+    """A newer version of ``record``, filed by the automation and sent for
+    review by an editor, whose verb that is on the automation's filing (Q35)."""
     newer = {**record, "modified": "2026-09-01T00:00:00.000Z", "name": "Revised"}
     del newer["extensions"][AIVS_PROVENANCE_EXTENSION_ID]
     filed = await file(client, automation_pem, [newer], scope="ai_system")
     assert filed.status_code == 201, filed.text
     submission_id = str(filed.json()["id"])
     submitted = await client.post(
-        f"/api/v1/submissions/{submission_id}/submit",
-        json={},
-        headers=proxy_headers(automation_pem),
+        f"/api/v1/submissions/{submission_id}/submit", json={}, headers=editor
     )
     assert submitted.status_code == 200, submitted.text
     return submission_id
+
+
+async def _sent_and_validated(client, submission_id: str, editor: dict[str, str]):
+    """An editor sends the automation's draft for review and validates it."""
+    submitted = await client.post(
+        f"/api/v1/submissions/{submission_id}/submit", json={}, headers=editor
+    )
+    assert submitted.status_code == 200, submitted.text
+    return await client.post(
+        f"/api/v1/submissions/{submission_id}/validate", json={}, headers=editor
+    )
 
 
 @pytest.mark.db
@@ -349,11 +361,11 @@ async def test_a_record_with_a_newer_version_in_review_is_left_out(
     circle = await make_circle("kev")
     record = validated(isac_record(isac_org.stix_identity_id))
     await seed(session, isac_org, record, circle=circle)
-    submission_id = await _file_newer_version(client, automation_pem, record)
+    _org, editor = isac
+    submission_id = await _file_newer_version(client, automation_pem, record, editor=editor)
     headers = proxy_headers(automation_pem)
 
     assert await _read_records(client, headers) == [], "submitted"
-    _org, editor = isac
     validate = await client.post(
         f"/api/v1/submissions/{submission_id}/validate", json={}, headers=editor
     )
@@ -363,16 +375,17 @@ async def test_a_record_with_a_newer_version_in_review_is_left_out(
 
 @pytest.mark.db
 async def test_a_withdrawn_newer_version_does_not_hold_the_record_back(
-    client, session, isac_org, make_circle, automation_pem
+    client, session, isac, isac_org, make_circle, automation_pem
 ):
     circle = await make_circle("kev")
     record = validated(isac_record(isac_org.stix_identity_id))
     await seed(session, isac_org, record, circle=circle)
-    submission_id = await _file_newer_version(client, automation_pem, record)
+    _org, editor = isac
+    submission_id = await _file_newer_version(client, automation_pem, record, editor=editor)
     headers = proxy_headers(automation_pem)
 
     withdrawn = await client.post(
-        f"/api/v1/submissions/{submission_id}/withdraw", json={}, headers=headers
+        f"/api/v1/submissions/{submission_id}/withdraw", json={}, headers=editor
     )
 
     assert withdrawn.status_code == 200, withdrawn.text
@@ -514,6 +527,7 @@ async def test_run_files_a_kev_version_of_the_isacs_record_and_of_nothing_else(
     automation_pem,
     monkeypatch,
     tmp_path,
+    capsys,
 ):
     circle = await make_circle("kev")
     ours = validated(isac_record(isac_org.stix_identity_id))
@@ -541,15 +555,30 @@ async def test_run_files_a_kev_version_of_the_isacs_record_and_of_nothing_else(
             await session.execute(
                 select(StixObject)
                 .join(Submission, Submission.id == StixObject.submission_id)
-                .where(Submission.state == SubmissionState.SUBMITTED)
+                .where(Submission.state == SubmissionState.DRAFT)
             )
         )
         .scalars()
         .all()
     )
-    assert [obj.stix_id for obj in filed] == [ours["id"]]
+    assert [obj.stix_id for obj in filed] == [ours["id"]], "a draft, waiting for an editor"
     assert filed[0].raw["extensions"][AIVS_INTEL_EXTENSION_ID]["kev_listed"] is True
     assert theirs not in {obj.stix_id for obj in filed}
+
+    # Its own waiting draft holds the record back, so a second run files
+    # nothing twice (Q35: the script no longer sends what it files), and says
+    # so: the record's KEV updates stall until an editor sends the draft.
+    capsys.readouterr()
+    assert await asyncio.to_thread(script.run, args) == 0
+    assert f"  1 {script.WAITING}" in capsys.readouterr().out
+    response = await client.get(RECORDS, headers=proxy_headers(automation_pem))
+    assert response.json()["waiting_drafts"] == 1
+    drafts = await session.scalar(
+        select(func.count())
+        .select_from(Submission)
+        .where(Submission.state == SubmissionState.DRAFT)
+    )
+    assert drafts == 1
 
 
 # ---------------------------------------------------------------------------
@@ -558,7 +587,7 @@ async def test_run_files_a_kev_version_of_the_isacs_record_and_of_nothing_else(
 def test_the_summary_counts_each_outcome_and_says_why_records_were_skipped(script):
     lines = script.summary({script.FILED: 2, script.SKIPPED_1_0: 3, script.REFUSED: 0})
     assert lines[0] == "5 records read"
-    assert "  2 filed" in lines
+    assert "  2 filed as a draft, waiting for an ISAC editor to send it" in lines
     assert any(line.startswith("  3 skipped: still on extension 1.0") for line in lines)
     assert not any("refused" in line for line in lines), "an outcome nobody had is not listed"
 

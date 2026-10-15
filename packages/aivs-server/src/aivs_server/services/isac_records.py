@@ -23,18 +23,19 @@ version in review holds the record back, not only one with a later
 from __future__ import annotations
 
 import datetime as dt
+from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy import exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
-from aivs_schemas.enums import VISIBLE_SUBMISSION_STATES, SubmissionState
+from aivs_schemas.enums import VISIBLE_SUBMISSION_STATES, SubmissionSource, SubmissionState
 from aivs_server.auth.policy import isac_record_read_clause
 from aivs_server.db.models import Distribution, StixObject, Submission
 from aivs_server.services.ownership import ISAC_OWNER, owner_key
 
-__all__ = ["latest_isac_vulnerabilities"]
+__all__ = ["IsacRecords", "latest_isac_vulnerabilities"]
 
 #: States in which a version is on its way to distribution and may still get there.
 #: Not DRAFT, deliberately: a draft nobody sends would otherwise hold the KEV
@@ -78,13 +79,43 @@ def _has_version_in_review() -> Any:
     )
 
 
-async def latest_isac_vulnerabilities(
-    session: AsyncSession, *, now: dt.datetime
-) -> list[dict[str, Any]]:
+def _has_waiting_kev_draft() -> Any:
+    """Whether the automation's own draft of this record waits for an editor.
+
+    It holds the record back (Q35): without that, every run files another draft
+    of it. Only the automation's (source ``system``); an editor's or analyst's
+    forgotten draft still holds nothing. The cost is that KEV updates to the
+    record stall until an editor acts, so the stall is counted and shown --
+    in the script's summary and on the status page -- rather than silent.
+    """
+    pending = aliased(StixObject)
+    pending_submission = aliased(Submission)
+    return (
+        exists()
+        .where(
+            pending.stix_id == StixObject.stix_id,
+            pending_submission.id == pending.submission_id,
+            owner_key(pending_submission.submitter_org_id) == ISAC_OWNER,
+            pending_submission.state == SubmissionState.DRAFT,
+            pending_submission.source == SubmissionSource.SYSTEM,
+        )
+        .correlate(StixObject)
+    )
+
+
+@dataclass(frozen=True)
+class IsacRecords:
+    #: The newest readable version of each record the automation may version now.
+    objects: list[dict[str, Any]]
+    #: Records left out only because the automation's own draft of them waits.
+    waiting_drafts: int
+
+
+async def latest_isac_vulnerabilities(session: AsyncSession, *, now: dt.datetime) -> IsacRecords:
     """The newest version of each of the ISAC's vulnerability records, where it may be read."""
     newest = _newest_isac_versions().subquery()
     rows = await session.execute(
-        select(StixObject.raw)
+        select(StixObject.raw, _has_waiting_kev_draft())
         .distinct(StixObject.stix_id)
         .join(Submission, Submission.id == StixObject.submission_id)
         .join(Distribution, Distribution.stix_object_id == StixObject.id)
@@ -95,4 +126,8 @@ async def latest_isac_vulnerabilities(
         )
         .order_by(StixObject.stix_id)
     )
-    return [dict(raw) for raw in rows.scalars()]
+    found = rows.all()
+    return IsacRecords(
+        objects=[dict(raw) for raw, waiting in found if not waiting],
+        waiting_drafts=sum(1 for _raw, waiting in found if waiting),
+    )

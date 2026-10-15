@@ -6,12 +6,12 @@ Expect red: packages/aivs-server/tests/unit/test_isac_filings.py::test_isac_staf
 diff --git a/packages/aivs-server/src/aivs_server/services/submissions.py b/packages/aivs-server/src/aivs_server/services/submissions.py
 --- a/packages/aivs-server/src/aivs_server/services/submissions.py
 +++ b/packages/aivs-server/src/aivs_server/services/submissions.py
-@@ -720,7 +720,7 @@
-     if submission.state is not SubmissionState.DRAFT:
-         msg = f"a submission in state '{submission.state.value}' can no longer be edited"
+@@ -739,7 +739,7 @@
          raise SubmissionError(msg)
--    require(holds_submitter_rights(ctx, submission), _submitter_refusal(ctx, submission))
-+    require(submission.submitter_org_id == ctx.org_id, _submitter_refusal(ctx, submission))
+     owner_is_isac = await is_isac_filing(session, submission)
+     require(
+-        holds_submitter_rights(ctx, submission, owner_is_isac=owner_is_isac),
++        submission.submitter_org_id == ctx.org_id,
+         _submitter_refusal(ctx, owner_is_isac=owner_is_isac),
+     )
  
-     bundle = changes.pop("bundle", None)
-     for field, value in changes.items():

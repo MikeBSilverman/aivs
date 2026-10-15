@@ -258,9 +258,11 @@ caller's org belongs to, at the role shown.
 
 ¹ The submitter's verbs (amend, submit, withdraw, supersede) go through
 `policy.holds_submitter_rights`. A member firm holds them for what it filed. On a
-filing whose owner is the ISAC's own organisation each needs a human
-`isac_editor`, as validating does (Mike, Q15; SF-81): an ISAC analyst, a system
-administrator and the admin organisation's certificate alone hold none of them,
+filing whose owner is the ISAC's own organisation or its automation each is a
+human `isac_editor`'s and nobody else's, as validating is (Mike, Q15 and Q35;
+SF-81): an ISAC analyst, a system administrator, the admin organisation's
+certificate alone and the automation's certificate hold none of them, and an
+editor holds them on what the automation filed,
 and the refusal is recorded as `isac_filing_requires_isac_editor`. A one-click
 files and submits in one step, so it refuses them before filing anything, with a
 sentence saying an editor has to file it (Q36: refused, not queued). An analyst

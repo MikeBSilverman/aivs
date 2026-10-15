@@ -16,10 +16,11 @@ from cryptography import x509
 from cryptography.hazmat.primitives import hashes
 from sqlalchemy import select
 
-from aivs_schemas.enums import OperatorRole, OrgType
+from aivs_schemas.enums import TLP, DiscoveryScope, OperatorRole, OrgType, SubmissionState
 from aivs_server.audit.log import AuditAction
 from aivs_server.auth.sessions import establish_session
-from aivs_server.db.models import AuditLog
+from aivs_server.db.models import AuditLog, Submission
+from aivs_server.services.submissions import is_isac_filing
 from tests.conftest import proxy_headers
 
 pytestmark = pytest.mark.db
@@ -186,3 +187,67 @@ async def test_an_analysts_isac_draft_waits_for_an_editor_and_only_an_editor_mov
 
     assert (analyst_sends.status_code, analyst_withdraws.status_code) == (403, 403)
     assert editor_sends.status_code == 200, editor_sends.text
+
+
+# ---------------------------------------------------------------------------
+# The automation's own filings (Mike, Q35)
+# ---------------------------------------------------------------------------
+async def _automation_draft(client, people) -> str:
+    drafted = await client.post(
+        API,
+        json={
+            "title": "A KEV version",
+            "discovery_scope": "ai_system",
+            "tlp": "amber",
+            "bundle": _bundle(),
+        },
+        headers=people["automation"],
+    )
+    assert drafted.status_code == 201, drafted.text
+    return drafted.json()["id"]
+
+
+@pytest.mark.requirement("SF-81")
+@pytest.mark.parametrize("verb", ["amend", "submit", "withdraw"])
+async def test_the_automation_holds_no_verb_on_its_own_draft(client, session, people, verb):
+    """It may file, as an analyst may draft; sending, changing or withdrawing
+    what it filed is an editor's."""
+    draft_id = await _automation_draft(client, people)
+
+    refused = await _verb(client, draft_id, verb, people["automation"])
+
+    assert refused.status_code == 403, refused.text
+    assert await _denial_reasons(session) == [REFUSAL]
+
+
+@pytest.mark.requirement("SF-81")
+@pytest.mark.parametrize("verb", ["amend", "submit", "withdraw"])
+async def test_an_isac_editor_holds_every_verb_on_the_automations_draft(client, people, verb):
+    """The editor is at the admin organisation, not the automation's: before
+    Q35 it held none of these, so refusing the automation alone would have
+    stranded its drafts."""
+    draft_id = await _automation_draft(client, people)
+    done = await _verb(client, draft_id, verb, people["editor"])
+    assert done.status_code == 200, done.text
+
+
+async def test_an_isac_analyst_holds_no_verb_on_the_automations_draft(client, session, people):
+    draft_id = await _automation_draft(client, people)
+    refused = await _verb(client, draft_id, "submit", people["analyst"])
+    assert refused.status_code == 403, refused.text
+    assert await _denial_reasons(session) == [REFUSAL]
+
+
+@pytest.mark.requirement("SF-81")
+async def test_a_filing_whose_owner_cannot_be_found_needs_an_editor(session):
+    """``is_isac_filing`` fails closed: an owner it cannot find is not taken for
+    a member, whose answer would hand the submitter's verbs to whoever shares
+    the filing's organisation id."""
+    orphan = Submission(
+        submitter_org_id=uuid.uuid4(),
+        state=SubmissionState.DRAFT,
+        tlp=TLP.AMBER,
+        discovery_scope=DiscoveryScope.OWN_ESTATE,
+        title="no owner",
+    )
+    assert await is_isac_filing(session, orphan) is True

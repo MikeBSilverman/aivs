@@ -6,12 +6,12 @@ Expect red: packages/aivs-server/tests/unit/test_isac_filings.py::test_isac_staf
 diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs-server/src/aivs_server/auth/policy.py
 --- a/packages/aivs-server/src/aivs_server/auth/policy.py
 +++ b/packages/aivs-server/src/aivs_server/auth/policy.py
-@@ -553,7 +553,7 @@
-     verb (Mike, Q15), so a shortcut that would file and submit in one step
-     refuses them before filing anything.
+@@ -548,7 +548,7 @@
+     ``owner_is_isac`` is the caller's to state, from the filing's owner
+     (``services.submissions.is_isac_filing``, which fails closed).
      """
--    return ctx.org_type is OrgType.ADMIN and not is_isac_editor(ctx)
-+    return ctx.org_type is OrgType.ADMIN and not is_isac_editor(ctx) and ctx.operator_id is not None
+-    if owner_is_isac:
++    if owner_is_isac and ctx.operator_id is not None:
+         return is_isac_editor(ctx)
+     return submission.submitter_org_id == ctx.org_id
  
- 
- def can_transition_submission(

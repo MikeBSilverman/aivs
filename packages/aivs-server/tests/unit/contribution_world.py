@@ -143,9 +143,16 @@ async def file(client, pem, objects, *, scope="own_product", tlp="amber", anonym
     )
 
 
-async def submit_and_validate(client, pem, submission_id, editor_headers, **validate_body: Any):
+async def submit_and_validate(
+    client, pem, submission_id, editor_headers, *, sender=None, **validate_body: Any
+):
+    """Send the filing for review, then validate it as the editor.
+
+    ``sender`` is who sends it: the filer by default, the editor for the ISAC's
+    automation, whose own filings only an editor may send (Mike, Q35).
+    """
     submitted = await client.post(
-        f"{API}/{submission_id}/submit", json={}, headers=proxy_headers(pem)
+        f"{API}/{submission_id}/submit", json={}, headers=sender or proxy_headers(pem)
     )
     assert submitted.status_code == 200, submitted.text
     return await client.post(

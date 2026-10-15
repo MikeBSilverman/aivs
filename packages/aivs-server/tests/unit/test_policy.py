@@ -36,6 +36,7 @@ from aivs_schemas.enums import (
 )
 from aivs_server.auth.context import AuthContext, AuthMethod, CircleGrant, MembershipInterval
 from aivs_server.auth.policy import (
+    ISAC_FILER_TYPES,
     PolicyDeniedError,
     can_administer_circle,
     can_manage_org,
@@ -46,6 +47,7 @@ from aivs_server.auth.policy import (
     can_view_submission,
     can_view_submission_receipts,
     distribution_visibility_clause,
+    holds_submitter_rights,
     is_active,
     is_isac_editor,
     is_isac_membership,
@@ -138,7 +140,10 @@ def test_inactive_orgs_are_denied_everywhere(status):
     assert can_administer_circle(ctx, CIRCLE) is False
     assert can_view_submission(ctx, draft) is False
     assert can_view_submission_receipts(ctx) is False
-    assert can_transition_submission(ctx, draft, SubmissionState.SUBMITTED) is False
+    assert (
+        can_transition_submission(ctx, draft, SubmissionState.SUBMITTED, owner_is_isac=False)
+        is False
+    )
     assert can_manage_org(ctx, ORG) is False
     assert readable_circle_ids(ctx) == frozenset()
     assert writable_circle_ids(ctx) == frozenset()
@@ -372,13 +377,16 @@ def test_who_may_perform_each_transition(state, target, by_submitter, by_isac):
     submitter = context()
     isac = isac_human(OperatorRole.ISAC_EDITOR, org_id=OTHER_ORG)
 
-    assert can_transition_submission(submitter, record, target) is by_submitter
-    assert can_transition_submission(isac, record, target) is by_isac
+    assert can_transition_submission(submitter, record, target, owner_is_isac=False) is by_submitter
+    assert can_transition_submission(isac, record, target, owner_is_isac=False) is by_isac
 
 
 def test_an_unrelated_member_may_transition_nothing():
     record = submission(submitter=OTHER_ORG, state=SubmissionState.DRAFT)
-    assert can_transition_submission(context(), record, SubmissionState.SUBMITTED) is False
+    assert (
+        can_transition_submission(context(), record, SubmissionState.SUBMITTED, owner_is_isac=False)
+        is False
+    )
 
 
 @pytest.mark.parametrize(
@@ -398,7 +406,12 @@ def test_illegal_transitions_are_refused_even_for_the_isac(state, target):
     because members already hold it and withdrawal would be a false promise.
     """
     record = submission(state=state)
-    assert can_transition_submission(isac_human(OperatorRole.ISAC_EDITOR), record, target) is False
+    assert (
+        can_transition_submission(
+            isac_human(OperatorRole.ISAC_EDITOR), record, target, owner_is_isac=False
+        )
+        is False
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -545,3 +558,45 @@ def test_isac_roles_on_a_non_session_context_confer_nothing(predicate):
     check = getattr(policy, predicate)
     assert check(context(AuthMethod.PORTAL_SESSION)) is True
     assert check(context(AuthMethod.MTLS)) is False
+
+
+# ---------------------------------------------------------------------------
+# The ISAC's and its automation's own filings (Mike, Q15 and Q35)
+# ---------------------------------------------------------------------------
+@pytest.mark.requirement("SF-81")
+@pytest.mark.parametrize(
+    ("caller", "holds"),
+    [
+        (lambda: isac_human(OperatorRole.ISAC_EDITOR, org_id=OTHER_ORG), True),
+        (lambda: isac_human(OperatorRole.ISAC_ANALYST, org_id=ORG), False),
+        (lambda: context(org_type=OrgType.ADMIN, org_id=ORG), False),
+        (lambda: context(org_type=OrgType.AUTOMATION, org_id=ORG), False),
+    ],
+    ids=["editor elsewhere", "analyst of the filing org", "admin certificate", "automation"],
+)
+def test_on_the_isacs_own_filing_only_an_editor_holds_the_submitters_verbs(caller, holds):
+    """Even when the editor's organisation is not the filing's: the automation
+    files, the ISAC's editor sends. Refusing the automation without admitting
+    the editor would strand its drafts with nobody able to send them."""
+    record = submission(submitter=ORG, state=SubmissionState.DRAFT)
+    ctx = caller()
+    assert holds_submitter_rights(ctx, record, owner_is_isac=True) is holds
+    assert (
+        can_transition_submission(ctx, record, SubmissionState.SUBMITTED, owner_is_isac=True)
+        is holds
+    )
+
+
+def test_a_member_still_holds_its_own_verbs_and_an_editor_holds_none_of_them():
+    record = submission(submitter=ORG, state=SubmissionState.DRAFT)
+    assert holds_submitter_rights(context(), record, owner_is_isac=False) is True
+    editor = isac_human(OperatorRole.ISAC_EDITOR, org_id=OTHER_ORG)
+    assert holds_submitter_rights(editor, record, owner_is_isac=False) is False
+
+
+def test_the_filer_types_are_the_owner_types():
+    """Two descriptions of "the ISAC, for this purpose": versioning's owner and
+    the submitter's verbs. They must not drift (CLAUDE.md section 5)."""
+    from aivs_server.services.ownership import ISAC_OWNER_TYPES  # noqa: PLC0415
+
+    assert ISAC_FILER_TYPES == ISAC_OWNER_TYPES

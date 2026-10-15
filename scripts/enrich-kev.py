@@ -22,8 +22,11 @@ that KEV lists, the script files a newer version with ``kev_listed``, ``kev_date
 ``kev_due_date`` and ``kev_ransomware_use`` set. It files nothing for a record
 that already says what KEV says. Each version is an ordinary submission: it is
 the ISAC's own record, so ownership allows it (``services/ownership.py``); its
-source is ``system``, so the AI gate applies; and an editor validates it like
-anything else before any member receives it.
+source is ``system``, so the AI gate applies. It is filed as a draft and left
+there: every verb on the automation's own filing is an ISAC editor's (Q35), so
+an editor sends it for review, validates it and distributes it. A record whose
+KEV draft is still waiting is not read again, so a second run files nothing
+twice. The summary counts the drafts filed, for the editor to pick up.
 
 A record still on the 1.0 extension is reported and skipped, since 2.0 needs
 fields only the ISAC's analyst can supply (affected products, discovery scope).
@@ -152,7 +155,8 @@ def _file(native: NativeClient, record: Mapping[str, Any], version: dict[str, An
         tlp=tlp_of(record).value,
         bundle={"type": "bundle", "id": f"bundle--{uuid.uuid4()}", "objects": [version]},
     )
-    native.submit(created["id"], reason="KEV enrichment")
+    # Filed as a draft and left there: every verb on the automation's own
+    # filing is an ISAC editor's (Mike, Q35), so the editor sends it for review.
     return str(created["id"])
 
 
@@ -163,14 +167,18 @@ def _say(line: str, stream: TextIO | None = None) -> None:
 
 
 #: Each outcome a record can have, as the summary names it.
-FILED: Final[str] = "filed"
+FILED: Final[str] = "filed as a draft, waiting for an ISAC editor to send it"
 WOULD_FILE: Final[str] = "would be filed (dry run)"
 UNCHANGED: Final[str] = "already current, or not listed by KEV"
 SKIPPED_1_0: Final[str] = (
     "skipped: still on extension 1.0, which carries no KEV fields (an analyst moves them to 2.0)"
 )
 REFUSED: Final[str] = "refused by the server"
-_OUTCOMES: Final[tuple[str, ...]] = (FILED, WOULD_FILE, UNCHANGED, SKIPPED_1_0, REFUSED)
+WAITING: Final[str] = (
+    "skipped: an earlier KEV draft of it still waits for an ISAC editor, so its KEV updates "
+    "stall until one is sent"
+)
+_OUTCOMES: Final[tuple[str, ...]] = (FILED, WOULD_FILE, UNCHANGED, SKIPPED_1_0, WAITING, REFUSED)
 
 
 def summary(counts: Mapping[str, int]) -> list[str]:
@@ -199,7 +207,7 @@ def _handle(
         _say(f"would file {record['id']}")
         return WOULD_FILE
     try:
-        _say(f"filed {record['id']} as submission {_file(native, record, version)}")
+        _say(f"filed {record['id']} as draft {_file(native, record, version)}")
     except (AivsError, ValueError) as exc:
         _say(f"refused {record['id']}: {exc}", sys.stderr)
         return REFUSED
@@ -215,8 +223,10 @@ def run(args: argparse.Namespace) -> int:
     with build_http_client(config) as http:
         native = NativeClient(http)
         now = dt.datetime.now(dt.UTC)
-        for record in native.isac_vulnerabilities():
+        records = native.isac_vulnerabilities()
+        for record in records["objects"]:
             counts[_handle(native, record, kev, now=now, dry_run=args.dry_run)] += 1
+        counts[WAITING] += int(records.get("waiting_drafts", 0))
     for line in summary(counts):
         _say(line)
     return 0

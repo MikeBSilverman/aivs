@@ -24,6 +24,9 @@ router = APIRouter(prefix="/api/v1/isac-records", tags=["automation"])
 
 class IsacRecordsOut(BaseModel):
     objects: list[dict[str, Any]]
+    #: Records left out because the automation's own draft of them still waits
+    #: for an editor: their KEV updates stall until it is sent.
+    waiting_drafts: int
 
 
 @router.get("/vulnerabilities", response_model=IsacRecordsOut)
@@ -31,5 +34,5 @@ async def isac_vulnerabilities(ctx: AuthenticatedContext, session: SessionDep) -
     """The newest version of each of the ISAC's vulnerability records. Its automation only."""
     if not can_read_isac_records(ctx):
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Not found")
-    objects = await latest_isac_vulnerabilities(session, now=await database_now(session))
-    return IsacRecordsOut(objects=objects)
+    records = await latest_isac_vulnerabilities(session, now=await database_now(session))
+    return IsacRecordsOut(objects=records.objects, waiting_drafts=records.waiting_drafts)

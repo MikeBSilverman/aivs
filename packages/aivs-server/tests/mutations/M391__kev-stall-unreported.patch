@@ -1,0 +1,16 @@
+Mutation M391: records held back by a waiting KEV draft go unreported, so a stalled record reads as nothing in KEV
+Re-applies: T15 (main's review: the stall is visible, not silent)
+
+Expect red: packages/aivs-server/tests/unit/test_enrich_kev.py::test_run_files_a_kev_version_of_the_isacs_record_and_of_nothing_else
+
+diff --git a/scripts/enrich-kev.py b/scripts/enrich-kev.py
+--- a/scripts/enrich-kev.py
++++ b/scripts/enrich-kev.py
+@@ -226,7 +226,6 @@
+         records = native.isac_vulnerabilities()
+         for record in records["objects"]:
+             counts[_handle(native, record, kev, now=now, dry_run=args.dry_run)] += 1
+-        counts[WAITING] += int(records.get("waiting_drafts", 0))
+     for line in summary(counts):
+         _say(line)
+     return 0

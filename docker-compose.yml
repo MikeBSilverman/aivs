@@ -170,7 +170,9 @@ services:
     #                        destroyed with the container.
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=16m,mode=1777
-      - /var/cache/nginx:rw,noexec,nosuid,nodev,size=64m,uid=101,gid=101,mode=0700
+      # 128m: the body limits in nginx.conf (16 + 8 spooled bodies of at most
+      # 5 MiB) fit, so no one client can fill it for everyone (D2-P1).
+      - /var/cache/nginx:rw,noexec,nosuid,nodev,size=128m,uid=101,gid=101,mode=0700
       - /etc/nginx/rendered:rw,noexec,nosuid,nodev,size=1m,uid=101,gid=101,mode=0700
 
     networks:

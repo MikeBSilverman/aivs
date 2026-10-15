@@ -180,6 +180,14 @@ address, answered with **429** rather than nginx's default 503 — a throttled
 member should see "slow down", not "the service is broken". A TAXII collection
 poller runs at roughly 1 r/s, so this leaves two orders of magnitude of headroom.
 
+Requests that carry a body (POST, PUT, PATCH) have tighter limits of their own,
+because a body over 128 KiB is spooled to the proxy's `/var/cache/nginx` tmpfs,
+which both listeners share: 2 at a time per certificate and 4 per address on
+the member listener, 2 per address on the public one, and at most 16 and 8 in
+flight on each listener. At the 5 MiB body limit that is 120 MiB, inside the
+128m tmpfs; `test_proxy_config.py` holds the two files together. Before this, one
+member's 24 connections could fill a 64m tmpfs and fail every member's uploads.
+
 **What address nginx records, and therefore the audit log.** Measured with
 Docker Engine 29 against the shipped compose file (T5, 2026-10-14). A member
 connecting from another host arrives through Docker's NAT with its own source

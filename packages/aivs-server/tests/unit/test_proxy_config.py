@@ -190,3 +190,29 @@ def test_the_public_listener_asks_for_no_certificate_and_limits_sign_in(repo_roo
     sign_in = _proxied_locations(block)[r"^/portal/sso/(login|callback)$"]
     assert "limit_req   zone=aivs_public_sign_in" in sign_in
     assert "limit_req   zone=aivs_public_pages" in block
+
+
+def _directive_value(conf: str, pattern: str) -> int:
+    match = re.search(pattern, conf, re.MULTILINE)
+    assert match, f"not found: {pattern}"
+    return int(match.group(1))
+
+
+def test_spooled_bodies_cannot_fill_the_proxys_scratch_space(repo_root: Path):
+    """One member's 24 connections, or one public address's 32, at 5 MiB each
+    filled the 64m tmpfs that every upload spools to, and then every member's
+    uploads failed (review D2-P1). Requests carrying a body have their own
+    totals per listener; together, at the largest body allowed, they must fit
+    the tmpfs. The numbers live in two files, so this holds them together."""
+    conf = (repo_root / "deploy/nginx/nginx.conf").read_text()
+    compose = (repo_root / "docker-compose.yml").read_text()
+    body_mib = _directive_value(conf, r"^\s*client_max_body_size\s+(\d+)m;")
+    members = _directive_value(conf, r"^\s*limit_conn\s+aivs_bodies_members\s+(\d+);")
+    public = _directive_value(conf, r"^\s*limit_conn\s+aivs_bodies_public\s+(\d+);")
+    scratch_mib = _directive_value(compose, r"-\s*/var/cache/nginx:[^\n]*size=(\d+)m")
+    assert (members + public) * body_mib <= scratch_mib
+    assert re.search(r"^\s*limit_conn\s+aivs_bodies_per_client\s+\d+;", conf, re.MULTILINE)
+    assert "aivs_bodies_public" in _public_server_block(repo_root)
+    assert "aivs_bodies_members" not in _public_server_block(repo_root), (
+        "the public listener must not draw on the members' share"
+    )

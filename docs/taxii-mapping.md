@@ -422,7 +422,7 @@ strict client. AIVS's conformance tests (`@pytest.mark.conformance`) assert the
 | 404 | The resource does not exist, **or** the caller may not know that it does. Collections outside the caller's circles return 404. |
 | 406 | `Accept` matches neither the TAXII media type nor `*/*`. |
 | 413 | Body exceeds `AIVS_MAX_BODY_BYTES`. nginx's `client_max_body_size 5m` will usually reject it first, with its own 413. |
-| 429 | Rate limited at the proxy. nginx limits each client certificate to 20 r/s with a burst of 40, and each source address to 64 concurrent connections. A collection poller runs at roughly 1 r/s, so a 429 means something is looping. Back off; do not retry immediately. |
+| 429 | Rate limited at the proxy. nginx limits each client certificate to 20 r/s with a burst of 40, and each source address to 64 concurrent connections; a certificate may have 2 requests carrying a body (a POST to an inbox, say) in flight at once. A collection poller runs at roughly 1 r/s, so a 429 means something is looping. Back off; do not retry immediately. |
 | 415 | `Content-Type` on a POST is not `application/taxii+json;version=2.1`. |
 | 422 | Body parsed but content failed STIX or AIVS extension validation, where the failure is whole-request rather than per-object. Per-object failures are reported in the Status resource's `failures`, with a 202. |
 

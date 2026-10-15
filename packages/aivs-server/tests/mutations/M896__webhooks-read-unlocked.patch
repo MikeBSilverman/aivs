@@ -4,12 +4,15 @@ Re-applies: the five delivery writers before review L2-P3
 Expect red: packages/aivs-server/tests/unit/test_notifications.py::test_a_webhook_deleted_mid_distribution_is_skipped_not_a_failure
 
 diff --git a/packages/aivs-server/src/aivs_server/db/webhook_lock.py b/packages/aivs-server/src/aivs_server/db/webhook_lock.py
-index e235531..05f6aea 100644
 --- a/packages/aivs-server/src/aivs_server/db/webhook_lock.py
 +++ b/packages/aivs-server/src/aivs_server/db/webhook_lock.py
-@@ -27,5 +27,4 @@ def deliverable_webhooks() -> Select[tuple[Webhook]]:
+@@ -27,9 +27,4 @@
      return (
          select(Webhook)
          .where(Webhook.is_active.is_(True))
--        .with_for_update(key_share=True, of=Webhook)
+-        # ``read=True`` is what makes it a share lock. ``key_share=True`` alone
+-        # renders FOR NO KEY UPDATE, an exclusive lock under a name that says
+-        # the opposite, and two distributions to one member then waited on
+-        # each other.
+-        .with_for_update(read=True, key_share=True, of=Webhook)
      )

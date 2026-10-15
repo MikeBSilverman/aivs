@@ -27,5 +27,9 @@ def deliverable_webhooks() -> Select[tuple[Webhook]]:
     return (
         select(Webhook)
         .where(Webhook.is_active.is_(True))
-        .with_for_update(key_share=True, of=Webhook)
+        # ``read=True`` is what makes it a share lock. ``key_share=True`` alone
+        # renders FOR NO KEY UPDATE, an exclusive lock under a name that says
+        # the opposite, and two distributions to one member then waited on
+        # each other.
+        .with_for_update(read=True, key_share=True, of=Webhook)
     )

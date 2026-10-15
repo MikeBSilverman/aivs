@@ -1,0 +1,16 @@
+Mutation M1019: the webhooks a notification is queued for are locked FOR NO KEY UPDATE, so readers wait on each other
+Re-applies: with_for_update(key_share=True) read as a share lock (found in Phase P slice 3c)
+
+Expect red: packages/aivs-server/tests/unit/test_webhook_lock.py::test_the_lock_is_a_key_share_lock
+Expect red: packages/aivs-server/tests/unit/test_webhook_lock.py::test_two_readers_of_one_members_webhooks_do_not_wait_for_each_other
+
+diff --git a/packages/aivs-server/src/aivs_server/db/webhook_lock.py b/packages/aivs-server/src/aivs_server/db/webhook_lock.py
+--- a/packages/aivs-server/src/aivs_server/db/webhook_lock.py
++++ b/packages/aivs-server/src/aivs_server/db/webhook_lock.py
+@@ -31,5 +31,5 @@
+         # renders FOR NO KEY UPDATE, an exclusive lock under a name that says
+         # the opposite, and two distributions to one member then waited on
+         # each other.
+-        .with_for_update(read=True, key_share=True, of=Webhook)
++        .with_for_update(key_share=True, of=Webhook)
+     )

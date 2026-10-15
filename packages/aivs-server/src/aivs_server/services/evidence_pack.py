@@ -41,7 +41,7 @@ from aivs_server.db.models import (
     OrgPosture,
     StixObject,
 )
-from aivs_server.services.visible import related_stix_ids, visible_objects
+from aivs_server.services.visible import ever_related_stix_ids, visible_objects
 
 __all__ = ["EvidencePack", "evidence_pack"]
 
@@ -69,7 +69,7 @@ async def evidence_pack(
     if not advisory:
         return None
     related = await _versions(
-        session, visible, await related_stix_ids(session, visible, vulnerability_stix_id)
+        session, visible, await ever_related_stix_ids(session, visible, vulnerability_stix_id)
     )
     versions = [*advisory, *(v for v in related if v["type"] != "relationship")]
     submission_ids = {uuid.UUID(v["submission_id"]) for v in versions}

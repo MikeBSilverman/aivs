@@ -1,0 +1,27 @@
+Mutation M942: the vulnerability page shows an object linked only by a revoked relationship
+Re-applies: the page's related ids before review H2-3 (any visible version)
+
+Expect red: packages/aivs-server/tests/unit/test_vulnerability_page.py::test_a_revoked_link_connects_its_fix_to_nothing_now_but_stays_in_the_record
+
+diff --git a/packages/aivs-server/src/aivs_server/services/vulnerability_page.py b/packages/aivs-server/src/aivs_server/services/vulnerability_page.py
+index a6f9962..5031991 100644
+--- a/packages/aivs-server/src/aivs_server/services/vulnerability_page.py
++++ b/packages/aivs-server/src/aivs_server/services/vulnerability_page.py
+@@ -40,7 +40,7 @@ from aivs_server.db.models import (
+     SubmissionTransition,
+ )
+ from aivs_server.services.readiness import Readiness, readiness_for
+-from aivs_server.services.visible import related_stix_ids, visible_objects
++from aivs_server.services.visible import ever_related_stix_ids, visible_objects
+ 
+ __all__ = [
+     "Event",
+@@ -153,7 +153,7 @@ async def vulnerability_page(
+     if not vulnerabilities:
+         return None
+ 
+-    related_ids = await related_stix_ids(session, visible, stix_id)
++    related_ids = await ever_related_stix_ids(session, visible, stix_id)
+     related = [
+         item
+         for item in await _latest_items(session, visible, related_ids)

@@ -1,16 +1,25 @@
 Mutation M804: a pack reads content that was never distributed
-Re-applies: Phase F (T8) -- the guard's absence
+Re-applies: Phase F (T8) -- the guard's absence; rewritten against services/visible.py after H2-3 folded the two gatherers
 
 Expect red: packages/aivs-server/tests/unit/test_vulnerability_exports.py::test_an_indicator_never_distributed_is_in_nobodys_pack
 
-diff --git a/packages/aivs-server/src/aivs_server/services/vulnerability_objects.py b/packages/aivs-server/src/aivs_server/services/vulnerability_objects.py
---- a/packages/aivs-server/src/aivs_server/services/vulnerability_objects.py
-+++ b/packages/aivs-server/src/aivs_server/services/vulnerability_objects.py
-@@ -159,7 +159,6 @@
-         return (
-             select(StixObject, cast(null(), DateTime(timezone=True)))
-             .join(Submission, Submission.id == StixObject.submission_id)
--            .where(Submission.state.in_(tuple(VISIBLE_SUBMISSION_STATES)))
-         )
-     return (
-         select(StixObject, func.min(Distribution.date_added))
+diff --git a/packages/aivs-server/src/aivs_server/services/visible.py b/packages/aivs-server/src/aivs_server/services/visible.py
+index 9c11d07..b1b3494 100644
+--- a/packages/aivs-server/src/aivs_server/services/visible.py
++++ b/packages/aivs-server/src/aivs_server/services/visible.py
+@@ -44,13 +44,13 @@ def visible_objects(ctx: AuthContext, now: dt.datetime) -> Select[Any]:
+     an object reaches a member once per circle, and "when was this shared with
+     us" is the earliest of those the member can see.
+     """
++    if can_review_submissions(ctx):
++        return select(StixObject).join(Submission, Submission.id == StixObject.submission_id)
+     query = (
+         select(StixObject)
+         .join(Submission, Submission.id == StixObject.submission_id)
+         .join(Distribution, Distribution.stix_object_id == StixObject.id)
+     )
+-    if can_review_submissions(ctx):
+-        return query.where(Submission.state.in_(tuple(VISIBLE_SUBMISSION_STATES)))
+     return query.where(distribution_visibility_clause(ctx, now))
+ 
+ 

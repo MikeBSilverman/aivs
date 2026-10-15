@@ -288,10 +288,17 @@ async def test_each_reader_is_summarised_once_and_the_summary_is_served(
     await poller.until_served(client, await _marker(session))
     await poller.drain(client)
     reading = await _marker(session)
-    await Poller(world["b"][1]).until_served(client, reading)
+    other = Poller(world["b"][1])
+    await other.until_served(client, reading)
 
     written = await summarise_audit_reads(session)
-    await summarise_audit_reads(session)
+    # The second run must cover a range of its own, or it skips (``until`` not
+    # past the watermark) and says nothing about the watermark: M368 survived
+    # runs where no transaction had passed the horizon between the two. B's
+    # reads after the first run are below the horizon once a later marker is.
+    await other.until_served(client, await _marker(session))
+    await other.until_served(client, await _marker(session))
+    assert await summarise_audit_reads(session) >= 1, "the second run covered a range"
     summaries = (
         await session.scalars(
             select(AuditLog).where(

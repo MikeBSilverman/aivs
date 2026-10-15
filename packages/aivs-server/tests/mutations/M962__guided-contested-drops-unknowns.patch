@@ -1,0 +1,18 @@
+Mutation M962: a contested view's guided wording drops what its sources say is not known
+Re-applies: unknowns tied to the agreed conditions, when they are what a disagreeing reader most needs
+
+Expect red: packages/aivs-server/tests/unit/test_guidance.py::test_contested_sources_give_the_guided_reader_no_conditions_to_rule_themselves_out_with
+
+diff --git a/packages/aivs-server/src/aivs_server/services/guidance.py b/packages/aivs-server/src/aivs_server/services/guidance.py
+index 07d19ec..6adb783 100644
+--- a/packages/aivs-server/src/aivs_server/services/guidance.py
++++ b/packages/aivs-server/src/aivs_server/services/guidance.py
+@@ -481,7 +481,7 @@ def affected_when(view: ExploitabilityView) -> AffectedWhen:
+     any one source's list would narrow another's.
+     """
+     agreed = view.status is ExploitabilityStatus.AGREED
+-    unknowns = dict.fromkeys(unknown for source in view.sources for unknown in source.unknowns)
++    unknowns = dict.fromkeys(u for s in (view.sources if agreed else ()) for u in s.unknowns)
+     return AffectedWhen(
+         statement=_AFFECTED_WHEN[view.status],
+         conditions=tuple(_condition(c) for c in view.conditions) if agreed else (),

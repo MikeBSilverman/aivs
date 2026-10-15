@@ -30,6 +30,23 @@
     {% else %}
       <p class="muted">The report does not name the affected products yet.</p>
     {% endif %}
+    <p>{{ guidance.affected_when.statement }}</p>
+    {% if guidance.affected_when.conditions %}
+      <ul class="guided-conditions">
+        {% for condition in guidance.affected_when.conditions %}
+          <li>
+            {{ condition.requirement }}
+            {% if condition.check %}<p class="muted">{{ condition.check }}</p>{% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+    {% if guidance.affected_when.unknowns %}
+      <p>Not known yet:</p>
+      <ul>
+        {% for unknown in guidance.affected_when.unknowns %}<li>{{ unknown }}</li>{% endfor %}
+      </ul>
+    {% endif %}
   </div>
 
   <div class="card">

@@ -32,14 +32,18 @@ from aivs_schemas.extension.builders import (
     AIVS_INTEL_EXTENSION_ID,
     AIVS_PROVENANCE_EXTENSION_ID,
 )
+from aivs_server.services.exploitability import ExploitabilityStatus, ExploitabilityView
 
 __all__ = [
     "AffectedProduct",
+    "AffectedWhen",
     "Assessment",
+    "Condition",
     "Guidance",
     "Step",
     "WatchFor",
     "affected_product_names",
+    "affected_when",
     "guide",
     "is_current_indicator",
     "is_due_for_review",
@@ -115,6 +119,24 @@ class Assessment:
 
 
 @dataclass(frozen=True)
+class Condition:
+    #: What must be true, alternatives joined by "or".
+    requirement: str
+    #: How to find out, when the source says.
+    check: str | None
+
+
+@dataclass(frozen=True)
+class AffectedWhen:
+    """What exploitation needs beyond running the product (Phase N)."""
+
+    statement: str
+    #: Every one must hold; given only when the sources agree.
+    conditions: tuple[Condition, ...]
+    unknowns: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class Guidance:
     title: str
     summary: str | None
@@ -122,6 +144,7 @@ class Guidance:
     urgency: str | None
     exploited: str | None
     affected: tuple[AffectedProduct, ...]
+    affected_when: AffectedWhen
     steps: tuple[Step, ...]
     no_fix: str | None
     done_when: tuple[str, ...]
@@ -200,6 +223,7 @@ def guide(
     related: Sequence[StixObject],
     *,
     now: dt.datetime,
+    exploitability: ExploitabilityView,
     new_ids: frozenset[str] = frozenset(),
 ) -> Guidance:
     """The guided view of ``vulnerability``, from it and the objects related to it.
@@ -208,7 +232,8 @@ def guide(
     relationship connects to the vulnerability. Revoked ones are ignored.
     ``new_ids`` are the ids the reader has not seen since they last read it
     (:func:`~aivs_server.services.vulnerability_objects.new_since`); their
-    steps and signs are marked new.
+    steps and signs are marked new. ``exploitability`` is the view over the
+    condition notes the caller can see (:mod:`~aivs_server.services.exploitability`).
     """
     intel = _intel(vulnerability)
     actions = [obj for obj in _live(related) if obj.get("type") == "course-of-action"]
@@ -220,6 +245,7 @@ def guide(
         urgency=_URGENCY.get(str(intel.get("ssvc_decision"))),
         exploited=_exploited(intel),
         affected=tuple(_affected(product) for product in _products(intel)),
+        affected_when=affected_when(exploitability),
         steps=_steps(actions, now, new_ids),
         no_fix=_no_fix(actions, now),
         done_when=_done_when(actions),
@@ -393,6 +419,143 @@ def _constraint_words(constraint: str) -> str:
     if constraint == "*":
         return "every version"
     return constraint.removeprefix("=")
+
+
+# ---------------------------------------------------------------------------
+# What exploitation needs (Phase N), from the exploitability view
+# ---------------------------------------------------------------------------
+_AFFECTED_WHEN: Final[Mapping[ExploitabilityStatus, str]] = {
+    ExploitabilityStatus.NOT_ESTABLISHED: (
+        "Nobody has said yet what else an attacker needs, so if you run one of "
+        "these, treat yourself as affected."
+    ),
+    ExploitabilityStatus.AGREED: (
+        "Running it is not enough on its own: you are affected only if every one of "
+        "these is true. If you cannot tell whether one is, treat it as true."
+    ),
+    ExploitabilityStatus.CONTESTED: (
+        "The ISAC's sources disagree about what else an attacker needs, so if you run "
+        "one of these, treat yourself as affected. The standard view shows each "
+        "source's account."
+    ),
+}
+
+_OS_NAMES: Final[Mapping[str, str]] = {
+    "darwin": "macOS",
+    "ios": "iOS",
+    "linux": "Linux",
+    "windows": "Windows",
+    "android": "Android",
+    "freebsd": "FreeBSD",
+    "openbsd": "OpenBSD",
+    "netbsd": "NetBSD",
+}
+_ARCH_NAMES: Final[Mapping[str, str]] = {"amd64": "64-bit Intel or AMD", "arm64": "64-bit Arm"}
+
+#: CVSS v4's exposure metrics in the reader's words, in the order a sentence wants them.
+_EXPOSURE_WORDS: Final[Mapping[str, Mapping[str, str]]] = {
+    "AV": {
+        "N": "can reach it over the network",
+        "A": "can reach it from the same local network",
+        "L": "can already run something on the machine",
+        "P": "can touch the machine",
+    },
+    "PR": {
+        "N": "without signing in",
+        "L": "with an ordinary account",
+        "H": "with an administrator's account",
+    },
+    "UI": {
+        "N": "with nobody's help",
+        "P": "once someone opens or views something",
+        "A": "once someone is talked into doing something",
+    },
+}
+
+
+def affected_when(view: ExploitabilityView) -> AffectedWhen:
+    """What exploitation needs, in the reader's words.
+
+    Conditions are spelled out only when the sources agree. A contested view
+    gives none, as the view itself does: the guided reader acts on one list, and
+    any one source's list would narrow another's.
+    """
+    agreed = view.status is ExploitabilityStatus.AGREED
+    unknowns = dict.fromkeys(unknown for source in view.sources for unknown in source.unknowns)
+    return AffectedWhen(
+        statement=_AFFECTED_WHEN[view.status],
+        conditions=tuple(_condition(c) for c in view.conditions) if agreed else (),
+        unknowns=tuple(unknowns),
+    )
+
+
+def _condition(condition: Mapping[str, Any]) -> Condition:
+    kind = str(condition["kind"])
+    alternatives = " or ".join(_alternative(kind, term) for term in condition["any_of"])
+    check = condition.get("how_to_check")
+    return Condition(
+        requirement=_REQUIREMENT[kind].format(alternatives),
+        check=(
+            f"To find out, use {check['tool']}: “{check['query_or_command']}”. "
+            f"Its source expects: {check['expected_result']}"
+            if isinstance(check, Mapping)
+            else None
+        ),
+    )
+
+
+_REQUIREMENT: Final[Mapping[str, str]] = {
+    "function": "Your software calls {}.",
+    "file": "What you run includes {}.",
+    "module": "You use {}.",
+    "platform": "It runs on {}.",
+    "configuration": "{}.",
+    "version": "The version you run is {}.",
+    "exposure": "An attacker {}.",
+}
+
+
+def _alternative(kind: str, term: Mapping[str, Any]) -> str:
+    if kind == "function":
+        return f"{term['symbol']} from {_name_from_purl(term['package']) or term['package']}"
+    if kind == "platform":
+        return _platform(term)
+    if kind == "configuration":
+        return _setting(term)
+    if kind == "version":
+        return _versions(term["vers"]) or str(term["vers"])
+    if kind == "exposure":
+        return ", ".join(
+            words[term[metric]] for metric, words in _EXPOSURE_WORDS.items() if metric in term
+        )
+    return str(term["path"])
+
+
+def _platform(term: Mapping[str, Any]) -> str:
+    if "cpe" in term:
+        return _name_from_cpe(term["cpe"]) or str(term["cpe"])
+    os_name = _OS_NAMES.get(str(term["os"]), str(term["os"]))
+    arch = term.get("arch")
+    return f"{os_name} on {_ARCH_NAMES.get(str(arch), str(arch))}" if arch else os_name
+
+
+_PREDICATE: Final[Mapping[str, str]] = {
+    "equals": "{setting} is set to {value} in {product}",
+    "not_equals": "{setting} is not set to {value} in {product}",
+    "present": "{setting} is set in {product}",
+    "absent": "{setting} is not set in {product}",
+}
+_FRESH_INSTALL: Final[Mapping[str, str]] = {
+    "exploitable": " (as it is on a fresh install)",
+    "not_exploitable": " (it is not, on a fresh install)",
+}
+
+
+def _setting(term: Mapping[str, Any]) -> str:
+    sentence = _PREDICATE[str(term["predicate"])].format(
+        setting=term["setting"], value=term.get("value", ""), product=term["product"]
+    )
+    return sentence + _FRESH_INSTALL.get(str(term["default_state"]), "")
 
 
 # ---------------------------------------------------------------------------

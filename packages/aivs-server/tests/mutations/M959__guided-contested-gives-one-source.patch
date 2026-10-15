@@ -1,0 +1,18 @@
+Mutation M959: a contested view's guided wording gives the first source's conditions
+Re-applies: the plausible shortcut: show what one source says rather than nothing, narrowing every other source's exposure (plan, Phase N, property 1)
+
+Expect red: packages/aivs-server/tests/unit/test_guidance.py::test_contested_sources_give_the_guided_reader_no_conditions_to_rule_themselves_out_with
+
+diff --git a/packages/aivs-server/src/aivs_server/services/guidance.py b/packages/aivs-server/src/aivs_server/services/guidance.py
+index 07d19ec..f4d6c5c 100644
+--- a/packages/aivs-server/src/aivs_server/services/guidance.py
++++ b/packages/aivs-server/src/aivs_server/services/guidance.py
+@@ -484,7 +484,7 @@ def affected_when(view: ExploitabilityView) -> AffectedWhen:
+     unknowns = dict.fromkeys(unknown for source in view.sources for unknown in source.unknowns)
+     return AffectedWhen(
+         statement=_AFFECTED_WHEN[view.status],
+-        conditions=tuple(_condition(c) for c in view.conditions) if agreed else (),
++        conditions=tuple(_condition(c) for c in (view.sources[0].conditions if view.sources else ())),
+         unknowns=tuple(unknowns),
+     )
+ 

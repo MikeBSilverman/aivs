@@ -17,8 +17,10 @@ import pytest
 from aivs_schemas.enums import ReadingDepth
 from aivs_schemas.extension.builders import AIVS_PROVENANCE_EXTENSION_ID
 from aivs_server.portal.shared import TEMPLATES
+from aivs_server.services.exploitability import ConditionSource, combine
 from aivs_server.services.guidance import (
     Guidance,
+    affected_when,
     guide,
     is_current_indicator,
     is_due_for_review,
@@ -42,6 +44,9 @@ STIX_JARGON = re.compile(
     re.IGNORECASE,
 )
 STIX_ID = re.compile(r"\b[a-z][a-z0-9-]+--[0-9a-f]{8}-[0-9a-f]{4}-")
+
+#: No condition note visible: the view most pages are rendered with.
+UNSTATED = combine([])
 
 
 def action(
@@ -112,7 +117,7 @@ def render(guidance: Guidance) -> str:
 @pytest.mark.requirement("NFR-U6")
 def test_guided_depth_answers_from_the_objects_alone():
     vuln, related = everything()
-    guidance = guide(vuln, related, now=NOW)
+    guidance = guide(vuln, related, now=NOW, exploitability=UNSTATED)
 
     assert guidance.title == "Gateway auth bypass (CVE-2026-1234)"
     assert guidance.severity == "Critical: 9.3 out of 10"
@@ -144,24 +149,29 @@ def test_guided_depth_answers_from_the_objects_alone():
 @pytest.mark.requirement("NFR-U6")
 def test_the_same_objects_give_the_same_guidance():
     vuln, related = everything()
-    assert guide(vuln, related, now=NOW) == guide(vuln, list(reversed(related)), now=NOW)
+    assert guide(vuln, related, now=NOW, exploitability=UNSTATED) == guide(
+        vuln, list(reversed(related)), now=NOW, exploitability=UNSTATED
+    )
 
 
 def test_a_revoked_action_is_not_a_step():
     vuln, _ = everything()
     revoked = action("vendor_fix", "Upgrade to 4.2.1") | {"revoked": True}
     live = action("mitigation", "Restrict the console")
-    assert [s.title for s in guide(vuln, [revoked, live], now=NOW).steps] == [
-        "Restrict the console"
-    ]
+    assert [
+        s.title for s in guide(vuln, [revoked, live], now=NOW, exploitability=UNSTATED).steps
+    ] == ["Restrict the console"]
 
 
 def test_a_statement_that_there_is_no_fix_is_shown_only_when_nothing_can_be_done():
     vuln, _ = everything()
     no_fix = action("no_fix_planned", "No fix planned")
-    assert guide(vuln, [no_fix], now=NOW).no_fix == "The vendor does not plan to fix this."
+    assert (
+        guide(vuln, [no_fix], now=NOW, exploitability=UNSTATED).no_fix
+        == "The vendor does not plan to fix this."
+    )
     workaround = action("workaround", "Block /admin")
-    assert guide(vuln, [no_fix, workaround], now=NOW).no_fix is None
+    assert guide(vuln, [no_fix, workaround], now=NOW, exploitability=UNSTATED).no_fix is None
 
 
 @pytest.mark.requirement("SF-8")
@@ -170,12 +180,15 @@ def test_a_no_fix_statement_past_its_review_date_is_told_as_stale_not_repeated()
     neither repeated as current nor turned into its opposite."""
     vuln, _ = everything()
     stale = action("none_available", "No fix yet", review_by="2026-09-01")
-    told = guide(vuln, [stale], now=NOW).no_fix
+    told = guide(vuln, [stale], now=NOW, exploitability=UNSTATED).no_fix
     assert told is not None
     assert "No fix is available yet." not in told
     assert "Ask the ISAC" in told
     current = action("no_fix_planned", "No fix planned", review_by="2026-12-01")
-    assert guide(vuln, [stale, current], now=NOW).no_fix == "The vendor does not plan to fix this."
+    assert (
+        guide(vuln, [stale, current], now=NOW, exploitability=UNSTATED).no_fix
+        == "The vendor does not plan to fix this."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -184,7 +197,9 @@ def test_a_no_fix_statement_past_its_review_date_is_told_as_stale_not_repeated()
 @pytest.mark.requirement("SF-46")
 def test_an_expired_sign_is_not_shown_and_a_current_one_is():
     vuln, related = everything()
-    shown = [sign.title for sign in guide(vuln, related, now=NOW).watch_for]
+    shown = [
+        sign.title for sign in guide(vuln, related, now=NOW, exploitability=UNSTATED).watch_for
+    ]
     assert shown == ["Admin console probe"]
 
 
@@ -215,7 +230,10 @@ def test_a_step_past_its_review_date_is_flagged_and_one_before_it_is_not():
     vuln, _ = everything()
     stale = action("workaround", "Stale", review_by="2026-09-01")
     fresh = action("mitigation", "Fresh", review_by="2026-12-01")
-    flags = {s.title: s.review_overdue for s in guide(vuln, [stale, fresh], now=NOW).steps}
+    flags = {
+        s.title: s.review_overdue
+        for s in guide(vuln, [stale, fresh], now=NOW, exploitability=UNSTATED).steps
+    }
     assert flags == {"Fresh": False, "Stale": True}
 
 
@@ -226,7 +244,9 @@ def test_only_steps_the_reader_has_not_seen_are_marked_new():
     vuln, _ = everything()
     seen = action("vendor_fix", "Upgrade")
     unseen = action("mitigation", "Restrict")
-    steps = guide(vuln, [seen, unseen], now=NOW, new_ids=frozenset({unseen["id"]})).steps
+    steps = guide(
+        vuln, [seen, unseen], now=NOW, exploitability=UNSTATED, new_ids=frozenset({unseen["id"]})
+    ).steps
     assert {s.title: s.is_new for s in steps} == {"Upgrade": False, "Restrict": True}
 
 
@@ -242,7 +262,7 @@ def test_the_assessment_lists_where_the_isac_differs():
             }
         ],
     )
-    assessment = guide(vuln, [], now=NOW).assessment
+    assessment = guide(vuln, [], now=NOW, exploitability=UNSTATED).assessment
     assert assessment is not None
     assert assessment.statement == "The ISAC's analysis disagrees with the public record."
     (line,) = assessment.differences
@@ -254,7 +274,7 @@ def test_the_assessment_lists_where_the_isac_differs():
 
 
 def test_no_assessment_means_none_is_shown():
-    assert guide(vulnerability(), [], now=NOW).assessment is None
+    assert guide(vulnerability(), [], now=NOW, exploitability=UNSTATED).assessment is None
 
 
 @pytest.mark.requirement("SF-29")
@@ -309,7 +329,15 @@ def test_the_guided_page_names_no_stix_type_and_no_stix_id():
             isac_assessment_delta=[{"property": "kev_listed", "isac_value": True}],
         )
     )
-    html = render(guide(vuln, related, now=NOW, new_ids=frozenset(o["id"] for o in related)))
+    html = render(
+        guide(
+            vuln,
+            related,
+            now=NOW,
+            exploitability=UNSTATED,
+            new_ids=frozenset(o["id"] for o in related),
+        )
+    )
     assert "Upgrade to 4.2.1" in html  # the page rendered its content
     assert STIX_JARGON.findall(html) == []
     assert STIX_ID.findall(html) == []
@@ -319,7 +347,7 @@ def test_the_guided_page_names_no_stix_type_and_no_stix_id():
 def test_the_jargon_check_would_see_a_type_name_if_one_were_rendered():
     vuln = vulnerability()
     vuln["name"] = "See the course-of-action for indicator--0b5c2a1e-0000-4000-8000-000000000000"
-    html = render(guide(vuln, [], now=NOW))
+    html = render(guide(vuln, [], now=NOW, exploitability=UNSTATED))
     assert STIX_JARGON.findall(html)
     assert STIX_ID.findall(html)
 
@@ -329,7 +357,141 @@ def test_member_text_is_escaped_on_the_guided_page():
     hostile = action(
         "vendor_fix", '<script>alert("x")</script>', description="<img src=x onerror=1>"
     )
-    html = render(guide(vulnerability(), [hostile], now=NOW))
+    html = render(guide(vulnerability(), [hostile], now=NOW, exploitability=UNSTATED))
     assert "<script>" not in html
     assert "<img" not in html
     assert "&lt;script&gt;" in html
+
+
+# ---------------------------------------------------------------------------
+# What exploitation needs (Phase N): the view, in the reader's words
+# ---------------------------------------------------------------------------
+CALLS_PARSER = {
+    "id": "fn",
+    "kind": "function",
+    "any_of": [
+        {"ecosystem": "Go", "package": "pkg:golang/example.com/xml", "symbol": "ParseStrict"}
+    ],
+    "how_to_check": {
+        "tool": "govulncheck",
+        "query_or_command": "govulncheck ./...",
+        "expected_result": "no call path to ParseStrict",
+    },
+}
+ENTITIES_ON = {
+    "id": "entities",
+    "kind": "configuration",
+    "any_of": [
+        {
+            "product": "example xml",
+            "setting": "AllowExternalEntities",
+            "predicate": "equals",
+            "value": "true",
+            "default_state": "not_exploitable",
+        }
+    ],
+}
+ON_LINUX_OR_ARM_MAC = {
+    "id": "os",
+    "kind": "platform",
+    "any_of": [{"os": "linux"}, {"os": "darwin", "arch": "arm64"}],
+}
+UNAUTHENTICATED = {"id": "net", "kind": "exposure", "any_of": [{"AV": "N", "PR": "N", "UI": "N"}]}
+NOTE_A = "note--0f9c0000-0000-4000-8000-00000000000a"
+NOTE_B = "note--0f9c0000-0000-4000-8000-00000000000b"
+
+
+def stated(note_id: str, *conditions: dict[str, Any], unknowns: tuple[str, ...] = ()):
+    return ConditionSource(
+        note_id=note_id,
+        modified=NOW,
+        summary="s",
+        conditions=conditions,
+        unknowns=unknowns,
+        reproduced=None,
+    )
+
+
+@pytest.mark.requirement("SF-84")
+def test_with_no_conditions_the_reader_is_told_to_treat_themselves_as_affected():
+    told = affected_when(UNSTATED)
+
+    assert "treat yourself as affected" in told.statement
+    assert told.conditions == ()
+
+
+@pytest.mark.requirement("NFR-U6")
+def test_agreed_conditions_read_as_sentences_an_engineer_can_act_on():
+    view = combine(
+        [stated(NOTE_A, CALLS_PARSER, ENTITIES_ON, ON_LINUX_OR_ARM_MAC, UNAUTHENTICATED)]
+    )
+
+    told = affected_when(view)
+
+    assert "only if every one of these is true" in told.statement
+    assert [c.requirement for c in told.conditions] == [
+        "Your software calls ParseStrict from xml (golang).",
+        "AllowExternalEntities is set to true in example xml (it is not, on a fresh install).",
+        "It runs on Linux or macOS on 64-bit Arm.",
+        "An attacker can reach it over the network, without signing in, with nobody's help.",
+    ]
+    assert told.conditions[0].check == (
+        "To find out, use govulncheck: “govulncheck ./...”. "
+        "Its source expects: no call path to ParseStrict"
+    )
+    assert told.conditions[1].check is None
+
+
+@pytest.mark.requirement("SF-84")
+def test_contested_sources_give_the_guided_reader_no_conditions_to_rule_themselves_out_with():
+    """Either source's list alone would narrow the other's: the guided reader
+    acts on one list, so a disagreement gives them none, and "affected"."""
+    view = combine(
+        [
+            stated(NOTE_A, ENTITIES_ON),
+            stated(NOTE_B, ENTITIES_ON, ON_LINUX_OR_ARM_MAC, unknowns=("Windows is untested",)),
+        ]
+    )
+
+    told = affected_when(view)
+
+    assert "disagree" in told.statement
+    assert "treat yourself as affected" in told.statement
+    assert told.conditions == ()
+    assert told.unknowns == ("Windows is untested",)
+
+
+@pytest.mark.requirement("NFR-U5")
+def test_the_guided_conditions_name_no_stix_type_and_no_note_id():
+    vuln, related = everything()
+    view = combine([stated(NOTE_A, CALLS_PARSER, ENTITIES_ON, unknowns=("Windows untested",))])
+
+    html = render(guide(vuln, related, now=NOW, exploitability=view))
+
+    assert "Your software calls ParseStrict" in html  # the conditions rendered
+    assert "Windows untested" in html
+    assert STIX_JARGON.findall(html) == []
+    assert STIX_ID.findall(html) == []
+
+
+@pytest.mark.requirement("SF-29")
+def test_condition_text_is_escaped_on_the_guided_page():
+    hostile = {
+        "id": "cfg",
+        "kind": "configuration",
+        "any_of": [
+            {
+                "product": "<img src=x onerror=1>",
+                "setting": "<script>x</script>",
+                "predicate": "present",
+                "default_state": "unknown",
+            }
+        ],
+    }
+    view = combine([stated(NOTE_A, hostile)])
+
+    html = render(guide(vulnerability(), [], now=NOW, exploitability=view))
+
+    assert "<script>" not in html
+    assert "<img" not in html
+    assert "&lt;script&gt;x&lt;/script&gt; is set in &lt;img" in html

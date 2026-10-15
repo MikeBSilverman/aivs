@@ -1,0 +1,19 @@
+Mutation M960: the guided page never shows the conditions it is handed
+Re-applies: F's guided depth as it was before N: the parameter taken and unused
+
+Expect red: packages/aivs-server/tests/unit/test_guidance.py::test_the_guided_conditions_name_no_stix_type_and_no_note_id
+Expect red: packages/aivs-server/tests/unit/test_exploitability.py::test_the_guided_page_states_shared_conditions_in_a_readers_words
+
+diff --git a/packages/aivs-server/src/aivs_server/services/guidance.py b/packages/aivs-server/src/aivs_server/services/guidance.py
+index 07d19ec..d9bc3b2 100644
+--- a/packages/aivs-server/src/aivs_server/services/guidance.py
++++ b/packages/aivs-server/src/aivs_server/services/guidance.py
+@@ -245,7 +245,7 @@ def guide(
+         urgency=_URGENCY.get(str(intel.get("ssvc_decision"))),
+         exploited=_exploited(intel),
+         affected=tuple(_affected(product) for product in _products(intel)),
+-        affected_when=affected_when(exploitability),
++        affected_when=affected_when(ExploitabilityView(ExploitabilityStatus.NOT_ESTABLISHED, (), ())),
+         steps=_steps(actions, now, new_ids),
+         no_fix=_no_fix(actions, now),
+         done_when=_done_when(actions),

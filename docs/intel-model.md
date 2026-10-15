@@ -364,8 +364,14 @@ In progress. Built:
   until the member's person saves the form, and a condition the caller cannot
   see fills in nothing.
 
-Planned: intake from CVE 5.x and OSV records through the KEV/NVD script; the
-OSV export; and guided depth's wording of the view.
+- **Guided depth** answers "are you affected?" from the view as well as the
+  products: agreed conditions as sentences with their checks; otherwise
+  "treat yourself as affected", saying whether nobody has stated the
+  conditions or the sources disagree. A contested view gives the guided
+  reader no conditions, since any one source's list would narrow another's.
+
+Planned: intake from CVE 5.x and OSV records through the KEV/NVD script, and
+the OSV export.
 
 ### 3.6 Phase I: documents
 

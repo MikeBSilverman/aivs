@@ -1,0 +1,18 @@
+Mutation M961: a condition's words are rendered as markup
+Re-applies: a |safe added because the sentence is built server-side, while every value in it is member-supplied (SF-29)
+
+Expect red: packages/aivs-server/tests/unit/test_guidance.py::test_condition_text_is_escaped_on_the_guided_page
+
+diff --git a/packages/aivs-server/src/aivs_server/portal/templates/_guided.html b/packages/aivs-server/src/aivs_server/portal/templates/_guided.html
+index ac86e58..7264188 100644
+--- a/packages/aivs-server/src/aivs_server/portal/templates/_guided.html
++++ b/packages/aivs-server/src/aivs_server/portal/templates/_guided.html
+@@ -35,7 +35,7 @@
+       <ul class="guided-conditions">
+         {% for condition in guidance.affected_when.conditions %}
+           <li>
+-            {{ condition.requirement }}
++            {{ condition.requirement|safe }}
+             {% if condition.check %}<p class="muted">{{ condition.check }}</p>{% endif %}
+           </li>
+         {% endfor %}

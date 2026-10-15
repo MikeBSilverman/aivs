@@ -29,7 +29,9 @@ from tests.unit.sharing_world import API, SharingWorld, build_sharing_world, one
 from tests.unit.test_portal import make_operator as portal_make_operator
 from tests.unit.test_portal import sign_in
 
-pytestmark = pytest.mark.db
+# The auditor stream serves only below the cluster-wide transaction horizon
+# (_auditor_page), which parallel workers hold back: run serially.
+pytestmark = [pytest.mark.db, pytest.mark.horizon]
 
 EVENTS = "/api/v1/audit/events"
 

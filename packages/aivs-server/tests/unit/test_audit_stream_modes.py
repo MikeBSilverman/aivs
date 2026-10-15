@@ -87,6 +87,22 @@ class Poller:
                 return
         pytest.fail(f"the stream never ran out after {MAX_PAGES} pages")
 
+    async def until_a_page_of_reads(self, client) -> None:
+        """Page until a page holding reads and nothing else is served.
+
+        That page is the case the recording rule is about. Paged straight to
+        empty, a drain can finish before the horizon lets the reads through,
+        and a test asserting how such a page is recorded then passes having
+        seen none: M362 survived one run in two that way.
+        """
+        deadline = asyncio.get_running_loop().time() + 60
+        while True:
+            served = await self.page(client)
+            if served and all(event["action"] == AuditAction.AUDIT_READ for event in served):
+                return
+            assert asyncio.get_running_loop().time() < deadline, "no page of reads alone"
+            await asyncio.sleep(0.2)
+
     async def wait_for_more(self, client) -> None:
         """Page until something new is served."""
         before = len(self.events)
@@ -164,6 +180,7 @@ async def test_full_serves_reads_and_records_an_all_reads_page_as_quiet(client, 
     poller = Poller(headers)
     await poller.until_served(client, await _marker(session))
     await poller.until_served(client, await _marker(session))
+    await poller.until_a_page_of_reads(client)
     await poller.drain(client)
     # Every quiet row the drain wrote committed before this marker, so paging
     # until the marker is served pages past them too. Without it the drain can

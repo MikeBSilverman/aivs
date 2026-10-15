@@ -1,0 +1,19 @@
+Mutation M1029: the dashboard lists only proxy filings with a deadline, dropping those that wait for a person
+Re-applies: the dashboard query before Q1
+
+Expect red: packages/aivs-server/tests/unit/test_proxy_filing.py::test_a_member_with_no_webhook_sees_the_filing_on_its_dashboard
+Expect red: packages/aivs-server/tests/unit/test_proxy_filing.py::test_the_portal_says_a_filing_with_no_deadline_waits_for_a_person
+
+diff --git a/packages/aivs-server/src/aivs_server/portal/routes.py b/packages/aivs-server/src/aivs_server/portal/routes.py
+index b5be4fc..34d3aaf 100644
+--- a/packages/aivs-server/src/aivs_server/portal/routes.py
++++ b/packages/aivs-server/src/aivs_server/portal/routes.py
+@@ -434,7 +434,7 @@ async def _filed_for_you(
+         select(Submission)
+         .where(
+             Submission.id.in_(await submissions_filed_by(ctx.org_id)),
+-            Submission.filed_on_behalf.is_(True),
++            Submission.proxy_confirm_by.is_not(None),
+             Submission.proxy_confirmed_at.is_(None),
+             Submission.state != SubmissionState.WITHDRAWN,
+         )

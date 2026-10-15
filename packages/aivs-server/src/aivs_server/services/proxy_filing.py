@@ -12,8 +12,11 @@ member can check:
   behalf; confirm or withdraw" -- the moment it is filed, and on its portal
   dashboard, which needs no webhook;
 - a **window**: the filing is not distributed until a person at the member
-  confirms, or until ``CONFIRM_WITHIN`` passes in silence. Withdrawing uses
-  the member's ordinary stop button.
+  confirms, or until ``CONFIRM_WITHIN`` passes in silence. Silence counts
+  only if the notice was sent: a member with no webhook subscribed to it may
+  not sign in for days, and silence it never heard about is not consent
+  (Mike, Q1 of 2026-10-14). Its filing waits for a person, and the editor
+  chases. Withdrawing uses the member's ordinary stop button.
 
 Anonymous by default, as every contribution is.
 """
@@ -75,12 +78,15 @@ async def _member_for(session: AsyncSession, org_id: uuid.UUID) -> Organization:
     return org
 
 
+def _subscribed(hooks: list[Webhook]) -> list[Webhook]:
+    """The webhooks that hear of a proxy filing: those subscribed to it, or to everything."""
+    return [hook for hook in hooks if not hook.events or EVENT_FILED_ON_BEHALF in hook.events]
+
+
 def _queue_notice(session: AsyncSession, hooks: list[Webhook], submission: Submission) -> None:
     """The member hears at once, contentlessly, that something was filed in its name."""
     confirm_by = submission.proxy_confirm_by
     for hook in hooks:
-        if hook.events and EVENT_FILED_ON_BEHALF not in hook.events:
-            continue
         session.add(
             WebhookDelivery(
                 webhook_id=hook.id,
@@ -115,12 +121,20 @@ async def file_on_behalf(
         msg = "consent_sha256 must be the SHA-256 of the consent artefact, in lower-case hex"
         raise SubmissionError(msg)
     member = await _member_for(session, org_id)
+    notified = _subscribed(
+        list(
+            (await session.execute(deliverable_webhooks().where(Webhook.org_id == member.id)))
+            .scalars()
+            .all()
+        )
+    )
+    confirm_by = now + CONFIRM_WITHIN if notified else None
 
     submission = await create_submission(
         session,
         ctx,
         filed_for=ProxyFiling(
-            org_id=member.id, consent_sha256=consent_sha256, confirm_by=now + CONFIRM_WITHIN
+            org_id=member.id, consent_sha256=consent_sha256, confirm_by=confirm_by
         ),
         via="proxy",
         key=key,
@@ -129,19 +143,18 @@ async def file_on_behalf(
     await record_transition(
         session, ctx, submission, SubmissionState.SUBMITTED, reason="filed on the member's behalf"
     )
-    hooks = list(
-        (await session.execute(deliverable_webhooks().where(Webhook.org_id == member.id)))
-        .scalars()
-        .all()
-    )
-    _queue_notice(session, hooks, submission)
+    _queue_notice(session, notified, submission)
     await record(
         session,
         action=AuditAction.SUBMISSION_FILED_ON_BEHALF,
         ctx=ctx,
         resource_type="submission",
         resource_id=str(submission.id),
-        details={"for_org_id": str(member.id), "consent_sha256": consent_sha256},
+        details={
+            "for_org_id": str(member.id),
+            "consent_sha256": consent_sha256,
+            "silence_confirms": confirm_by is not None,
+        },
     )
     return submission
 
@@ -179,18 +192,23 @@ async def confirm_proxy_filing(
 def is_proxy_filing(submission: Submission) -> bool:
     """Whether an ISAC analyst filed ``submission`` for its member (SF-68).
 
-    Read from the confirmation window, which ``create_submission`` sets on a
-    proxy filing and on nothing else. Who filed it, and on what consent, are
-    held apart (``services.attribution``); that it was filed for the member,
-    and until when it may confirm, name nobody.
+    Who filed it, and on what consent, are held apart
+    (``services.attribution``); that it was filed for the member, and until
+    when silence may confirm it, name nobody.
     """
-    return submission.proxy_confirm_by is not None
+    return submission.filed_on_behalf
 
 
 def awaiting_confirmation(submission: Submission, now: dt.datetime) -> bool:
-    """Whether this is a proxy filing still inside its window, unconfirmed."""
-    if submission.proxy_confirm_by is None or submission.proxy_confirmed_at is not None:
+    """Whether this is a proxy filing nobody at the member has confirmed, still held.
+
+    Held until a person confirms, or until ``proxy_confirm_by`` passes where
+    silence may confirm it; with no deadline, only a person releases it.
+    """
+    if not submission.filed_on_behalf or submission.proxy_confirmed_at is not None:
         return False
+    if submission.proxy_confirm_by is None:
+        return True
     return now < submission.proxy_confirm_by
 
 
@@ -199,8 +217,13 @@ def awaiting_confirmation_problem(submission: Submission, now: dt.datetime) -> s
     if not awaiting_confirmation(submission, now):
         return None
     deadline = submission.proxy_confirm_by
-    after = deadline.isoformat() if deadline is not None else "its window"
+    if deadline is None:
+        return (
+            "filed on a member's behalf and not yet confirmed: the member has no webhook "
+            "for the notice, so silence does not confirm it. Ask the member to confirm it "
+            "in the portal"
+        )
     return (
         "filed on a member's behalf and not yet confirmed: it may be distributed once the "
-        f"member confirms, or after {after}"
+        f"member confirms, or after {deadline.isoformat()}"
     )

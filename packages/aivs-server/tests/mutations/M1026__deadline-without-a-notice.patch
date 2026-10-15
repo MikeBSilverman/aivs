@@ -1,0 +1,19 @@
+Mutation M1026: every proxy filing gets a silence deadline, whether or not the member was sent the notice
+Re-applies: Q1 (2026-10-15): silence confirming every proxy filing, notified or not
+
+Expect red: packages/aivs-server/tests/unit/test_proxy_filing.py::test_with_no_webhook_silence_never_confirms_and_a_person_must
+Expect red: packages/aivs-server/tests/unit/test_proxy_filing.py::test_a_webhook_for_other_events_is_no_notice_so_silence_never_confirms
+
+diff --git a/packages/aivs-server/src/aivs_server/services/proxy_filing.py b/packages/aivs-server/src/aivs_server/services/proxy_filing.py
+index cfc05e5..c1147b3 100644
+--- a/packages/aivs-server/src/aivs_server/services/proxy_filing.py
++++ b/packages/aivs-server/src/aivs_server/services/proxy_filing.py
+@@ -128,7 +128,7 @@ async def file_on_behalf(
+             .all()
+         )
+     )
+-    confirm_by = now + CONFIRM_WITHIN if notified else None
++    confirm_by = now + CONFIRM_WITHIN
+ 
+     submission = await create_submission(
+         session,

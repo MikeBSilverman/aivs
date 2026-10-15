@@ -5,9 +5,10 @@ Expect red: packages/aivs-server/tests/unit/test_proxy_filing.py::test_an_unconf
 Expect red: packages/aivs-server/tests/abuse/test_sharing_abuse.py::test_a_proxy_filing_the_member_never_sent_is_stopped_before_it_reaches_members
 
 diff --git a/packages/aivs-server/src/aivs_server/services/proxy_filing.py b/packages/aivs-server/src/aivs_server/services/proxy_filing.py
+index cfc05e5..1a17efb 100644
 --- a/packages/aivs-server/src/aivs_server/services/proxy_filing.py
 +++ b/packages/aivs-server/src/aivs_server/services/proxy_filing.py
-@@ -175,7 +175,7 @@ def awaiting_confirmation(submission: Submission, now: dt.datetime) -> bool:
+@@ -214,7 +214,7 @@ def awaiting_confirmation(submission: Submission, now: dt.datetime) -> bool:
  
  def awaiting_confirmation_problem(submission: Submission, now: dt.datetime) -> str | None:
      """Why a proxy filing may not be distributed yet, or ``None``."""
@@ -15,4 +16,4 @@ diff --git a/packages/aivs-server/src/aivs_server/services/proxy_filing.py b/pac
 +    if True:
          return None
      deadline = submission.proxy_confirm_by
-     after = deadline.isoformat() if deadline is not None else "its window"
+     if deadline is None:

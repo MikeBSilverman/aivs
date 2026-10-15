@@ -1,0 +1,18 @@
+Mutation M1028: the submission page hides the confirm card when silence never confirms
+Re-applies: the card keyed on the deadline before Q1 (portal/templates/submission_detail.html)
+
+Expect red: packages/aivs-server/tests/unit/test_proxy_filing.py::test_the_portal_says_a_filing_with_no_deadline_waits_for_a_person
+
+diff --git a/packages/aivs-server/src/aivs_server/portal/templates/submission_detail.html b/packages/aivs-server/src/aivs_server/portal/templates/submission_detail.html
+index 04d1312..25e14d1 100644
+--- a/packages/aivs-server/src/aivs_server/portal/templates/submission_detail.html
++++ b/packages/aivs-server/src/aivs_server/portal/templates/submission_detail.html
+@@ -10,7 +10,7 @@
+   </p>
+ </div>
+ 
+-{% if submission.to_confirm %}
++{% if submission.to_confirm and submission.to_confirm.confirm_by %}
+ <div class="card" data-to-confirm>
+   <h2>Filed in your name by the ISAC</h2>
+   <p>

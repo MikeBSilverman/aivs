@@ -1,0 +1,18 @@
+Mutation M1027: a webhook subscribed only to other events counts as telling the member
+Re-applies: Q1 (2026-10-15): silence confirming every proxy filing, notified or not
+
+Expect red: packages/aivs-server/tests/unit/test_proxy_filing.py::test_a_webhook_for_other_events_is_no_notice_so_silence_never_confirms
+
+diff --git a/packages/aivs-server/src/aivs_server/services/proxy_filing.py b/packages/aivs-server/src/aivs_server/services/proxy_filing.py
+index cfc05e5..985fc78 100644
+--- a/packages/aivs-server/src/aivs_server/services/proxy_filing.py
++++ b/packages/aivs-server/src/aivs_server/services/proxy_filing.py
+@@ -80,7 +80,7 @@ async def _member_for(session: AsyncSession, org_id: uuid.UUID) -> Organization:
+ 
+ def _subscribed(hooks: list[Webhook]) -> list[Webhook]:
+     """The webhooks that hear of a proxy filing: those subscribed to it, or to everything."""
+-    return [hook for hook in hooks if not hook.events or EVENT_FILED_ON_BEHALF in hook.events]
++    return hooks
+ 
+ 
+ def _queue_notice(session: AsyncSession, hooks: list[Webhook], submission: Submission) -> None:

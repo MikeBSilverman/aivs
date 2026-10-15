@@ -670,12 +670,12 @@ class ProxyFiling:
 
     ``consent_sha256`` binds the filing to the member's consent artefact -- the
     forwarded mail or the click -- which the ISAC keeps; ``confirm_by`` is when
-    silence counts as confirmation.
+    silence counts as confirmation, ``None`` when it never does.
     """
 
     org_id: uuid.UUID
     consent_sha256: str
-    confirm_by: dt.datetime
+    confirm_by: dt.datetime | None
 
 
 def _filing_record(ctx: AuthContext, filed_for: ProxyFiling | None) -> FilingRecord:
@@ -730,6 +730,7 @@ async def create_submission(
         owner_is_isac=filed_for is None and ctx.org_type in ISAC_FILER_TYPES,
     )
     submission = Submission(
+        filed_on_behalf=filed_for is not None,
         proxy_confirm_by=filed_for.confirm_by if filed_for else None,
         state=SubmissionState.DRAFT,
         source=SubmissionSource.MEMBER if filed_for else source_for(ctx),

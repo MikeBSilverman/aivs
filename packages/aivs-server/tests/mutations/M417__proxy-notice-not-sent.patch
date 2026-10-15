@@ -4,13 +4,14 @@ Re-applies: Phase E slice 4 (T7) -- the guard's absence
 Expect red: packages/aivs-server/tests/unit/test_proxy_filing.py::test_the_member_is_told_at_once_and_the_notice_carries_no_content
 
 diff --git a/packages/aivs-server/src/aivs_server/services/proxy_filing.py b/packages/aivs-server/src/aivs_server/services/proxy_filing.py
+index cfc05e5..e344764 100644
 --- a/packages/aivs-server/src/aivs_server/services/proxy_filing.py
 +++ b/packages/aivs-server/src/aivs_server/services/proxy_filing.py
-@@ -131,7 +131,6 @@
-         .scalars()
-         .all()
+@@ -143,7 +143,6 @@ async def file_on_behalf(
+     await record_transition(
+         session, ctx, submission, SubmissionState.SUBMITTED, reason="filed on the member's behalf"
      )
--    _queue_notice(session, hooks, submission)
+-    _queue_notice(session, notified, submission)
      await record(
          session,
          action=AuditAction.SUBMISSION_FILED_ON_BEHALF,

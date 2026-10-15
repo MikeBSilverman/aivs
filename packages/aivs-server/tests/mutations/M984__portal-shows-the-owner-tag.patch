@@ -4,17 +4,19 @@ Re-applies: Phase P slice 3b (SF-90)
 Expect red: packages/aivs-server/tests/unit/test_owner_values_stay_inside.py::test_no_tag_or_token_reaches_any_reader
 
 diff --git a/packages/aivs-server/src/aivs_server/portal/routes.py b/packages/aivs-server/src/aivs_server/portal/routes.py
+index b5be4fc..c7a9a17 100644
 --- a/packages/aivs-server/src/aivs_server/portal/routes.py
 +++ b/packages/aivs-server/src/aivs_server/portal/routes.py
-@@ -680,6 +680,7 @@
+@@ -685,6 +685,7 @@ async def submission_detail(
                  "summary": submission.summary,
                  "object_count": object_count,
                  "anonymous": submission.distribute_anonymously,
 +                "owner_tag": submission.owner_tag,
                  "distributed_at": stamp(submission.distributed_at),
-                 "confirm_by": _confirm_by_for(ctx, submission, owner_is_caller=owner_is_caller),
+                 "to_confirm": _to_confirm(ctx, submission, owner_is_caller=owner_is_caller),
              },
 diff --git a/packages/aivs-server/src/aivs_server/portal/templates/submission_detail.html b/packages/aivs-server/src/aivs_server/portal/templates/submission_detail.html
+index 04d1312..a3c5c56 100644
 --- a/packages/aivs-server/src/aivs_server/portal/templates/submission_detail.html
 +++ b/packages/aivs-server/src/aivs_server/portal/templates/submission_detail.html
 @@ -3,7 +3,7 @@

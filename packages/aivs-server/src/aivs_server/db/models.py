@@ -581,11 +581,17 @@ class Submission(TimestampMixin, Base):
         default=SubmissionLane.REVIEW,
         server_default=SubmissionLane.REVIEW.value,
     )
-    #: Set on, and only on, a filing an ISAC analyst made for the member it is
-    #: attributed to (SF-68): when silence confirms it. The member may confirm
-    #: or withdraw it; until it does, or until this passes, it is not
-    #: distributed. Which analyst filed it, and on what consent, are held apart
-    #: with the submitter (``SubmissionFiler``).
+    #: A filing an ISAC editor made for the member it is attributed to (SF-68).
+    #: Which editor filed it, and on what consent, are held apart with the
+    #: submitter (``SubmissionFiler``).
+    filed_on_behalf: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    #: When silence confirms a proxy filing: set only when the member was sent
+    #: the notice, to a webhook subscribed to it. ``None`` on a proxy filing
+    #: means silence never confirms it, and a person at the member must (Mike,
+    #: Q1 of 2026-10-14). The member may confirm or withdraw it either way;
+    #: until then it is not distributed.
     proxy_confirm_by: Mapped[dt.datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

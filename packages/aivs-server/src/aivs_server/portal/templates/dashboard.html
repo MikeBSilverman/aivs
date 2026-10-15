@@ -18,8 +18,8 @@
   <h2>Filed in your name: confirm or withdraw</h2>
   <p class="muted">
     The ISAC filed these for your firm, from something it says you sent. Each
-    goes to members only once someone here confirms it, or after the time
-    shown if nobody does. Withdraw any your firm did not send.
+    goes to members only once someone here confirms it, or, where a time is
+    shown, after it if nobody does. Withdraw any your firm did not send.
   </p>
   <div class="table-wrap">
     <table>
@@ -28,7 +28,7 @@
         {% for item in to_confirm %}
           <tr>
             <td><a href="/portal/submissions/{{ item.id }}">{{ item.title }}</a></td>
-            <td class="nowrap muted mono">{{ item.confirm_by }}</td>
+            <td class="nowrap muted mono">{{ item.confirm_by or "Only once confirmed here" }}</td>
           </tr>
         {% endfor %}
       </tbody>

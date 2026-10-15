@@ -434,11 +434,11 @@ async def _filed_for_you(
         select(Submission)
         .where(
             Submission.id.in_(await submissions_filed_by(ctx.org_id)),
-            Submission.proxy_confirm_by.is_not(None),
+            Submission.filed_on_behalf.is_(True),
             Submission.proxy_confirmed_at.is_(None),
             Submission.state != SubmissionState.WITHDRAWN,
         )
-        .order_by(Submission.proxy_confirm_by)
+        .order_by(Submission.proxy_confirm_by.asc().nulls_last(), Submission.created_at)
     )
     return [
         {"id": str(item.id), "title": item.title, "confirm_by": stamp(item.proxy_confirm_by)}
@@ -686,7 +686,7 @@ async def submission_detail(
                 "object_count": object_count,
                 "anonymous": submission.distribute_anonymously,
                 "distributed_at": stamp(submission.distributed_at),
-                "confirm_by": _confirm_by_for(ctx, submission, owner_is_caller=owner_is_caller),
+                "to_confirm": _to_confirm(ctx, submission, owner_is_caller=owner_is_caller),
             },
             "transitions": [
                 {
@@ -724,14 +724,15 @@ async def _first_pass_view(
     }
 
 
-def _confirm_by_for(
+def _to_confirm(
     ctx: AuthContext, submission: Submission, *, owner_is_caller: bool
-) -> str | None:
-    """When silence confirms this filing, for the person who may confirm it; else ``None``."""
+) -> dict[str, str] | None:
+    """A filing waiting for the person who may confirm it, and when silence would
+    (``""`` when it never does); ``None`` for anyone else, or nothing waiting."""
     pending = awaiting_confirmation(submission, dt.datetime.now(dt.UTC))
     if not pending or not can_confirm_proxy_filing(ctx, owner_is_caller=owner_is_caller):
         return None
-    return stamp(submission.proxy_confirm_by)
+    return {"confirm_by": stamp(submission.proxy_confirm_by)}
 
 
 async def _available_actions(

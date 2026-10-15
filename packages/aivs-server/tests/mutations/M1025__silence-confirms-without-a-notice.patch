@@ -1,0 +1,18 @@
+Mutation M1025: a proxy filing with no deadline is released at once, as if silence had confirmed it
+Re-applies: Q1 (2026-10-15): silence confirming every proxy filing, notified or not
+
+Expect red: packages/aivs-server/tests/unit/test_proxy_filing.py::test_with_no_webhook_silence_never_confirms_and_a_person_must
+
+diff --git a/packages/aivs-server/src/aivs_server/services/proxy_filing.py b/packages/aivs-server/src/aivs_server/services/proxy_filing.py
+index cfc05e5..9c04f04 100644
+--- a/packages/aivs-server/src/aivs_server/services/proxy_filing.py
++++ b/packages/aivs-server/src/aivs_server/services/proxy_filing.py
+@@ -208,7 +208,7 @@ def awaiting_confirmation(submission: Submission, now: dt.datetime) -> bool:
+     if not submission.filed_on_behalf or submission.proxy_confirmed_at is not None:
+         return False
+     if submission.proxy_confirm_by is None:
+-        return True
++        return False
+     return now < submission.proxy_confirm_by
+ 
+ 

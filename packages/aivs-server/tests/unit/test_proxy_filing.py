@@ -3,7 +3,8 @@
 The risk is attribution: an analyst filing in a member's name content the
 member never sent. So a proxy filing needs a consent artefact, tells the member
 at once and contentlessly, and is not distributed until the member confirms or
-its window passes in silence.
+its window passes in silence. Silence counts only where the member was sent the
+notice: with no webhook subscribed to it, only a person at the member releases it.
 """
 
 from __future__ import annotations
@@ -18,9 +19,10 @@ from cryptography.hazmat.primitives import hashes
 from sqlalchemy import select
 
 from aivs_schemas.enums import OrgStatus, OrgType, SubmissionState
+from aivs_server.audit.log import AuditAction
 from aivs_server.auth.secretbox import SecretPurpose
 from aivs_server.auth.sessions import establish_session
-from aivs_server.db.models import Operator, Submission, Webhook, WebhookDelivery
+from aivs_server.db.models import AuditLog, Operator, Submission, Webhook, WebhookDelivery
 from aivs_server.services.attribution import filing_record, submissions_filed_by
 from aivs_server.services.proxy_filing import (
     CONFIRM_WITHIN,
@@ -238,7 +240,7 @@ async def test_once_the_member_confirms_the_filing_is_distributed(client, sessio
 
 
 @pytest.mark.requirement("SF-68")
-async def test_silence_confirms_once_the_window_has_passed(client, session, world):
+async def test_silence_confirms_once_the_window_has_passed(client, session, world, member_hook):
     submission = await _validated_proxy_filing(client, session, world)
     deadline = submission.proxy_confirm_by
 
@@ -247,12 +249,55 @@ async def test_silence_confirms_once_the_window_has_passed(client, session, worl
 
 
 @pytest.mark.requirement("SF-68")
-async def test_the_window_is_a_day_from_filing(client, session, world):
+async def test_the_window_is_a_day_from_filing(client, session, world, member_hook):
     before = dt.datetime.now(dt.UTC)
     submission = await _stored(session, await file_for(client, world, world.member.org.id))
 
     assert before + CONFIRM_WITHIN <= submission.proxy_confirm_by
     assert submission.proxy_confirm_by <= dt.datetime.now(dt.UTC) + CONFIRM_WITHIN
+
+
+@pytest.mark.requirement("SF-68")
+async def test_with_no_webhook_silence_never_confirms_and_a_person_must(client, session, world):
+    submission = await _validated_proxy_filing(client, session, world)
+
+    assert submission.proxy_confirm_by is None
+    a_month_on = dt.datetime.now(dt.UTC) + dt.timedelta(days=30)
+    assert "silence does not confirm" in (
+        awaiting_confirmation_problem(submission, a_month_on) or ""
+    )
+    refused = await _distribute(client, world, submission)
+    assert refused.status_code == 409
+    assert "Ask the member to confirm" in refused.text
+
+    await client.post(
+        f"{API}/submissions/{submission.id}/confirm", json={}, headers=world.member.person
+    )
+    assert (await _distribute(client, world, submission)).status_code == 200
+
+
+@pytest.mark.requirement("SF-68")
+async def test_a_webhook_for_other_events_is_no_notice_so_silence_never_confirms(
+    client, session, world, member_hook
+):
+    member_hook.events = ["submission.distributed"]
+    await session.commit()
+
+    submission = await _stored(session, await file_for(client, world, world.member.org.id))
+
+    assert submission.proxy_confirm_by is None
+    queued = (
+        await session.scalars(
+            select(WebhookDelivery).where(WebhookDelivery.webhook_id == member_hook.id)
+        )
+    ).all()
+    assert queued == []
+    audited = (
+        await session.scalars(
+            select(AuditLog).where(AuditLog.action == AuditAction.SUBMISSION_FILED_ON_BEHALF)
+        )
+    ).one()
+    assert audited.details["silence_confirms"] is False
 
 
 @pytest.mark.requirement("SF-68")
@@ -346,6 +391,38 @@ async def test_a_person_confirms_from_the_portal_and_the_dashboard_stops_asking(
     await session.refresh(submission)
     assert submission.proxy_confirmed_at is not None
     assert "Filed in your name" not in dashboard.text
+
+
+@pytest.mark.requirement("SF-68")
+async def test_the_portal_says_a_filing_with_no_deadline_waits_for_a_person(
+    client, session, settings, world
+):
+    submission = await _stored(session, await file_for(client, world, world.member.org.id))
+    await _signed_in(client, session, settings, world)
+    headers = proxy_headers(world.member.pem)
+
+    detail = await client.get(f"/portal/submissions/{submission.id}", headers=headers)
+    dashboard = await client.get("/portal/", headers=headers)
+
+    assert "data-to-confirm" in detail.text
+    assert "not distributed until someone here confirms it" in detail.text
+    assert "may be distributed after" not in detail.text
+    assert "Only once confirmed here" in dashboard.text
+
+
+@pytest.mark.requirement("SF-68")
+async def test_the_portal_gives_the_deadline_where_silence_confirms(
+    client, session, settings, world, member_hook
+):
+    submission = await _stored(session, await file_for(client, world, world.member.org.id))
+    await _signed_in(client, session, settings, world)
+
+    detail = await client.get(
+        f"/portal/submissions/{submission.id}", headers=proxy_headers(world.member.pem)
+    )
+
+    assert "may be distributed after" in detail.text
+    assert submission.proxy_confirm_by.strftime("%Y-%m-%d %H:%M") in detail.text
 
 
 async def test_the_dashboard_does_not_ask_about_a_filing_the_member_made_itself(

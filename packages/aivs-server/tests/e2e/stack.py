@@ -6,8 +6,11 @@ file and talks to the stack the way a member or an operator would -- through
 nginx on the published port, with a client certificate -- or, for the few
 facts only the host can see, through ``docker``.
 
-Unless ``AIVS_E2E_STATE`` names a state file that exists, every e2e test is
-skipped with a reason that says how to start a stack. The skip is a ``skipif``
+Unless ``AIVS_E2E_STATE`` is set, every e2e test is skipped with a reason
+that says how to start a stack. Set to anything but an existing file, it stops
+collection instead: pointed at the state *directory*, all 42 tests once
+skipped and the run exited 0, twice, which reads exactly like a green e2e
+run. An opt-in that cannot be honoured is an error. The skip is a ``skipif``
 marker evaluated at collection, so the requirement census
 (``tests/test_requirements_pinned.py``) does not count an e2e test as a pin in
 a run where it cannot have run.
@@ -34,12 +37,28 @@ import pytest
 #: Opt-in by variable, never by finding a file: a stack left up locally must
 #: not turn an ordinary `uv run pytest` into an e2e run that stops its database.
 _STATE_VARIABLE = os.environ.get("AIVS_E2E_STATE", "")
-STATE_PATH = Path(_STATE_VARIABLE)
+
+
+def state_path(value: str) -> Path | None:
+    """The state file the variable names, ``None`` when unset; refuses anything else."""
+    if not value:
+        return None
+    path = Path(value)
+    if not path.is_file():
+        reason = (
+            f"AIVS_E2E_STATE={value} is not a file: set it to the state.json that "
+            "`scripts/e2e.sh up` prints, or unset it to skip the e2e tests"
+        )
+        raise pytest.UsageError(reason)
+    return path
+
+
+STATE_PATH = state_path(_STATE_VARIABLE) or Path()
 
 TAXII_ACCEPT = "application/taxii+json;version=2.1"
 
 requires_stack = pytest.mark.skipif(
-    not (_STATE_VARIABLE and STATE_PATH.is_file()),
+    not _STATE_VARIABLE,
     reason=(
         "no end-to-end stack: run `scripts/e2e.sh up`, then set AIVS_E2E_STATE to the "
         "state.json it prints"

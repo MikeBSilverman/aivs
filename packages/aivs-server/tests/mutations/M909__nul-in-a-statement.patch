@@ -3,6 +3,10 @@ Re-applies: unbounded statement text
 
 Expect red: packages/aivs-server/tests/unit/test_vex.py::test_unbounded_or_unstorable_input_is_refused_as_the_members_mistake[nul]
 
+How it fails: PostgreSQL refuses the NUL and the DataError escapes, so the member
+would get a 500 for its own mistake. That is the defect the pattern prevents; the
+test fails on the escaped error, not on its assertion.
+
 diff --git a/packages/aivs-server/src/aivs_server/api/contributions.py b/packages/aivs-server/src/aivs_server/api/contributions.py
 --- a/packages/aivs-server/src/aivs_server/api/contributions.py
 +++ b/packages/aivs-server/src/aivs_server/api/contributions.py

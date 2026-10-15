@@ -3,6 +3,11 @@ Re-applies: posture before Phase H: VEX's rules unchecked in the API
 
 Expect red: packages/aivs-server/tests/unit/test_vex.py::test_a_statement_vex_would_reject_is_refused_by_name[affected-without-action]
 
+How it fails: the database's own check (ck_org_postures_affected_says_what_is_done)
+refuses the row and the error escapes, so the member would get a 500 for its own
+mistake (CLAUDE.md section 5, commit inside the try). That is the defect this
+guard prevents; the test fails on the escaped error, not on its assertion.
+
 diff --git a/packages/aivs-server/src/aivs_server/services/posture.py b/packages/aivs-server/src/aivs_server/services/posture.py
 --- a/packages/aivs-server/src/aivs_server/services/posture.py
 +++ b/packages/aivs-server/src/aivs_server/services/posture.py

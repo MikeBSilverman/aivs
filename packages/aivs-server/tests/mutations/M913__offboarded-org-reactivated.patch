@@ -3,6 +3,11 @@ Re-applies: a status writer that does not know offboarding is terminal
 
 Expect red: packages/aivs-server/tests/unit/test_offboarding.py::test_nothing_writes_another_status_over_offboarded
 
+How it fails: the database trigger aivs_offboarded_is_terminal (L2-P6) refuses the
+write and the error escapes, so the operator would get a 500 instead of the named
+refusal. Both layers are wanted; this proves the application's is still what
+answers.
+
 diff --git a/packages/aivs-server/src/aivs_server/services/org_status.py b/packages/aivs-server/src/aivs_server/services/org_status.py
 --- a/packages/aivs-server/src/aivs_server/services/org_status.py
 +++ b/packages/aivs-server/src/aivs_server/services/org_status.py

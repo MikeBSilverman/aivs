@@ -4,13 +4,14 @@ Re-applies: (T8, uncommitted) "Member sign-in through the ISAC's identity provid
 Expect red: packages/aivs-server/tests/unit/test_member_sso.py::test_an_sso_session_cannot_open_its_own_firms_embargoed_filing
 
 diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs-server/src/aivs_server/auth/policy.py
+index c3adeab..95063f3 100644
 --- a/packages/aivs-server/src/aivs_server/auth/policy.py
 +++ b/packages/aivs-server/src/aivs_server/auth/policy.py
-@@ -479,7 +479,7 @@
+@@ -508,7 +508,7 @@ def submission_within_ceiling(ctx: AuthContext, submission: Submission) -> bool:
      """
      if not within_tlp_ceiling(ctx, submission.tlp):
          return False
--    return ctx.auth_method is not AuthMethod.SSO_SESSION or submission.embargo is None
+-    return is_certificate_bound(ctx) or submission.embargo is None
 +    return True
  
  

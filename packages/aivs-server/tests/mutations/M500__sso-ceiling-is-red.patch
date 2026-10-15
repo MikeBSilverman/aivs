@@ -5,12 +5,13 @@ Expect red: packages/aivs-server/tests/unit/test_member_sso.py::test_an_sso_sess
 Expect red: packages/aivs-server/tests/unit/test_member_sso.py::test_sso_reads_amber_strict_but_not_red_or_embargoed_content
 
 diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs-server/src/aivs_server/auth/policy.py
+index c3adeab..af215e2 100644
 --- a/packages/aivs-server/src/aivs_server/auth/policy.py
 +++ b/packages/aivs-server/src/aivs_server/auth/policy.py
-@@ -330,7 +330,7 @@
-     says so here.
+@@ -471,7 +471,7 @@ def tlp_ceiling(ctx: AuthContext) -> TLP:
+     the certificate-bound path.
      """
-     if ctx.auth_method is AuthMethod.SSO_SESSION:
+     if not is_certificate_bound(ctx):
 -        return TLP.AMBER_STRICT
 +        return TLP.RED
      return TLP.RED

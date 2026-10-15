@@ -4,10 +4,11 @@ Re-applies: (T8, uncommitted) "Member sign-in through the ISAC's identity provid
 Expect red: packages/aivs-server/tests/unit/test_member_sso.py::test_sso_reads_amber_strict_but_not_red_or_embargoed_content
 
 diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs-server/src/aivs_server/auth/policy.py
+index c3adeab..419dba7 100644
 --- a/packages/aivs-server/src/aivs_server/auth/policy.py
 +++ b/packages/aivs-server/src/aivs_server/auth/policy.py
-@@ -354,7 +354,7 @@
-     if ctx.auth_method is not AuthMethod.SSO_SESSION:
+@@ -495,7 +495,7 @@ def tlp_ceiling_clause(ctx: AuthContext) -> ColumnElement[bool]:
+     if is_certificate_bound(ctx):
          return marking_allowed
      embargoed = exists().where(Embargo.submission_id == Submission.id)
 -    return and_(marking_allowed, ~embargoed)

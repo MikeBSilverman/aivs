@@ -53,6 +53,7 @@ if TYPE_CHECKING:  # pragma: no cover
 Intervals = tuple[MembershipInterval, ...]
 
 __all__ = [
+    "CERTIFICATE_BOUND_METHODS",
     "ISAC_FILER_TYPES",
     "PolicyDeniedError",
     "audit_scope",
@@ -91,6 +92,7 @@ __all__ = [
     "holds_submitter_rights",
     "is_active",
     "is_auditor",
+    "is_certificate_bound",
     "is_isac_editor",
     "is_isac_filing_needing_an_editor",
     "is_isac_membership",
@@ -446,17 +448,29 @@ def writable_circle_ids(ctx: AuthContext) -> frozenset[uuid.UUID]:
 # ---------------------------------------------------------------------------
 # Submission access
 # ---------------------------------------------------------------------------
+#: The ways in that reach RED and embargoed content: each is bound to a client
+#: certificate, so a named device is on the path (Mike's decision, "Human
+#: access"). An allow-list, so a way in added later is limited until someone
+#: names it here.
+CERTIFICATE_BOUND_METHODS: Final[frozenset[AuthMethod]] = frozenset(
+    {AuthMethod.MTLS, AuthMethod.PORTAL_SESSION}
+)
+
+
+def is_certificate_bound(ctx: AuthContext) -> bool:
+    """Whether this caller came in on a certificate-bound path."""
+    return ctx.auth_method in CERTIFICATE_BOUND_METHODS
+
+
 def tlp_ceiling(ctx: AuthContext) -> TLP:
     """The most restrictive marking this caller may read.
 
     A member's person signed in through the IdP, over ordinary TLS from any
     browser, reads up to AMBER+STRICT -- organisation-only, and the person is in
     the organisation. RED is for named individuals on named devices and stays on
-    the certificate-bound path (Mike's decision, "Human access"). Written as the
-    one session kind that is limited, so a new kind is unlimited only if someone
-    says so here.
+    the certificate-bound path.
     """
-    if ctx.auth_method is AuthMethod.SSO_SESSION:
+    if not is_certificate_bound(ctx):
         return TLP.AMBER_STRICT
     return TLP.RED
 
@@ -471,14 +485,14 @@ def tlp_ceiling_clause(ctx: AuthContext) -> ColumnElement[bool]:
 
     Over ``Submission``: the query it joins must join the owning submission.
 
-    An SSO session also never reads content distributed under an embargo: the
-    pre-CVE lane under embargo stays on the certificate-bound path for its
-    whole life, released or not, because a warning that was worth an embargo
-    is the content RED-adjacent handling exists for.
+    A caller off the certificate-bound path (an SSO session) also never reads
+    content distributed under an embargo: the pre-CVE lane under embargo stays
+    on that path for its whole life, released or not, because a warning that
+    was worth an embargo is the content RED-adjacent handling exists for.
     """
     allowed = tuple(marking for marking in TLP if within_tlp_ceiling(ctx, marking))
     marking_allowed = Submission.tlp.in_(allowed)
-    if ctx.auth_method is not AuthMethod.SSO_SESSION:
+    if is_certificate_bound(ctx):
         return marking_allowed
     embargoed = exists().where(Embargo.submission_id == Submission.id)
     return and_(marking_allowed, ~embargoed)
@@ -487,13 +501,14 @@ def tlp_ceiling_clause(ctx: AuthContext) -> ColumnElement[bool]:
 def submission_within_ceiling(ctx: AuthContext, submission: Submission) -> bool:
     """:func:`tlp_ceiling_clause` for one loaded submission: the same two terms.
 
-    Reads ``submission.embargo``, so for an SSO session the submission must
-    have been loaded with it (``load_submission`` does); the check is made
-    first, so other sessions never touch the relationship.
+    Reads ``submission.embargo``, so for a caller off the certificate-bound
+    path the submission must have been loaded with it (``load_submission``
+    does); the check is made first, so other callers never touch the
+    relationship.
     """
     if not within_tlp_ceiling(ctx, submission.tlp):
         return False
-    return ctx.auth_method is not AuthMethod.SSO_SESSION or submission.embargo is None
+    return is_certificate_bound(ctx) or submission.embargo is None
 
 
 def can_view_submission(ctx: AuthContext, submission: Submission, *, owner_is_caller: bool) -> bool:

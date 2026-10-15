@@ -1,0 +1,20 @@
+Mutation M830: the ISAC's own filing stores anonymity it asked for, a promise distribution does not keep
+Re-applies: Phase P slice 1 (Mike, Q16; W2-C1)
+
+Expect red: packages/aivs-server/tests/unit/test_anonymity.py::test_the_isacs_own_filing_is_attributed_and_cannot_ask_for_anonymity
+Expect red: packages/aivs-server/tests/unit/test_anonymity.py::test_the_isacs_draft_cannot_be_patched_anonymous
+
+diff --git a/packages/aivs-server/src/aivs_server/services/submissions.py b/packages/aivs-server/src/aivs_server/services/submissions.py
+--- a/packages/aivs-server/src/aivs_server/services/submissions.py
++++ b/packages/aivs-server/src/aivs_server/services/submissions.py
+@@ -624,9 +624,7 @@
+     rather than stored as a promise that changes nothing.
+     """
+     if owner_is_isac:
+-        if requested:
+-            raise SubmissionError(ISAC_FILINGS_ARE_ATTRIBUTED)
+-        return False
++        return bool(requested)
+     return True if requested is None else requested
+ 
+ 

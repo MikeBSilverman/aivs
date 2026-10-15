@@ -78,6 +78,10 @@ async def create_draft(client, pem, **overrides: object) -> dict:
         "title": "AI-discovered chain in agent runtime",
         "discovery_scope": "ai_system",
         "tlp": "amber",
+        # Credited unless a test asks otherwise: stated, because the server's
+        # default for a member is anonymous (Mike, Q16), and the identity
+        # tests here are about what an attributed filing may carry.
+        "distribute_anonymously": False,
         "bundle": bundle(),
     }
     payload.update(overrides)
@@ -689,6 +693,7 @@ async def test_identity_objects_are_fine_when_not_anonymous(client, member):
         json={
             "title": "Attributed submission",
             "discovery_scope": "ai_system",
+            "distribute_anonymously": False,
             "bundle": payload_bundle,
         },
         headers=proxy_headers(pem),
@@ -847,12 +852,22 @@ async def test_an_identity_object_cannot_use_a_peers_registered_identifier(
 
     refused = await client.post(
         API,
-        json={"title": "As someone else", "discovery_scope": "ai_system", "bundle": impersonating},
+        json={
+            "title": "As someone else",
+            "discovery_scope": "ai_system",
+            "distribute_anonymously": False,
+            "bundle": impersonating,
+        },
         headers=proxy_headers(pem),
     )
     accepted = await client.post(
         API,
-        json={"title": "Naming a vendor", "discovery_scope": "ai_system", "bundle": vendor},
+        json={
+            "title": "Naming a vendor",
+            "discovery_scope": "ai_system",
+            "distribute_anonymously": False,
+            "bundle": vendor,
+        },
         headers=proxy_headers(pem),
     )
 
@@ -913,7 +928,12 @@ async def test_a_member_may_carry_its_own_identity(client, member):
 
     response = await client.post(
         API,
-        json={"title": "Signed as ourselves", "discovery_scope": "ai_system", "bundle": own},
+        json={
+            "title": "Signed as ourselves",
+            "discovery_scope": "ai_system",
+            "distribute_anonymously": False,
+            "bundle": own,
+        },
         headers=proxy_headers(pem),
     )
     assert response.status_code == 201

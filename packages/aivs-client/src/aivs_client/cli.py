@@ -307,9 +307,12 @@ def submit(
     ],
     tlp: Annotated[str, typer.Option("--tlp")] = "amber",
     summary: Annotated[str | None, typer.Option("--summary")] = None,
-    anonymous: Annotated[
+    credit: Annotated[
         bool,
-        typer.Option("--anonymous", help="Withhold our identity from other members."),
+        typer.Option(
+            "--credit",
+            help="Name our firm to other members. Without it the finding is anonymous to them.",
+        ),
     ] = False,
     send: Annotated[
         bool, typer.Option("--send", help="Hand to the ISAC for review immediately.")
@@ -343,7 +346,7 @@ def submit(
                 bundle=bundle,
                 summary=summary,
                 tlp=tlp,
-                anonymous=anonymous,
+                credit=credit,
             )
             _err(f"created draft {created['id']}")
             if send:

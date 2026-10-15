@@ -1,0 +1,16 @@
+Mutation M832: a PATCH of the flag alone changes a distributed object's anonymity
+Re-applies: Phase P slice 1 (Mike, Q16; W2-C1)
+
+Expect red: packages/aivs-server/tests/unit/test_anonymity.py::test_patching_the_flag_alone_is_checked_against_the_first_distribution
+
+diff --git a/packages/aivs-server/src/aivs_server/services/submissions.py b/packages/aivs-server/src/aivs_server/services/submissions.py
+--- a/packages/aivs-server/src/aivs_server/services/submissions.py
++++ b/packages/aivs-server/src/aivs_server/services/submissions.py
+@@ -817,7 +817,6 @@
+         else await _stored_raws(session, submission)
+     )
+     await _refuse_contribution_problem(session, ctx, submission, objects)
+-    await _refuse_anonymity_change(session, submission)
+ 
+     await record(
+         session,

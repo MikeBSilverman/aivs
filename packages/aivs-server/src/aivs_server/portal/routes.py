@@ -995,7 +995,7 @@ async def submit_finding(
     bundle: Annotated[str, Form()],
     csrf_token: Annotated[str, Form()],
     summary: Annotated[str, Form()] = "",
-    distribute_anonymously: Annotated[str, Form()] = "",
+    credit_my_firm: Annotated[str, Form()] = "",
 ) -> Response:
     """Create a draft from the form.
 
@@ -1039,7 +1039,9 @@ async def submit_finding(
                 "summary": summary or None,
                 "tlp": TLP(tlp),
                 "discovery_scope": discovery_scope,
-                "distribute_anonymously": bool(distribute_anonymously),
+                # Unticked asks for nothing, which is the owner's default:
+                # anonymous for a member (Mike, Q16), the ISAC's own for the ISAC.
+                "distribute_anonymously": False if credit_my_firm else None,
                 "bundle": parsed,
             }
         )

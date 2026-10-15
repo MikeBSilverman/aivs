@@ -1,0 +1,17 @@
+Mutation M839: the CLI asks for credit whether or not --credit was given, the default before Q16
+Re-applies: Phase P slice 1 (Mike, Q16; W2-C1)
+
+Expect red: packages/aivs-client/tests/test_cli.py::test_submit_leaves_the_choice_to_the_server_unless_credit_is_asked[default]
+
+diff --git a/packages/aivs-client/src/aivs_client/transport.py b/packages/aivs-client/src/aivs_client/transport.py
+--- a/packages/aivs-client/src/aivs_client/transport.py
++++ b/packages/aivs-client/src/aivs_client/transport.py
+@@ -227,7 +227,7 @@
+             "tlp": tlp,
+             "bundle": bundle,
+         }
+-        if credit:
++        if credit or not credit:
+             payload["distribute_anonymously"] = False
+         if summary:
+             payload["summary"] = summary

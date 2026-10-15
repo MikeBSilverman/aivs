@@ -8,11 +8,11 @@ Expect red: packages/aivs-server/tests/unit/test_stale_versions.py::test_an_isac
 diff --git a/packages/aivs-server/src/aivs_server/services/submissions.py b/packages/aivs-server/src/aivs_server/services/submissions.py
 --- a/packages/aivs-server/src/aivs_server/services/submissions.py
 +++ b/packages/aivs-server/src/aivs_server/services/submissions.py
-@@ -784,7 +784,6 @@
+@@ -855,7 +855,6 @@
          await foreign_owned_versions_problem(
              session, raws, owner_org_id=submission.submitter_org_id
          ),
 -        await stale_version_problem(session, submission),
+         await anonymity_change_problem(session, submission),
          await contribution_problem(session, submission, raws, visible_to=None, now=now),
          unacknowledged_changes_problem(
-             await consequential_changes(session, submission, raws), acknowledged_changes

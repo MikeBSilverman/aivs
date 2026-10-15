@@ -1,0 +1,17 @@
+Mutation M829: a member's filing that asks nothing is distributed crediting the member, the default before Q16
+Re-applies: Phase P slice 1 (Mike, Q16; W2-C1)
+
+Expect red: packages/aivs-server/tests/unit/test_anonymity.py::test_a_members_filing_is_anonymous_unless_it_asks_for_credit[None-True]
+
+diff --git a/packages/aivs-server/src/aivs_server/services/submissions.py b/packages/aivs-server/src/aivs_server/services/submissions.py
+--- a/packages/aivs-server/src/aivs_server/services/submissions.py
++++ b/packages/aivs-server/src/aivs_server/services/submissions.py
+@@ -627,7 +627,7 @@
+         if requested:
+             raise SubmissionError(ISAC_FILINGS_ARE_ATTRIBUTED)
+         return False
+-    return True if requested is None else requested
++    return False if requested is None else requested
+ 
+ 
+ async def _refuse_anonymity_change(session: AsyncSession, submission: Submission) -> None:

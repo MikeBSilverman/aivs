@@ -1,0 +1,17 @@
+Mutation M833: the ingest check queries the new bundle before it is flushed, compares nothing, and passes every change (the defect as first written)
+Re-applies: Phase P slice 1 (Mike, Q16; W2-C1)
+
+Expect red: packages/aivs-server/tests/unit/test_anonymity.py::test_a_later_version_cannot_change_a_distributed_objects_anonymity[anonymous]
+Expect red: packages/aivs-server/tests/unit/test_anonymity.py::test_a_later_version_cannot_change_a_distributed_objects_anonymity[credited]
+
+diff --git a/packages/aivs-server/src/aivs_server/services/submissions.py b/packages/aivs-server/src/aivs_server/services/submissions.py
+--- a/packages/aivs-server/src/aivs_server/services/submissions.py
++++ b/packages/aivs-server/src/aivs_server/services/submissions.py
+@@ -637,7 +637,6 @@
+     at ingest they are still pending (``autoflush=False``), so without it a new
+     bundle was compared as empty and every change passed.
+     """
+-    await session.flush()
+     problem = await anonymity_change_problem(session, submission)
+     if problem is not None:
+         raise SubmissionError(problem)

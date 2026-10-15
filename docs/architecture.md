@@ -434,10 +434,22 @@ acted on its submission, each count withheld below k (`services/telemetry.py`).
 
 ## 9. Anonymized distribution
 
-`submissions.distribute_anonymously` is a boolean chosen by the submitter. When
-true, the distribution pipeline rewrites `created_by_ref` on outbound objects to
-the hosting ISAC's own STIX identity and withholds the submitter from every
-consumer-facing view.
+`submissions.distribute_anonymously` is a boolean chosen by the submitter, and
+a member's filing is anonymous unless it asks for credit (Mike, Q16): the API
+field left out, the portal's "credit my firm" unticked, the CLI without
+`--credit`, and every TAXII inbox write. When true, the distribution pipeline
+rewrites `created_by_ref` on outbound objects to the hosting ISAC's own STIX
+identity and withholds the submitter from every consumer-facing view. The
+ISAC's own filings are the ISAC's either way, so asking for anonymity on one is
+refused.
+
+An object keeps the choice of its first distributed version (SF-85,
+`services/anonymity.py`). Only the owner versions an object, so an attributed
+version followed by an anonymous one would name the anonymous one's submitter,
+and the reverse would name it after the fact to every member already holding
+it. A member that wants the other choice files a new object. Existing
+submissions keep what they were distributed under: changing that afterwards
+would re-attribute content members already hold.
 
 Receipts and the audit trail still resolve internally, so the ISAC can answer
 questions the members cannot. Anonymity here is *from other members*, not from

@@ -1,0 +1,17 @@
+Mutation M838: the portal files every finding crediting the member, the unticked default before Q16
+Re-applies: Phase P slice 1 (Mike, Q16; W2-C1)
+
+Expect red: packages/aivs-server/tests/unit/test_anonymity.py::test_the_portal_files_anonymously_unless_credit_is_ticked[False-True]
+
+diff --git a/packages/aivs-server/src/aivs_server/portal/routes.py b/packages/aivs-server/src/aivs_server/portal/routes.py
+--- a/packages/aivs-server/src/aivs_server/portal/routes.py
++++ b/packages/aivs-server/src/aivs_server/portal/routes.py
+@@ -1041,7 +1041,7 @@
+                 "discovery_scope": discovery_scope,
+                 # Unticked asks for nothing, which is the owner's default:
+                 # anonymous for a member (Mike, Q16), the ISAC's own for the ISAC.
+-                "distribute_anonymously": False if credit_my_firm else None,
++                "distribute_anonymously": False,
+                 "bundle": parsed,
+             }
+         )

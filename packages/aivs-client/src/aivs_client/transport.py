@@ -213,15 +213,22 @@ class NativeClient:
         bundle: dict[str, Any],
         summary: str | None = None,
         tlp: str = "amber",
-        anonymous: bool = False,
+        credit: bool,
     ) -> dict[str, Any]:
+        """File a draft. ``credit`` names the filing firm to other members.
+
+        Without it the field is left out and the server applies the owner's
+        default: anonymous for a member, the ISAC's own for the ISAC. Required,
+        with no default, so every caller states the choice where it is read.
+        """
         payload: dict[str, Any] = {
             "title": title,
             "discovery_scope": discovery_scope,
             "tlp": tlp,
-            "distribute_anonymously": anonymous,
             "bundle": bundle,
         }
+        if credit:
+            payload["distribute_anonymously"] = False
         if summary:
             payload["summary"] = summary
         return dict(self._request("POST", "/submissions", json=payload))

@@ -100,7 +100,8 @@ async def receive_envelope(
         summary=None,
         tlp=TLP(circle.minimum_tlp),
         discovery_scope=INBOX_SCOPE,
-        distribute_anonymously=True,
+        # The owner's default: the inbox carries no choice of its own.
+        distribute_anonymously=None,
         bundle={"type": "bundle", "id": f"bundle--{uuid.uuid4()}", "objects": objects},
         filed_for=None,
         via="taxii",

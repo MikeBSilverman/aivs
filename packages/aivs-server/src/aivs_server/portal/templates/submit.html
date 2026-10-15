@@ -50,17 +50,21 @@
       </select>
     </div>
 
+    {% if not is_admin %}
     <div class="field">
       <label>
-        <input type="checkbox" name="distribute_anonymously" value="1">
-        Withhold our identity from other members
+        <input type="checkbox" name="credit_my_firm" value="1" data-credit-my-firm>
+        Credit my firm by name
       </label>
       <div class="hint">
-        {{ instance_name }} still knows it came from you. Your bundle must not
-        contain identity objects — those are redistributed verbatim and would
-        name you anyway, so they are refused.
+        Left unticked, other members see the finding as {{ instance_name }}'s,
+        and {{ instance_name }} still knows it came from you. Your bundle must
+        then not contain identity objects — those are redistributed verbatim and
+        would name you anyway, so they are refused. A later version of the same
+        object keeps whichever you choose here once it has been distributed.
       </div>
     </div>
+    {% endif %}
 
     <div class="field">
       <label for="bundle">STIX 2.1 bundle</label>

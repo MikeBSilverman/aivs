@@ -157,3 +157,35 @@ def test_enroll_never_overwrites_an_existing_key(runner, tmp_path):
 
     assert result.exit_code == 2
     assert key_path.read_text(encoding="utf-8") == "the key already in use"
+
+
+# ---------------------------------------------------------------------------
+# submit: anonymous unless the member asks for credit (Mike, Q16)
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize(
+    ("flags", "sent"), [([], None), (["--credit"], False)], ids=["default", "credit"]
+)
+def test_submit_leaves_the_choice_to_the_server_unless_credit_is_asked(
+    runner, serve, tmp_path, flags, sent
+):
+    """Without ``--credit`` the field is left out, and the server files a
+    member's finding anonymously; ``--credit`` asks it to name the firm."""
+    bodies: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        bodies.append(json.loads(request.content))
+        return httpx.Response(201, json={"id": "submission-1"})
+
+    serve(handler)
+    bundle_path = tmp_path / "bundle.json"
+    bundle_path.write_text(json.dumps({"type": "bundle", "id": "bundle--1", "objects": []}))
+
+    result = runner.invoke(
+        cli.app,
+        ["submit", str(bundle_path), "--title", "A finding", "--scope", "own_product", *flags],
+    )
+
+    assert result.exit_code == 0, result.output
+    [body] = bodies
+    assert body.get("distribute_anonymously", None) is sent
+    assert ("distribute_anonymously" in body) is (sent is not None)

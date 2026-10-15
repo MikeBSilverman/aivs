@@ -154,6 +154,8 @@ def _file(native: NativeClient, record: Mapping[str, Any], version: dict[str, An
         discovery_scope=extension["discovery_scope"],
         tlp=tlp_of(record).value,
         bundle={"type": "bundle", "id": f"bundle--{uuid.uuid4()}", "objects": [version]},
+        # The ISAC's own record: it is the ISAC's whichever way this points.
+        credit=False,
     )
     # Filed as a draft and left there: every verb on the automation's own
     # filing is an ISAC editor's (Mike, Q35), so the editor sends it for review.

@@ -52,6 +52,7 @@ from aivs_server.auth.policy import (
 )
 from aivs_server.db.clock import database_now
 from aivs_server.db.models import Organization, StixObject, Submission, SubmissionTransition
+from aivs_server.services.anonymity import anonymity_change_problem
 from aivs_server.services.disclosure import DisclosureScope, disclosure_problem
 from aivs_server.services.indexing import intel_index_fields
 from aivs_server.services.markings import granular_tlp_problem, looser_than_referents_problem
@@ -606,6 +607,42 @@ async def _refuse_contribution_problem(
         raise SubmissionError(problem)
 
 
+#: The refusal for anonymity asked of the ISAC's own filing.
+ISAC_FILINGS_ARE_ATTRIBUTED: Final[str] = (
+    "the ISAC's own filings are distributed as the ISAC's; "
+    "distribute_anonymously does not apply to them"
+)
+
+
+def resolve_anonymity(requested: bool | None, *, owner_is_isac: bool) -> bool:
+    """What a filing is distributed under, given what its filer asked for.
+
+    A member's filing is anonymous unless it asks for credit (Mike, Q16), so
+    ``None`` -- nothing asked -- is anonymous. The ISAC's own filings carry the
+    ISAC's identity whichever way the flag points (distribution attributes
+    them to the ISAC either way), so asking for anonymity there is refused
+    rather than stored as a promise that changes nothing.
+    """
+    if owner_is_isac:
+        if requested:
+            raise SubmissionError(ISAC_FILINGS_ARE_ATTRIBUTED)
+        return False
+    return True if requested is None else requested
+
+
+async def _refuse_anonymity_change(session: AsyncSession, submission: Submission) -> None:
+    """Refuse a version that would change its object's anonymity (``services.anonymity``).
+
+    Flushed first: the check reads the submission's objects back by query, and
+    at ingest they are still pending (``autoflush=False``), so without it a new
+    bundle was compared as empty and every change passed.
+    """
+    await session.flush()
+    problem = await anonymity_change_problem(session, submission)
+    if problem is not None:
+        raise SubmissionError(problem)
+
+
 @dataclass(frozen=True, slots=True)
 class ProxyFiling:
     """An ISAC analyst filing for a member (SF-68): who, and on what consent.
@@ -628,7 +665,7 @@ async def create_submission(
     summary: str | None,
     tlp: Any,
     discovery_scope: Any,
-    distribute_anonymously: bool,
+    distribute_anonymously: bool | None,
     bundle: dict[str, Any],
     filed_for: ProxyFiling | None,
     via: str = "api",
@@ -645,7 +682,14 @@ async def create_submission(
     proxy filing passes (``services.proxy_filing``), and which records the
     editor and the member's consent beside it. Required rather than defaulted,
     so every caller says which it is.
+
+    ``distribute_anonymously`` is what the filer asked for, ``None`` when it
+    asked nothing (``resolve_anonymity``).
     """
+    distribute_anonymously = resolve_anonymity(
+        distribute_anonymously,
+        owner_is_isac=filed_for is None and ctx.org_type in ISAC_FILER_TYPES,
+    )
     submission = Submission(
         submitter_org_id=filed_for.org_id if filed_for else ctx.org_id,
         created_by_operator_id=None if filed_for else ctx.operator_id,
@@ -669,6 +713,7 @@ async def create_submission(
     await _refuse_contribution_problem(
         session, None if filed_for else ctx, submission, bundle.get("objects") or []
     )
+    await _refuse_anonymity_change(session, submission)
 
     session.add(
         SubmissionTransition(
@@ -744,6 +789,10 @@ async def update_submission(
     )
 
     bundle = changes.pop("bundle", None)
+    if "distribute_anonymously" in changes:
+        changes["distribute_anonymously"] = resolve_anonymity(
+            changes["distribute_anonymously"], owner_is_isac=owner_is_isac
+        )
     for field, value in changes.items():
         setattr(submission, field, value)
 
@@ -768,6 +817,7 @@ async def update_submission(
         else await _stored_raws(session, submission)
     )
     await _refuse_contribution_problem(session, ctx, submission, objects)
+    await _refuse_anonymity_change(session, submission)
 
     await record(
         session,
@@ -789,7 +839,7 @@ async def _prepare_validation(
     """Refuse content the ISAC may not accept, then record who reviewed it.
 
     In order: owner-only versioning (SF-48), newest-version-only (SF-82),
-    the disclosure split and TLP
+    an object's anonymity fixed by its first distribution (SF-85), the disclosure split and TLP
     inheritance from the ISAC's view of everything (SF-7, SF-49), the AI gate
     (SF-6). Only then is the reviewer stamped, so a refused validation writes
     nothing.
@@ -806,6 +856,7 @@ async def _prepare_validation(
             session, raws, owner_org_id=submission.submitter_org_id
         ),
         await stale_version_problem(session, submission),
+        await anonymity_change_problem(session, submission),
         await contribution_problem(session, submission, raws, visible_to=None, now=now),
         unacknowledged_changes_problem(
             await consequential_changes(session, submission, raws), acknowledged_changes
@@ -911,7 +962,7 @@ async def record_transition(
 
 
 async def check_content_rules(session: AsyncSession, submission: Submission) -> None:
-    """Owner-only and newest-only versioning, the disclosure split and TLP inheritance.
+    """Versioning (owner-only, newest-only, anonymity kept), the disclosure split, TLP inheritance.
 
     What validate checks of any submission's content, without the parts that
     need a human reviewer (the AI gate, the reviewer stamp). The fast lane runs
@@ -923,6 +974,7 @@ async def check_content_rules(session: AsyncSession, submission: Submission) -> 
             session, raws, owner_org_id=submission.submitter_org_id
         ),
         await stale_version_problem(session, submission),
+        await anonymity_change_problem(session, submission),
         await contribution_problem(
             session, submission, raws, visible_to=None, now=await database_now(session)
         ),

@@ -475,7 +475,7 @@ Choose at submission time:
 | Choice | Effect |
 | --- | --- |
 | TLP designation | Must be at least as restrictive as the target circle's floor. |
-| `distribute_anonymously` | Rewrites `created_by_ref` to the ISAC's identity and withholds you from every member-facing view. **The ISAC still knows.** Anonymity is from other members, not from the ISAC. |
+| `distribute_anonymously` | **On unless you ask for credit** (`--credit`, the portal's "credit my firm", or `false` in the API). Rewrites `created_by_ref` to the ISAC's identity and withholds you from every member-facing view. **The ISAC still knows.** Anonymity is from other members, not from the ISAC. Once a version of an object has been distributed, later versions keep its choice; for the other one, file a new object. |
 | Embargo policy | `timer` (requires a release time), `coordinated`, or `manual`. |
 
 ```console

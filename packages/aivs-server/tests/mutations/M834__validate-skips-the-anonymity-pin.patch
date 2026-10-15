@@ -1,0 +1,16 @@
+Mutation M834: validate accepts a version whose object was first distributed with the other choice after it was filed
+Re-applies: Phase P slice 1 (Mike, Q16; W2-C1)
+
+Expect red: packages/aivs-server/tests/unit/test_anonymity.py::test_a_version_filed_before_the_first_distribution_is_refused_at_validate
+
+diff --git a/packages/aivs-server/src/aivs_server/services/submissions.py b/packages/aivs-server/src/aivs_server/services/submissions.py
+--- a/packages/aivs-server/src/aivs_server/services/submissions.py
++++ b/packages/aivs-server/src/aivs_server/services/submissions.py
+@@ -856,7 +856,6 @@
+             session, raws, owner_org_id=submission.submitter_org_id
+         ),
+         await stale_version_problem(session, submission),
+-        await anonymity_change_problem(session, submission),
+         await contribution_problem(session, submission, raws, visible_to=None, now=now),
+         unacknowledged_changes_problem(
+             await consequential_changes(session, submission, raws), acknowledged_changes

@@ -6,10 +6,10 @@ Expect red: packages/aivs-server/tests/unit/test_markings.py::test_a_stricter_re
 diff --git a/packages/aivs-server/src/aivs_server/services/submissions.py b/packages/aivs-server/src/aivs_server/services/submissions.py
 --- a/packages/aivs-server/src/aivs_server/services/submissions.py
 +++ b/packages/aivs-server/src/aivs_server/services/submissions.py
-@@ -785,7 +785,7 @@
-             session, raws, owner_org_id=submission.submitter_org_id
+@@ -857,7 +857,7 @@
          ),
          await stale_version_problem(session, submission),
+         await anonymity_change_problem(session, submission),
 -        await contribution_problem(session, submission, raws, visible_to=None, now=now),
 +        await contribution_problem(session, submission, raws, visible_to=ctx, now=now),
          unacknowledged_changes_problem(

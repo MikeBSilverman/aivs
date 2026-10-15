@@ -7,13 +7,13 @@ Expect red: packages/aivs-server/tests/unit/test_stale_versions.py::test_an_emba
 diff --git a/packages/aivs-server/src/aivs_server/services/content_rules.py b/packages/aivs-server/src/aivs_server/services/content_rules.py
 --- a/packages/aivs-server/src/aivs_server/services/content_rules.py
 +++ b/packages/aivs-server/src/aivs_server/services/content_rules.py
-@@ -47,9 +47,6 @@
+@@ -49,9 +49,6 @@
      )
      if owned is not None:
          return owned
 -    stale = await stale_version_problem(session, submission)
 -    if stale is not None:
 -        return stale
-     contribution = await contribution_problem(session, submission, raws, visible_to=None, now=now)
-     if contribution is not None:
-         return contribution
+     anonymity = await anonymity_change_problem(session, submission)
+     if anonymity is not None:
+         return anonymity

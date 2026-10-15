@@ -1,0 +1,17 @@
+Mutation M831: a new version that changes its object's anonymity is accepted at ingest
+Re-applies: Phase P slice 1 (Mike, Q16; W2-C1)
+
+Expect red: packages/aivs-server/tests/unit/test_anonymity.py::test_a_later_version_cannot_change_a_distributed_objects_anonymity[anonymous]
+Expect red: packages/aivs-server/tests/unit/test_anonymity.py::test_a_later_version_cannot_change_a_distributed_objects_anonymity[credited]
+
+diff --git a/packages/aivs-server/src/aivs_server/services/submissions.py b/packages/aivs-server/src/aivs_server/services/submissions.py
+--- a/packages/aivs-server/src/aivs_server/services/submissions.py
++++ b/packages/aivs-server/src/aivs_server/services/submissions.py
+@@ -713,7 +713,6 @@
+     await _refuse_contribution_problem(
+         session, None if filed_for else ctx, submission, bundle.get("objects") or []
+     )
+-    await _refuse_anonymity_change(session, submission)
+ 
+     session.add(
+         SubmissionTransition(

@@ -474,6 +474,8 @@ async def test_a_member_cannot_publish_under_another_firms_identity(
         json={
             "title": "Filed in someone else's name",
             "discovery_scope": "ai_system",
+            # Attributed: the path that names a firm is the one under test.
+            "distribute_anonymously": False,
             "bundle": _bundle(obj),
         },
         headers=proxy_headers(submitter_pem),

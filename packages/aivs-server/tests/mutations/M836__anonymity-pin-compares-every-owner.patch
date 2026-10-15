@@ -1,0 +1,16 @@
+Mutation M836: the pin is read from every firm's versions, so a refusal at ingest tells a member how another firm distributed an id
+Re-applies: Phase P slice 1 (Mike, Q16; W2-C1)
+
+Expect red: packages/aivs-server/tests/unit/test_anonymity.py::test_another_firms_object_is_not_the_members_to_be_told_about
+
+diff --git a/packages/aivs-server/src/aivs_server/services/anonymity.py b/packages/aivs-server/src/aivs_server/services/anonymity.py
+--- a/packages/aivs-server/src/aivs_server/services/anonymity.py
++++ b/packages/aivs-server/src/aivs_server/services/anonymity.py
+@@ -76,7 +76,6 @@
+         .where(
+             other.stix_id.in_(select(own.stix_id).where(own.submission_id == submission.id)),
+             other.submission_id != submission.id,
+-            other_submission.submitter_org_id == submission.submitter_org_id,
+         )
+         .order_by(other.stix_id, Distribution.date_added, Distribution.seq)
+     )

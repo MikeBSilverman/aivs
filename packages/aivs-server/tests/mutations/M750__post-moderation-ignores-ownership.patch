@@ -6,7 +6,7 @@ Expect red: packages/aivs-server/tests/unit/test_post_moderation.py::test_a_note
 diff --git a/packages/aivs-server/src/aivs_server/services/content_rules.py b/packages/aivs-server/src/aivs_server/services/content_rules.py
 --- a/packages/aivs-server/src/aivs_server/services/content_rules.py
 +++ b/packages/aivs-server/src/aivs_server/services/content_rules.py
-@@ -42,9 +42,7 @@
+@@ -44,9 +44,7 @@
  ) -> str | None:
      """Why ``submission``'s ``objects`` may not become readable now, or ``None``."""
      raws = list(objects)
@@ -20,7 +20,7 @@ diff --git a/packages/aivs-server/src/aivs_server/services/content_rules.py b/pa
 diff --git a/packages/aivs-server/src/aivs_server/services/submissions.py b/packages/aivs-server/src/aivs_server/services/submissions.py
 --- a/packages/aivs-server/src/aivs_server/services/submissions.py
 +++ b/packages/aivs-server/src/aivs_server/services/submissions.py
-@@ -897,9 +897,6 @@
+@@ -970,9 +970,6 @@
      """
      raws = await _stored_raws(session, submission)
      for problem in (
@@ -28,5 +28,5 @@ diff --git a/packages/aivs-server/src/aivs_server/services/submissions.py b/pack
 -            session, raws, owner_org_id=submission.submitter_org_id
 -        ),
          await stale_version_problem(session, submission),
+         await anonymity_change_problem(session, submission),
          await contribution_problem(
-             session, submission, raws, visible_to=None, now=await database_now(session)

@@ -1,0 +1,18 @@
+Mutation M835: distribution publishes a version whose object went out with the other choice after it was validated
+Re-applies: Phase P slice 1 (Mike, Q16; W2-C1)
+
+Expect red: packages/aivs-server/tests/unit/test_anonymity.py::test_a_version_validated_before_the_first_distribution_is_refused_at_distribution
+
+diff --git a/packages/aivs-server/src/aivs_server/services/content_rules.py b/packages/aivs-server/src/aivs_server/services/content_rules.py
+--- a/packages/aivs-server/src/aivs_server/services/content_rules.py
++++ b/packages/aivs-server/src/aivs_server/services/content_rules.py
+@@ -52,9 +52,6 @@
+     stale = await stale_version_problem(session, submission)
+     if stale is not None:
+         return stale
+-    anonymity = await anonymity_change_problem(session, submission)
+-    if anonymity is not None:
+-        return anonymity
+     contribution = await contribution_problem(session, submission, raws, visible_to=None, now=now)
+     if contribution is not None:
+         return contribution

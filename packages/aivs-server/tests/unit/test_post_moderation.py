@@ -115,7 +115,8 @@ async def draft(client, headers, objects: list[dict], *, tlp: str = "amber"):
             "title": "A short contribution",
             "discovery_scope": "own_estate",
             "tlp": tlp,
-            "distribute_anonymously": True,
+            # Left to the owner's default: anonymous for a member, the ISAC's
+            # own for the ISAC, which may not ask for anonymity.
             "bundle": bundle_of(*objects),
         },
         headers=headers,
@@ -639,7 +640,8 @@ async def draft_response(client, headers, objects: list[dict], *, tlp: str):
             "title": "A sighting",
             "discovery_scope": "own_estate",
             "tlp": tlp,
-            "distribute_anonymously": True,
+            # Left to the owner's default: anonymous for a member, the ISAC's
+            # own for the ISAC, which may not ask for anonymity.
             "bundle": bundle_of(*objects),
         },
         headers=headers,

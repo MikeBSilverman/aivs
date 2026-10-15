@@ -6,10 +6,10 @@ Expect red: packages/aivs-server/tests/unit/test_disclosure_split.py::test_a_tar
 diff --git a/packages/aivs-server/src/aivs_server/services/content_rules.py b/packages/aivs-server/src/aivs_server/services/content_rules.py
 --- a/packages/aivs-server/src/aivs_server/services/content_rules.py
 +++ b/packages/aivs-server/src/aivs_server/services/content_rules.py
-@@ -50,7 +50,7 @@
-     stale = await stale_version_problem(session, submission)
-     if stale is not None:
-         return stale
+@@ -55,7 +55,7 @@
+     anonymity = await anonymity_change_problem(session, submission)
+     if anonymity is not None:
+         return anonymity
 -    contribution = await contribution_problem(session, submission, raws, visible_to=None, now=now)
 +    contribution = None
      if contribution is not None:

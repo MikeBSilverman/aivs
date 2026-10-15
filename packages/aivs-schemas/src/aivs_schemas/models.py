@@ -119,8 +119,10 @@ class SubmissionCreate(_In):
     discovery_scope: DiscoveryScope
     #: When true the distribution pipeline attributes outbound objects to the
     #: hosting ISAC rather than the submitter. The ISAC still knows; consumers
-    #: do not.
-    distribute_anonymously: bool = False
+    #: do not. Left out, a member's filing is anonymous (Mike, Q16): crediting
+    #: the firm is the choice it states, ``false``. The ISAC's own filings are
+    #: the ISAC's whatever the flag says, so for them ``true`` is refused.
+    distribute_anonymously: bool | None = None
     #: A STIX 2.1 bundle. Every object in it is validated, not only the ones
     #: AIVS reads.
     bundle: dict[str, Any]

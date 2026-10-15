@@ -508,7 +508,8 @@ async def contribute(
         tlp=target.tlp,
         # It is the member's own experience: seen in, or tried in, its estate.
         discovery_scope=DiscoveryScope.OWN_ESTATE,
-        distribute_anonymously=True,
+        # The owner's default: anonymous for a member, the ISAC's own for the ISAC.
+        distribute_anonymously=None,
         bundle={"type": "bundle", "id": f"bundle--{uuid.uuid4()}", "objects": [built]},
         filed_for=None,
         via="one-click",

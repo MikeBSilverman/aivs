@@ -12,6 +12,7 @@ make header-derived identity safe.
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import subprocess
 
@@ -69,6 +70,36 @@ def test_the_application_publishes_no_host_port():
 def test_the_proxy_publishes_exactly_its_member_listeners():
     """The pair: the inspection does see a published port where there is one."""
     assert set(published_ports("aivs-proxy")) == {"8443/tcp", "8444/tcp"}
+
+
+def _gateway(network: str) -> str:
+    result = subprocess.run(  # noqa: S603 - fixed argv
+        ["docker", "network", "inspect", "--format", "{{(index .IPAM.Config 0).Gateway}}", network],  # noqa: S607 - docker from PATH, as the harness runs it
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return result.stdout.strip()
+
+
+def _default_route(stack) -> str:
+    """The proxy's default gateway, read from the kernel: no tool in the image is assumed."""
+    result = stack.compose("exec", "-T", "proxy", "cat", "/proc/net/route")
+    assert result.returncode == 0, result.stderr
+    for line in result.stdout.splitlines()[1:]:
+        fields = line.split()
+        if fields[1] == "00000000":
+            return str(ipaddress.IPv4Address(bytes.fromhex(fields[2])[::-1]))
+    pytest.fail("the proxy has no default route")
+
+
+def test_the_proxy_routes_and_publishes_through_frontend(stack):
+    """``gw_priority`` on the proxy's frontend attachment: the published ports
+    arrive there, not on ``backend``, the network the application listens on."""
+    route = _default_route(stack)
+
+    assert route == _gateway("aivs_frontend")
+    assert route != _gateway("aivs_backend")
 
 
 #: nginx's own answer on the public listener, which no application response has.

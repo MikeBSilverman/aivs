@@ -177,6 +177,11 @@ services:
 
     networks:
       frontend:
+        # The proxy's gateway, so the published ports arrive on `frontend`,
+        # the network that exists to carry them. Without it Docker picks, and
+        # picked `backend`, the network the app listens on. Needs Engine 28+
+        # and Compose 2.33+ (deploy/README.md).
+        gw_priority: 1
       backend:
         # Static address so the application's trusted_proxy_cidrs can be a /32.
         # With a dynamic address the allowlist would have to be the whole
@@ -531,11 +536,10 @@ services:
 # Three, so that reachability is a property of the topology rather than of
 # everyone remembering to configure a firewall.
 #
-#   frontend  The proxy alone. Meant to carry the published port; in practice
-#             Docker publishes through whichever network it picks as the
-#             proxy's gateway, which today is `backend`. An external member's
-#             address survives either way; docs/deployment-topology.md
-#             ("What address nginx records") has the measurements.
+#   frontend  The proxy alone. Carries the published ports: it is the proxy's
+#             gateway (`gw_priority: 1`), which is what Docker publishes
+#             through. docs/deployment-topology.md ("What address nginx
+#             records") has the measurements.
 #   backend   proxy <-> app. Not internal: the app needs egress for outbound
 #             webhook delivery to members. Fixed subnet so the proxy can have a
 #             static address that the app's trusted_proxy_cidrs pins to a /32,

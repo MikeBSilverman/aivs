@@ -4,8 +4,9 @@ Operator guide for the AIVS sharing server: two hosting modes, the certificate
 authority, member enrolment, network placement, and the exact first-run
 sequence.
 
-Everything here assumes a single Linux host with Docker Engine 24+ and the
-Compose v2 plugin. Nothing in this directory needs Kubernetes, and nothing in
+Everything here assumes a single Linux host with Docker Engine 28+ and the
+Compose v2 plugin, 2.33 or later (the proxy chooses its gateway network with
+`gw_priority`, which older versions do not understand). Nothing in this directory needs Kubernetes, and nothing in
 it needs a CA daemon.
 
 ---
@@ -85,7 +86,7 @@ the proxy's trust anchor and server certificate are mounted from
 `deploy/ca/out`; the volume mount fails if that directory does not exist.
 
 ```bash
-# 0. Prerequisites: Docker Engine 24+, the Compose v2 plugin, openssl 1.1.1+,
+# 0. Prerequisites: Docker Engine 28+, the Compose v2 plugin (2.33+), openssl 1.1.1+,
 #    bash 4.3+. Check with:
 docker compose version && openssl version && bash --version | head -1
 

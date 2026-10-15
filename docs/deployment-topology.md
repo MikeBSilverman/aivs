@@ -198,14 +198,17 @@ relayed by `docker-proxy` and appears as a bridge gateway (172.29.10.1). So the
 per-address connection limit and the `auth_failure_burst` detection see real
 member addresses in production, and only a local client shares one.
 
-The published port is delivered to the proxy's **`backend`** address, not its
-`frontend` one: Docker publishes through whichever network it picks as the
-container's gateway, and nothing in the compose file chooses. That changes
-nothing for an external member's address (above). Docker Engine 28+ with
-Compose 2.33+ can choose it explicitly (`gw_priority: 1` on the proxy's
-`frontend` attachment, verified to move ingress and the proxy's default route
-to `frontend`); it is not set because it would raise the supported floor from
-Engine 24 for a change no member-facing property depends on.
+The published ports are delivered to the proxy's **`frontend`** address.
+Docker publishes through whichever network it treats as the container's
+gateway, and until 2026-10-15 nothing chose, so it picked `backend`, the
+network the application listens on. The proxy's `frontend` attachment now
+sets `gw_priority: 1`, which moves both ingress and the proxy's default route
+to `frontend`. The end-to-end suite checks the route
+(`test_listeners.py`). An external member's address is preserved either way,
+as described above. What changes is that a client on the Docker host itself
+appears as `frontend`'s gateway rather than `backend`'s 172.29.10.1, and
+nothing keys on that address. This raised the supported floor to Docker
+Engine 28 and Compose 2.33 (Mike, 2026-10-15).
 
 `X-Request-Id` is nginx's own `$request_id`, never the client's. Accepting a
 caller-chosen correlation id would let a member forge audit-trail entries or

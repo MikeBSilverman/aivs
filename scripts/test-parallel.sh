@@ -49,10 +49,13 @@ uv run pytest -q -p no:cacheprovider -n "${workers}" -m "not horizon" "${cov[@]}
 parallel=$?
 uv run pytest -q -p no:cacheprovider -m horizon "${cov[@]}" "${append[@]}" "$@"
 serial=$?
-# Narrowed to some paths, finding no horizon test there is not a failure
-# (pytest's 5); over the whole suite it is, because 40 of them exist.
-if (( serial == 5 && $# > 0 )); then
-    serial=0
+# Narrowed to some paths, one phase finding nothing there is not a failure
+# (pytest's 5): a file of horizon tests alone has no parallel phase, and most
+# files have no horizon phase. Both finding nothing is, since nothing ran; and
+# over the whole suite each phase must find its tests.
+if (( $# > 0 )) && ! (( parallel == 5 && serial == 5 )); then
+    (( parallel == 5 )) && parallel=0
+    (( serial == 5 )) && serial=0
 fi
 
 echo "parallel phase exit=${parallel}, horizon phase exit=${serial}"

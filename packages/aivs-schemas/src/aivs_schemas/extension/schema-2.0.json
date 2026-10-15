@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://schemas.aivs.example/aivs-intel/2.0/schema.json",
   "title": "AIVS Intelligence Extension 2.0",
-  "description": "Property-extension for the STIX 2.1 vulnerability, course-of-action and indicator SDOs. The definition that applies is chosen by the type of the object carrying the extension; the extension on any other type is refused. Standards' names and values are adopted verbatim; every property of ours says so. Property names follow STIX 2.1 section 7.3.2.1.",
+  "description": "Property-extension for the STIX 2.1 vulnerability, course-of-action, indicator and note SDOs. The definition that applies is chosen by the type of the object carrying the extension; the extension on any other type is refused. Standards' names and values are adopted verbatim; every property of ours says so. Property names follow STIX 2.1 section 7.3.2.1.",
   "$defs": {
     "vulnerability": {
       "type": "object",
@@ -89,7 +89,6 @@
           ]
         },
         "embargo_policy": {
-
           "description": "The submitter's stated embargo intent. Advisory metadata for the consumer, like embargo_release_at: the server releases content by its own embargo record, on a timer or by an editor's early release, and does not yet release anything on a vendor's acknowledgement, whatever this says.",
           "type": "string",
           "enum": [
@@ -619,6 +618,486 @@
           "type": "string",
           "pattern": "^pkg:",
           "maxLength": 500
+        }
+      }
+    },
+    "exploit_term_function": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "ecosystem",
+        "package",
+        "symbol"
+      ],
+      "properties": {
+        "ecosystem": {
+          "description": "OSV's ecosystem name, verbatim.",
+          "enum": [
+            "Go",
+            "npm",
+            "PyPI",
+            "Maven",
+            "crates.io",
+            "NuGet",
+            "RubyGems",
+            "Packagist",
+            "Hex",
+            "Pub",
+            "SwiftURL",
+            "GitHub Actions"
+          ]
+        },
+        "package": {
+          "description": "The package, as a purl.",
+          "type": "string",
+          "maxLength": 400,
+          "pattern": "^pkg:[a-z0-9.+-]+/\\S+$"
+        },
+        "symbol": {
+          "description": "The vulnerable routine as the ecosystem's tooling names it (CVE 5.x programRoutines; OSV ecosystem_specific symbols). An identifier, never prose.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "pattern": "^[A-Za-z_$][A-Za-z0-9_$.:/<>#\\[\\]*-]*$"
+        }
+      }
+    },
+    "exploit_term_file": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 400,
+          "pattern": "^[^\\u0000-\\u001f\\u007f]+$",
+          "description": "CVE 5.x programFiles."
+        }
+      }
+    },
+    "exploit_term_module": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 400,
+          "pattern": "^[^\\u0000-\\u001f\\u007f]+$",
+          "description": "CVE 5.x modules."
+        }
+      }
+    },
+    "exploit_term_platform": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "os"
+          ],
+          "properties": {
+            "os": {
+              "description": "OSV/Go GOOS vocabulary.",
+              "enum": [
+                "aix",
+                "android",
+                "darwin",
+                "dragonfly",
+                "freebsd",
+                "illumos",
+                "ios",
+                "js",
+                "linux",
+                "netbsd",
+                "openbsd",
+                "plan9",
+                "solaris",
+                "wasip1",
+                "windows"
+              ]
+            },
+            "arch": {
+              "description": "OSV/Go GOARCH vocabulary.",
+              "enum": [
+                "386",
+                "amd64",
+                "arm",
+                "arm64",
+                "loong64",
+                "mips",
+                "mips64",
+                "mips64le",
+                "mipsle",
+                "ppc64",
+                "ppc64le",
+                "riscv64",
+                "s390x",
+                "wasm"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "cpe"
+          ],
+          "properties": {
+            "cpe": {
+              "description": "A CPE 2.3 platform, as NVD's applicability statements name one.",
+              "type": "string",
+              "maxLength": 400,
+              "pattern": "^cpe:2\\.3:[aho]:"
+            }
+          }
+        }
+      ]
+    },
+    "exploit_term_configuration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "product",
+        "setting",
+        "predicate",
+        "default_state"
+      ],
+      "properties": {
+        "product": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "setting": {
+          "description": "Ours: no standard structures a configuration (CVE 5.x configurations is prose). The setting's name as the product spells it.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "pattern": "^\\S(.*\\S)?$"
+        },
+        "predicate": {
+          "enum": [
+            "equals",
+            "not_equals",
+            "present",
+            "absent"
+          ]
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "default_state": {
+          "description": "Ours. Whether a fresh install meets this condition.",
+          "enum": [
+            "exploitable",
+            "not_exploitable",
+            "unknown"
+          ]
+        }
+      }
+    },
+    "exploit_term_version": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "vers"
+      ],
+      "properties": {
+        "vers": {
+          "description": "A vers range, as affected_products uses.",
+          "type": "string",
+          "maxLength": 400,
+          "pattern": "^vers:[a-z0-9.+-]+/\\S+$"
+        }
+      }
+    },
+    "exploit_term_exposure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "AV": {
+          "description": "CVSS v4 Attack Vector.",
+          "enum": [
+            "N",
+            "A",
+            "L",
+            "P"
+          ]
+        },
+        "PR": {
+          "description": "CVSS v4 Privileges Required.",
+          "enum": [
+            "N",
+            "L",
+            "H"
+          ]
+        },
+        "UI": {
+          "description": "CVSS v4 User Interaction.",
+          "enum": [
+            "N",
+            "P",
+            "A"
+          ]
+        }
+      },
+      "minProperties": 1
+    },
+    "exploit_condition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "any_of"
+      ],
+      "properties": {
+        "id": {
+          "description": "Ours. Unique within the note; a posture cites the condition by it.",
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]{0,39}$"
+        },
+        "kind": {
+          "enum": [
+            "function",
+            "file",
+            "module",
+            "platform",
+            "configuration",
+            "version",
+            "exposure"
+          ]
+        },
+        "any_of": {
+          "description": "Ours. The condition holds when any one of these does.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 50
+        },
+        "how_to_check": {
+          "description": "Ours. How a member finds out whether the condition holds for it; the shape of a course of action's validation_check.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "tool",
+            "query_or_command",
+            "expected_result"
+          ],
+          "properties": {
+            "tool": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "query_or_command": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4000
+            },
+            "expected_result": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            }
+          }
+        },
+        "if_absent": {
+          "description": "The VEX justification a member can cite when the condition does not hold, verbatim.",
+          "enum": [
+            "component_not_present",
+            "vulnerable_code_not_present",
+            "vulnerable_code_not_in_execute_path",
+            "vulnerable_code_cannot_be_controlled_by_adversary",
+            "inline_mitigations_already_exist"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "function"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "any_of": {
+                "items": {
+                  "$ref": "#/$defs/exploit_term_function"
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "file"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "any_of": {
+                "items": {
+                  "$ref": "#/$defs/exploit_term_file"
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "module"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "any_of": {
+                "items": {
+                  "$ref": "#/$defs/exploit_term_module"
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "platform"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "any_of": {
+                "items": {
+                  "$ref": "#/$defs/exploit_term_platform"
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "configuration"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "any_of": {
+                "items": {
+                  "$ref": "#/$defs/exploit_term_configuration"
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "version"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "any_of": {
+                "items": {
+                  "$ref": "#/$defs/exploit_term_version"
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "exposure"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "any_of": {
+                "items": {
+                  "$ref": "#/$defs/exploit_term_exposure"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "note": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "extension_type",
+        "aivs_schema_version",
+        "summary",
+        "conditions"
+      ],
+      "properties": {
+        "extension_type": {
+          "const": "property-extension"
+        },
+        "aivs_schema_version": {
+          "description": "2.1: notes were added to the 2.0 extension additively, so a consumer that implements 2.0 and meets a note knows it is newer than what it reads.",
+          "const": "2.1"
+        },
+        "summary": {
+          "description": "Ours. What makes the vulnerability exploitable, in plain language.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "conditions": {
+          "description": "Ours. Exploitable only when every condition holds; each holds when any one of its alternatives does. No negation and no nesting.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 20,
+          "items": {
+            "$ref": "#/$defs/exploit_condition"
+          }
+        },
+        "unknowns": {
+          "description": "Ours. What the research has not established.",
+          "type": "array",
+          "maxItems": 20,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          }
+        },
+        "reproduced": {
+          "description": "Ours. Whether the contributor reproduced the vulnerability under these conditions. The evidence is the note's external_references.",
+          "type": "boolean"
         }
       }
     }

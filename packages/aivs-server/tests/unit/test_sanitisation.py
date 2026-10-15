@@ -92,3 +92,30 @@ async def test_the_endpoint_flags_the_callers_own_name_and_no_one_elses(
         ("own_organisation", "meridian-global"),
         ("private_address", "10.9.9.9"),
     ]
+
+
+@pytest.mark.requirement("SF-83")
+def test_prose_inside_an_extension_is_read_too():
+    """A note's exploitability summary and unknowns, an indicator's false-positive
+    notes, a fix's residual risk: prose a person wrote, one level down. Read only
+    at the top level, an internal hostname in any of them went unremarked."""
+    bundle = {
+        "objects": [
+            {
+                "type": "note",
+                "id": "note--1",
+                "extensions": {
+                    "extension-definition--x": {
+                        "summary": "seen on build01.corp.internal",
+                        "unknowns": ["whether 10.2.0.0/16 hosts are reachable"],
+                        "conditions": [{"id": "not-prose"}],
+                    }
+                },
+            }
+        ]
+    }
+
+    assert free_text_of(bundle) == {
+        "note--1.extensions.summary": "seen on build01.corp.internal",
+        "note--1.extensions.unknowns[0]": "whether 10.2.0.0/16 hosts are reachable",
+    }

@@ -740,6 +740,43 @@ These are type rules rather than extension rules on purpose. A rule that
 applied only when the extension was present could be avoided by leaving the
 extension off.
 
+### `note`: exploitability conditions (2.1)
+
+Added additively on 2026-10-15 (plan, Phase N); a note body says
+`aivs_schema_version: "2.1"`, and the definition's `version` is `2.1.0`. A
+note carrying it states what makes a vulnerability exploitable, as data a
+member's tooling can evaluate: the AppSec engineer's "does our code reach it?".
+
+- `summary` (required): plain language.
+- `conditions` (required, 1 to 20): the vulnerability is exploitable only when
+  **every** condition holds, and a condition holds when **any one** of its
+  `any_of` alternatives does. No negation and no nesting.
+- Each condition has an `id` (unique within the note; a posture cites it), a
+  `kind`, `any_of`, and optionally `how_to_check` (the shape of a course of
+  action's `validation_check`) and `if_absent` (the VEX justification a member
+  cites when it does not hold).
+- The terms, by kind, each from a standard where one exists:
+
+| `kind` | Term | From |
+| --- | --- | --- |
+| `function` | `ecosystem`, `package` (a purl), `symbol` (an identifier, never prose) | CVE 5.x `programRoutines`; OSV symbols |
+| `file`, `module` | `path` | CVE 5.x `programFiles`, `modules` |
+| `platform` | `os` and optional `arch` (OSV/Go vocabulary), or `cpe` | OSV `goos`/`goarch`; NVD applicability |
+| `configuration` | `product`, `setting`, `predicate`, optional `value`, `default_state` | ours: no standard structures a configuration |
+| `version` | `vers` | vers, as `affected_products` uses |
+| `exposure` | `AV`, `PR`, `UI` | CVSS v4 |
+
+- `unknowns`: what the research has not established. `reproduced`: whether
+  the contributor reproduced it under these conditions; the evidence is the
+  note's own `external_references`.
+
+A term of the wrong shape for its kind, an empty condition list, a repeated
+condition id, or a note whose `object_refs` names no vulnerability is refused
+at ingest, naming the note (SF-83). The `summary` and `unknowns` are read by the
+sanitisation assist like any other prose. A note carrying conditions is never
+post-moderated: a condition tells most members they are not affected, and a
+wrong one published unread is a false negative across the sector.
+
 ### `attack-pattern`
 
 There is no 2.0 definition; ATT&CK and CAPEC already supply what is needed, in

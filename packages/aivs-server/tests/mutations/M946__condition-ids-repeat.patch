@@ -1,0 +1,18 @@
+Mutation M946: two conditions in one note share an id
+Re-applies: the schema alone, which cannot say ids are unique
+
+Expect red: packages/aivs-schemas/tests/test_extension_note.py::test_condition_ids_are_unique_within_a_note
+
+diff --git a/packages/aivs-schemas/src/aivs_schemas/extension/builders.py b/packages/aivs-schemas/src/aivs_schemas/extension/builders.py
+index 574ec71..8668bb6 100644
+--- a/packages/aivs-schemas/src/aivs_schemas/extension/builders.py
++++ b/packages/aivs-schemas/src/aivs_schemas/extension/builders.py
+@@ -616,7 +616,7 @@ def _check_exploitability_note(obj: Mapping[str, Any], body: Mapping[str, Any])
+         raise ExtensionValidationError(msg)
+     seen: set[str] = set()
+     for condition in body["conditions"]:
+-        if condition["id"] in seen:
++        if False:
+             msg = f"{described}: two conditions are both {condition['id']!r}; ids are unique"
+             raise ExtensionValidationError(msg)
+         seen.add(condition["id"])

@@ -1,0 +1,18 @@
+Mutation M947: a note's conditions need not be about a vulnerability
+Re-applies: the schema alone, which does not read object_refs
+
+Expect red: packages/aivs-schemas/tests/test_extension_note.py::test_conditions_are_about_a_vulnerability
+
+diff --git a/packages/aivs-schemas/src/aivs_schemas/extension/builders.py b/packages/aivs-schemas/src/aivs_schemas/extension/builders.py
+index 574ec71..d90db1c 100644
+--- a/packages/aivs-schemas/src/aivs_schemas/extension/builders.py
++++ b/packages/aivs-schemas/src/aivs_schemas/extension/builders.py
+@@ -609,7 +609,7 @@ def _check_exploitability_note(obj: Mapping[str, Any], body: Mapping[str, Any])
+     """
+     described = f"note {obj.get('id', '<no id>')}"
+     refs = obj.get("object_refs")
+-    if not isinstance(refs, list) or not any(
++    if False and not any(
+         isinstance(ref, str) and ref.startswith("vulnerability--") for ref in refs
+     ):
+         msg = f"{described}: exploitability conditions must be about a vulnerability (object_refs)"

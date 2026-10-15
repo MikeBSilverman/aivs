@@ -1,0 +1,17 @@
+Mutation M948: prose inside extension bodies is not read by the sanitisation assist
+Re-applies: free_text_of before Phase N (top-level keys only)
+
+Expect red: packages/aivs-server/tests/unit/test_sanitisation.py::test_prose_inside_an_extension_is_read_too
+
+diff --git a/packages/aivs-server/src/aivs_server/services/sanitisation.py b/packages/aivs-server/src/aivs_server/services/sanitisation.py
+index ecda5d4..1edfa16 100644
+--- a/packages/aivs-server/src/aivs_server/services/sanitisation.py
++++ b/packages/aivs-server/src/aivs_server/services/sanitisation.py
+@@ -157,7 +157,6 @@ def free_text_of(bundle: Mapping[str, Any]) -> dict[str, str]:
+         for key, value in obj.items():
+             if key in _PROSE_KEYS and isinstance(value, str):
+                 found[f"{label}.{key}"] = value
+-        found.update(_extension_prose(obj.get("extensions"), f"{label}.extensions"))
+     return found
+ 
+ 

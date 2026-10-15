@@ -24,6 +24,7 @@ from aivs_schemas.enums import (
     SubmissionLane,
     SubmissionState,
 )
+from aivs_schemas.extension.builders import AIVS_INTEL_EXTENSION_ID
 from aivs_server.audit.log import AuditAction
 from aivs_server.db.models import AuditLog, Circle, Submission, SubmissionTransition
 from aivs_server.services.contributions import within_hourly_allowance
@@ -157,6 +158,45 @@ async def test_the_same_note_in_a_circle_without_post_moderation_waits_for_revie
     submission = await file_and_submit(
         client, session, world.member.person, [note_about(world.published)]
     )
+
+    assert submission.state is SubmissionState.SUBMITTED
+    assert submission.lane is SubmissionLane.REVIEW
+
+
+@pytest.mark.requirement("SF-66")
+@pytest.mark.requirement("SF-83")
+async def test_a_note_stating_exploitability_conditions_waits_for_review(client, session, world):
+    """A condition tells most members they are not affected. Published unread, a
+    wrong one is a false negative at sector scale, so it is never post-moderated
+    (plan, Phase N, property 1), though an ordinary note beside it would be."""
+    await post_moderation(client, world, enabled=True)
+    conditions = {
+        **note_about(world.published),
+        "extensions": {
+            AIVS_INTEL_EXTENSION_ID: {
+                "extension_type": "property-extension",
+                "aivs_schema_version": "2.1",
+                "summary": "Only with external entities on.",
+                "conditions": [
+                    {
+                        "id": "entities",
+                        "kind": "configuration",
+                        "any_of": [
+                            {
+                                "product": "example xml",
+                                "setting": "AllowExternalEntities",
+                                "predicate": "equals",
+                                "value": "true",
+                                "default_state": "not_exploitable",
+                            }
+                        ],
+                    }
+                ],
+            }
+        },
+    }
+
+    submission = await file_and_submit(client, session, world.member.person, [conditions])
 
     assert submission.state is SubmissionState.SUBMITTED
     assert submission.lane is SubmissionLane.REVIEW

@@ -113,7 +113,7 @@ AIVS_PROVENANCE_EXTENSION_ID: Final[str] = (
 #: The object types the 2.0 extension has a definition for. On any other type
 #: it is refused: a body nobody defined for that type means nothing to anyone.
 INTEL_EXTENSION_TYPES: Final[frozenset[str]] = frozenset(
-    {"vulnerability", "course-of-action", "indicator"}
+    {"vulnerability", "course-of-action", "indicator", "note"}
 )
 
 #: Provenance fields the server writes when the ISAC validates. A submitter
@@ -323,10 +323,15 @@ _ACTION_TYPE: Final[tuple[str, ...]] = (
         # indicator
         ("telemetry_sources", ListProperty(StringProperty)),
         ("false_positive_notes", StringProperty()),
+        # note: exploitability conditions (Phase N)
+        ("summary", StringProperty()),
+        ("conditions", ListProperty(DictionaryProperty(spec_version="2.1"))),
+        ("unknowns", ListProperty(StringProperty)),
+        ("reproduced", BooleanProperty()),
     ],
 )
 class AivsIntelExtension:
-    """The 2.0 intelligence properties on vulnerability, course-of-action and indicator."""
+    """The 2.0 intelligence properties on vulnerability, course-of-action, indicator and note."""
 
     extension_type = "property-extension"
 
@@ -591,6 +596,30 @@ def _validate_intel_body(obj: Mapping[str, Any], body: Any) -> None:
         )
         raise ExtensionValidationError(msg)
     _validate_body(obj, body, lambda: _intel_validator(object_type), "AIVS 2.0 extension")
+    if object_type == "note":
+        _check_exploitability_note(obj, body)
+
+
+def _check_exploitability_note(obj: Mapping[str, Any], body: Mapping[str, Any]) -> None:
+    """What the schema cannot say about exploitability conditions (plan, Phase N).
+
+    They are about a vulnerability: a note that names none is conditions on
+    nothing, and the consolidated view would never find it. And each id is
+    unique, because a member's posture cites the condition it rests on by id.
+    """
+    described = f"note {obj.get('id', '<no id>')}"
+    refs = obj.get("object_refs")
+    if not isinstance(refs, list) or not any(
+        isinstance(ref, str) and ref.startswith("vulnerability--") for ref in refs
+    ):
+        msg = f"{described}: exploitability conditions must be about a vulnerability (object_refs)"
+        raise ExtensionValidationError(msg)
+    seen: set[str] = set()
+    for condition in body["conditions"]:
+        if condition["id"] in seen:
+            msg = f"{described}: two conditions are both {condition['id']!r}; ids are unique"
+            raise ExtensionValidationError(msg)
+        seen.add(condition["id"])
 
 
 def _refuse_both_intel_versions(obj: Mapping[str, Any], extensions: Mapping[str, Any]) -> None:

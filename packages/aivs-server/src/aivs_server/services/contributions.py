@@ -55,7 +55,7 @@ from aivs_schemas.enums import (
     SubmissionSource,
     SubmissionState,
 )
-from aivs_schemas.extension.builders import format_stix_timestamp
+from aivs_schemas.extension.builders import AIVS_INTEL_EXTENSION_ID, format_stix_timestamp
 from aivs_server.audit.log import AuditAction, record, record_independently
 from aivs_server.auth.context import AuthContext
 from aivs_server.auth.policy import (
@@ -540,7 +540,20 @@ def _post_moderable(raws: list[Mapping[str, Any]], ctx: AuthContext) -> bool:
             return False
         if object_type == "opinion" and ctx.org_type is OrgType.VENDOR:
             return False
+        if object_type == "note" and _states_exploitability(raw):
+            return False
     return bool(raws)
+
+
+def _states_exploitability(raw: Mapping[str, Any]) -> bool:
+    """A note carrying exploitability conditions (plan, Phase N).
+
+    A condition tells most members they are not affected; a wrong one,
+    published unread, is a false negative across the sector. Such a note is
+    always reviewed, however open its circle.
+    """
+    extensions = raw.get("extensions")
+    return isinstance(extensions, Mapping) and AIVS_INTEL_EXTENSION_ID in extensions
 
 
 async def _post_moderated_circles(

@@ -36,6 +36,13 @@ _PROSE_KEYS: Final[frozenset[str]] = frozenset(
     {"name", "description", "content", "explanation", "abstract", "summary", "title"}
 )
 
+#: Prose inside our extension bodies. Read one level down, because a person
+#: wrote it as surely as a description: a note's exploitability summary and
+#: unknowns, an indicator's false-positive notes, a fix's residual risk.
+_EXTENSION_PROSE_KEYS: Final[frozenset[str]] = frozenset(
+    {"summary", "unknowns", "false_positive_notes", "residual_risk"}
+)
+
 #: Shorter names match inside ordinary words too often to be worth a warning.
 _SHORTEST_NAME: Final[int] = 3
 
@@ -150,6 +157,29 @@ def free_text_of(bundle: Mapping[str, Any]) -> dict[str, str]:
         for key, value in obj.items():
             if key in _PROSE_KEYS and isinstance(value, str):
                 found[f"{label}.{key}"] = value
+        found.update(_extension_prose(obj.get("extensions"), f"{label}.extensions"))
+    return found
+
+
+def _extension_prose(extensions: Any, label: str) -> dict[str, str]:
+    if not isinstance(extensions, Mapping):
+        return {}
+    found: dict[str, str] = {}
+    for body in extensions.values():
+        if not isinstance(body, Mapping):
+            continue
+        for key in _EXTENSION_PROSE_KEYS & body.keys():
+            value = body[key]
+            if isinstance(value, str):
+                found[f"{label}.{key}"] = value
+            elif isinstance(value, list):
+                found.update(
+                    {
+                        f"{label}.{key}[{i}]": item
+                        for i, item in enumerate(value)
+                        if isinstance(item, str)
+                    }
+                )
     return found
 
 

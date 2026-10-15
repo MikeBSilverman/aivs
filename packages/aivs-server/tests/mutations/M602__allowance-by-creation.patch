@@ -6,9 +6,9 @@ Expect red: packages/aivs-server/tests/unit/test_post_moderation.py::test_drafts
 diff --git a/packages/aivs-server/src/aivs_server/services/contributions.py b/packages/aivs-server/src/aivs_server/services/contributions.py
 --- a/packages/aivs-server/src/aivs_server/services/contributions.py
 +++ b/packages/aivs-server/src/aivs_server/services/contributions.py
-@@ -294,7 +294,8 @@
+@@ -293,7 +293,8 @@
          .where(
-             Submission.id.in_(submitted_by(org_id)),
+             Submission.id.in_(await submissions_filed_by(org_id)),
              Submission.lane != SubmissionLane.REVIEW,
 -            Submission.distributed_at >= since,
 +            Submission.created_at >= since,

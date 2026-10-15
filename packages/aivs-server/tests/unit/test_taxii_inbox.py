@@ -24,7 +24,7 @@ from aivs_schemas.enums import (
 )
 from aivs_server.audit.log import AuditAction
 from aivs_server.db.models import AuditLog, Circle, Submission, TaxiiCollection, TaxiiStatus
-from aivs_server.services.attribution import submitted_by
+from aivs_server.services.attribution import submissions_filed_by
 from tests.authz_matrix.world import inbox_note
 from tests.conftest import proxy_headers
 from tests.unit.contribution_world import STAMP
@@ -99,7 +99,9 @@ async def _switch(client, world: SharingWorld, headers, *, enabled: bool):
 
 
 async def _filed(session, org_id) -> list[Submission]:
-    rows = await session.execute(select(Submission).where(Submission.id.in_(submitted_by(org_id))))
+    rows = await session.execute(
+        select(Submission).where(Submission.id.in_(await submissions_filed_by(org_id)))
+    )
     return list(rows.scalars().all())
 
 

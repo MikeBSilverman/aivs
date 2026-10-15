@@ -45,7 +45,7 @@ from aivs_server.db.models import (
     Webhook,
     WebhookDelivery,
 )
-from aivs_server.services.attribution import submitted_by, submitter_column
+from aivs_server.services.attribution import submissions_filed_by, submitter_column
 
 __all__ = [
     "CERTIFICATE_WARNING",
@@ -204,7 +204,7 @@ async def _newest_available(
             Distribution.circle_id == circle_id,
             distribution_visibility_clause(ctx, now),
             # Its own filings it has already; they are never "waiting".
-            Submission.id.not_in(submitted_by(ctx.org_id)),
+            Submission.id.not_in(await submissions_filed_by(ctx.org_id)),
         )
     )
     return newest

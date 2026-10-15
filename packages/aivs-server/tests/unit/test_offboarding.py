@@ -23,7 +23,7 @@ from aivs_server.audit.log import AuditAction
 from aivs_server.auth.secretbox import SecretPurpose
 from aivs_server.db import models
 from aivs_server.db.base import Base
-from aivs_server.services.attribution import filing_record, submitted_by
+from aivs_server.services.attribution import filing_record, submissions_filed_by
 from aivs_server.services.detections import RULES, run_detections
 from tests.authz_matrix.world import inbox_note
 from tests.conftest import proxy_headers
@@ -199,7 +199,7 @@ async def test_a_filing_record_keeps_the_pseudonymised_persons_id(client, sessio
     filed = (
         await session.scalars(
             select(models.Submission).where(
-                models.Submission.id.in_(submitted_by(holdings.member.org.id))
+                models.Submission.id.in_(await submissions_filed_by(holdings.member.org.id))
             )
         )
     ).all()

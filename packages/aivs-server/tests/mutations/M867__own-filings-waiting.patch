@@ -10,7 +10,7 @@ diff --git a/packages/aivs-server/src/aivs_server/services/connection_health.py 
              Distribution.circle_id == circle_id,
              distribution_visibility_clause(ctx, now),
              # Its own filings it has already; they are never "waiting".
--            Submission.id.not_in(submitted_by(ctx.org_id)),
+-            Submission.id.not_in(await submissions_filed_by(ctx.org_id)),
          )
      )
      return newest

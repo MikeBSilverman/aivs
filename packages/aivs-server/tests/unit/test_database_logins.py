@@ -8,7 +8,9 @@ it runs, so a test can say which login served which request.
 
 What the logins may read is slice 3c's to narrow. This proves the routing that
 narrowing will rely on: a member request that reached the staff engine would
-reach whatever the staff login can, whatever the grants say.
+reach whatever the staff login can, whatever the grants say. The one staff
+read a member's request makes is ``attribution.submissions_filed_by``: its own
+list of filings, from ``attribution.submitters``, on a session of its own.
 """
 
 from __future__ import annotations
@@ -32,22 +34,53 @@ pytestmark = pytest.mark.db
 API = "/api/v1/submissions"
 
 
-def _labelled(url: str, label: str, seen: list[str]) -> AsyncEngine:
+class Seen(list[str]):
+    """Which login ran each statement, and what each staff statement was."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.staff_statements: list[str] = []
+
+    def clear(self) -> None:
+        super().clear()
+        self.staff_statements.clear()
+
+
+def _labelled(url: str, label: str, seen: Seen) -> AsyncEngine:
     engine = create_async_engine(url)
 
     @event.listens_for(engine.sync_engine, "before_cursor_execute")
-    def _seen(*_args: Any, **_kwargs: Any) -> None:
+    def _seen(_conn: Any, _cursor: Any, statement: str, *_args: Any) -> None:
         seen.append(label)
+        if label == "staff":
+            seen.staff_statements.append(" ".join(statement.split()))
 
     return engine
 
 
+#: The member path's one staff read: its own filings' ids.
+_OWN_FILINGS = (
+    "SELECT attribution.submitters.submission_id FROM attribution.submitters "
+    "WHERE attribution.submitters.org_id ="
+)
+
+
+def _only_its_own_filings(seen: Seen) -> list[str]:
+    """Every staff statement a member request ran that was not that read."""
+    return [
+        statement
+        for statement in seen.staff_statements
+        if not statement.startswith(_OWN_FILINGS)
+        and statement not in {"BEGIN (implicit)", "ROLLBACK", "COMMIT"}
+    ]
+
+
 @pytest.fixture
-async def logins(app, settings) -> Iterator[list[str]]:
+async def logins(app, settings) -> Iterator[Seen]:
     """Separate staff and member engines on the test database, recording which ran."""
     from aivs_server.db import engine as engine_module  # noqa: PLC0415 - the fixture's own swap
 
-    seen: list[str] = []
+    seen = Seen()
     url = settings.database_url.get_secret_value()
     staff = _labelled(url, "staff", seen)
     member = _labelled(url, "member", seen)
@@ -95,7 +128,7 @@ def test_only_the_isacs_organisations_use_the_staff_login(org_type, staff):
 # Which login served each request
 # ---------------------------------------------------------------------------
 @pytest.mark.requirement("SF-89")
-async def test_a_members_api_request_never_touches_the_staff_login(
+async def test_a_members_api_request_reads_only_its_own_filings_on_the_staff_login(
     client, logins, make_org, make_cert
 ):
     member = await make_org("routed-member")
@@ -106,7 +139,8 @@ async def test_a_members_api_request_never_touches_the_staff_login(
 
     assert listed.status_code == 200, listed.text
     assert "member" in logins
-    assert "staff" not in logins
+    assert logins.staff_statements, "the list was read staff side"
+    assert _only_its_own_filings(logins) == []
 
 
 @pytest.mark.requirement("SF-89")
@@ -121,7 +155,7 @@ async def test_an_isac_editors_api_request_is_served_by_the_staff_login(client, 
 
 
 @pytest.mark.requirement("SF-89")
-async def test_a_members_portal_page_never_touches_the_staff_login(
+async def test_a_members_portal_page_reads_only_its_own_filings_on_the_staff_login(
     client, logins, session, secret_box, make_org, make_cert
 ):
     member = await make_org("routed-portal-member")
@@ -133,7 +167,8 @@ async def test_a_members_portal_page_never_touches_the_staff_login(
     page = await client.get("/portal/submissions", headers=proxy_headers(pem))
 
     assert page.status_code == 200, page.text
-    assert "staff" not in logins
+    assert logins.staff_statements, "the list was read staff side"
+    assert _only_its_own_filings(logins) == []
 
 
 @pytest.mark.requirement("SF-89")

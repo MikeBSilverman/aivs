@@ -89,7 +89,7 @@ from aivs_server.portal.shared import (
     tlp_label,
 )
 from aivs_server.portal.submitter_view import lint_hits, telemetry_rows
-from aivs_server.services.attribution import is_submitted_by, submitted_by
+from aivs_server.services.attribution import is_submitted_by, submissions_filed_by
 from aivs_server.services.bulk_validation import GroupMemberNotFoundError, validate_group
 from aivs_server.services.contributions import submit_submission
 from aivs_server.services.distribution import DistributionError, distribute_submission
@@ -382,7 +382,9 @@ async def dashboard(request: Request, settings: SettingsDep, session: SessionDep
         await session.scalar(
             select(func.count())
             .select_from(Submission)
-            .where(Submission.id.in_(submitted_by(ctx.org_id)), tlp_ceiling_clause(ctx))
+            .where(
+                Submission.id.in_(await submissions_filed_by(ctx.org_id)), tlp_ceiling_clause(ctx)
+            )
         )
     ) or 0
 
@@ -431,7 +433,7 @@ async def _filed_for_you(
     rows = await session.execute(
         select(Submission)
         .where(
-            Submission.id.in_(submitted_by(ctx.org_id)),
+            Submission.id.in_(await submissions_filed_by(ctx.org_id)),
             Submission.proxy_confirm_by.is_not(None),
             Submission.proxy_confirmed_at.is_(None),
             Submission.state != SubmissionState.WITHDRAWN,
@@ -480,7 +482,10 @@ async def list_submissions(
         (
             await session.execute(
                 select(Submission)
-                .where(Submission.id.in_(submitted_by(ctx.org_id)), tlp_ceiling_clause(ctx))
+                .where(
+                    Submission.id.in_(await submissions_filed_by(ctx.org_id)),
+                    tlp_ceiling_clause(ctx),
+                )
                 .order_by(Submission.created_at.desc())
                 .limit(200)
             )

@@ -6,12 +6,12 @@ Expect red: packages/aivs-server/tests/unit/test_duplicates.py::test_a_member_is
 diff --git a/packages/aivs-server/src/aivs_server/services/duplicates.py b/packages/aivs-server/src/aivs_server/services/duplicates.py
 --- a/packages/aivs-server/src/aivs_server/services/duplicates.py
 +++ b/packages/aivs-server/src/aivs_server/services/duplicates.py
-@@ -58,7 +58,7 @@
+@@ -59,7 +59,7 @@
  ) -> list[Candidate]:
      """Vulnerabilities, outside ``submission``, that share a key with one inside it."""
      keys = await _keys_of(session, submission.id)
 -    sees_everything = can_review_submissions(ctx)
 +    sees_everything = True
+     own_ids = await submissions_filed_by(ctx.org_id)
      candidates: list[Candidate] = []
      for match_on, value, condition in _conditions(keys):
-         rows = (

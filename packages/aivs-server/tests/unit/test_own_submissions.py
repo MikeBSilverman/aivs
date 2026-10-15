@@ -1,6 +1,6 @@
 """A member's list of its own filings holds its own and no other firm's (Phase P, SF-88).
 
-The list is asked of ``services.attribution.submitted_by`` for the caller's
+The list is asked of ``services.attribution.submissions_filed_by`` for the caller's
 organisation: the member's own question, answered for the member alone. The
 pair is another firm's filing, made at the same time, that must not appear.
 """

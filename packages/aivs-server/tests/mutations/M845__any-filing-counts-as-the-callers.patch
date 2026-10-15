@@ -6,7 +6,7 @@ Expect red: packages/aivs-server/tests/unit/test_submission_workflow.py::test_an
 diff --git a/packages/aivs-server/src/aivs_server/services/attribution.py b/packages/aivs-server/src/aivs_server/services/attribution.py
 --- a/packages/aivs-server/src/aivs_server/services/attribution.py
 +++ b/packages/aivs-server/src/aivs_server/services/attribution.py
-@@ -173,7 +173,7 @@
+@@ -174,7 +174,7 @@
      cannot read ``attribution``. A tag under another key raises
      ``ForeignAttributionKeyError``: a fault, not "no".
      """
@@ -14,4 +14,4 @@ diff --git a/packages/aivs-server/src/aivs_server/services/attribution.py b/pack
 +    return submission.owner_tag.startswith(key.prefix)
  
  
- def submitted_by(org_id: uuid.UUID) -> Select[tuple[uuid.UUID]]:
+ async def submissions_filed_by(org_id: uuid.UUID) -> list[uuid.UUID]:

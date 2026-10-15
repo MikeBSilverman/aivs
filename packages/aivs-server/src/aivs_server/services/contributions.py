@@ -73,7 +73,7 @@ from aivs_server.db.models import (
     TaxiiStatus,
 )
 from aivs_server.notify.events import queue_visibility_notifications
-from aivs_server.services.attribution import submitted_by
+from aivs_server.services.attribution import submissions_filed_by
 from aivs_server.services.disclosure import cve_status, published_in_the_isacs_view
 from aivs_server.services.distribution import DistributionError, distribute_submission
 from aivs_server.services.ownership import ISAC_OWNER
@@ -291,7 +291,7 @@ async def within_hourly_allowance(
         select(func.count())
         .select_from(Submission)
         .where(
-            Submission.id.in_(submitted_by(org_id)),
+            Submission.id.in_(await submissions_filed_by(org_id)),
             Submission.lane != SubmissionLane.REVIEW,
             Submission.distributed_at >= since,
         )

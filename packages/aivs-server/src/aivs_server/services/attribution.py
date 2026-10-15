@@ -16,7 +16,7 @@ Two kinds of caller:
   ``submitter_column``, ``creator_column``.
 - **The member's own** questions (its list of submissions, whether it may act
   on one) are answered only for the asking organisation: ``is_submitted_by``,
-  ``submitted_by``, ``submitter_shown_to``. They never return another
+  ``submissions_filed_by``, ``submitter_shown_to``. They never return another
   organisation's id.
 
 ``owner_tokens_for`` is ingest's: the token each version is stored with, so
@@ -37,11 +37,12 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any, Final, cast
 
-from sqlalchemy import Select, select, update
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
 from aivs_server.auth.attribution_key import AttributionKey
+from aivs_server.db.engine import get_sessionmaker
 from aivs_server.db.models import StixObject, Submission, SubmissionFiler
 
 __all__ = [
@@ -54,7 +55,7 @@ __all__ = [
     "owner_tokens_for",
     "record_filing",
     "rekey",
-    "submitted_by",
+    "submissions_filed_by",
     "submitter_column",
     "submitter_of",
     "submitter_shown_to",
@@ -176,9 +177,21 @@ def is_submitted_by(key: AttributionKey, submission: Submission, org_id: uuid.UU
     return key.is_owner_tag(submission.owner_tag, org_id, submission.id)
 
 
-def submitted_by(org_id: uuid.UUID) -> Select[tuple[uuid.UUID]]:
-    """The ids of the submissions ``org_id`` filed, for ``Submission.id.in_(...)``."""
-    return select(SubmissionFiler.submission_id).where(SubmissionFiler.org_id == org_id)
+async def submissions_filed_by(org_id: uuid.UUID) -> list[uuid.UUID]:
+    """The ids of the submissions ``org_id`` filed: a member's own list, read staff side.
+
+    On a session of its own, on the staff login, over committed rows. The
+    member login is refused ``attribution`` (Phase P slice 3c), and a member's
+    lists are the one read of it a member's request still makes; so the read
+    happens here, for the asking organisation only, and only ids leave. A
+    filing made earlier in the caller's own, uncommitted transaction is not
+    in the list: no caller asks for one.
+    """
+    async with get_sessionmaker()() as staff:
+        filed = await staff.scalars(
+            select(SubmissionFiler.submission_id).where(SubmissionFiler.org_id == org_id)
+        )
+        return list(filed)
 
 
 def submitter_column(entity: Any = Submission) -> ColumnElement[uuid.UUID]:
@@ -186,7 +199,7 @@ def submitter_column(entity: Any = Submission) -> ColumnElement[uuid.UUID]:
 
     Staff-side queries group, join and compare by it. A member-side query
     never selects it: what a member's query needs is answered by
-    ``submitted_by`` for the member alone.
+    ``submissions_filed_by`` for the member alone.
     """
     return (
         select(SubmissionFiler.org_id)

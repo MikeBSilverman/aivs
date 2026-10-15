@@ -6,12 +6,11 @@ Expect red: packages/aivs-server/tests/unit/test_member_sso.py::test_an_sso_sess
 diff --git a/packages/aivs-server/src/aivs_server/portal/routes.py b/packages/aivs-server/src/aivs_server/portal/routes.py
 --- a/packages/aivs-server/src/aivs_server/portal/routes.py
 +++ b/packages/aivs-server/src/aivs_server/portal/routes.py
-@@ -478,7 +478,7 @@
-         (
-             await session.execute(
+@@ -484,7 +484,6 @@
                  select(Submission)
--                .where(Submission.id.in_(submitted_by(ctx.org_id)), tlp_ceiling_clause(ctx))
-+                .where(Submission.id.in_(submitted_by(ctx.org_id)))
+                 .where(
+                     Submission.id.in_(await submissions_filed_by(ctx.org_id)),
+-                    tlp_ceiling_clause(ctx),
+                 )
                  .order_by(Submission.created_at.desc())
                  .limit(200)
-             )

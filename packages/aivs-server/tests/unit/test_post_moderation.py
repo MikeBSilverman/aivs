@@ -411,6 +411,8 @@ async def test_drafts_made_earlier_still_spend_the_allowance_when_published(clie
 
 
 @pytest.mark.requirement("SF-66")
+# A member's own list is read staff side, on the process's staff sessionmaker.
+@pytest.mark.usefixtures("app")
 async def test_the_allowance_is_counted_under_the_organisations_lock(session, open_session, world):
     """A second count for the same organisation waits for the first transaction.
 

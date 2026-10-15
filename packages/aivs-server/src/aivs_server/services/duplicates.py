@@ -29,7 +29,7 @@ from aivs_schemas.extension.builders import AIVS_EXTENSION_ID, AIVS_INTEL_EXTENS
 from aivs_server.auth.context import AuthContext
 from aivs_server.auth.policy import can_review_submissions, distribution_visibility_clause
 from aivs_server.db.models import Distribution, StixObject, Submission
-from aivs_server.services.attribution import submitted_by
+from aivs_server.services.attribution import submissions_filed_by
 
 __all__ = ["Candidate", "duplicate_candidates"]
 
@@ -60,11 +60,12 @@ async def duplicate_candidates(
     """Vulnerabilities, outside ``submission``, that share a key with one inside it."""
     keys = await _keys_of(session, submission.id)
     sees_everything = can_review_submissions(ctx)
+    own_ids = await submissions_filed_by(ctx.org_id)
     candidates: list[Candidate] = []
     for match_on, value, condition in _conditions(keys):
         rows = (
             await session.execute(
-                _scope(ctx, sees_everything, now)
+                _scope(ctx, own_ids, sees_everything, now)
                 .where(condition, StixObject.submission_id != submission.id)
                 .limit(_MAX_CANDIDATES)
             )
@@ -78,12 +79,14 @@ async def duplicate_candidates(
     return _distinct(candidates)[:_MAX_CANDIDATES]
 
 
-def _scope(ctx: AuthContext, sees_everything: bool, now: dt.datetime) -> Select[Any]:
+def _scope(
+    ctx: AuthContext, own_ids: list[uuid.UUID], sees_everything: bool, now: dt.datetime
+) -> Select[Any]:
     """The vulnerabilities ``ctx`` may be told about: its own, plus what reached it.
 
     Each row says whether it is the caller's own, never whose it is.
     """
-    own = Submission.id.in_(submitted_by(ctx.org_id))
+    own = Submission.id.in_(own_ids)
     query = (
         select(StixObject.stix_id, Submission.id, own.label("own"))
         .join(Submission, Submission.id == StixObject.submission_id)

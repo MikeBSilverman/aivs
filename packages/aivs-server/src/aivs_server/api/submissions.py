@@ -69,7 +69,7 @@ from aivs_server.notify.events import (
 )
 from aivs_server.services.attribution import (
     is_submitted_by,
-    submitted_by,
+    submissions_filed_by,
     submitter_of,
     submitter_shown_to,
 )
@@ -201,7 +201,7 @@ async def list_submissions(
     """
     query = select(Submission).order_by(Submission.created_at.desc()).limit(limit)
     if not can_review_submissions(ctx):
-        query = query.where(Submission.id.in_(submitted_by(ctx.org_id)))
+        query = query.where(Submission.id.in_(await submissions_filed_by(ctx.org_id)))
     if state is not None:
         query = query.where(Submission.state == state)
     rows = (await session.execute(query)).scalars().all()

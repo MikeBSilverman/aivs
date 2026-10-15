@@ -1,0 +1,27 @@
+Mutation M987: a member's own list is read on the member login, which slice 3c refuses attribution
+Re-applies: Phase P slice 3b, lists (SF-89)
+
+Expect red: packages/aivs-server/tests/unit/test_database_logins.py::test_a_members_api_request_reads_only_its_own_filings_on_the_staff_login
+Expect red: packages/aivs-server/tests/unit/test_database_logins.py::test_a_members_portal_page_reads_only_its_own_filings_on_the_staff_login
+
+diff --git a/packages/aivs-server/src/aivs_server/services/attribution.py b/packages/aivs-server/src/aivs_server/services/attribution.py
+--- a/packages/aivs-server/src/aivs_server/services/attribution.py
++++ b/packages/aivs-server/src/aivs_server/services/attribution.py
+@@ -42,7 +42,7 @@
+ from sqlalchemy.sql.elements import ColumnElement
+ 
+ from aivs_server.auth.attribution_key import AttributionKey
+-from aivs_server.db.engine import get_sessionmaker
++from aivs_server.db.engine import get_member_sessionmaker
+ from aivs_server.db.models import StixObject, Submission, SubmissionFiler
+ 
+ __all__ = [
+@@ -187,7 +187,7 @@
+     filing made earlier in the caller's own, uncommitted transaction is not
+     in the list: no caller asks for one.
+     """
+-    async with get_sessionmaker()() as staff:
++    async with get_member_sessionmaker()() as staff:
+         filed = await staff.scalars(
+             select(SubmissionFiler.submission_id).where(SubmissionFiler.org_id == org_id)
+         )

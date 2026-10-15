@@ -10,7 +10,7 @@ diff --git a/packages/aivs-server/src/aivs_server/services/provenance.py b/packa
      AIVS_PROVENANCE_EXTENSION_ID,
  )
  from aivs_server.db.models import Distribution, StixObject, Submission
-+from aivs_server.services.attribution import submitted_by, submitter_of
++from aivs_server.services.attribution import submissions_filed_by, submitter_of
  from aivs_server.taxii.resources import to_taxii_timestamp
  
  __all__ = [
@@ -19,7 +19,7 @@ diff --git a/packages/aivs-server/src/aivs_server/services/provenance.py b/packa
                  own.submission_id == submission.id,
                  StixObject.submission_id != submission.id,
 +                StixObject.submission_id.in_(
-+                    submitted_by(await submitter_of(session, submission))
++                    await submissions_filed_by(await submitter_of(session, submission))
 +                ),
              )
              .order_by(StixObject.stix_id, StixObject.modified.desc())

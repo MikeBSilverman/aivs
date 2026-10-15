@@ -21,7 +21,7 @@ from aivs_schemas.enums import OrgStatus, OrgType, SubmissionState
 from aivs_server.auth.secretbox import SecretPurpose
 from aivs_server.auth.sessions import establish_session
 from aivs_server.db.models import Operator, Submission, Webhook, WebhookDelivery
-from aivs_server.services.attribution import filing_record, submitted_by
+from aivs_server.services.attribution import filing_record, submissions_filed_by
 from aivs_server.services.proxy_filing import (
     CONFIRM_WITHIN,
     EVENT_FILED_ON_BEHALF,
@@ -145,7 +145,7 @@ async def test_a_filing_without_a_consent_artefact_is_refused_and_nothing_is_fil
 
     assert response.status_code in (400, 422)
     filed = await session.scalar(
-        select(Submission).where(Submission.id.in_(submitted_by(world.member.org.id)))
+        select(Submission).where(Submission.id.in_(await submissions_filed_by(world.member.org.id)))
     )
     assert filed is None
 

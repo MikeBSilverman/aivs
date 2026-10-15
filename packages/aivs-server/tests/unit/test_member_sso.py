@@ -52,7 +52,7 @@ from aivs_server.db.models import (
     Submission,
 )
 from aivs_server.main import create_app
-from aivs_server.services.attribution import submitted_by
+from aivs_server.services.attribution import submissions_filed_by
 from aivs_server.taxii.filters import TaxiiFilters
 from aivs_server.taxii.queries import build_object_listing_query
 from tests.conftest import (
@@ -645,6 +645,8 @@ async def test_an_sso_session_cannot_open_its_own_firms_embargoed_filing(
 
 
 @pytest.mark.requirement("SF-65")
+# A member's own list is read staff side, on the process's staff sessionmaker.
+@pytest.mark.usefixtures("app")
 async def test_the_certificate_view_of_the_same_filings_lists_them_all(
     member, session, make_circle, join_circle
 ):
@@ -661,7 +663,8 @@ async def test_the_certificate_view_of_the_same_filings_lists_them_all(
         (
             await session.execute(
                 select(Submission.id).where(
-                    Submission.id.in_(submitted_by(member.id)), tlp_ceiling_clause(ctx)
+                    Submission.id.in_(await submissions_filed_by(member.id)),
+                    tlp_ceiling_clause(ctx),
                 )
             )
         ).scalars()

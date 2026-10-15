@@ -1,4 +1,4 @@
-Mutation M846: submitted_by lists every filing, so a member's list holds other firms' submissions
+Mutation M846: submissions_filed_by lists every filing, so a member's list holds other firms' submissions
 Re-applies: Phase P slice 2b (SF-88)
 
 Expect red: packages/aivs-server/tests/unit/test_own_submissions.py::test_a_members_list_holds_its_own_filings_and_no_other_firms
@@ -6,12 +6,12 @@ Expect red: packages/aivs-server/tests/unit/test_own_submissions.py::test_a_memb
 diff --git a/packages/aivs-server/src/aivs_server/services/attribution.py b/packages/aivs-server/src/aivs_server/services/attribution.py
 --- a/packages/aivs-server/src/aivs_server/services/attribution.py
 +++ b/packages/aivs-server/src/aivs_server/services/attribution.py
-@@ -157,7 +157,7 @@
+@@ -189,7 +189,7 @@
+     """
+     async with get_sessionmaker()() as staff:
+         filed = await staff.scalars(
+-            select(SubmissionFiler.submission_id).where(SubmissionFiler.org_id == org_id)
++            select(SubmissionFiler.submission_id)
+         )
+         return list(filed)
  
- def submitted_by(org_id: uuid.UUID) -> Select[tuple[uuid.UUID]]:
-     """The ids of the submissions ``org_id`` filed, for ``Submission.id.in_(...)``."""
--    return select(SubmissionFiler.submission_id).where(SubmissionFiler.org_id == org_id)
-+    return select(SubmissionFiler.submission_id)
- 
- 
- def submitter_column(entity: Any = Submission) -> ColumnElement[uuid.UUID]:

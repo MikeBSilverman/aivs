@@ -6,11 +6,11 @@ Expect red: packages/aivs-server/tests/unit/test_auditor.py::test_the_isacs_audi
 diff --git a/packages/aivs-server/src/aivs_server/services/audit_stream.py b/packages/aivs-server/src/aivs_server/services/audit_stream.py
 --- a/packages/aivs-server/src/aivs_server/services/audit_stream.py
 +++ b/packages/aivs-server/src/aivs_server/services/audit_stream.py
-@@ -290,8 +290,6 @@
-     details = row.details or {}
-     if scope is not None:
-         return _only(details, _OWN_SCOPE_DETAIL_KEYS)
--    if row.action == AuditAction.DETECTION_RAISED and details.get("rule") in ATTRIBUTION_RULES:
+@@ -484,8 +484,6 @@
+     details = entry.details or {}
+     rule = details.get("rule")
+     names_no_filer = rule in RULE_NAMES and rule not in ATTRIBUTION_RULES
+-    if entry.action == AuditAction.DETECTION_RAISED and not names_no_filer:
 -        return _only(details, _ATTRIBUTION_FINDING_KEYS)
      return details
  

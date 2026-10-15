@@ -1,0 +1,17 @@
+Mutation M1064: the content allow-list keeps the keys that name the filer of an on-behalf filing
+Re-applies: for_org_id and filed_for served to the instance auditor before slice 3d
+
+Expect red: packages/aivs-server/tests/unit/test_auditor_projection.py::test_a_filing_on_a_members_behalf_names_the_editor_and_never_the_member
+
+diff --git a/packages/aivs-server/src/aivs_server/services/audit_stream.py b/packages/aivs-server/src/aivs_server/services/audit_stream.py
+--- a/packages/aivs-server/src/aivs_server/services/audit_stream.py
++++ b/packages/aivs-server/src/aivs_server/services/audit_stream.py
+@@ -251,6 +251,8 @@
+         "early",
+         "embargoed",
+         "fields",
++        "filed_for",
++        "for_org_id",
+         "from",
+         "lane",
+         "object_count",

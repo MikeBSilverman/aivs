@@ -1,0 +1,17 @@
+Mutation M1063: an action nobody classified is served whole
+Re-applies: a projection table read as deny-only-content
+
+Expect red: packages/aivs-server/tests/unit/test_auditor_projection.py::test_an_action_nobody_classified_is_served_as_content
+
+diff --git a/packages/aivs-server/src/aivs_server/services/audit_stream.py b/packages/aivs-server/src/aivs_server/services/audit_stream.py
+--- a/packages/aivs-server/src/aivs_server/services/audit_stream.py
++++ b/packages/aivs-server/src/aivs_server/services/audit_stream.py
+@@ -406,7 +406,7 @@
+     other = aliased(AuditLog)
+     return (
+         exists()
+-        .where(other.xact_id == AuditLog.xact_id, other.action.not_in(_WHOLE_ACTIONS))
++        .where(other.xact_id == AuditLog.xact_id, other.action.in_([a for a, p in _PROJECTIONS.items() if p is _CONTENT]))
+         .label("in_content_transaction")
+     )
+ 

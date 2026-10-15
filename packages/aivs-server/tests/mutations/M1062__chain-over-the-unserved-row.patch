@@ -1,0 +1,17 @@
+Mutation M1062: the chain is computed over the whole row while the redacted row is served
+Re-applies: a projection applied after hashing (slice 3d design note)
+
+Expect red: packages/aivs-server/tests/unit/test_auditor_projection.py::test_the_chain_verifies_over_a_page_that_holds_content_rows
+
+diff --git a/packages/aivs-server/src/aivs_server/services/audit_stream.py b/packages/aivs-server/src/aivs_server/services/audit_stream.py
+--- a/packages/aivs-server/src/aivs_server/services/audit_stream.py
++++ b/packages/aivs-server/src/aivs_server/services/audit_stream.py
+@@ -450,7 +450,7 @@
+     events = []
+     for row in rows:
+         event = render(row)
+-        chain = _link(chain, event)
++        chain = _link(chain, _event(row[0], row[0].details or {}) if isinstance(row[0], AuditLog) else event)
+         events.append({**event, "hash": chain})
+     if not rows:
+         return Page(events=[], cursor=start)

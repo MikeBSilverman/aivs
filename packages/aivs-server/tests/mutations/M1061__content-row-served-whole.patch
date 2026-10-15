@@ -1,0 +1,19 @@
+Mutation M1061: the ISAC's auditor is served a content row whole, who filed it included
+Re-applies: the instance auditor's view before Phase P slice 3d
+
+Expect red: packages/aivs-server/tests/unit/test_auditor_projection.py::test_a_members_filing_reaches_the_isacs_auditor_without_who_filed_it
+Expect red: packages/aivs-server/tests/unit/test_auditor_projection.py::test_a_contribution_reaches_the_isacs_auditor_without_its_contributor
+Expect red: packages/aivs-server/tests/unit/test_auditor_projection.py::test_a_filing_on_a_members_behalf_names_the_editor_and_never_the_member
+
+diff --git a/packages/aivs-server/src/aivs_server/services/audit_stream.py b/packages/aivs-server/src/aivs_server/services/audit_stream.py
+--- a/packages/aivs-server/src/aivs_server/services/audit_stream.py
++++ b/packages/aivs-server/src/aivs_server/services/audit_stream.py
+@@ -473,7 +473,7 @@
+     entry: AuditLog = row[0]
+     isac_row: bool = row[1]
+     in_content_transaction: bool = row[2]
+-    if not in_content_transaction:
++    if True:
+         return _event(entry, _instance_details(entry))
+     event = _event(entry, _only(entry.details or {}, _CONTENT_DETAIL_KEYS))
+     if not isac_row:

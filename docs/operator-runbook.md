@@ -1164,6 +1164,23 @@ to reads written after it. What was served before it is served the same way to
 anyone who reads it again, so a SIEM's cursor and the hash chain it keeps carry
 on unchanged. Changing to the mode already in force writes nothing.
 
+**What the ISAC's auditor is not shown (SF-94).** Who filed a submission is
+intel staff's alone. On a row about a submission or a contribution, and on any
+row written in the same transaction as one, the auditor's stream serves
+`org_id`, `actor_type`, `actor_id`, `request_id` and `source_ip` as null and
+cuts `details` to states, codes, counts, circles, flags and times -- unless the
+row's organisation is the ISAC's own or its automation's, so which editor
+validated, distributed or filed on a member's behalf stays visible. A null means
+"a member did this", never which member. Who filed what is answered from the
+database by intel staff, not from the export.
+
+**The chain is version 2 from slice 3d.** A SIEM that re-exports from genesis
+after the upgrade gets different hashes for every content row it exported
+before, because those rows are now served redacted. That is expected, not
+tampering: the first hash of a fresh export chains from `aivs-audit-chain/v2`,
+an old export's from `v1`. A SIEM polling forward with its cursor sees no
+break; its chain continues over the new projection.
+
 ### 9.7 Email-to-draft: members email the ISAC
 
 Members can email a finding to a mailbox you already run, and it appears as

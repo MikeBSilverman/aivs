@@ -1,0 +1,17 @@
+Mutation M1066: each row is judged alone, so a member's row beside a content row names who wrote it
+Re-applies: per-row classification, before the transaction rule (main's adjacency point, slice 3d)
+
+Expect red: packages/aivs-server/tests/unit/test_auditor_projection.py::test_a_members_row_in_a_content_rows_transaction_is_served_as_content
+
+diff --git a/packages/aivs-server/src/aivs_server/services/audit_stream.py b/packages/aivs-server/src/aivs_server/services/audit_stream.py
+--- a/packages/aivs-server/src/aivs_server/services/audit_stream.py
++++ b/packages/aivs-server/src/aivs_server/services/audit_stream.py
+@@ -406,7 +406,7 @@
+     other = aliased(AuditLog)
+     return (
+         exists()
+-        .where(other.xact_id == AuditLog.xact_id, other.action.not_in(_WHOLE_ACTIONS))
++        .where(other.id == AuditLog.id, other.action.not_in(_WHOLE_ACTIONS))
+         .label("in_content_transaction")
+     )
+ 

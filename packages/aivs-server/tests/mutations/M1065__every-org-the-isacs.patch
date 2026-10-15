@@ -1,0 +1,18 @@
+Mutation M1065: every organisation is taken for the ISAC's, so a member's content row keeps who did it
+Re-applies: an ISAC-actor check that never says no
+
+Expect red: packages/aivs-server/tests/unit/test_auditor_projection.py::test_a_members_filing_reaches_the_isacs_auditor_without_who_filed_it
+Expect red: packages/aivs-server/tests/unit/test_auditor_projection.py::test_a_contribution_reaches_the_isacs_auditor_without_its_contributor
+
+diff --git a/packages/aivs-server/src/aivs_server/services/audit_stream.py b/packages/aivs-server/src/aivs_server/services/audit_stream.py
+--- a/packages/aivs-server/src/aivs_server/services/audit_stream.py
++++ b/packages/aivs-server/src/aivs_server/services/audit_stream.py
+@@ -393,7 +393,7 @@
+ def _isac_row() -> ColumnElement[bool]:
+     """Whether the row's organisation is the ISAC's own or its automation's."""
+     isac_orgs = select(Organization.id).where(Organization.org_type.in_(ISAC_FILER_TYPES))
+-    return func.coalesce(AuditLog.org_id.in_(isac_orgs), False).label("isac_row")
++    return func.coalesce(AuditLog.org_id.is_not(None), False).label("isac_row")
+ 
+ 
+ def _in_content_transaction() -> ColumnElement[bool]:

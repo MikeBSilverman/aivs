@@ -1,0 +1,16 @@
+Mutation M1068: a submission's title is served to the ISAC's auditor
+Re-applies: submission.created details served whole before slice 3d
+
+Expect red: packages/aivs-server/tests/unit/test_auditor_projection.py::test_a_members_filing_reaches_the_isacs_auditor_without_who_filed_it
+
+diff --git a/packages/aivs-server/src/aivs_server/services/audit_stream.py b/packages/aivs-server/src/aivs_server/services/audit_stream.py
+--- a/packages/aivs-server/src/aivs_server/services/audit_stream.py
++++ b/packages/aivs-server/src/aivs_server/services/audit_stream.py
+@@ -263,6 +263,7 @@
+         "rules_version",
+         "silence_confirms",
+         "submission_ids",
++        "title",
+         "tlp",
+         "to",
+         "verb",

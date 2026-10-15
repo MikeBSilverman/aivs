@@ -273,8 +273,10 @@ withdraws it. A system administrator does not submit on a member's behalf.
 
 ³ `policy.can_read_audit`: an operator holding `auditor` alone, before its
 `role_expires_at`; the whole instance at the ISAC, its own organisation's rows
-at a member (`audit_scope`). No other role reads the trail, and an auditor
-reads nothing else. Its reads are recorded (`audit.read`) and, by design,
+at a member (`audit_scope`), and at the ISAC without who filed what: a content
+row's organisation, actor, request and address are served as null unless the
+ISAC acted (SF-94). No other role reads the trail, and an auditor reads nothing
+else. Its reads are recorded (`audit.read`) and, by design,
 not served back by the stream; `auditor_bulk_read` watches them. This table
 once said `Y` here for a route that did not exist.
 

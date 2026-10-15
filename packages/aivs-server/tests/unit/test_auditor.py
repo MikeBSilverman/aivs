@@ -178,7 +178,7 @@ async def test_receipts_are_scoped_like_the_trail(client, session, world):
     assert {e["org_id"] for e in isac_view} == {str(world["member"].id), str(world["peer"].id)}
 
 
-@pytest.mark.requirement("SF-78")
+@pytest.mark.requirement("SF-94")
 async def test_the_isacs_auditor_is_not_told_whom_a_finding_records_as_filer(
     client, settings, member_engine, make_org, make_cert, world
 ):

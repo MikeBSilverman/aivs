@@ -57,6 +57,7 @@ __all__ = [
     "EVENT_DETECTION_RAISED",
     "PROPOSED_QUARANTINE",
     "RULES",
+    "RULE_NAMES",
     "Finding",
     "QuarantinePolicy",
     "detection_rules",
@@ -679,6 +680,12 @@ def detection_rules(key: AttributionKey) -> tuple[Rule, ...]:
             _owner_tag_mismatch(key),
         ),
     )
+
+
+#: Every rule's name, the keyed one included, for a reader that classifies
+#: findings without the key in hand (``services.audit_stream``). A test holds
+#: it equal to ``detection_rules``.
+RULE_NAMES: Final[frozenset[str]] = frozenset({*(rule.name for rule in RULES), OWNER_TAG_MISMATCH})
 
 
 async def _already_raised(

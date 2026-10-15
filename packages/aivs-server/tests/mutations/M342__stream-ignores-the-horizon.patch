@@ -6,9 +6,9 @@ Expect red: packages/aivs-server/tests/unit/test_auditor.py::test_a_row_committi
 diff --git a/packages/aivs-server/src/aivs_server/services/audit_stream.py b/packages/aivs-server/src/aivs_server/services/audit_stream.py
 --- a/packages/aivs-server/src/aivs_server/services/audit_stream.py
 +++ b/packages/aivs-server/src/aivs_server/services/audit_stream.py
-@@ -179,7 +179,6 @@
+@@ -429,7 +429,6 @@
      query = (
-         select(model)
+         select(model, *columns)
          .where(
 -            model.xact_id < horizon,
              tuple_(model.xact_id, model.id)

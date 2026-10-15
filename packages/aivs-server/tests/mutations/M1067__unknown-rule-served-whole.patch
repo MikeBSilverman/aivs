@@ -1,0 +1,17 @@
+Mutation M1067: a finding from a rule the stream does not know is served whole
+Re-applies: a deny-only list of attribution rules
+
+Expect red: packages/aivs-server/tests/unit/test_auditor_projection.py::test_a_finding_from_a_rule_nobody_classified_is_served_without_its_details
+
+diff --git a/packages/aivs-server/src/aivs_server/services/audit_stream.py b/packages/aivs-server/src/aivs_server/services/audit_stream.py
+--- a/packages/aivs-server/src/aivs_server/services/audit_stream.py
++++ b/packages/aivs-server/src/aivs_server/services/audit_stream.py
+@@ -485,7 +485,7 @@
+     """A whole row's ``details``; for a finding, without a filer it may name."""
+     details = entry.details or {}
+     rule = details.get("rule")
+-    names_no_filer = rule in RULE_NAMES and rule not in ATTRIBUTION_RULES
++    names_no_filer = rule not in ATTRIBUTION_RULES
+     if entry.action == AuditAction.DETECTION_RAISED and not names_no_filer:
+         return _only(details, _ATTRIBUTION_FINDING_KEYS)
+     return details

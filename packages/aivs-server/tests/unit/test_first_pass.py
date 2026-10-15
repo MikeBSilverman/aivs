@@ -42,6 +42,15 @@ SEVERE = {"cvss_v4_vector": "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC
 CHECK = {"tool": "curl", "query_or_command": "curl -I x", "expected_result": "403"}
 
 
+def calls(package: str) -> dict[str, Any]:
+    return {
+        "id": "fn",
+        "kind": "function",
+        "any_of": [{"ecosystem": "Go", "package": package, "symbol": "Parse"}],
+        "how_to_check": CHECK,
+    }
+
+
 @pytest.mark.parametrize(
     ("objects", "code", "present"),
     [
@@ -124,6 +133,30 @@ CHECK = {"tool": "curl", "query_or_command": "curl -I x", "expected_result": "40
                 )
             ],
             FindingCode.CONDITION_WITHOUT_CHECK,
+            False,
+        ),
+        (
+            [
+                _obj("vulnerability", {**SEVERE, "affected_products": [PRODUCT]}),
+                _obj(
+                    "note",
+                    {"conditions": [calls("pkg:generic/acme/sdk@1.0")]},
+                    object_refs=["vulnerability--1"],
+                ),
+            ],
+            FindingCode.FUNCTION_OUTSIDE_PRODUCTS,
+            True,
+        ),
+        (
+            [
+                _obj("vulnerability", {**SEVERE, "affected_products": [PRODUCT]}),
+                _obj(
+                    "note",
+                    {"conditions": [calls("pkg:generic/acme/gateway@4.2.0")]},
+                    object_refs=["vulnerability--1"],
+                ),
+            ],
+            FindingCode.FUNCTION_OUTSIDE_PRODUCTS,
             False,
         ),
         (

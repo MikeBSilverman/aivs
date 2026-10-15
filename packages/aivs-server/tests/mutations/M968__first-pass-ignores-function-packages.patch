@@ -1,0 +1,17 @@
+Mutation M968: a function condition outside the affected products goes unremarked
+Re-applies: slice 1 as it was: the condition checked for a check, never against its own vulnerability
+
+Expect red: packages/aivs-server/tests/unit/test_first_pass.py::test_each_check_fires_on_its_case_and_not_its_pair
+
+diff --git a/packages/aivs-server/src/aivs_server/services/first_pass.py b/packages/aivs-server/src/aivs_server/services/first_pass.py
+index baffa06..7379ac4 100644
+--- a/packages/aivs-server/src/aivs_server/services/first_pass.py
++++ b/packages/aivs-server/src/aivs_server/services/first_pass.py
+@@ -133,7 +133,6 @@ def _note(
+                 f"{obj.get('id')}.conditions.{condition.get('id')}",
+                 "a condition a member cannot check for itself",
+             )
+-    yield from _functions_outside_products(obj, vulnerabilities)
+ 
+ 
+ def _functions_outside_products(

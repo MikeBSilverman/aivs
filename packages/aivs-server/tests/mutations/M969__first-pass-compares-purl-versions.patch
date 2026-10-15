@@ -1,0 +1,18 @@
+Mutation M969: a function's package is compared with its version
+Re-applies: exact purl equality: a pinned version reads as a different package, and every condition is flagged
+
+Expect red: packages/aivs-server/tests/unit/test_first_pass.py::test_each_check_fires_on_its_case_and_not_its_pair
+
+diff --git a/packages/aivs-server/src/aivs_server/services/first_pass.py b/packages/aivs-server/src/aivs_server/services/first_pass.py
+index baffa06..9731821 100644
+--- a/packages/aivs-server/src/aivs_server/services/first_pass.py
++++ b/packages/aivs-server/src/aivs_server/services/first_pass.py
+@@ -176,7 +176,7 @@ def _package_of(purl: Any) -> str | None:
+         return None
+     base = purl.split("#", 1)[0].split("?", 1)[0]
+     head, separator, last = base.rpartition("/")
+-    return f"{head}/{last.split('@', 1)[0]}" if separator else base
++    return base
+ 
+ 
+ _CHECKS: Final[Mapping[str, Callable[..., Iterator[Finding]]]] = {

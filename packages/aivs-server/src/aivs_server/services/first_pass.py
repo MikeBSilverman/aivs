@@ -47,6 +47,8 @@ class FindingCode(enum.StrEnum):
     DATED_IN_FUTURE = "dated_in_future"
     #: An exploitability condition that does not say how to check it.
     CONDITION_WITHOUT_CHECK = "condition_without_check"
+    #: A function condition in a package the vulnerability does not list as affected.
+    FUNCTION_OUTSIDE_PRODUCTS = "function_outside_products"
     #: Free text that may say more than the submitter meant (the sanitisation assist).
     SANITISATION = "sanitisation"
 
@@ -121,7 +123,9 @@ def _vulnerability(obj: Mapping[str, Any], *_: object) -> Iterator[Finding]:
             )
 
 
-def _note(obj: Mapping[str, Any], *_: object) -> Iterator[Finding]:
+def _note(
+    obj: Mapping[str, Any], vulnerabilities: Sequence[Mapping[str, Any]], *_: object
+) -> Iterator[Finding]:
     for condition in _intel(obj).get("conditions") or ():
         if not condition.get("how_to_check"):
             yield Finding(
@@ -129,6 +133,50 @@ def _note(obj: Mapping[str, Any], *_: object) -> Iterator[Finding]:
                 f"{obj.get('id')}.conditions.{condition.get('id')}",
                 "a condition a member cannot check for itself",
             )
+    yield from _functions_outside_products(obj, vulnerabilities)
+
+
+def _functions_outside_products(
+    note: Mapping[str, Any], vulnerabilities: Sequence[Mapping[str, Any]]
+) -> Iterator[Finding]:
+    """A function in a package its vulnerability does not list: a question, never a refusal.
+
+    It may be right -- the flaw can sit in a dependency the advisory does not
+    name -- but a member matching on the listed products will never look
+    there. Only vulnerabilities filed in the same submission are compared;
+    one already shared is the ISAC's view, which this first pass does not read.
+    """
+    refs = set(note.get("object_refs") or ())
+    listed = {
+        _package_of(product.get("purl"))
+        for vulnerability in vulnerabilities
+        if vulnerability.get("id") in refs
+        for product in _intel(vulnerability).get("affected_products") or ()
+    } - {None}
+    if not listed:
+        return
+    for condition in _intel(note).get("conditions") or ():
+        outside = [
+            term["package"]
+            for term in condition.get("any_of") or ()
+            if condition.get("kind") == "function"
+            and _package_of(term.get("package")) not in listed
+        ]
+        for package in outside:
+            yield Finding(
+                FindingCode.FUNCTION_OUTSIDE_PRODUCTS,
+                f"{note.get('id')}.conditions.{condition.get('id')}",
+                f"{package} is not among the vulnerability's affected products",
+            )
+
+
+def _package_of(purl: Any) -> str | None:
+    """A purl without its version, qualifiers or subpath: the package it names."""
+    if not isinstance(purl, str):
+        return None
+    base = purl.split("#", 1)[0].split("?", 1)[0]
+    head, separator, last = base.rpartition("/")
+    return f"{head}/{last.split('@', 1)[0]}" if separator else base
 
 
 _CHECKS: Final[Mapping[str, Callable[..., Iterator[Finding]]]] = {

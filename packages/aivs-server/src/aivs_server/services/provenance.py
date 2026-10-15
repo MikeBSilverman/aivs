@@ -36,6 +36,7 @@ from aivs_schemas.extension.builders import (
     AIVS_PROVENANCE_EXTENSION_ID,
 )
 from aivs_server.db.models import Distribution, StixObject, Submission
+from aivs_server.services.attribution import submitter_column, submitter_of
 from aivs_server.services.ownership import owner_key
 from aivs_server.taxii.resources import to_taxii_timestamp
 
@@ -137,8 +138,8 @@ async def _distributed_versions(
             .join(Submission, Submission.id == StixObject.submission_id)
             .where(
                 StixObject.stix_id.in_(stix_ids),
-                owner_key(Submission.submitter_org_id)
-                == owner_key(literal(submission.submitter_org_id)),
+                owner_key(submitter_column(Submission))
+                == owner_key(literal(await submitter_of(session, submission))),
                 Submission.id != submission.id,
             )
             .order_by(StixObject.stix_id, StixObject.modified.desc())

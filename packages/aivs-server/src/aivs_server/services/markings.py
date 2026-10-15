@@ -42,6 +42,7 @@ from aivs_schemas.tlp import is_tlp_marking_id, marking_id_for
 from aivs_server.auth.context import AuthContext
 from aivs_server.auth.policy import distribution_visibility_clause
 from aivs_server.db.models import Distribution, StixObject, Submission
+from aivs_server.services.attribution import submitted_by
 
 __all__ = ["granular_tlp_problem", "looser_than_referents_problem", "stamp_tlp_marking"]
 
@@ -126,7 +127,7 @@ async def _referent_tlps(
     else:
         query = query.where(
             or_(
-                Submission.submitter_org_id == visible_to.org_id,
+                Submission.id.in_(submitted_by(visible_to.org_id)),
                 distribution_visibility_clause(visible_to, now),
             )
         )

@@ -58,6 +58,7 @@ from aivs_server.db.models import (
     StixObject,
     Submission,
 )
+from aivs_server.services.attribution import submitter_column
 from aivs_server.services.ownership import ISAC_OWNER_TYPES
 from aivs_server.services.references import external_references_by_type
 
@@ -123,7 +124,7 @@ async def _canonical_current(
     query = (
         select(StixObject.raw)
         .join(Submission, Submission.id == StixObject.submission_id)
-        .join(Organization, Organization.id == Submission.submitter_org_id)
+        .join(Organization, Organization.id == submitter_column(Submission))
         .where(
             StixObject.stix_id == stix_id,
             Organization.org_type.in_(tuple(ISAC_OWNER_TYPES)),
@@ -197,7 +198,7 @@ async def _vendor_party_acknowledges(
             caller_reads
         )
     found = await session.scalar(
-        agreeing.where(Submission.submitter_org_id.in_(vendors_in_case.correlate(None)))
+        agreeing.where(submitter_column(Submission).in_(vendors_in_case.correlate(None)))
     )
     return found is not None
 

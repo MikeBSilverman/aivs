@@ -55,6 +55,7 @@ from aivs_server.db.models import (
     StixObject,
     Submission,
 )
+from aivs_server.services.attribution import submitter_of
 from aivs_server.services.content_rules import content_problem
 from aivs_server.services.embargo import record_embargo
 from aivs_server.services.markings import stamp_tlp_marking
@@ -118,7 +119,7 @@ async def _submitter_identity(session: AsyncSession, submission: Submission) -> 
     identity = (
         await session.execute(
             select(Organization.stix_identity_id).where(
-                Organization.id == submission.submitter_org_id
+                Organization.id == await submitter_of(session, submission)
             )
         )
     ).scalar_one_or_none()
@@ -141,7 +142,9 @@ async def _attributed_identity(session: AsyncSession, submission: Submission) ->
     than a machine's.
     """
     submitter_type = await session.scalar(
-        select(Organization.org_type).where(Organization.id == submission.submitter_org_id)
+        select(Organization.org_type).where(
+            Organization.id == await submitter_of(session, submission)
+        )
     )
     if not is_isac_owner(submitter_type):
         return await _submitter_identity(session, submission)
@@ -167,7 +170,7 @@ async def _apply_attribution(
     liked, including a peer's, which is readable from any object that peer has
     shared into a common circle. Every member of the target circles would then
     receive the finding attributed to a firm that never filed it, and because no
-    consumer-facing surface exposes ``submitter_org_id``, the named firm could
+    consumer-facing surface exposes the submitter, the named firm could
     neither see nor contest it.
 
     Reassigned rather than deleted: an object with no attribution at all is more

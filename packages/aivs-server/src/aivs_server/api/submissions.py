@@ -16,6 +16,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from aivs_schemas.enums import SubmissionState
 from aivs_schemas.extension.builders import (
@@ -64,6 +65,12 @@ from aivs_server.db.models import (
 from aivs_server.notify.events import (
     circle_ids_for_submission,
     queue_visibility_notifications,
+)
+from aivs_server.services.attribution import (
+    is_submitted_by,
+    submitted_by,
+    submitter_of,
+    submitter_shown_to,
 )
 from aivs_server.services.contributions import submit_submission
 from aivs_server.services.distribution import DistributionError, distribute_submission
@@ -117,24 +124,31 @@ async def _require_visible_submission(
     ``load_submission`` for why an unlocked read-modify-write loses updates.
     """
     submission = await load_submission(session, submission_id, for_update=for_update)
-    if submission is None or not can_view_submission(ctx, submission):
+    if submission is None or not can_view_submission(
+        ctx, submission, owner_is_caller=await is_submitted_by(session, submission, ctx.org_id)
+    ):
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Submission not found")
     return submission
 
 
-def _present(submission: Submission, ctx: AuthContext) -> SubmissionOut:
+async def present_submission(
+    session: AsyncSession, submission: Submission, ctx: AuthContext
+) -> SubmissionOut:
     """The submission as this caller may see it.
 
-    An anonymous submission's submitter is shown to the submitter alone. Every
-    other reader -- ISAC staff included -- gets ``None``, and names it only
-    through the reveal action, which is audited with its reason. Without this,
-    any ISAC reader saw the identity in an ordinary GET, and an audited reveal
-    would have been decoration.
+    The submitter comes from ``attribution.submitter_shown_to``: an anonymous
+    submission's is shown to the submitter alone. Without that, any ISAC reader
+    saw the identity in an ordinary GET, and an audited reveal would have been
+    decoration. Built field by field, so nothing about who filed it is read
+    from the submission row.
     """
-    out = SubmissionOut.model_validate(submission)
-    if submission.distribute_anonymously and submission.submitter_org_id != ctx.org_id:
-        out = out.model_copy(update={"submitter_org_id": None})
-    return out
+    fields = {
+        name: getattr(submission, name)
+        for name in SubmissionOut.model_fields
+        if name != "submitter_org_id"
+    }
+    shown = await submitter_shown_to(session, submission, ctx.org_id)
+    return SubmissionOut.model_validate({**fields, "submitter_org_id": shown})
 
 
 @router.post("", status_code=status.HTTP_201_CREATED, response_model=SubmissionOut)
@@ -164,7 +178,7 @@ async def create(
         ) from exc
 
     await session.refresh(submission)
-    return _present(submission, ctx)
+    return await present_submission(session, submission, ctx)
 
 
 @router.get("", response_model=list[SubmissionOut])
@@ -181,10 +195,11 @@ async def list_submissions(
     """
     query = select(Submission).order_by(Submission.created_at.desc()).limit(limit)
     if not can_review_submissions(ctx):
-        query = query.where(Submission.submitter_org_id == ctx.org_id)
+        query = query.where(Submission.id.in_(submitted_by(ctx.org_id)))
     if state is not None:
         query = query.where(Submission.state == state)
-    return [_present(row, ctx) for row in (await session.execute(query)).scalars().all()]
+    rows = (await session.execute(query)).scalars().all()
+    return [await present_submission(session, row, ctx) for row in rows]
 
 
 @router.get("/{submission_id}", response_model=SubmissionDetail)
@@ -233,7 +248,7 @@ async def get_submission(
     )
 
     return SubmissionDetail(
-        **_present(submission, ctx).model_dump(),
+        **(await present_submission(session, submission, ctx)).model_dump(),
         object_count=len(stix_ids),
         stix_ids=stix_ids,
         circle_ids=circle_ids,
@@ -281,7 +296,7 @@ async def amend(
         ) from exc
 
     await session.refresh(submission)
-    return _present(submission, ctx)
+    return await present_submission(session, submission, ctx)
 
 
 async def _refused(
@@ -348,7 +363,7 @@ async def submit(
     except _CLIENT_ERRORS as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     await session.refresh(submission)
-    return _present(submission, ctx)
+    return await present_submission(session, submission, ctx)
 
 
 @router.post("/{submission_id}/validate", response_model=SubmissionOut)
@@ -380,7 +395,7 @@ async def validate(
     except _CLIENT_ERRORS as exc:
         raise await _refused(ctx, submission_id, "validated", exc) from exc
     await session.refresh(submission)
-    return _present(submission, ctx)
+    return await present_submission(session, submission, ctx)
 
 
 @router.post("/{submission_id}/withdraw", response_model=SubmissionOut)
@@ -395,10 +410,10 @@ async def withdraw(
     Distributed content cannot be withdrawn: members already hold it, and
     pretending otherwise would be a false promise.
     """
-    return _present(
-        await _transition(session, ctx, submission_id, SubmissionState.WITHDRAWN, payload.reason),
-        ctx,
+    withdrawn = await _transition(
+        session, ctx, submission_id, SubmissionState.WITHDRAWN, payload.reason
     )
+    return await present_submission(session, withdrawn, ctx)
 
 
 @router.post("/{submission_id}/distribute", response_model=SubmissionOut)
@@ -448,7 +463,7 @@ async def distribute(
     except _CLIENT_ERRORS as exc:
         raise await _refused(ctx, submission_id, "distributed", exc) from exc
     await session.refresh(submission)
-    return _present(submission, ctx)
+    return await present_submission(session, submission, ctx)
 
 
 @router.post("/{submission_id}/embargo/release", response_model=SubmissionOut)
@@ -486,7 +501,7 @@ async def release_embargo(
         raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
     await session.refresh(submission)
-    return _present(submission, ctx)
+    return await present_submission(session, submission, ctx)
 
 
 @router.post("/{submission_id}/embargo/extend", response_model=SubmissionOut)
@@ -523,7 +538,7 @@ async def extend_embargo_endpoint(
         raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
     await session.refresh(submission)
-    return _present(submission, ctx)
+    return await present_submission(session, submission, ctx)
 
 
 @router.post("/{submission_id}/revoke", response_model=RevokeOut)
@@ -576,7 +591,7 @@ async def reveal_submitter(
             detail="This submission is not anonymous; its submitter is in the ordinary record",
         )
 
-    organisation = await session.get(Organization, submission.submitter_org_id)
+    organisation = await session.get(Organization, await submitter_of(session, submission))
     if organisation is None:  # pragma: no cover - foreign key guarantees it
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Not found")
 

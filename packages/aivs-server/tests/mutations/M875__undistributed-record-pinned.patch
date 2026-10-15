@@ -6,11 +6,12 @@ Expect red: packages/aivs-server/tests/unit/test_sector_events.py::test_only_the
 diff --git a/packages/aivs-server/src/aivs_server/services/sector_events.py b/packages/aivs-server/src/aivs_server/services/sector_events.py
 --- a/packages/aivs-server/src/aivs_server/services/sector_events.py
 +++ b/packages/aivs-server/src/aivs_server/services/sector_events.py
-@@ -229,7 +229,6 @@
+@@ -230,7 +230,7 @@
                  StixObject.stix_id == stix_id,
                  StixObject.type == "vulnerability",
                  Submission.id == StixObject.submission_id,
 -                Submission.state.in_(tuple(VISIBLE_SUBMISSION_STATES)),
-                 Submission.submitter_org_id.in_(isac_orgs),
++
+                 submitter_column(Submission).in_(isac_orgs),
              )
          )

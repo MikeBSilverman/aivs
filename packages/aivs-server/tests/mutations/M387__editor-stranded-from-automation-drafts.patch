@@ -7,16 +7,14 @@ Expect red: packages/aivs-server/tests/unit/test_policy.py::test_on_the_isacs_ow
 diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs-server/src/aivs_server/auth/policy.py
 --- a/packages/aivs-server/src/aivs_server/auth/policy.py
 +++ b/packages/aivs-server/src/aivs_server/auth/policy.py
-@@ -548,9 +548,9 @@
-     ``owner_is_isac`` is the caller's to state, from the filing's owner
-     (``services.submissions.is_isac_filing``, which fails closed).
+@@ -550,9 +550,7 @@
+     ``owner_is_caller``, whether the caller's organisation filed it
+     (``services.attribution.is_submitted_by``).
      """
 -    if owner_is_isac:
 -        return is_isac_editor(ctx)
--    return submission.submitter_org_id == ctx.org_id
-+    return submission.submitter_org_id == ctx.org_id and (
-+        not owner_is_isac or is_isac_editor(ctx)
-+    )
+-    return owner_is_caller
++    return owner_is_caller and (not owner_is_isac or is_isac_editor(ctx))
  
  
  def is_isac_filing_needing_an_editor(ctx: AuthContext, *, owner_is_isac: bool) -> bool:

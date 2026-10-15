@@ -28,6 +28,7 @@ from aivs_schemas.extension.builders import (
     UnknownExtensionError,
 )
 from aivs_schemas.models import SubmissionCreate, SubmissionOut
+from aivs_server.api.submissions import present_submission
 from aivs_server.audit.log import AuditAction, record, record_denial
 from aivs_server.auth.context import AuthContext
 from aivs_server.auth.deps import (
@@ -45,6 +46,7 @@ from aivs_server.auth.policy import (
 from aivs_server.config import Settings
 from aivs_server.db.clock import database_now
 from aivs_server.db.models import Circle
+from aivs_server.services.attribution import is_submitted_by
 from aivs_server.services.circles import set_taxii_inbox
 from aivs_server.services.contributions import (
     ISAC_CLICK_NEEDS_AN_EDITOR,
@@ -185,18 +187,6 @@ class OnBehalfIn(SubmissionCreate):
     consent_sha256: Annotated[str, Field(min_length=64, max_length=64)]
     #: Anonymous unless the member asked to be named (SF-68).
     distribute_anonymously: bool = True
-
-
-def _present(submission: Any, ctx: Any) -> SubmissionOut:
-    """The submission as this caller may see it: an anonymous submitter to itself alone.
-
-    The rule the submissions API applies, here too: the editor who filed for
-    a member names it, like any ISAC reader, only through the audited reveal.
-    """
-    out = SubmissionOut.model_validate(submission)
-    if submission.distribute_anonymously and submission.submitter_org_id != ctx.org_id:
-        out = out.model_copy(update={"submitter_org_id": None})
-    return out
 
 
 # ---------------------------------------------------------------------------
@@ -412,7 +402,7 @@ async def file_for_member(
             status.HTTP_400_BAD_REQUEST, detail="Submission content rejected by storage"
         ) from exc
     await session.refresh(submission)
-    return _present(submission, ctx)
+    return await present_submission(session, submission, ctx)
 
 
 @router.post("/submissions/{submission_id}/confirm", response_model=SubmissionOut)
@@ -421,7 +411,9 @@ async def confirm(
 ) -> SubmissionOut:
     """The member confirms a filing made in its name."""
     submission = await load_submission(session, submission_id, for_update=True)
-    if submission is None or not can_view_submission(ctx, submission):
+    if submission is None or not can_view_submission(
+        ctx, submission, owner_is_caller=await is_submitted_by(session, submission, ctx.org_id)
+    ):
         raise _NOT_FOUND
     try:
         await confirm_proxy_filing(session, ctx, submission, now=dt.datetime.now(dt.UTC))
@@ -429,4 +421,4 @@ async def confirm(
         raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     await session.commit()
     await session.refresh(submission)
-    return _present(submission, ctx)
+    return await present_submission(session, submission, ctx)

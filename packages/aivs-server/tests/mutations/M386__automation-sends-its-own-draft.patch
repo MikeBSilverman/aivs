@@ -6,12 +6,12 @@ Expect red: packages/aivs-server/tests/unit/test_isac_filings.py::test_the_autom
 diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs-server/src/aivs_server/auth/policy.py
 --- a/packages/aivs-server/src/aivs_server/auth/policy.py
 +++ b/packages/aivs-server/src/aivs_server/auth/policy.py
-@@ -548,7 +548,7 @@
-     ``owner_is_isac`` is the caller's to state, from the filing's owner
-     (``services.submissions.is_isac_filing``, which fails closed).
+@@ -550,7 +550,7 @@
+     ``owner_is_caller``, whether the caller's organisation filed it
+     (``services.attribution.is_submitted_by``).
      """
 -    if owner_is_isac:
 +    if owner_is_isac and ctx.org_type is not OrgType.AUTOMATION:
          return is_isac_editor(ctx)
-     return submission.submitter_org_id == ctx.org_id
+     return owner_is_caller
  

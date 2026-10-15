@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from aivs_schemas.enums import SsvcPriority, SubmissionSource, SubmissionState
 from aivs_server.db.models import Operator, Organization, StixObject, Submission
+from aivs_server.services.attribution import submitters_of
 from aivs_server.services.priority import PriorityAssessment, assess_priority, decision_points
 
 __all__ = ["QueueItem", "ReviewGroup", "queued_for_review"]
@@ -73,13 +74,14 @@ async def queued_for_review(
         .all()
     )
     points = await _points_by_submission(session, [s.id for s in submissions])
-    names = await _organisation_names(session, {s.submitter_org_id for s in submissions})
+    submitters = await submitters_of(session, submissions)
+    names = await _organisation_names(session, set(submitters.values()))
     assignees = await _assignee_names(session, {s.assignee_operator_id for s in submissions})
 
     grouped: dict[tuple[str, SubmissionSource], list[QueueItem]] = defaultdict(list)
     for submission in submissions:
         default = assess_priority(points.get(submission.id, []), mission_impact=mission_impact)
-        grouped[(names[submission.submitter_org_id], submission.source)].append(
+        grouped[(names[submitters[submission.id]], submission.source)].append(
             _item(submission, default, assignees)
         )
     return [

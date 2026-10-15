@@ -6,9 +6,9 @@ Expect red: packages/aivs-server/tests/unit/test_member_sso.py::test_an_sso_sess
 diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs-server/src/aivs_server/auth/policy.py
 --- a/packages/aivs-server/src/aivs_server/auth/policy.py
 +++ b/packages/aivs-server/src/aivs_server/auth/policy.py
-@@ -377,7 +377,7 @@
-     members see the objects only once they are distributed into a circle they
-     belong to, which the TAXII visibility clause governs.
+@@ -494,7 +494,7 @@
+     ``services.attribution`` by the caller: who filed what is held apart from
+     the submission (Phase P), so this predicate cannot read it.
      """
 -    if not is_active(ctx) or not submission_within_ceiling(ctx, submission):
 +    if not is_active(ctx):

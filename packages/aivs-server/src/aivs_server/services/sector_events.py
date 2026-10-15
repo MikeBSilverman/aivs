@@ -39,6 +39,7 @@ from aivs_server.audit.log import AuditAction, record
 from aivs_server.auth.context import AuthContext
 from aivs_server.auth.policy import is_isac_editor, require
 from aivs_server.db.models import Organization, SectorEvent, StixObject, Submission
+from aivs_server.services.attribution import submitter_column
 from aivs_server.services.ownership import ISAC_OWNER_TYPES
 from aivs_server.services.vulnerability_objects import (
     VulnerabilityHiddenError,
@@ -230,7 +231,7 @@ async def _is_distributed_isac_record(session: AsyncSession, stix_id: str) -> bo
                 StixObject.type == "vulnerability",
                 Submission.id == StixObject.submission_id,
                 Submission.state.in_(tuple(VISIBLE_SUBMISSION_STATES)),
-                Submission.submitter_org_id.in_(isac_orgs),
+                submitter_column(Submission).in_(isac_orgs),
             )
         )
     )

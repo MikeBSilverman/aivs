@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from aivs_schemas.enums import EDITABLE_SUBMISSION_STATES
 from aivs_server.auth.context import AuthContext
 from aivs_server.db.models import Organization, StixObject, Submission
+from aivs_server.services.attribution import is_submitted_by
 from aivs_server.services.sanitisation import free_text_of, lint
 from aivs_server.services.telemetry import Count, submission_telemetry
 
@@ -48,7 +49,7 @@ async def telemetry_rows(
     session: AsyncSession, ctx: AuthContext, submission: Submission
 ) -> dict[str, Any] | None:
     """The submitter's telemetry, or ``None`` for anyone else or before distribution."""
-    if submission.submitter_org_id != ctx.org_id:
+    if not await is_submitted_by(session, submission, ctx.org_id):
         return None
     telemetry = await submission_telemetry(session, submission)
     if not telemetry.distributed:
@@ -80,9 +81,8 @@ async def lint_hits(
     Only while it is a draft or returned, when the submitter can still change it; after
     that the answer would be a worry with nothing to do about it.
     """
-    if (
-        submission.submitter_org_id != ctx.org_id
-        or submission.state not in EDITABLE_SUBMISSION_STATES
+    if submission.state not in EDITABLE_SUBMISSION_STATES or not await is_submitted_by(
+        session, submission, ctx.org_id
     ):
         return None
     organisation = await session.get(Organization, ctx.org_id)

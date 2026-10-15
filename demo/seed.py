@@ -49,6 +49,7 @@ from aivs_server.db.models import (
     Submission,
     TaxiiCollection,
 )
+from aivs_server.services.attribution import FilingRecord, record_filing
 from aivs_server.taxii.resources import truncate_to_taxii_precision
 
 DEFAULT_DATABASE_URL = os.environ.get(
@@ -262,7 +263,6 @@ async def seed(database_url: str, *, reset: bool) -> None:
         objects = build_exploit_chain(submitter.stix_identity_id)
 
         submission = Submission(
-            submitter_org_id=submitter.id,
             state=SubmissionState.DISTRIBUTED,
             tlp=TLP.AMBER_STRICT,
             discovery_scope=DiscoveryScope.AI_SYSTEM,
@@ -273,6 +273,12 @@ async def seed(database_url: str, *, reset: bool) -> None:
                 "outside the egress allowlist. Vendor notified; fix in 2.4.1."
             ),
             distributed_at=dt.datetime.now(dt.UTC),
+        )
+        record_filing(
+            submission,
+            FilingRecord(
+                org_id=submitter.id, created_by=None, proxy_editor=None, proxy_consent=None
+            ),
         )
         session.add(submission)
         await session.flush()

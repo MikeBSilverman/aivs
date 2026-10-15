@@ -7,13 +7,14 @@ Expect red: packages/aivs-server/tests/unit/test_disclosure_split.py::test_a_ven
 diff --git a/packages/aivs-server/src/aivs_server/services/disclosure.py b/packages/aivs-server/src/aivs_server/services/disclosure.py
 --- a/packages/aivs-server/src/aivs_server/services/disclosure.py
 +++ b/packages/aivs-server/src/aivs_server/services/disclosure.py
-@@ -178,9 +178,6 @@ async def _vendor_party_acknowledges(
+@@ -194,9 +194,7 @@
      if scope.visible_to is not None:
          caller_reads = distribution_visibility_clause(scope.visible_to, scope.now)
          vendors_in_case = vendors_in_case.where(caller_reads)
 -        agreeing = agreeing.join(Distribution, Distribution.stix_object_id == StixObject.id).where(
 -            caller_reads
 -        )
++
      found = await session.scalar(
-         agreeing.where(Submission.submitter_org_id.in_(vendors_in_case.correlate(None)))
+         agreeing.where(submitter_column(Submission).in_(vendors_in_case.correlate(None)))
      )

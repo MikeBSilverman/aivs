@@ -1,0 +1,17 @@
+Mutation M840: the notifier reads who filed a submission from the row itself, outside services.attribution
+Re-applies: Phase P slice 2 (SF-88)
+
+Expect red: packages/aivs-server/tests/unit/test_attribution_boundary.py::test_nothing_outside_the_attribution_module_reads_who_filed_a_submission
+
+diff --git a/packages/aivs-server/src/aivs_server/notify/events.py b/packages/aivs-server/src/aivs_server/notify/events.py
+--- a/packages/aivs-server/src/aivs_server/notify/events.py
++++ b/packages/aivs-server/src/aivs_server/notify/events.py
+@@ -152,7 +152,7 @@
+     submitter = await submitter_of(session, submission)
+     queued = 0
+     for org, collection_id in await entitled_readers(session, circle_ids, visible_at):
+-        if org.id == submitter:
++        if org.id == submission.submitter_org_id:
+             # They filed it; being told about their own submission is noise, and
+             # for an anonymous submission it would be a small confirmation that
+             # the anonymised item is theirs.

@@ -482,19 +482,23 @@ def submission_within_ceiling(ctx: AuthContext, submission: Submission) -> bool:
     return ctx.auth_method is not AuthMethod.SSO_SESSION or submission.embargo is None
 
 
-def can_view_submission(ctx: AuthContext, submission: Submission) -> bool:
+def can_view_submission(ctx: AuthContext, submission: Submission, *, owner_is_caller: bool) -> bool:
     """Return whether the caller may view a submission's workflow record.
 
     Distinct from whether they can read its distributed *content*: the submitter
     and the hosting ISAC can see a submission while it is still a draft, whereas
     members see the objects only once they are distributed into a circle they
     belong to, which the TAXII visibility clause governs.
+
+    ``owner_is_caller`` is whether the caller's organisation filed it, asked of
+    ``services.attribution`` by the caller: who filed what is held apart from
+    the submission (Phase P), so this predicate cannot read it.
     """
     if not is_active(ctx) or not submission_within_ceiling(ctx, submission):
         return False
     if can_review_submissions(ctx):
         return True
-    return submission.submitter_org_id == ctx.org_id
+    return owner_is_caller
 
 
 def can_view_submission_receipts(ctx: AuthContext) -> bool:
@@ -511,16 +515,14 @@ def can_view_submission_receipts(ctx: AuthContext) -> bool:
     return is_active(ctx) and can_review_submissions(ctx)
 
 
-def can_confirm_proxy_filing(ctx: AuthContext, submission: Submission) -> bool:
+def can_confirm_proxy_filing(ctx: AuthContext, *, owner_is_caller: bool) -> bool:
     """Confirm a filing an ISAC editor made in this organisation's name (SF-68).
 
     A person at that organisation, never its machine certificate. The window
     exists so someone at the member can say "we did not send this"; a
     collector that confirms whatever arrives would close it unread.
     """
-    return (
-        is_active(ctx) and submission.submitter_org_id == ctx.org_id and ctx.operator_id is not None
-    )
+    return is_active(ctx) and owner_is_caller and ctx.operator_id is not None
 
 
 #: The organisations whose filings are the instance's own record: the ISAC and
@@ -529,9 +531,7 @@ def can_confirm_proxy_filing(ctx: AuthContext, submission: Submission) -> bool:
 ISAC_FILER_TYPES: Final[frozenset[OrgType]] = frozenset({OrgType.ADMIN, OrgType.AUTOMATION})
 
 
-def holds_submitter_rights(
-    ctx: AuthContext, submission: Submission, *, owner_is_isac: bool
-) -> bool:
+def holds_submitter_rights(ctx: AuthContext, *, owner_is_isac: bool, owner_is_caller: bool) -> bool:
     """Whether the caller may act as ``submission``'s submitter: amend its
     draft, submit, withdraw or supersede it.
 
@@ -546,11 +546,13 @@ def holds_submitter_rights(
     its drafts.
 
     ``owner_is_isac`` is the caller's to state, from the filing's owner
-    (``services.submissions.is_isac_filing``, which fails closed).
+    (``services.submissions.is_isac_filing``, which fails closed), and so is
+    ``owner_is_caller``, whether the caller's organisation filed it
+    (``services.attribution.is_submitted_by``).
     """
     if owner_is_isac:
         return is_isac_editor(ctx)
-    return submission.submitter_org_id == ctx.org_id
+    return owner_is_caller
 
 
 def is_isac_filing_needing_an_editor(ctx: AuthContext, *, owner_is_isac: bool) -> bool:
@@ -570,7 +572,12 @@ def files_through_an_editor(ctx: AuthContext) -> bool:
 
 
 def can_transition_submission(
-    ctx: AuthContext, submission: Submission, target: SubmissionState, *, owner_is_isac: bool
+    ctx: AuthContext,
+    submission: Submission,
+    target: SubmissionState,
+    *,
+    owner_is_isac: bool,
+    owner_is_caller: bool,
 ) -> bool:
     """Return whether the caller may move ``submission`` into ``target``.
 
@@ -590,7 +597,9 @@ def can_transition_submission(
     if not is_transition_allowed(submission.state, target):
         return False
 
-    is_submitter = holds_submitter_rights(ctx, submission, owner_is_isac=owner_is_isac)
+    is_submitter = holds_submitter_rights(
+        ctx, owner_is_isac=owner_is_isac, owner_is_caller=owner_is_caller
+    )
     admin = is_isac_editor(ctx)
 
     match target:

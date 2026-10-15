@@ -6,12 +6,12 @@ Expect red: packages/aivs-server/tests/unit/test_proxy_filing.py::test_the_membe
 diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs-server/src/aivs_server/auth/policy.py
 --- a/packages/aivs-server/src/aivs_server/auth/policy.py
 +++ b/packages/aivs-server/src/aivs_server/auth/policy.py
-@@ -354,7 +354,7 @@ def can_confirm_proxy_filing(ctx: AuthContext, submission: Submission) -> bool:
+@@ -522,7 +522,7 @@
+     exists so someone at the member can say "we did not send this"; a
      collector that confirms whatever arrives would close it unread.
      """
-     return (
--        is_active(ctx) and submission.submitter_org_id == ctx.org_id and ctx.operator_id is not None
-+        is_active(ctx) and submission.submitter_org_id == ctx.org_id
-     )
+-    return is_active(ctx) and owner_is_caller and ctx.operator_id is not None
++    return is_active(ctx) and owner_is_caller
  
  
+ #: The organisations whose filings are the instance's own record: the ISAC and

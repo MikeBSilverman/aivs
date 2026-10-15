@@ -6,10 +6,10 @@ Expect red: packages/aivs-server/tests/unit/test_bulk_validation.py::test_two_or
 diff --git a/packages/aivs-server/src/aivs_server/services/bulk_validation.py b/packages/aivs-server/src/aivs_server/services/bulk_validation.py
 --- a/packages/aivs-server/src/aivs_server/services/bulk_validation.py
 +++ b/packages/aivs-server/src/aivs_server/services/bulk_validation.py
-@@ -80,7 +80,7 @@
- def _require_one_group(submissions: Sequence[Submission]) -> None:
+@@ -84,7 +84,7 @@
+ ) -> None:
      """One organisation's filings, all by a person or all by an automation."""
-     groups = {(submission.submitter_org_id, submission.source) for submission in submissions}
+     groups = {(submitters[submission.id], submission.source) for submission in submissions}
 -    if len(groups) != 1:
 +    if not groups:
          msg = (

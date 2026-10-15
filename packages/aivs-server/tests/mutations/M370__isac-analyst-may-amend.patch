@@ -6,12 +6,12 @@ Expect red: packages/aivs-server/tests/unit/test_isac_filings.py::test_isac_staf
 diff --git a/packages/aivs-server/src/aivs_server/services/submissions.py b/packages/aivs-server/src/aivs_server/services/submissions.py
 --- a/packages/aivs-server/src/aivs_server/services/submissions.py
 +++ b/packages/aivs-server/src/aivs_server/services/submissions.py
-@@ -739,7 +739,7 @@
-         raise SubmissionError(msg)
+@@ -811,7 +811,7 @@
      owner_is_isac = await is_isac_filing(session, submission)
+     owner_is_caller = await is_submitted_by(session, submission, ctx.org_id)
      require(
--        holds_submitter_rights(ctx, submission, owner_is_isac=owner_is_isac),
-+        submission.submitter_org_id == ctx.org_id,
+-        holds_submitter_rights(ctx, owner_is_isac=owner_is_isac, owner_is_caller=owner_is_caller),
++        owner_is_caller,
          _submitter_refusal(ctx, owner_is_isac=owner_is_isac),
      )
  

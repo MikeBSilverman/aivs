@@ -72,6 +72,7 @@ from aivs_server.db.models import (
     TaxiiStatus,
 )
 from aivs_server.notify.events import queue_visibility_notifications
+from aivs_server.services.attribution import submitted_by, submitter_column
 from aivs_server.services.disclosure import cve_status, published_in_the_isacs_view
 from aivs_server.services.distribution import DistributionError, distribute_submission
 from aivs_server.services.ownership import ISAC_OWNER, owner_key
@@ -215,7 +216,7 @@ async def resolve_target(
         await session.execute(
             select(StixObject.raw, StixObject.modified, Submission.tlp, Submission.discovery_scope)
             .add_columns(
-                Distribution.circle_id, owner_key(Submission.submitter_org_id).label("owner")
+                Distribution.circle_id, owner_key(submitter_column(Submission)).label("owner")
             )
             .join(Distribution, Distribution.stix_object_id == StixObject.id)
             .join(Submission, Submission.id == StixObject.submission_id)
@@ -291,7 +292,7 @@ async def within_hourly_allowance(
         select(func.count())
         .select_from(Submission)
         .where(
-            Submission.submitter_org_id == org_id,
+            Submission.id.in_(submitted_by(org_id)),
             Submission.lane != SubmissionLane.REVIEW,
             Submission.distributed_at >= since,
         )

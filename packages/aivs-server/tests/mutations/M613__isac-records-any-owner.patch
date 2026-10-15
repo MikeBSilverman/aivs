@@ -7,11 +7,11 @@ Expect red: packages/aivs-server/tests/unit/test_enrich_kev.py::test_run_files_a
 diff --git a/packages/aivs-server/src/aivs_server/services/isac_records.py b/packages/aivs-server/src/aivs_server/services/isac_records.py
 --- a/packages/aivs-server/src/aivs_server/services/isac_records.py
 +++ b/packages/aivs-server/src/aivs_server/services/isac_records.py
-@@ -39,7 +39,6 @@ def _newest_isac_versions() -> Any:
+@@ -55,7 +55,6 @@
          .join(Submission, Submission.id == StixObject.submission_id)
          .where(
              StixObject.type == "vulnerability",
--            owner_key(Submission.submitter_org_id) == ISAC_OWNER,
+-            owner_key(submitter_column(Submission)) == ISAC_OWNER,
              Submission.state.in_(tuple(VISIBLE_SUBMISSION_STATES)),
              distributed,
          )

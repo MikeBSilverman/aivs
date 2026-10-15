@@ -33,6 +33,7 @@ from sqlalchemy.orm import aliased
 from aivs_schemas.enums import VISIBLE_SUBMISSION_STATES, SubmissionSource, SubmissionState
 from aivs_server.auth.policy import isac_record_read_clause
 from aivs_server.db.models import Distribution, StixObject, Submission
+from aivs_server.services.attribution import submitter_column
 from aivs_server.services.ownership import ISAC_OWNER, owner_key
 
 __all__ = ["IsacRecords", "latest_isac_vulnerabilities"]
@@ -54,7 +55,7 @@ def _newest_isac_versions() -> Any:
         .join(Submission, Submission.id == StixObject.submission_id)
         .where(
             StixObject.type == "vulnerability",
-            owner_key(Submission.submitter_org_id) == ISAC_OWNER,
+            owner_key(submitter_column(Submission)) == ISAC_OWNER,
             Submission.state.in_(tuple(VISIBLE_SUBMISSION_STATES)),
             distributed,
         )
@@ -72,7 +73,7 @@ def _has_version_in_review() -> Any:
         .where(
             pending.stix_id == StixObject.stix_id,
             pending_submission.id == pending.submission_id,
-            owner_key(pending_submission.submitter_org_id) == ISAC_OWNER,
+            owner_key(submitter_column(pending_submission)) == ISAC_OWNER,
             pending_submission.state.in_(_IN_REVIEW_STATES),
         )
         .correlate(StixObject)
@@ -95,7 +96,7 @@ def _has_waiting_kev_draft() -> Any:
         .where(
             pending.stix_id == StixObject.stix_id,
             pending_submission.id == pending.submission_id,
-            owner_key(pending_submission.submitter_org_id) == ISAC_OWNER,
+            owner_key(submitter_column(pending_submission)) == ISAC_OWNER,
             pending_submission.state == SubmissionState.DRAFT,
             pending_submission.source == SubmissionSource.SYSTEM,
         )

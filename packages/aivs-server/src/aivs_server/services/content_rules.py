@@ -29,6 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from aivs_server.db.models import Submission
 from aivs_server.services.anonymity import anonymity_change_problem
+from aivs_server.services.attribution import submitter_of
 from aivs_server.services.ownership import foreign_owned_versions_problem, stale_version_problem
 from aivs_server.services.submissions import contribution_problem, foreign_identity_ids
 
@@ -44,9 +45,8 @@ async def content_problem(
 ) -> str | None:
     """Why ``submission``'s ``objects`` may not become readable now, or ``None``."""
     raws = list(objects)
-    owned = await foreign_owned_versions_problem(
-        session, raws, owner_org_id=submission.submitter_org_id
-    )
+    submitter = await submitter_of(session, submission)
+    owned = await foreign_owned_versions_problem(session, raws, owner_org_id=submitter)
     if owned is not None:
         return owned
     stale = await stale_version_problem(session, submission)
@@ -66,7 +66,7 @@ async def _foreign_identity_problem(
 ) -> str | None:
     """Identity objects whose identifier is registered to another organisation."""
     impersonated = await foreign_identity_ids(
-        session, objects, submitter_org_id=submission.submitter_org_id
+        session, objects, submitter_org_id=await submitter_of(session, submission)
     )
     if impersonated:
         return (

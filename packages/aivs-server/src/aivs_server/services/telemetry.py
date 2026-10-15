@@ -63,6 +63,7 @@ from aivs_server.db.models import (
     WebhookDelivery,
 )
 from aivs_server.db.webhook_lock import deliverable_webhooks
+from aivs_server.services.attribution import submitter_of
 from aivs_server.services.count_snapshots import K_ANONYMITY, publish_if_changed, published
 from aivs_server.services.ownership import ISAC_OWNER_TYPES
 
@@ -160,7 +161,7 @@ def _is_counted(org_id: Any, submitter_org_id: uuid.UUID) -> Any:
     return and_(org_id != submitter_org_id, org_id.in_(counted_organisations()))
 
 
-def _reachable(submission: Submission) -> Select[tuple[uuid.UUID]]:
+def _reachable(submission: Submission, submitter: uuid.UUID) -> Select[tuple[uuid.UUID]]:
     """Organisations that could retrieve it, as the TAXII read path decides.
 
     A member when it became visible, in a circle that is active, with an
@@ -194,7 +195,7 @@ def _reachable(submission: Submission) -> Select[tuple[uuid.UUID]]:
             # is no reach, and counting it would let an exercise read as
             # engagement.
             Circle.is_sandbox.is_(False),
-            _is_counted(CircleMembership.org_id, submission.submitter_org_id),
+            _is_counted(CircleMembership.org_id, submitter),
         )
     )
 
@@ -205,7 +206,7 @@ async def telemetry_basis(session: AsyncSession, submission: Submission) -> dict
     The live state a snapshot is taken from. Receipts from outside reach are
     not counted: a count is a part of reach, or reach minus it lies.
     """
-    reachable = _reachable(submission)
+    reachable = _reachable(submission, await submitter_of(session, submission))
     in_reach = (await session.execute(reachable.distinct())).scalars().all()
     receipts = await session.execute(
         select(Acknowledgment.org_id, Acknowledgment.ack_type)
@@ -281,7 +282,7 @@ async def _announce(
     )
     hooks = (
         await session.execute(
-            deliverable_webhooks().where(Webhook.org_id == submission.submitter_org_id)
+            deliverable_webhooks().where(Webhook.org_id == await submitter_of(session, submission))
         )
     ).scalars()
     for hook in hooks:

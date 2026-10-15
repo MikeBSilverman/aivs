@@ -6,11 +6,11 @@ Expect red: packages/aivs-server/tests/unit/test_connection_health.py::test_what
 diff --git a/packages/aivs-server/src/aivs_server/services/connection_health.py b/packages/aivs-server/src/aivs_server/services/connection_health.py
 --- a/packages/aivs-server/src/aivs_server/services/connection_health.py
 +++ b/packages/aivs-server/src/aivs_server/services/connection_health.py
-@@ -203,7 +203,6 @@
+@@ -204,7 +204,6 @@
              Distribution.circle_id == circle_id,
              distribution_visibility_clause(ctx, now),
              # Its own filings it has already; they are never "waiting".
--            Submission.submitter_org_id != ctx.org_id,
+-            Submission.id.not_in(submitted_by(ctx.org_id)),
          )
      )
      return newest

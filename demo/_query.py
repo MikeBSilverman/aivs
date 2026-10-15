@@ -28,6 +28,7 @@ from aivs_server.db.models import (
     StixObject,
     Submission,
 )
+from aivs_server.services.attribution import submitter_of
 from aivs_server.services.receipts import record_retrievals
 
 DATABASE_URL = os.environ.get(
@@ -68,7 +69,7 @@ async def submission(session: AsyncSession) -> None:
         out("  (nothing seeded)")
         return
 
-    submitter = await session.get(Organization, record.submitter_org_id)
+    submitter = await session.get(Organization, await submitter_of(session, record))
     objects = (
         (await session.execute(select(StixObject).where(StixObject.submission_id == record.id)))
         .scalars()

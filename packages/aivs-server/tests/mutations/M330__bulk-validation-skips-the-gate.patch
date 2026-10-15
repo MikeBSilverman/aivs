@@ -6,9 +6,9 @@ Expect red: packages/aivs-server/tests/unit/test_bulk_validation.py::test_a_cons
 diff --git a/packages/aivs-server/src/aivs_server/services/bulk_validation.py b/packages/aivs-server/src/aivs_server/services/bulk_validation.py
 --- a/packages/aivs-server/src/aivs_server/services/bulk_validation.py
 +++ b/packages/aivs-server/src/aivs_server/services/bulk_validation.py
-@@ -56,7 +56,7 @@
-     submissions = [await _locked(session, submission_id) for submission_id in ids]
-     _require_one_group(submissions)
+@@ -58,7 +58,7 @@
+     submitters = await submitters_of(session, submissions)
+     _require_one_group(submissions, submitters)
      for submission in submissions:
 -        await apply_transition(session, ctx, submission, SubmissionState.VALIDATED)
 +        submission.state = SubmissionState.VALIDATED

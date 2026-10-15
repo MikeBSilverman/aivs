@@ -29,6 +29,7 @@ from aivs_server.audit.log import AuditAction, record
 from aivs_server.auth.context import AuthContext
 from aivs_server.auth.policy import can_acknowledge_own_submission, require
 from aivs_server.db.models import Acknowledgment, Submission
+from aivs_server.services.attribution import is_submitted_by
 
 __all__ = ["AssertionNotFoundError", "assert_receipt", "retrieved_submission_ids"]
 
@@ -111,7 +112,7 @@ async def retrieved_submission_ids(
 async def _require_assertable(
     session: AsyncSession, ctx: AuthContext, submission: Submission
 ) -> None:
-    if submission.submitter_org_id == ctx.org_id:
+    if await is_submitted_by(session, submission, ctx.org_id):
         # 403, not 404: the submitter knows the submission exists.
         require(can_acknowledge_own_submission(ctx), "acknowledge_own_submission")
         return

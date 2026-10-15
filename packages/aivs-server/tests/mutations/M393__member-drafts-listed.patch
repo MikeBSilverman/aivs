@@ -6,8 +6,8 @@ Expect red: packages/aivs-server/tests/unit/test_isac_drafts.py::test_a_member_d
 diff --git a/packages/aivs-server/src/aivs_server/services/isac_drafts.py b/packages/aivs-server/src/aivs_server/services/isac_drafts.py
 --- a/packages/aivs-server/src/aivs_server/services/isac_drafts.py
 +++ b/packages/aivs-server/src/aivs_server/services/isac_drafts.py
-@@ -55,7 +55,6 @@
-         .outerjoin(Operator, Operator.id == Submission.created_by_operator_id)
+@@ -56,7 +56,6 @@
+         .outerjoin(Operator, Operator.id == creator_column(Submission))
          .where(
              Submission.state == SubmissionState.DRAFT,
 -            Organization.org_type.in_(tuple(ISAC_FILER_TYPES)),

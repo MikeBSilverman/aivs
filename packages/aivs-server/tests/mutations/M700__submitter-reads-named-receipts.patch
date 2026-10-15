@@ -7,7 +7,7 @@ Expect red: packages/aivs-server/tests/unit/test_admin_and_receipts.py::test_the
 diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs-server/src/aivs_server/auth/policy.py
 --- a/packages/aivs-server/src/aivs_server/auth/policy.py
 +++ b/packages/aivs-server/src/aivs_server/auth/policy.py
-@@ -353,7 +353,7 @@ def can_view_submission_receipts(ctx: AuthContext) -> bool:
+@@ -512,7 +512,7 @@
      the named rows as well made that suppression decorative: a "fewer than 5"
      beside a list of the four firms.
      """
@@ -15,4 +15,4 @@ diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs
 +    return is_active(ctx)
  
  
- def can_confirm_proxy_filing(ctx: AuthContext, submission: Submission) -> bool:
+ def can_confirm_proxy_filing(ctx: AuthContext, *, owner_is_caller: bool) -> bool:

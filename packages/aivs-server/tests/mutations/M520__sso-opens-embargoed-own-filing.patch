@@ -6,7 +6,7 @@ Expect red: packages/aivs-server/tests/unit/test_member_sso.py::test_an_sso_sess
 diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs-server/src/aivs_server/auth/policy.py
 --- a/packages/aivs-server/src/aivs_server/auth/policy.py
 +++ b/packages/aivs-server/src/aivs_server/auth/policy.py
-@@ -366,7 +366,7 @@
+@@ -479,7 +479,7 @@
      """
      if not within_tlp_ceiling(ctx, submission.tlp):
          return False
@@ -14,4 +14,4 @@ diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs
 +    return True
  
  
- def can_view_submission(ctx: AuthContext, submission: Submission) -> bool:
+ def can_view_submission(ctx: AuthContext, submission: Submission, *, owner_is_caller: bool) -> bool:

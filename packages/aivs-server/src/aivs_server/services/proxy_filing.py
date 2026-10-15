@@ -33,6 +33,7 @@ from aivs_server.auth.context import AuthContext
 from aivs_server.auth.policy import can_confirm_proxy_filing, is_isac_editor, require
 from aivs_server.db.models import Organization, Submission, Webhook, WebhookDelivery
 from aivs_server.db.webhook_lock import deliverable_webhooks
+from aivs_server.services.attribution import is_submitted_by
 from aivs_server.services.submissions import (
     ProxyFiling,
     SubmissionError,
@@ -47,6 +48,7 @@ __all__ = [
     "awaiting_confirmation_problem",
     "confirm_proxy_filing",
     "file_on_behalf",
+    "is_proxy_filing",
 ]
 
 #: How long a member has to confirm or withdraw before silence confirms.
@@ -145,8 +147,12 @@ async def confirm_proxy_filing(
     session: AsyncSession, ctx: AuthContext, submission: Submission, *, now: dt.datetime
 ) -> Submission:
     """A person at the member confirms a filing made in its name. Nobody else."""
-    require(can_confirm_proxy_filing(ctx, submission), "proxy_confirm_requires_member_person")
-    if submission.filed_by_operator_id is None:
+    owner_is_caller = await is_submitted_by(session, submission, ctx.org_id)
+    require(
+        can_confirm_proxy_filing(ctx, owner_is_caller=owner_is_caller),
+        "proxy_confirm_requires_member_person",
+    )
+    if not is_proxy_filing(submission):
         msg = "this submission was not filed on your behalf"
         raise SubmissionError(msg)
     if submission.proxy_confirmed_at is None:
@@ -162,11 +168,22 @@ async def confirm_proxy_filing(
     return submission
 
 
+def is_proxy_filing(submission: Submission) -> bool:
+    """Whether an ISAC analyst filed ``submission`` for its member (SF-68).
+
+    Read from the confirmation window, which ``create_submission`` sets on a
+    proxy filing and on nothing else. Who filed it, and on what consent, are
+    held apart (``services.attribution``); that it was filed for the member,
+    and until when it may confirm, name nobody.
+    """
+    return submission.proxy_confirm_by is not None
+
+
 def awaiting_confirmation(submission: Submission, now: dt.datetime) -> bool:
     """Whether this is a proxy filing still inside its window, unconfirmed."""
-    if submission.filed_by_operator_id is None or submission.proxy_confirmed_at is not None:
+    if submission.proxy_confirm_by is None or submission.proxy_confirmed_at is not None:
         return False
-    return submission.proxy_confirm_by is None or now < submission.proxy_confirm_by
+    return now < submission.proxy_confirm_by
 
 
 def awaiting_confirmation_problem(submission: Submission, now: dt.datetime) -> str | None:

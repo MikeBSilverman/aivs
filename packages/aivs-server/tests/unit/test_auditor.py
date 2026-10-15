@@ -458,6 +458,6 @@ def test_policy_refuses_an_auditor_what_its_firms_people_may_do():
             role_expires_at=_later() if role is OperatorRole.AUDITOR else None,
         )
 
-    assert can_view_submission(ctx(OperatorRole.ANALYST), own)
-    assert not can_view_submission(ctx(OperatorRole.AUDITOR), own)
+    assert can_view_submission(ctx(OperatorRole.ANALYST), own, owner_is_caller=True)
+    assert not can_view_submission(ctx(OperatorRole.AUDITOR), own, owner_is_caller=True)
     assert not can_hold_evidence_pack(ctx(OperatorRole.AUDITOR))

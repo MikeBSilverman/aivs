@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from aivs_schemas.enums import OrgType, SubmissionState
 from aivs_server.auth.policy import ISAC_FILER_TYPES
 from aivs_server.db.models import Operator, Organization, Submission
+from aivs_server.services.attribution import creator_column, submitter_column
 
 __all__ = ["STALE_AFTER", "StaleDrafts", "WaitingDraft", "stale_isac_drafts", "waiting_isac_drafts"]
 
@@ -51,8 +52,8 @@ async def waiting_isac_drafts(session: AsyncSession) -> list[WaitingDraft]:
     """
     rows = await session.execute(
         select(Submission, Operator.display_name, Organization.org_type)
-        .join(Organization, Organization.id == Submission.submitter_org_id)
-        .outerjoin(Operator, Operator.id == Submission.created_by_operator_id)
+        .join(Organization, Organization.id == submitter_column(Submission))
+        .outerjoin(Operator, Operator.id == creator_column(Submission))
         .where(
             Submission.state == SubmissionState.DRAFT,
             Organization.org_type.in_(tuple(ISAC_FILER_TYPES)),
@@ -74,7 +75,7 @@ async def stale_isac_drafts(session: AsyncSession, *, now: dt.datetime) -> Stale
     rows = await session.execute(
         select(Organization.org_type, func.count())
         .select_from(Submission)
-        .join(Organization, Organization.id == Submission.submitter_org_id)
+        .join(Organization, Organization.id == submitter_column(Submission))
         .where(
             Submission.state == SubmissionState.DRAFT,
             Organization.org_type.in_(tuple(ISAC_FILER_TYPES)),

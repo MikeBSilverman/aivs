@@ -6,11 +6,11 @@ Expect red: packages/aivs-server/tests/unit/test_isac_drafts.py::test_an_analyst
 diff --git a/packages/aivs-server/src/aivs_server/portal/routes.py b/packages/aivs-server/src/aivs_server/portal/routes.py
 --- a/packages/aivs-server/src/aivs_server/portal/routes.py
 +++ b/packages/aivs-server/src/aivs_server/portal/routes.py
-@@ -543,7 +543,7 @@
-         "created_at": stamp(submission.created_at),
+@@ -546,7 +546,7 @@
          "created_by": created_by,
          "by_automation": draft.by_automation,
--        "may_send": holds_submitter_rights(ctx, submission, owner_is_isac=True),
+         # The ISAC's own filing: an editor's verbs, whoever the caller's organisation is.
+-        "may_send": holds_submitter_rights(ctx, owner_is_isac=True, owner_is_caller=False),
 +        "may_send": True,
      }
  

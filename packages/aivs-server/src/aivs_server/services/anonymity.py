@@ -29,6 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from aivs_server.db.models import Distribution, Organization, StixObject, Submission
+from aivs_server.services.attribution import submitter_column, submitter_of
 from aivs_server.services.ownership import is_isac_owner
 
 __all__ = ["anonymity_change_problem"]
@@ -37,7 +38,9 @@ __all__ = ["anonymity_change_problem"]
 async def anonymity_change_problem(session: AsyncSession, submission: Submission) -> str | None:
     """Why ``submission`` would change an object's anonymity, or ``None``."""
     owner_type = await session.scalar(
-        select(Organization.org_type).where(Organization.id == submission.submitter_org_id)
+        select(Organization.org_type).where(
+            Organization.id == await submitter_of(session, submission)
+        )
     )
     if is_isac_owner(owner_type):
         return None
@@ -76,7 +79,7 @@ async def _first_distributed_choices(
         .where(
             other.stix_id.in_(select(own.stix_id).where(own.submission_id == submission.id)),
             other.submission_id != submission.id,
-            other_submission.submitter_org_id == submission.submitter_org_id,
+            submitter_column(other_submission) == await submitter_of(session, submission),
         )
         .order_by(other.stix_id, Distribution.date_added, Distribution.seq)
     )

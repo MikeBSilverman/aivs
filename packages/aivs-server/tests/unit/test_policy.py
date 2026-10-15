@@ -105,13 +105,15 @@ def context(
 LONG_AGO = dt.datetime(2020, 1, 1, tzinfo=dt.UTC)
 
 
-def submission(*, submitter: uuid.UUID = ORG, state: SubmissionState) -> Submission:
+def submission(*, state: SubmissionState) -> Submission:
     """A detached Submission carrying only what the predicates read.
 
     ``tlp`` explicitly: the column default is applied at INSERT, and a stored
-    submission always has a marking for the ceiling to read.
+    submission always has a marking for the ceiling to read. Who filed it is
+    not on the submission (``services.attribution``); each test states whether
+    the caller's organisation did, as ``owner_is_caller``.
     """
-    return Submission(id=uuid.uuid4(), submitter_org_id=submitter, state=state, tlp=TLP.AMBER)
+    return Submission(id=uuid.uuid4(), state=state, tlp=TLP.AMBER)
 
 
 INACTIVE = [OrgStatus.PENDING, OrgStatus.SUSPENDED]
@@ -138,10 +140,12 @@ def test_inactive_orgs_are_denied_everywhere(status):
     assert can_read_circle(ctx, CIRCLE) is False
     assert can_submit_to_circle(ctx, CIRCLE) is False
     assert can_administer_circle(ctx, CIRCLE) is False
-    assert can_view_submission(ctx, draft) is False
+    assert can_view_submission(ctx, draft, owner_is_caller=True) is False
     assert can_view_submission_receipts(ctx) is False
     assert (
-        can_transition_submission(ctx, draft, SubmissionState.SUBMITTED, owner_is_isac=False)
+        can_transition_submission(
+            ctx, draft, SubmissionState.SUBMITTED, owner_is_isac=False, owner_is_caller=True
+        )
         is False
     )
     assert can_manage_org(ctx, ORG) is False
@@ -377,14 +381,24 @@ def test_who_may_perform_each_transition(state, target, by_submitter, by_isac):
     submitter = context()
     isac = isac_human(OperatorRole.ISAC_EDITOR, org_id=OTHER_ORG)
 
-    assert can_transition_submission(submitter, record, target, owner_is_isac=False) is by_submitter
-    assert can_transition_submission(isac, record, target, owner_is_isac=False) is by_isac
+    assert (
+        can_transition_submission(
+            submitter, record, target, owner_is_isac=False, owner_is_caller=True
+        )
+        is by_submitter
+    )
+    assert (
+        can_transition_submission(isac, record, target, owner_is_isac=False, owner_is_caller=False)
+        is by_isac
+    )
 
 
 def test_an_unrelated_member_may_transition_nothing():
-    record = submission(submitter=OTHER_ORG, state=SubmissionState.DRAFT)
+    record = submission(state=SubmissionState.DRAFT)
     assert (
-        can_transition_submission(context(), record, SubmissionState.SUBMITTED, owner_is_isac=False)
+        can_transition_submission(
+            context(), record, SubmissionState.SUBMITTED, owner_is_isac=False, owner_is_caller=False
+        )
         is False
     )
 
@@ -408,7 +422,11 @@ def test_illegal_transitions_are_refused_even_for_the_isac(state, target):
     record = submission(state=state)
     assert (
         can_transition_submission(
-            isac_human(OperatorRole.ISAC_EDITOR), record, target, owner_is_isac=False
+            isac_human(OperatorRole.ISAC_EDITOR),
+            record,
+            target,
+            owner_is_isac=False,
+            owner_is_caller=False,
         )
         is False
     )
@@ -419,11 +437,10 @@ def test_illegal_transitions_are_refused_even_for_the_isac(state, target):
 # ---------------------------------------------------------------------------
 def test_submissions_are_visible_to_their_submitter_and_the_isac():
     record = submission(state=SubmissionState.DRAFT)
-    assert can_view_submission(context(), record) is True
-    assert (
-        can_view_submission(isac_human(OperatorRole.ISAC_ANALYST, org_id=OTHER_ORG), record) is True
-    )
-    assert can_view_submission(context(org_id=OTHER_ORG), record) is False
+    assert can_view_submission(context(), record, owner_is_caller=True) is True
+    analyst = isac_human(OperatorRole.ISAC_ANALYST, org_id=OTHER_ORG)
+    assert can_view_submission(analyst, record, owner_is_caller=False) is True
+    assert can_view_submission(context(org_id=OTHER_ORG), record, owner_is_caller=False) is False
 
 
 @pytest.mark.requirement("SF-15")
@@ -578,20 +595,22 @@ def test_on_the_isacs_own_filing_only_an_editor_holds_the_submitters_verbs(calle
     """Even when the editor's organisation is not the filing's: the automation
     files, the ISAC's editor sends. Refusing the automation without admitting
     the editor would strand its drafts with nobody able to send them."""
-    record = submission(submitter=ORG, state=SubmissionState.DRAFT)
+    record = submission(state=SubmissionState.DRAFT)
     ctx = caller()
-    assert holds_submitter_rights(ctx, record, owner_is_isac=True) is holds
+    owns = ctx.org_id == ORG
+    assert holds_submitter_rights(ctx, owner_is_isac=True, owner_is_caller=owns) is holds
     assert (
-        can_transition_submission(ctx, record, SubmissionState.SUBMITTED, owner_is_isac=True)
+        can_transition_submission(
+            ctx, record, SubmissionState.SUBMITTED, owner_is_isac=True, owner_is_caller=owns
+        )
         is holds
     )
 
 
 def test_a_member_still_holds_its_own_verbs_and_an_editor_holds_none_of_them():
-    record = submission(submitter=ORG, state=SubmissionState.DRAFT)
-    assert holds_submitter_rights(context(), record, owner_is_isac=False) is True
+    assert holds_submitter_rights(context(), owner_is_isac=False, owner_is_caller=True) is True
     editor = isac_human(OperatorRole.ISAC_EDITOR, org_id=OTHER_ORG)
-    assert holds_submitter_rights(editor, record, owner_is_isac=False) is False
+    assert holds_submitter_rights(editor, owner_is_isac=False, owner_is_caller=False) is False
 
 
 def test_the_filer_types_are_the_owner_types():

@@ -87,6 +87,7 @@ from aivs_server.portal.shared import (
     tlp_label,
 )
 from aivs_server.portal.submitter_view import lint_hits, telemetry_rows
+from aivs_server.services.attribution import is_submitted_by, submitted_by
 from aivs_server.services.bulk_validation import GroupMemberNotFoundError, validate_group
 from aivs_server.services.contributions import submit_submission
 from aivs_server.services.distribution import DistributionError, distribute_submission
@@ -379,7 +380,7 @@ async def dashboard(request: Request, settings: SettingsDep, session: SessionDep
         await session.scalar(
             select(func.count())
             .select_from(Submission)
-            .where(Submission.submitter_org_id == ctx.org_id, tlp_ceiling_clause(ctx))
+            .where(Submission.id.in_(submitted_by(ctx.org_id)), tlp_ceiling_clause(ctx))
         )
     ) or 0
 
@@ -428,8 +429,8 @@ async def _filed_for_you(
     rows = await session.execute(
         select(Submission)
         .where(
-            Submission.submitter_org_id == ctx.org_id,
-            Submission.filed_by_operator_id.is_not(None),
+            Submission.id.in_(submitted_by(ctx.org_id)),
+            Submission.proxy_confirm_by.is_not(None),
             Submission.proxy_confirmed_at.is_(None),
             Submission.state != SubmissionState.WITHDRAWN,
         )
@@ -477,7 +478,7 @@ async def list_submissions(
         (
             await session.execute(
                 select(Submission)
-                .where(Submission.submitter_org_id == ctx.org_id, tlp_ceiling_clause(ctx))
+                .where(Submission.id.in_(submitted_by(ctx.org_id)), tlp_ceiling_clause(ctx))
                 .order_by(Submission.created_at.desc())
                 .limit(200)
             )
@@ -544,7 +545,8 @@ def _waiting_draft(ctx: AuthContext, draft: WaitingDraft) -> dict[str, Any]:
         "created_at": stamp(submission.created_at),
         "created_by": created_by,
         "by_automation": draft.by_automation,
-        "may_send": holds_submitter_rights(ctx, submission, owner_is_isac=True),
+        # The ISAC's own filing: an editor's verbs, whoever the caller's organisation is.
+        "may_send": holds_submitter_rights(ctx, owner_is_isac=True, owner_is_caller=False),
     }
 
 
@@ -610,7 +612,12 @@ async def submission_detail(
     """One submission, its history, and the actions this analyst may take."""
     ctx, csrf_hash = await current_session(request, settings, session)
     submission = await load_submission(session, submission_id, for_update=False)
-    if submission is None or not can_view_submission(ctx, submission):
+    owner_is_caller = submission is not None and await is_submitted_by(
+        session, submission, ctx.org_id
+    )
+    if submission is None or not can_view_submission(
+        ctx, submission, owner_is_caller=owner_is_caller
+    ):
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Not found")
 
     object_count = (
@@ -672,7 +679,7 @@ async def submission_detail(
                 "object_count": object_count,
                 "anonymous": submission.distribute_anonymously,
                 "distributed_at": stamp(submission.distributed_at),
-                "confirm_by": _confirm_by_for(ctx, submission),
+                "confirm_by": _confirm_by_for(ctx, submission, owner_is_caller=owner_is_caller),
             },
             "transitions": [
                 {
@@ -710,10 +717,12 @@ async def _first_pass_view(
     }
 
 
-def _confirm_by_for(ctx: AuthContext, submission: Submission) -> str | None:
+def _confirm_by_for(
+    ctx: AuthContext, submission: Submission, *, owner_is_caller: bool
+) -> str | None:
     """When silence confirms this filing, for the person who may confirm it; else ``None``."""
     pending = awaiting_confirmation(submission, dt.datetime.now(dt.UTC))
-    if not pending or not can_confirm_proxy_filing(ctx, submission):
+    if not pending or not can_confirm_proxy_filing(ctx, owner_is_caller=owner_is_caller):
         return None
     return stamp(submission.proxy_confirm_by)
 
@@ -727,6 +736,7 @@ async def _available_actions(
     appears for something the API would refuse.
     """
     owner_is_isac = await is_isac_filing(session, submission)
+    owner_is_caller = await is_submitted_by(session, submission, ctx.org_id)
     verbs = [
         (SubmissionState.SUBMITTED, "submit", "Send for review", True),
         (SubmissionState.VALIDATED, "validate", "Accept for sharing", True),
@@ -735,10 +745,12 @@ async def _available_actions(
     actions = [
         {"verb": verb, "label": label, "primary": primary, "acknowledge": [], "reason": False}
         for target, verb, label, primary in verbs
-        if can_transition_submission(ctx, submission, target, owner_is_isac=owner_is_isac)
+        if can_transition_submission(
+            ctx, submission, target, owner_is_isac=owner_is_isac, owner_is_caller=owner_is_caller
+        )
     ]
     if awaiting_confirmation(submission, dt.datetime.now(dt.UTC)) and can_confirm_proxy_filing(
-        ctx, submission
+        ctx, owner_is_caller=owner_is_caller
     ):
         actions.insert(
             0,
@@ -777,7 +789,11 @@ async def _available_actions(
 
     circles: list[dict[str, Any]] = []
     if can_transition_submission(
-        ctx, submission, SubmissionState.DISTRIBUTED, owner_is_isac=owner_is_isac
+        ctx,
+        submission,
+        SubmissionState.DISTRIBUTED,
+        owner_is_isac=owner_is_isac,
+        owner_is_caller=owner_is_caller,
     ):
         rows = (
             (
@@ -859,7 +875,9 @@ async def perform_action(
     require_csrf(csrf_token, csrf_hash)
 
     submission = await load_submission(session, submission_id, for_update=True)
-    if submission is None or not can_view_submission(ctx, submission):
+    if submission is None or not can_view_submission(
+        ctx, submission, owner_is_caller=await is_submitted_by(session, submission, ctx.org_id)
+    ):
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Not found")
 
     targets = {
@@ -884,6 +902,7 @@ async def perform_action(
                 submission,
                 SubmissionState.DISTRIBUTED,
                 owner_is_isac=await is_isac_filing(session, submission),
+                owner_is_caller=await is_submitted_by(session, submission, ctx.org_id),
             ),
             "portal_distribute",
         )

@@ -44,6 +44,7 @@ from sqlalchemy.sql.elements import ColumnElement
 
 from aivs_schemas.enums import OrgType
 from aivs_server.db.models import Distribution, Organization, StixObject, Submission
+from aivs_server.services.attribution import submitter_column, submitter_of
 
 __all__ = [
     "ISAC_OWNER",
@@ -110,7 +111,7 @@ async def foreign_owned_versions_problem(
             .distinct()
             .join(Distribution, Distribution.stix_object_id == StixObject.id)
             .join(Submission, Submission.id == StixObject.submission_id)
-            .where(StixObject.stix_id.in_(ids), Submission.submitter_org_id.not_in(owners))
+            .where(StixObject.stix_id.in_(ids), submitter_column(Submission).not_in(owners))
         )
     ).scalars()
     foreign = sorted(taken)
@@ -151,7 +152,7 @@ async def stale_version_problem(session: AsyncSession, submission: Submission) -
     own = aliased(StixObject)
     other = aliased(StixObject)
     other_submission = aliased(Submission)
-    owners = await _owners_like(session, submission.submitter_org_id)
+    owners = await _owners_like(session, await submitter_of(session, submission))
     stale = (
         (
             await session.execute(
@@ -167,7 +168,7 @@ async def stale_version_problem(session: AsyncSession, submission: Submission) -
                 .join(other_submission, other_submission.id == other.submission_id)
                 .where(
                     own.submission_id == submission.id,
-                    other_submission.submitter_org_id.in_(owners),
+                    submitter_column(other_submission).in_(owners),
                 )
                 .order_by(own.stix_id)
             )

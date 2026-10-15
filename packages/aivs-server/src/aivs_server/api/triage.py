@@ -27,6 +27,7 @@ from aivs_server.auth.policy import (
 )
 from aivs_server.db.clock import database_now
 from aivs_server.db.models import Operator, Organization, StixObject, Submission
+from aivs_server.services.attribution import is_submitted_by, submitter_of
 from aivs_server.services.bulk_validation import (
     MAX_GROUP_SIZE,
     GroupMemberNotFoundError,
@@ -141,7 +142,9 @@ async def duplicates(
     it; the ISAC's reviewers see every candidate (services.duplicates).
     """
     submission = await load_submission(session, submission_id, for_update=False)
-    if submission is None or not can_view_submission(ctx, submission):
+    if submission is None or not can_view_submission(
+        ctx, submission, owner_is_caller=await is_submitted_by(session, submission, ctx.org_id)
+    ):
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Not found")
     found = await duplicate_candidates(session, ctx, submission, now=await database_now(session))
     return [
@@ -175,7 +178,7 @@ async def first_pass_findings(
             select(StixObject.raw).where(StixObject.submission_id == submission.id)
         )
     ).all()
-    submitter = await session.get(Organization, submission.submitter_org_id)
+    submitter = await session.get(Organization, await submitter_of(session, submission))
     own_names = [submitter.name, submitter.slug] if submitter is not None else []
     return [
         FindingOut(code=finding.code, path=finding.path, detail=finding.detail)
@@ -207,7 +210,9 @@ async def _locked_visible(
 ) -> Submission:
     """The submission, row-locked; 404 unless the caller may see it (SF-47)."""
     submission = await load_submission(session, submission_id, for_update=True)
-    if submission is None or not can_view_submission(ctx, submission):
+    if submission is None or not can_view_submission(
+        ctx, submission, owner_is_caller=await is_submitted_by(session, submission, ctx.org_id)
+    ):
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Not found")
     return submission
 

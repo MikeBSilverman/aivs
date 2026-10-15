@@ -20,7 +20,7 @@ other instead of deadlocking.
 from __future__ import annotations
 
 import uuid
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Final
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,6 +30,7 @@ from aivs_server.audit.log import AuditAction, record
 from aivs_server.auth.context import AuthContext
 from aivs_server.auth.policy import can_validate_in_bulk, require
 from aivs_server.db.models import Submission
+from aivs_server.services.attribution import submitters_of
 from aivs_server.services.submissions import SubmissionError, apply_transition, load_submission
 
 __all__ = ["MAX_GROUP_SIZE", "GroupMemberNotFoundError", "validate_group"]
@@ -54,7 +55,8 @@ async def validate_group(
         raise SubmissionError(msg)
 
     submissions = [await _locked(session, submission_id) for submission_id in ids]
-    _require_one_group(submissions)
+    submitters = await submitters_of(session, submissions)
+    _require_one_group(submissions, submitters)
     for submission in submissions:
         await apply_transition(session, ctx, submission, SubmissionState.VALIDATED)
 
@@ -64,7 +66,7 @@ async def validate_group(
         action=AuditAction.SUBMISSION_BULK_VALIDATED,
         ctx=ctx,
         resource_type="organization",
-        resource_id=str(first.submitter_org_id),
+        resource_id=str(submitters[first.id]),
         details={"source": first.source.value, "submission_ids": [str(s.id) for s in submissions]},
     )
     return submissions
@@ -77,9 +79,11 @@ async def _locked(session: AsyncSession, submission_id: uuid.UUID) -> Submission
     return submission
 
 
-def _require_one_group(submissions: Sequence[Submission]) -> None:
+def _require_one_group(
+    submissions: Sequence[Submission], submitters: Mapping[uuid.UUID, uuid.UUID]
+) -> None:
     """One organisation's filings, all by a person or all by an automation."""
-    groups = {(submission.submitter_org_id, submission.source) for submission in submissions}
+    groups = {(submitters[submission.id], submission.source) for submission in submissions}
     if len(groups) != 1:
         msg = (
             "bulk validation takes one review group: one organisation's filings, "

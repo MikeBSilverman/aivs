@@ -65,6 +65,7 @@ from aivs_server.db.models import (
     WebhookDelivery,
 )
 from aivs_server.db.webhook_lock import deliverable_webhooks
+from aivs_server.services.attribution import submitter_of
 from aivs_server.services.guidance import affected_product_names
 from aivs_server.services.sector_events import subjects_in_open_events
 
@@ -148,9 +149,10 @@ async def queue_visibility_notifications(
     if submission is None:
         return 0
     facts = await notice_facts(session, submission)
+    submitter = await submitter_of(session, submission)
     queued = 0
     for org, collection_id in await entitled_readers(session, circle_ids, visible_at):
-        if org.id == submission.submitter_org_id:
+        if org.id == submitter:
             # They filed it; being told about their own submission is noise, and
             # for an anonymous submission it would be a small confirmation that
             # the anonymised item is theirs.

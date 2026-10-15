@@ -144,6 +144,26 @@ async def _submitted(client, pem: str, bundle: dict[str, Any]) -> str:
     return submission_id
 
 
+async def _filed_for_the_member(client, isac, org) -> str:
+    """An ISAC editor files for the member on its consent (SF-68): submitted as it is filed."""
+    _isac_org, editor = isac
+    filed = await client.post(
+        f"{API}/on-behalf",
+        json={
+            "title": "Forwarded by the member",
+            "discovery_scope": "own_product",
+            "tlp": "amber",
+            "bundle": _bundle(**UNMATCHABLE),
+            "on_behalf_of": str(org.id),
+            "consent_sha256": "c0" * 32,
+        },
+        headers=editor,
+    )
+    assert filed.status_code == 201, filed.text
+    assert filed.json()["state"] == "submitted"
+    return str(filed.json()["id"])
+
+
 async def _submit(client, pem: str, submission_id: str) -> None:
     submitted = await client.post(
         f"{API}/{submission_id}/submit", json={}, headers=proxy_headers(pem)
@@ -265,19 +285,22 @@ async def test_urgent_content_goes_to_review_with_its_notes(client, session, mem
 @pytest.mark.requirement("SF-87")
 @pytest.mark.parametrize("filed_as", ["system", "proxy"])
 async def test_only_a_members_own_filing_is_sent_back_to_its_writer(
-    client, session, member, make_operator, isac_org, filed_as
+    client, session, member, isac, filed_as
 ):
-    _org, pem = member
-    submission_id = await _submitted(client, pem, _bundle(**UNMATCHABLE))
+    """A proxy filing is filed through the editor's own route, so the row is the
+    one the writer produces: the triage reads whatever marks it as filed for the
+    member, not a pair of columns a test set by hand."""
+    org, pem = member
     if filed_as == "system":
-        change: dict[str, Any] = {"source": SubmissionSource.SYSTEM}
+        submission_id = await _submitted(client, pem, _bundle(**UNMATCHABLE))
+        await session.execute(
+            update(Submission)
+            .where(Submission.id == uuid.UUID(submission_id))
+            .values(source=SubmissionSource.SYSTEM)
+        )
+        await session.commit()
     else:
-        editor, _seed = await make_operator(isac_org)
-        change = {"filed_by_operator_id": editor.id, "proxy_consent_sha256": "c0" * 32}
-    await session.execute(
-        update(Submission).where(Submission.id == uuid.UUID(submission_id)).values(**change)
-    )
-    await session.commit()
+        submission_id = await _filed_for_the_member(client, isac, org)
 
     await triage_pending(session, now=NOW)
 

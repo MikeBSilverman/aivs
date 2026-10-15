@@ -6,9 +6,9 @@ Expect red: packages/aivs-server/tests/unit/test_submission_workflow.py::test_di
 diff --git a/packages/aivs-server/src/aivs_server/services/content_rules.py b/packages/aivs-server/src/aivs_server/services/content_rules.py
 --- a/packages/aivs-server/src/aivs_server/services/content_rules.py
 +++ b/packages/aivs-server/src/aivs_server/services/content_rules.py
-@@ -59,7 +59,7 @@ async def _foreign_identity_problem(
+@@ -68,7 +68,7 @@
      impersonated = await foreign_identity_ids(
-         session, objects, submitter_org_id=submission.submitter_org_id
+         session, objects, submitter_org_id=await submitter_of(session, submission)
      )
 -    if impersonated:
 +    if False:

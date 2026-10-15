@@ -6,10 +6,10 @@ Expect red: packages/aivs-server/tests/unit/test_submission_workflow.py::test_an
 diff --git a/packages/aivs-server/src/aivs_server/services/submissions.py b/packages/aivs-server/src/aivs_server/services/submissions.py
 --- a/packages/aivs-server/src/aivs_server/services/submissions.py
 +++ b/packages/aivs-server/src/aivs_server/services/submissions.py
-@@ -375,7 +375,7 @@
-     impersonated = await foreign_identity_ids(
-         session, objects, submitter_org_id=submission.submitter_org_id
-     )
+@@ -480,7 +480,7 @@
+             raise SubmissionError(located_elsewhere)
+ 
+     impersonated = await foreign_identity_ids(session, objects, submitter_org_id=submitter)
 -    if impersonated:
 +    if False:
          msg = (

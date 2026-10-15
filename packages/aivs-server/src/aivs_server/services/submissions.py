@@ -54,6 +54,12 @@ from aivs_server.auth.policy import (
 from aivs_server.db.clock import database_now
 from aivs_server.db.models import Organization, StixObject, Submission, SubmissionTransition
 from aivs_server.services.anonymity import anonymity_change_problem
+from aivs_server.services.attribution import (
+    FilingRecord,
+    is_submitted_by,
+    record_filing,
+    submitter_of,
+)
 from aivs_server.services.disclosure import DisclosureScope, disclosure_problem
 from aivs_server.services.indexing import intel_index_fields
 from aivs_server.services.markings import granular_tlp_problem, looser_than_referents_problem
@@ -385,7 +391,10 @@ async def _reject_stored_self_identifying_content(
         .all()
     )
     reject_self_identifying_content(
-        raws, own_identity_id=await submitter_identity_id(session, submission.submitter_org_id)
+        raws,
+        own_identity_id=await submitter_identity_id(
+            session, await submitter_of(session, submission)
+        ),
     )
 
 
@@ -461,7 +470,8 @@ async def _reject_identity_problems(
     session: AsyncSession, submission: Submission, objects: list[Any]
 ) -> None:
     """Refuse a bundle that names its anonymous submitter, or impersonates a peer."""
-    own_identity_id = await submitter_identity_id(session, submission.submitter_org_id)
+    submitter = await submitter_of(session, submission)
+    own_identity_id = await submitter_identity_id(session, submitter)
     if submission.distribute_anonymously:
         reject_self_identifying_content(objects, own_identity_id=own_identity_id)
     else:
@@ -469,9 +479,7 @@ async def _reject_identity_problems(
         if located_elsewhere is not None:
             raise SubmissionError(located_elsewhere)
 
-    impersonated = await foreign_identity_ids(
-        session, objects, submitter_org_id=submission.submitter_org_id
-    )
+    impersonated = await foreign_identity_ids(session, objects, submitter_org_id=submitter)
     if impersonated:
         msg = (
             "identity objects may not use an identifier registered to another "
@@ -658,6 +666,23 @@ class ProxyFiling:
     confirm_by: dt.datetime
 
 
+def _filing_record(ctx: AuthContext, filed_for: ProxyFiling | None) -> FilingRecord:
+    """Who files: the caller in its own name, or an ISAC analyst for a member (SF-68).
+
+    Taken from the authenticated context, never from the request body.
+    """
+    if filed_for is None:
+        return FilingRecord(
+            org_id=ctx.org_id, created_by=ctx.operator_id, proxy_editor=None, proxy_consent=None
+        )
+    return FilingRecord(
+        org_id=filed_for.org_id,
+        created_by=None,
+        proxy_editor=ctx.operator_id,
+        proxy_consent=filed_for.consent_sha256,
+    )
+
+
 async def create_submission(
     session: AsyncSession,
     ctx: AuthContext,
@@ -692,10 +717,6 @@ async def create_submission(
         owner_is_isac=filed_for is None and ctx.org_type in ISAC_FILER_TYPES,
     )
     submission = Submission(
-        submitter_org_id=filed_for.org_id if filed_for else ctx.org_id,
-        created_by_operator_id=None if filed_for else ctx.operator_id,
-        filed_by_operator_id=ctx.operator_id if filed_for else None,
-        proxy_consent_sha256=filed_for.consent_sha256 if filed_for else None,
         proxy_confirm_by=filed_for.confirm_by if filed_for else None,
         state=SubmissionState.DRAFT,
         source=SubmissionSource.MEMBER if filed_for else source_for(ctx),
@@ -705,6 +726,7 @@ async def create_submission(
         title=title,
         summary=summary,
     )
+    record_filing(submission, _filing_record(ctx, filed_for))
     session.add(submission)
     await session.flush()
 
@@ -755,7 +777,9 @@ async def is_isac_filing(session: AsyncSession, submission: Submission) -> bool:
     an editor.
     """
     owner_type = await session.scalar(
-        select(Organization.org_type).where(Organization.id == submission.submitter_org_id)
+        select(Organization.org_type).where(
+            Organization.id == await submitter_of(session, submission)
+        )
     )
     return owner_type is None or owner_type in ISAC_FILER_TYPES
 
@@ -785,8 +809,9 @@ async def update_submission(
         msg = f"a submission in state '{submission.state.value}' can no longer be edited"
         raise SubmissionError(msg)
     owner_is_isac = await is_isac_filing(session, submission)
+    owner_is_caller = await is_submitted_by(session, submission, ctx.org_id)
     require(
-        holds_submitter_rights(ctx, submission, owner_is_isac=owner_is_isac),
+        holds_submitter_rights(ctx, owner_is_isac=owner_is_isac, owner_is_caller=owner_is_caller),
         _submitter_refusal(ctx, owner_is_isac=owner_is_isac),
     )
 
@@ -855,7 +880,7 @@ async def _prepare_validation(
     now = await database_now(session)
     for problem in (
         await foreign_owned_versions_problem(
-            session, raws, owner_org_id=submission.submitter_org_id
+            session, raws, owner_org_id=await submitter_of(session, submission)
         ),
         await stale_version_problem(session, submission),
         await anonymity_change_problem(session, submission),
@@ -904,8 +929,15 @@ async def apply_transition(
         raise SubmissionError(msg)
 
     owner_is_isac = await is_isac_filing(session, submission)
+    owner_is_caller = await is_submitted_by(session, submission, ctx.org_id)
     require(
-        can_transition_submission(ctx, submission, target, owner_is_isac=owner_is_isac),
+        can_transition_submission(
+            ctx,
+            submission,
+            target,
+            owner_is_isac=owner_is_isac,
+            owner_is_caller=owner_is_caller,
+        ),
         "isac_filing_requires_isac_editor"
         if is_isac_filing_needing_an_editor(ctx, owner_is_isac=owner_is_isac)
         else f"transition_{submission.state.value}_to_{target.value}",
@@ -978,7 +1010,7 @@ async def check_content_rules(session: AsyncSession, submission: Submission) -> 
     raws = await _stored_raws(session, submission)
     for problem in (
         await foreign_owned_versions_problem(
-            session, raws, owner_org_id=submission.submitter_org_id
+            session, raws, owner_org_id=await submitter_of(session, submission)
         ),
         await stale_version_problem(session, submission),
         await anonymity_change_problem(session, submission),

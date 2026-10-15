@@ -55,8 +55,10 @@ from aivs_server.db.models import (
     SubmissionTransition,
     SubmissionTriage,
 )
+from aivs_server.services.attribution import submitter_of
 from aivs_server.services.first_pass import Finding, FindingCode, first_pass
 from aivs_server.services.instance import distribution_is_paused
+from aivs_server.services.proxy_filing import is_proxy_filing
 from aivs_server.services.submissions import is_isac_filing, load_submission, record_transition
 
 __all__ = [
@@ -232,7 +234,7 @@ async def _objects(session: AsyncSession, submission: Submission) -> list[Mappin
 
 
 async def _own_names(session: AsyncSession, submission: Submission) -> list[str]:
-    submitter = await session.get(Organization, submission.submitter_org_id)
+    submitter = await session.get(Organization, await submitter_of(session, submission))
     return [submitter.name, submitter.slug] if submitter is not None else []
 
 
@@ -243,7 +245,7 @@ async def _returnable(session: AsyncSession, submission: Submission) -> bool:
     """A member's own filing, written by the member: the only kind sent back to its writer."""
     return (
         submission.source is SubmissionSource.MEMBER
-        and submission.filed_by_operator_id is None
+        and not is_proxy_filing(submission)
         and not await is_isac_filing(session, submission)
     )
 
@@ -294,7 +296,7 @@ async def _audit(
     await record(
         session,
         action=AuditAction.SUBMISSION_TRIAGED,
-        org_id=submission.submitter_org_id,
+        org_id=await submitter_of(session, submission),
         resource_type="submission",
         resource_id=str(submission.id),
         details={

@@ -6,11 +6,12 @@ Expect red: packages/aivs-server/tests/unit/test_connection_health.py::test_cont
 diff --git a/packages/aivs-server/src/aivs_server/services/connection_health.py b/packages/aivs-server/src/aivs_server/services/connection_health.py
 --- a/packages/aivs-server/src/aivs_server/services/connection_health.py
 +++ b/packages/aivs-server/src/aivs_server/services/connection_health.py
-@@ -284,7 +284,6 @@
+@@ -285,7 +285,7 @@
              Distribution.date_added <= now,
              Submission.state.in_(tuple(VISIBLE_SUBMISSION_STATES)),
-             Submission.submitter_org_id != CircleMembership.org_id,
+             submitter_column(Submission) != CircleMembership.org_id,
 -            last.is_(None) | (Distribution.date_added > last),
++
          )
          .correlate(CircleMembership)
          .scalar_subquery()

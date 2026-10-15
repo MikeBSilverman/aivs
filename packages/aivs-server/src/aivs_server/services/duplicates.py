@@ -29,6 +29,7 @@ from aivs_schemas.extension.builders import AIVS_EXTENSION_ID, AIVS_INTEL_EXTENS
 from aivs_server.auth.context import AuthContext
 from aivs_server.auth.policy import can_review_submissions, distribution_visibility_clause
 from aivs_server.db.models import Distribution, StixObject, Submission
+from aivs_server.services.attribution import submitted_by
 
 __all__ = ["Candidate", "duplicate_candidates"]
 
@@ -69,16 +70,22 @@ async def duplicate_candidates(
             )
         ).all()
         candidates.extend(
-            Candidate(match_on, value, stix_id, _openable(sub_id, org_id, ctx, sees_everything))
-            for stix_id, sub_id, org_id in rows
+            Candidate(
+                match_on, value, stix_id, _openable(sub_id, own, sees_everything=sees_everything)
+            )
+            for stix_id, sub_id, own in rows
         )
     return _distinct(candidates)[:_MAX_CANDIDATES]
 
 
 def _scope(ctx: AuthContext, sees_everything: bool, now: dt.datetime) -> Select[Any]:
-    """The vulnerabilities ``ctx`` may be told about: its own, plus what reached it."""
+    """The vulnerabilities ``ctx`` may be told about: its own, plus what reached it.
+
+    Each row says whether it is the caller's own, never whose it is.
+    """
+    own = Submission.id.in_(submitted_by(ctx.org_id))
     query = (
-        select(StixObject.stix_id, Submission.id, Submission.submitter_org_id)
+        select(StixObject.stix_id, Submission.id, own.label("own"))
         .join(Submission, Submission.id == StixObject.submission_id)
         .where(StixObject.type == "vulnerability", Submission.state != SubmissionState.WITHDRAWN)
     )
@@ -89,13 +96,11 @@ def _scope(ctx: AuthContext, sees_everything: bool, now: dt.datetime) -> Select[
         .join(Submission, Submission.id == Distribution.submission_id)
         .where(distribution_visibility_clause(ctx, now))
     )
-    return query.where(or_(Submission.submitter_org_id == ctx.org_id, StixObject.id.in_(received)))
+    return query.where(or_(own, StixObject.id.in_(received)))
 
 
-def _openable(
-    submission_id: uuid.UUID, org_id: uuid.UUID, ctx: AuthContext, sees_everything: bool
-) -> uuid.UUID | None:
-    return submission_id if sees_everything or org_id == ctx.org_id else None
+def _openable(submission_id: uuid.UUID, own: bool, *, sees_everything: bool) -> uuid.UUID | None:
+    return submission_id if sees_everything or own else None
 
 
 def _conditions(keys: _Keys) -> Iterable[tuple[str, str, Any]]:

@@ -45,6 +45,7 @@ from aivs_server.db.models import (
     Webhook,
     WebhookDelivery,
 )
+from aivs_server.services.attribution import submitted_by, submitter_column
 
 __all__ = [
     "CERTIFICATE_WARNING",
@@ -203,7 +204,7 @@ async def _newest_available(
             Distribution.circle_id == circle_id,
             distribution_visibility_clause(ctx, now),
             # Its own filings it has already; they are never "waiting".
-            Submission.submitter_org_id != ctx.org_id,
+            Submission.id.not_in(submitted_by(ctx.org_id)),
         )
     )
     return newest
@@ -283,7 +284,7 @@ async def stale_connections(
             Distribution.date_added >= CircleMembership.joined_at,
             Distribution.date_added <= now,
             Submission.state.in_(tuple(VISIBLE_SUBMISSION_STATES)),
-            Submission.submitter_org_id != CircleMembership.org_id,
+            submitter_column(Submission) != CircleMembership.org_id,
             last.is_(None) | (Distribution.date_added > last),
         )
         .correlate(CircleMembership)

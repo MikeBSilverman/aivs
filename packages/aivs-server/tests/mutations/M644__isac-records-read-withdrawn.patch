@@ -6,7 +6,7 @@ Expect red: packages/aivs-server/tests/unit/test_enrich_kev.py::test_a_withdrawn
 diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs-server/src/aivs_server/auth/policy.py
 --- a/packages/aivs-server/src/aivs_server/auth/policy.py
 +++ b/packages/aivs-server/src/aivs_server/auth/policy.py
-@@ -511,7 +511,6 @@ def isac_record_read_clause(now: dt.datetime) -> ColumnElement[bool]:
+@@ -761,7 +761,6 @@
      """
      return and_(
          Distribution.date_added <= now,
@@ -17,11 +17,12 @@ diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs
 diff --git a/packages/aivs-server/src/aivs_server/services/isac_records.py b/packages/aivs-server/src/aivs_server/services/isac_records.py
 --- a/packages/aivs-server/src/aivs_server/services/isac_records.py
 +++ b/packages/aivs-server/src/aivs_server/services/isac_records.py
-@@ -40,7 +40,6 @@ def _newest_isac_versions() -> Any:
+@@ -56,7 +56,7 @@
          .where(
              StixObject.type == "vulnerability",
-             owner_key(Submission.submitter_org_id) == ISAC_OWNER,
+             owner_key(submitter_column(Submission)) == ISAC_OWNER,
 -            Submission.state.in_(tuple(VISIBLE_SUBMISSION_STATES)),
++
              distributed,
          )
          .distinct(StixObject.stix_id)

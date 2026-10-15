@@ -1,12 +1,13 @@
 # Intelligence model
 
-> **Status: design.** Apart from §2, this describes phases E–I of the build
-> plan and the Tier 2 designs. None of it exists in the code until the phase
-> named beside it lands. §2 says what does exist today, and is the only part
-> that should be read as describing the running system.
+> **Status: mixed, by section.** §2 describes the running system through phase
+> E slice 3. §3.1 (phase E), §3.2 (phase M), §3.3 (phase F) and §3.4 (phase H)
+> describe what is built, and each line that is not built says so. §3.5
+> (phase I) and §5 (Tier 2) are design: nothing in them exists in the code. In
+> §4, entries marked *(planned)* are designed and not built.
 
-This is the model the next phases build toward, written down before they
-start so that no phase forecloses a later one. Each section names its phase.
+This is the model the phases build toward. It was written down before phase E
+started, so that no phase forecloses a later one. Each section names its phase.
 When a phase lands, the matching section here is rewritten in the present
 tense in the same commit, the way `security-requirements.md` gains its rows.
 
@@ -42,7 +43,8 @@ reviews removed each one, and §6 records them so that they do not come back.
 
 ## 2. What exists today
 
-The model the code holds now, as of phase D:
+The model the code holds now, as of phase D and the first three slices of phase
+E. Later phases are described, as built, in their own sections below:
 
 - **Submissions** are a member's filing: a STIX bundle plus title, summary,
   TLP, discovery scope, anonymity flag, and a workflow state (`draft →
@@ -64,9 +66,9 @@ The model the code holds now, as of phase D:
   - `indicator`: `telemetry_sources` and `false_positive_notes`.
 
   A **provenance** extension records who at the ISAC reviewed an object. Its
-  reviewer fields are refused from a submitter. Nothing writes them yet: that
-  is validate's job, in a later slice of E.
-  ([`stix-extension.md`](stix-extension.md) §9.)
+  reviewer fields are refused from a submitter, and validate writes them on
+  every object, naming the signed-in editor (SF-6;
+  [`stix-extension.md`](stix-extension.md) §9).
 - **Type rules, extension or not.** Every inbound indicator states a runnable
   `pattern_type` and a `valid_until`, at most 90 days after `valid_from` for a
   network address and two years for anything else (SF-46). CVE, CWE, ATT&CK
@@ -123,7 +125,7 @@ The model the code holds now, as of phase D:
   future. **Acknowledgments** are the receipts: retrieved, acknowledged,
   actioned.
 
-Everything below is design.
+Each section below says whether it is built. What is not built is design.
 
 ---
 
@@ -136,8 +138,10 @@ keyed by the ISAC's identity, not by CVE. A vulnerability often has a public
 existence before it has a CVE: a vendor advisory id, a sector warning,
 observed exploitation. The object exists from that first disclosure. A CVE
 attaches as an `external_reference` when it issues, and `cve_status` moves
-on the canonical object. A vendor advisory, a KEV entry and an NVD record
-each become references on it, never new objects.
+on the canonical object. A vendor advisory becomes a reference on it, and KEV
+status a newer version of it carrying the `kev_*` fields (filed by the KEV
+enrichment script and reviewed like anything else). An NVD record will attach
+as a reference once NVD is ingested (planned). None becomes a new object.
 
 **Only the owner versions an object; everyone else references it.** STIX
 consumers merge by `stix_id` + `modified`, so a newer version filed by a
@@ -151,8 +155,12 @@ bundle holding a `course-of-action`, `indicator`, `attack-pattern`,
 `sighting` or `opinion`, plus a `relationship` to the canonical
 vulnerability. The existing workflow already is the contribution lifecycle:
 `validated` is acceptance, `withdrawn` is rejection, a new `modified` is
-supersession, and `revoked` is retraction. Attribution, anonymity, TLP floors,
-embargoes and receipts apply unchanged, because no new write path is added.
+supersession, and retraction is a newer version with `revoked: true`. An
+editor publishes it for content that skipped review; for anything else it is
+filed and reviewed. Attribution, anonymity, TLP floors, embargoes and receipts
+apply unchanged. Every entry point added since files an ordinary submission:
+the one-click and post-moderated lanes, the TAXII inbox (SF-69) and an
+editor's proxy filing for a member (SF-68).
 
 **The disclosure split is enforced here, not earlier.** Whether a third party
 may contribute depends on the *target* vulnerability's current state: is it
@@ -162,9 +170,10 @@ checking a rule against the request that asserts it is the error CLAUDE.md §5
 names. So phase D reserved the two scope values in storage and phase E admits
 them, with the rule:
 
-- `disclosed_third_party`: the target is public. The check runs against the
-  latest validated or distributed version of the canonical object owned by
-  the ISAC, excluding the submission being checked.
+- `disclosed_third_party`: the target is public, meaning its `cve_status` is
+  `published`. The check runs against the latest validated, distributed or
+  superseded version of the canonical object owned by the ISAC, excluding the
+  submission being checked.
 - `coordinated_disclosure`: the vendor is a recorded party to the case. An
   `isac_editor` records the vendor, and the vendor itself files an
   acknowledging `opinion`; alternatively a GOLD EAGLE or VINCE case id is
@@ -183,9 +192,10 @@ against members.
 **Extension 2.0 and the index columns exist (§2).** What remains for this
 phase:
 
-- `validate` writes the provenance reviewer fields from the authenticated
-  context;
-- the readers of the index columns are built;
+- two index columns are written and read by nothing, because their readers
+  read `raw` instead: `ssvc_exploitation` (the default priority) and
+  `kev_listed` (the KEV script and lead time). Either route the readers
+  through them or drop them, as CLAUDE.md §5 requires (not yet done);
 - two columns wait for a reader:
   - `epss_score`, for EPSS enrichment, which the plan defers until an analyst
     asks for it;
@@ -217,8 +227,11 @@ Everything in the pre-CVE lane, everything RED, and every `vulnerability`,
 `course-of-action`, `indicator`, `attack-pattern` and `report` still needs a
 human `validate`. Everything published without review, with every TAXII inbox
 post, spends one hourly allowance per organisation, and a refusal raises
-`contribution_flood`. An editor revokes a post-moderated contribution with
-`POST /api/v1/submissions/{id}/revoke`.
+`contribution_flood`. An editor revokes such content by distributing a newer
+`revoked: true` version of each object to every circle it reached
+(`POST /api/v1/submissions/{id}/revoke`), allowed while distribution is paused.
+Reviewed content is retracted by a new version, filed and reviewed (SF-66,
+`services/revocation.py`).
 
 **The TAXII inbox, per circle.** A circle's collection takes POSTs only once an
 ISAC editor has opened its inbox (`PUT /api/v1/circles/{id}/taxii-inbox`, or the
@@ -233,7 +246,9 @@ aggregate posture outcomes and opinion counts are designed, and named to the
 submitter as coming rather than shown as zero. None is ever a list. A count is
 exact only when at least k organisations did the thing and at least k did not:
 reach is exact, so a count within k of it names the firms that did not act as
-surely as a small count names those that did.
+surely as a small count names those that did. Below k organisations
+able to read it, every number is withheld, reach included. Counts are read from
+a published snapshot, so one firm's change moves no number (R2-C1).
 
 ### 3.2 Phase M: members sign in with SSO
 
@@ -254,7 +269,8 @@ Built, except where a line says otherwise:
 - **Depth is a link, not a profile.** `?depth=guided` renders a
   vulnerability from its objects alone, in plain language, with no STIX
   type names (`services/guidance.py`, `templates/_guided.html`); `technical`
-  is the raw STIX. The one stored preference is a per-operator
+  is the raw STIX; `standard`, the default, is the page as it was before
+  depth existed. An unrecognised `?depth=` is ignored. The one stored preference is a per-operator
   `default_depth`, read by the vulnerability page (`?depth=` overrides it).
   Each depth is a rendering of the same visible objects; technical shows each
   one's latest *visible* version, and history is the evidence pack's.
@@ -263,9 +279,14 @@ Built, except where a line says otherwise:
   Like readiness, it is relative to the caller: the guided view reads it from
   the latest version the caller can see.
 - **Exporters are serialisers over visible objects**: a print stylesheet and
-  a CSV IoC pack (current indicators only). Each export writes a receipt.
+  a CSV IoC pack (current indicators only). Each content export writes a
+  receipt.
   *pySigma rendering per member SIEM dialect is not built*: every pySigma
   release from 1.0 depends on a package with an open advisory and no fix.
+- **TIP configuration**: the instance's discovery URL, API root and
+  collection ids, filled into each supported TIP's connector settings (OpenCTI,
+  MISP, Splunk), with certificate paths left as placeholders
+  (`services/tip_config.py`). It carries no content and writes no receipt.
 - **Lead time** is a query, first visible to the organisation against
   `nvd_published` and `kev_date_added` per item, shown to each organisation
   about itself; the ISAC sees a sector median over distribution dates,
@@ -317,6 +338,8 @@ Built, except where a line says otherwise:
 
 ### 3.5 Phase I: documents
 
+Designed; not built.
+
 - **`documents`, `document_versions`, `document_comments`, `access_grants`**:
   the second exception to the principle, because STIX has no object for a
   draft being written by several organisations. A finished document becomes
@@ -346,26 +369,26 @@ body later defines (NVD in particular, §4.1).
 | Standard | Where it lives | Adopted | Ours (and why) |
 |---|---|---|---|
 | **STIX 2.1** | Canonical model; `stix_objects.raw`. SDOs `vulnerability`, `course-of-action`, `indicator`, `attack-pattern`, `grouping`, `opinion`, `sighting`, `report`, `identity`, `note`, `campaign`, `threat-actor`; SCO `artifact`; SRO `relationship`. | Types, `confidence`, `revoked`, `modified`, `external_references`, `object_marking_refs`, `pattern_type`, `identity_class`, `roles`, `kill_chain_phases`, `valid_from/until`. | Property extension 1.0 and 2.0, and the provenance extension (all exist). |
-| **TAXII 2.1 / TLP 2.0** | Delivery; markings; circle floors. | Unchanged. | A statement marking "shareable with regulator" (H). |
+| **TAXII 2.1 / TLP 2.0** | Delivery; markings; circle floors. | Unchanged. | A statement marking "shareable with regulator" (planned). |
 | **CVE** | `external_references[cve]`; `cve_id`; `cve_status`. | Id format; CVE 5.x `affected[]` shape. | `cve_status`: the pre-CVE phase has no standard. |
-| **NVD records** | `external_references[source_name=nvd]` on the matching object; `provenance.source` per property. | Whatever NVD issues. | Our values keep their own names beside NVD's; `isac_assessment` records agreement or contradiction. |
-| **CWE** | `external_references[cwe]`; `grouping(context=weakness-class)`; `cwe_ids[]`. | Ids. | The `weakness-class` context value. |
+| **NVD records** | `external_references[source_name=nvd]` on the matching object; `provenance.source` per property (both planned: nothing ingests NVD yet). | Whatever NVD issues. | Our values keep their own names beside NVD's; `isac_assessment` records agreement or contradiction. |
+| **CWE** | `external_references[cwe]`; `grouping(context=weakness-class)` (planned); `cwe_ids[]`. | Ids. | The `weakness-class` context value. |
 | **CVSS** | v4 (exists) and v3.1 vector strings. | Verbatim. | — |
-| **SSVC** | `ssvc` on `vulnerability` (CISA v2 decision points); coordinator tree for priority; deployer tree in Tier 2. | Decision-point names and values. | `decision` recorded with its factors. |
+| **SSVC** | `ssvc` on `vulnerability` (CISA v2 decision points); coordinator tree for priority; deployer tree in Tier 2. | Decision-point names and values. | The decision shown with its factors; only an editor's override is stored. |
 | **EPSS** | `epss_score/percentile/date`. | FIRST's fields. | — |
 | **CISA KEV** | `kev_listed/date_added/due_date/ransomware_use`. | KEV's fields. | — |
-| **CSAF 2.0** | `course-of-action.category` = `remediation.category`; `restart_required`; `product_ids`; `revision_history` on advisories. Product tree not adopted. | Remediation, restart and tracking vocabularies. | `validation`, `rollback`, `action_type`, `residual_risk`, `validation_check`: CSAF stops before verification. |
+| **CSAF 2.0** | `course-of-action.category` = `remediation.category`; `restart_required`; `product_ids` and `revision_history` on advisories (planned). Product tree not adopted. | Remediation, restart and tracking vocabularies. | `validation`, `rollback`, `action_type`, `residual_risk`, `validation_check`: CSAF stops before verification. |
 | **VEX** (CSAF VEX / OpenVEX) | `org_posture`; export. | `status`, `justification`, `impact_statement`, `action_statement`. | `detection_deployed`, `validated_at`, `evidence_note`. |
 | **ATT&CK / CAPEC** | `attack-pattern` with MITRE's own references. | Ids verbatim. | — |
 | **CPE / purl / vers** | `affected_products`; `version_range` as `vers:`; `fixed_versions[]`. | Verbatim; free text refused. | `fixed_versions`, as a readable list. |
-| **Sigma / YARA / Snort / Suricata** | `indicator.pattern_type`; pySigma rendering. | STIX's vocabulary. | `kql`, `spl`; `telemetry_sources[]`; `false_positive_notes`. |
-| **STIX confidence scales** | Portal display. | The Admiralty and estimative mappings in the STIX specification. | — |
+| **Sigma / YARA / Snort / Suricata** | `indicator.pattern_type`; pySigma rendering (planned, §3.3). | STIX's vocabulary. | `kql`, `spl`; `telemetry_sources[]`; `false_positive_notes`. |
+| **STIX confidence scales** | Portal display (planned). | The Admiralty and estimative mappings in the STIX specification. | — |
 | **UK Finance / PSR APP categories; FBI IC3 types** | Fraud `attack-pattern` typology by reference (Tier 2). | Names verbatim. | `fraud-lifecycle` kill chain; `loss_band`; `fraud_typology` for gaps. |
 | **STIX SCOs** (`user-account`, `email-addr`, `domain-name`, `url`, `ipv4-addr`) | Fraud entities (Tier 2). | Verbatim. | `x-payment-account`; per-circle HMAC tokenisation. |
 | **USA PATRIOT Act §314(b); 31 CFR 1020.320(e)** | Precondition for an entity circle; SAR lint (Tier 2, with counsel). | — | — |
 | **OpenTelemetry; Prometheus exposition** | `/metrics`. | Prometheus text format. | — |
-| **OCSF, CEF, RFC 5424 syslog** | Platform detection alerts and log forwarding to the ISAC's SIEM. | OCSF Security Finding class; CEF; syslog over TLS. | — |
-| **OIDC + SCIM 2.0** | Sign-in and provisioning from the ISAC's directory (M, L). | Standard claims; SCIM Users and Groups. | Group → circle and issuer → role mappings. |
+| **OCSF, CEF, RFC 5424 syslog** | Platform detection alerts and log forwarding to the ISAC's SIEM. | OCSF Detection Finding class; CEF. Syslog over TLS is the deployment's forwarder, not the app (NFR-S13). | — |
+| **OIDC + SCIM 2.0** | Sign-in (OIDC, built in M) and provisioning (SCIM, planned, L) from the ISAC's directory. | Standard claims; SCIM Users and Groups. | Group → circle and issuer → role mappings. |
 | **Relationship tuples (Zanzibar shape)** | `access_grants` as `(resource, relation, principal)` (I). | The tuple shape. | `expires_at`. |
 
 The last three rows describe operational interfaces rather than
@@ -390,7 +413,9 @@ building until NVD moves. What it needs now is that no field of ours is
 ## 5. Tier 2: designed now, built when a member asks
 
 Each design is recorded so that nothing in Tier 1 forecloses it. No column,
-setting or event for any of them lands until it is pulled.
+setting or event for any of them lands until it is pulled. Inbound
+email-to-draft and AI assist for triage have since moved into phase O of the
+plan (Mike, 2026-10-14); the rows stay here until O's section is written.
 
 | Design | Shape | Pulled by |
 |---|---|---|
@@ -403,11 +428,11 @@ setting or event for any of them lands until it is pulled.
 | **Pages per job function** | CISO, vulnerability-management and fusion pages, rendered only from the caller's visible set; no stored job function. | The first CISO sign-in. |
 | **More exporters** | CSAF 2.0 advisory, DOCX, MISP feed: serialisers over existing objects. | A member's tooling. |
 | **Uploads** | Attachments by value: size cap, magic-byte allow-list, a malware scan gating readability, served as `attachment` with `nosniff` and a sandboxing CSP. | A member asking to upload. |
-| **Academic research access** | A `researcher` organisation under a research agreement: delayed, anonymised, aggregated export; never in a cohort, a denominator or the feed. | The first university MoU. |
+| **Academic research access** | A `researcher` organisation (the type exists today, as a contributor that reads no circle) under a research agreement: delayed, anonymised, aggregated export; never in a cohort, a denominator or the feed. | The first university MoU. |
 | **Fraud lane: TTPs** | `attack-pattern`, `campaign`, `threat-actor`, `course-of-action`, `sighting` in ordinary circles at AMBER; a `fraud-lifecycle` kill chain of ours; typology by reference to ATT&CK, CAPEC, UK Finance / PSR and IC3. No new column. | The fraud team's first scheme write-up. |
 | **Fraud lane: entities** | SCOs (`user-account`, `email-addr`, `x-payment-account`, …) distributable only to circles flagged for entities; §314(b) registration as a membership precondition; per-circle HMAC tokenisation; excluded from search, logs, exports and email. | Counsel's sign-off and a §314(b)-registered cohort. |
 | **BYOK sidecar** | Sealed content as an option, excluded from search, analytics and readiness; key exchange designed post-quantum hybrid from the start ([`pqc-readiness.md`](pqc-readiness.md)). | A named ISAC requiring it. |
-| **Federation between instances; PSI correlation; passkeys; image signing; GOLD EAGLE / VINCE** | As designed elsewhere in `docs/`. Many ISACs means federation between single-tenant instances, never a tenant column. | — |
+| **Federation between instances; PSI correlation; passkeys; image signing; GOLD EAGLE / VINCE integration** | As designed elsewhere in `docs/` (a GOLD EAGLE or VINCE case id recorded on the ISAC's record is built, §3.1). Many ISACs means federation between single-tenant instances, never a tenant column. | — |
 
 ---
 

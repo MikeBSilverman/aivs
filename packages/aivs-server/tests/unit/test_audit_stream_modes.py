@@ -87,6 +87,15 @@ class Poller:
                 return
         pytest.fail(f"the stream never ran out after {MAX_PAGES} pages")
 
+    async def wait_for_more(self, client) -> None:
+        """Page until something new is served."""
+        before = len(self.events)
+        deadline = asyncio.get_running_loop().time() + 60
+        while len(self.events) == before:
+            assert asyncio.get_running_loop().time() < deadline, "nothing more was served"
+            await self.page(client)
+            await asyncio.sleep(0.2)
+
     async def until_served(self, client, marker: str) -> None:
         """Page until ``marker`` is served: everything committed before it is
         then below the horizon too."""
@@ -156,6 +165,11 @@ async def test_full_serves_reads_and_records_an_all_reads_page_as_quiet(client, 
     await poller.until_served(client, await _marker(session))
     await poller.until_served(client, await _marker(session))
     await poller.drain(client)
+    # Every quiet row the drain wrote committed before this marker, so paging
+    # until the marker is served pages past them too. Without it the drain can
+    # end before a lagging horizon lets them be served, and "no quiet row is
+    # served" holds of rows the poller was never offered (CLAUDE.md section 3).
+    await poller.until_served(client, await _marker(session))
 
     recorded = await _recorded(session, operator.id)
     assert any(e["action"] == AuditAction.AUDIT_READ for e in poller.events), "reads are served"
@@ -181,6 +195,13 @@ async def test_two_pollers_reading_each_others_reads_both_run_out(client, sessio
             break
     else:
         pytest.fail("two pollers fed each other for good")
+    # A page of nothing but the other's reads, for certain: B starts where A's
+    # last loud page left off, so what follows is A's record of that page and
+    # nothing else. Waiting for it, rather than for "an empty page", is what
+    # keeps a lagging horizon from ending the test before such a page exists.
+    await a.until_served(client, await _marker(session))
+    b.cursor = a.cursor
+    await b.wait_for_more(client)
 
     for (operator, _), poller in ((world["a"], a), (world["b"], b)):
         recorded = await _recorded(session, operator.id)

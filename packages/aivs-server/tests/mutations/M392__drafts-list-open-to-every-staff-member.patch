@@ -1,0 +1,17 @@
+Mutation M392: membership staff and the system administrator see the review page and the ISAC's drafts, though they hold no content right
+Re-applies: T16 (Mike, Q36)
+
+Expect red: packages/aivs-server/tests/unit/test_isac_drafts.py::test_staff_who_hold_no_content_right_do_not_see_it
+
+diff --git a/packages/aivs-server/src/aivs_server/portal/routes.py b/packages/aivs-server/src/aivs_server/portal/routes.py
+--- a/packages/aivs-server/src/aivs_server/portal/routes.py
++++ b/packages/aivs-server/src/aivs_server/portal/routes.py
+@@ -506,7 +506,7 @@
+     than being a filter on a list.
+     """
+     ctx, _csrf_hash = await current_session(request, settings, session)
+-    if not can_review_submissions(ctx):
++    if not can_review_submissions(ctx) and ctx.operator_id is None:
+         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Not found")
+ 
+     groups = await queued_for_review(session, mission_impact=settings.ssvc_mission_impact)

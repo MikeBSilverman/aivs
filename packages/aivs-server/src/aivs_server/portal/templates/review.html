@@ -58,4 +58,39 @@
 {% else %}
   <div class="card"><div class="empty">{{ empty_message }}</div></div>
 {% endif %}
+
+<div class="card" id="isac-drafts">
+  <h2>Drafts waiting for an ISAC editor</h2>
+  <p class="muted small">The ISAC's own drafts and the automation's KEV drafts. Only an editor sends one for review or withdraws it; an automation draft holds its record's next KEV update back until then.</p>
+  {% if isac_drafts %}
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Title</th><th>Drafted by</th><th>Since</th><th></th></tr></thead>
+        <tbody>
+          {% for draft in isac_drafts %}
+            <tr data-draft="{{ draft.id }}">
+              <td><a href="/portal/submissions/{{ draft.id }}">{{ draft.title }}</a></td>
+              <td>{{ draft.created_by }}</td>
+              <td class="nowrap mono muted">{{ draft.created_at }}</td>
+              <td class="nowrap">
+                {% if draft.may_send %}
+                  <form method="post" action="/portal/submissions/{{ draft.id }}/submit" class="inline">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <button type="submit">Send for review</button>
+                  </form>
+                  <form method="post" action="/portal/submissions/{{ draft.id }}/withdraw" class="inline">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <button type="submit" class="button-secondary">Withdraw</button>
+                  </form>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="empty">No ISAC drafts are waiting.</div>
+  {% endif %}
+</div>
 {% endblock %}

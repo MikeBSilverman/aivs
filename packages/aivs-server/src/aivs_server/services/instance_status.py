@@ -38,6 +38,7 @@ from aivs_server.db.models import (
 )
 from aivs_server.observability import HEARTBEATS, ComponentReport
 from aivs_server.services.connection_health import StaleConnection, stale_connections
+from aivs_server.services.isac_drafts import StaleDrafts, stale_isac_drafts
 
 __all__ = [
     "CERTIFICATE_WARNING",
@@ -77,6 +78,9 @@ class InstanceStatus:
     #: passed, still waiting for an editor: a hold nobody sees is a release
     #: that silently never happens.
     held_embargoes: list[dict[str, Any]]
+    #: The ISAC's and the automation's drafts that have waited for an editor
+    #: past ``isac_drafts.STALE_AFTER``; a KEV one stalls its record.
+    stale_drafts: StaleDrafts
     detections: list[dict[str, Any]]
     proposed_quarantines: list[dict[str, Any]]
     key_fingerprint: str
@@ -360,6 +364,7 @@ async def gather_status(
         failing_webhooks=await _failing_webhooks(session),
         undelivered_email=await _undelivered_email(session, email_max_attempts),
         held_embargoes=await _held_embargoes(session),
+        stale_drafts=await stale_isac_drafts(session, now=now),
         detections=await _recent_detections(session, now),
         proposed_quarantines=await _proposed_quarantines(session, now),
         key_fingerprint=box.active_fingerprint,

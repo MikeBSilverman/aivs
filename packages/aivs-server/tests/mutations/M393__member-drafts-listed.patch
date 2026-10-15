@@ -1,0 +1,16 @@
+Mutation M393: every draft is listed, a member's included, before the member sends it
+Re-applies: T16 (Mike, Q36)
+
+Expect red: packages/aivs-server/tests/unit/test_isac_drafts.py::test_a_member_draft_never_appears
+
+diff --git a/packages/aivs-server/src/aivs_server/services/isac_drafts.py b/packages/aivs-server/src/aivs_server/services/isac_drafts.py
+--- a/packages/aivs-server/src/aivs_server/services/isac_drafts.py
++++ b/packages/aivs-server/src/aivs_server/services/isac_drafts.py
+@@ -55,7 +55,6 @@
+         .outerjoin(Operator, Operator.id == Submission.created_by_operator_id)
+         .where(
+             Submission.state == SubmissionState.DRAFT,
+-            Organization.org_type.in_(tuple(ISAC_FILER_TYPES)),
+         )
+         .order_by(Submission.created_at, Submission.id)
+     )

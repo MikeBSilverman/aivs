@@ -1,0 +1,17 @@
+Mutation M395: the drafts list offers an analyst the send and withdraw buttons the API would refuse
+Re-applies: T16 (Mike, Q36)
+
+Expect red: packages/aivs-server/tests/unit/test_isac_drafts.py::test_an_analyst_sees_the_list_and_no_verb
+
+diff --git a/packages/aivs-server/src/aivs_server/portal/routes.py b/packages/aivs-server/src/aivs_server/portal/routes.py
+--- a/packages/aivs-server/src/aivs_server/portal/routes.py
++++ b/packages/aivs-server/src/aivs_server/portal/routes.py
+@@ -543,7 +543,7 @@
+         "created_at": stamp(submission.created_at),
+         "created_by": created_by,
+         "by_automation": draft.by_automation,
+-        "may_send": holds_submitter_rights(ctx, submission, owner_is_isac=True),
++        "may_send": True,
+     }
+ 
+ 

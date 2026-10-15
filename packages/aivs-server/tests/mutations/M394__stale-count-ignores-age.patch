@@ -1,0 +1,16 @@
+Mutation M394: the stale count counts every waiting draft, so the line is always there and says nothing
+Re-applies: T16 (Mike, Q36)
+
+Expect red: packages/aivs-server/tests/unit/test_isac_drafts.py::test_drafts_waiting_past_a_week_are_counted_kev_on_its_own_line
+
+diff --git a/packages/aivs-server/src/aivs_server/services/isac_drafts.py b/packages/aivs-server/src/aivs_server/services/isac_drafts.py
+--- a/packages/aivs-server/src/aivs_server/services/isac_drafts.py
++++ b/packages/aivs-server/src/aivs_server/services/isac_drafts.py
+@@ -78,7 +78,6 @@
+         .where(
+             Submission.state == SubmissionState.DRAFT,
+             Organization.org_type.in_(tuple(ISAC_FILER_TYPES)),
+-            Submission.created_at < now - STALE_AFTER,
+         )
+         .group_by(Organization.org_type)
+     )

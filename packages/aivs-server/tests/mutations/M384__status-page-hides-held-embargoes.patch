@@ -6,12 +6,12 @@ Expect red: packages/aivs-server/tests/unit/test_stale_versions.py::test_an_emba
 diff --git a/packages/aivs-server/src/aivs_server/services/instance_status.py b/packages/aivs-server/src/aivs_server/services/instance_status.py
 --- a/packages/aivs-server/src/aivs_server/services/instance_status.py
 +++ b/packages/aivs-server/src/aivs_server/services/instance_status.py
-@@ -359,7 +359,7 @@
+@@ -363,7 +363,7 @@
          stale_connections=await stale_connections(session, now),
          failing_webhooks=await _failing_webhooks(session),
          undelivered_email=await _undelivered_email(session, email_max_attempts),
 -        held_embargoes=await _held_embargoes(session),
 +        held_embargoes=[],
+         stale_drafts=await stale_isac_drafts(session, now=now),
          detections=await _recent_detections(session, now),
          proposed_quarantines=await _proposed_quarantines(session, now),
-         key_fingerprint=box.active_fingerprint,

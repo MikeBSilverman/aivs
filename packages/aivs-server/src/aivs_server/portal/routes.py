@@ -43,6 +43,7 @@ from aivs_server.auth.policy import (
     can_view_submission,
     can_view_submission_receipts,
     distribution_visibility_clause,
+    holds_submitter_rights,
     is_isac_editor,
     readable_circle_grants,
     require,
@@ -89,6 +90,7 @@ from aivs_server.portal.submitter_view import lint_hits, telemetry_rows
 from aivs_server.services.bulk_validation import GroupMemberNotFoundError, validate_group
 from aivs_server.services.contributions import submit_submission
 from aivs_server.services.distribution import DistributionError, distribute_submission
+from aivs_server.services.isac_drafts import WaitingDraft, waiting_isac_drafts
 from aivs_server.services.provenance import consequential_changes
 from aivs_server.services.proxy_filing import awaiting_confirmation, confirm_proxy_filing
 from aivs_server.services.publication import PublicationPausedError
@@ -508,6 +510,7 @@ async def review_queue(request: Request, settings: SettingsDep, session: Session
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Not found")
 
     groups = await queued_for_review(session, mission_impact=settings.ssvc_mission_impact)
+    drafts = await waiting_isac_drafts(session)
 
     context = base_context(request, settings, ctx, await operator_name(session, ctx), "review")
     context.update(
@@ -517,9 +520,31 @@ async def review_queue(request: Request, settings: SettingsDep, session: Session
             "groups": [_review_group(group) for group in groups],
             "can_validate_groups": can_validate_in_bulk(ctx),
             "empty_message": "Nothing is waiting for review.",
+            "isac_drafts": [_waiting_draft(ctx, draft) for draft in drafts],
         }
     )
     return render(request, "review.html", context)
+
+
+def _waiting_draft(ctx: AuthContext, draft: WaitingDraft) -> dict[str, Any]:
+    """One ISAC or automation draft, with the verbs this caller holds on it.
+
+    Through the submitter-rights predicate the API asks, so an analyst sees the
+    list and no button the API would refuse it.
+    """
+    submission = draft.submission
+    if draft.by_automation:
+        created_by = "the automation (KEV)"
+    else:
+        created_by = draft.created_by or "ISAC staff"
+    return {
+        "id": str(submission.id),
+        "title": submission.title,
+        "created_at": stamp(submission.created_at),
+        "created_by": created_by,
+        "by_automation": draft.by_automation,
+        "may_send": holds_submitter_rights(ctx, submission, owner_is_isac=True),
+    }
 
 
 @router.post("/review/validate")

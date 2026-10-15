@@ -183,6 +183,21 @@
     <div class="empty">None.</div>
   {% endif %}
 
+  <h3>Drafts waiting for an ISAC editor</h3>
+  {% if status.stale_drafts.isac or status.stale_drafts.kev %}
+    <ul>
+      {% if status.stale_drafts.isac %}
+        <li data-stale-drafts="isac">ISAC drafts waiting more than 7 days: {{ status.stale_drafts.isac }}</li>
+      {% endif %}
+      {% if status.stale_drafts.kev %}
+        <li data-stale-drafts="kev">KEV drafts waiting more than 7 days: {{ status.stale_drafts.kev }}. Each holds its record's KEV updates back until an editor sends it.</li>
+      {% endif %}
+    </ul>
+    <p class="muted small">An ISAC editor sends or withdraws them from the review page.</p>
+  {% else %}
+    <div class="empty">None waiting more than 7 days.</div>
+  {% endif %}
+
   <h3>Held embargoes</h3>
   <p class="muted small">Taken off their timer because the content no longer passes a rule it passed at distribution. Members cannot read it until an editor releases or withdraws it.</p>
   {% if status.held_embargoes %}

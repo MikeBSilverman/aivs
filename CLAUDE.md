@@ -105,14 +105,20 @@ anywhere on the cluster. Parallel workers always have one open, so six
 auditor tests stalled for their full minute and failed on a timeout that
 named nothing. Under a worker a `horizon` test now refuses to run, with the
 instruction, rather than skip, because a skip reads as covered. Any new test
-that pages the audit stream gets the marker.
+that pages the audit stream gets the marker (one, from 3b, was missed and
+passed or failed on timing until T1 found it by reading). "On their own"
+means alone on the *cluster*, not only within the run: another session's
+suite or mutation shard holds the horizon back just as a worker does.
 
 **The machine is shared, so a parallel run budgets memory.** Eight workers
 beside another project's `pytest -n auto` left 600 MB free, and the OS killed
 a third session's verification chain, which produced no result. The runner
 reads `MemAvailable`, gives each worker 500 MB, keeps 3 GB in hand, and
-refuses to start rather than run on fewer than two. Before a long chain (the
-full mutation set, e2e), say so to the other sessions and wait for quiet.
+refuses to start rather than run on fewer than two. It reads that figure
+once, at start, so two runs launched together each book the same free memory:
+when jobs run side by side, give each its worker count and split the budget
+by hand. Before a long chain (the full mutation set, e2e), say so to the
+other sessions and wait for quiet.
 
 **What runs when.** While working: lint, types, and `scripts/test-parallel.sh
 <paths>` for what changed, without coverage. To land a commit:
@@ -120,9 +126,20 @@ full mutation set, e2e), say so to the other sessions and wait for quiet.
 - every mutation patch whose `+++` target is a file the commit changes, which
   is the "run that patch in the same commit" rule below;
 - e2e when compose, `deploy/` or nginx change.
-The full mutation set runs nightly in CI (`mutations.yml`), but only over
-what has been pushed. Until main is pushed, run the full set locally before
-the push that would carry it.
+A change to `conftest.py` or anything every test runs through changes every
+test, so it runs the full mutation set: a fixture that starts refusing a
+privilege turns proofs to ERROR anywhere. The full set runs nightly in CI
+(`mutations.yml`), but only over what has been pushed. Until main is pushed,
+run the full set locally before the push that would carry it.
+
+**Shard the full mutation set, and run the horizon proofs last, alone.**
+`mutation-check.sh` patches files in place, so it is serial within a tree;
+run it in several detached worktrees, each with its own database and a slice
+of the ids. Every patch whose "Expect red" names a `horizon` test goes in a
+shard of its own that starts after the others finish. Beside another shard
+that test stalls on the cluster-wide horizon and fails, and in a mutation run
+a failure is a kill: the proof would pass without proving anything. (T1,
+planning 3c's run.)
 
 **A gate is its exit status, not its output.** Two sessions landed a commit
 with bandit red, each having read bandit through `tail`: the last lines said

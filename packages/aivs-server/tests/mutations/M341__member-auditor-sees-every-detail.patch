@@ -6,13 +6,12 @@ Expect red: packages/aivs-server/tests/unit/test_auditor.py::test_a_members_audi
 diff --git a/packages/aivs-server/src/aivs_server/services/audit_stream.py b/packages/aivs-server/src/aivs_server/services/audit_stream.py
 --- a/packages/aivs-server/src/aivs_server/services/audit_stream.py
 +++ b/packages/aivs-server/src/aivs_server/services/audit_stream.py
-@@ -212,8 +212,7 @@
- def _audit_event(scope: uuid.UUID | None) -> Callable[[AuditLog], dict[str, Any]]:
-     def render(row: AuditLog) -> dict[str, Any]:
-         details = row.details or {}
--        if scope is not None:
--            details = {k: v for k, v in details.items() if k in _OWN_SCOPE_DETAIL_KEYS}
-+
-         return {
-             "id": row.id,
-             "at": _stamp(row.at),
+@@ -288,8 +288,6 @@
+ def _shown_details(row: AuditLog, scope: uuid.UUID | None) -> dict[str, Any]:
+     """The part of ``details`` the caller's scope is shown."""
+     details = row.details or {}
+-    if scope is not None:
+-        return _only(details, _OWN_SCOPE_DETAIL_KEYS)
+     if row.action == AuditAction.DETECTION_RAISED and details.get("rule") in ATTRIBUTION_RULES:
+         return _only(details, _ATTRIBUTION_FINDING_KEYS)
+     return details

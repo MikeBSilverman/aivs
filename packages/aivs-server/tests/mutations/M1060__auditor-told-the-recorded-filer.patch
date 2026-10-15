@@ -1,0 +1,17 @@
+Mutation M1060: the ISAC's auditor is served an attribution finding whole, recorded filer included
+Re-applies: Phase P slice 3c's filer_mismatch and owner_tag_mismatch rows reaching audit_stream unfiltered
+
+Expect red: packages/aivs-server/tests/unit/test_auditor.py::test_the_isacs_auditor_is_not_told_whom_a_finding_records_as_filer
+
+diff --git a/packages/aivs-server/src/aivs_server/services/audit_stream.py b/packages/aivs-server/src/aivs_server/services/audit_stream.py
+--- a/packages/aivs-server/src/aivs_server/services/audit_stream.py
++++ b/packages/aivs-server/src/aivs_server/services/audit_stream.py
+@@ -290,8 +290,6 @@
+     details = row.details or {}
+     if scope is not None:
+         return _only(details, _OWN_SCOPE_DETAIL_KEYS)
+-    if row.action == AuditAction.DETECTION_RAISED and details.get("rule") in ATTRIBUTION_RULES:
+-        return _only(details, _ATTRIBUTION_FINDING_KEYS)
+     return details
+ 
+ 

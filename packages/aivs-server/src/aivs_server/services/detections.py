@@ -53,6 +53,7 @@ from aivs_server.services.org_status import load_org_for_update
 from aivs_server.services.quarantine import QuarantineError, quarantine_org_automatically
 
 __all__ = [
+    "ATTRIBUTION_RULES",
     "EVENT_DETECTION_RAISED",
     "PROPOSED_QUARANTINE",
     "RULES",
@@ -65,6 +66,13 @@ __all__ = [
 security_logger = logging.getLogger("aivs_server.security")
 
 EVENT_DETECTION_RAISED: Final[str] = "detection.raised"
+
+FILER_MISMATCH: Final[str] = "filer_mismatch"
+OWNER_TAG_MISMATCH: Final[str] = "owner_tag_mismatch"
+#: The rules whose findings name the firm a submission is recorded for: who
+#: filed what, which only ISAC intel staff may know (Q37). The auditor's
+#: stream serves their rows without it (``services.audit_stream``).
+ATTRIBUTION_RULES: Final[frozenset[str]] = frozenset({FILER_MISMATCH, OWNER_TAG_MISMATCH})
 
 #: OCSF Detection Finding (class 2004, category Findings). Severity ids per OCSF.
 _OCSF_CLASS_UID: Final[int] = 2004
@@ -497,12 +505,12 @@ async def _filer_mismatch(
     The member login may record filings and not read them, so the one way a
     filing appears in another firm's name is SQL on the member path; this is
     where that is noticed. Each finding names the submission and the firm it
-    was recorded for, which only the ISAC sees.
+    was recorded for, which only intel staff see (``ATTRIBUTION_RULES``).
     """
     del threshold
     return [
         Finding(
-            rule="filer_mismatch",
+            rule=FILER_MISMATCH,
             severity="critical",
             subject=str(submission_id),
             summary="a filing is recorded in a firm's name that no audited creation names",
@@ -525,7 +533,7 @@ def _owner_tag_mismatch(key: AttributionKey) -> RuleCheck:
         del threshold
         return [
             Finding(
-                rule="owner_tag_mismatch",
+                rule=OWNER_TAG_MISMATCH,
                 severity="critical",
                 subject=str(submission_id),
                 summary="a submission's owner tag is not its recorded filer's",
@@ -584,7 +592,7 @@ RULES: Final[tuple[Rule, ...]] = (
     ),
     Rule("not_found_burst", "medium", dt.timedelta(minutes=10), 50, _not_found_burst),
     Rule("contribution_flood", "medium", dt.timedelta(hours=1), 1, _contribution_flood),
-    Rule("filer_mismatch", "critical", dt.timedelta(hours=24), 1, _filer_mismatch),
+    Rule(FILER_MISMATCH, "critical", dt.timedelta(hours=24), 1, _filer_mismatch),
     Rule("posture_export_burst", "high", dt.timedelta(hours=1), 20, _posture_export_burst),
     Rule("evidence_pack_burst", "medium", dt.timedelta(hours=1), 20, _evidence_pack_burst),
     Rule("auditor_bulk_read", "medium", dt.timedelta(hours=1), 20000, _auditor_bulk_read),
@@ -664,7 +672,7 @@ def detection_rules(key: AttributionKey) -> tuple[Rule, ...]:
     return (
         *RULES,
         Rule(
-            "owner_tag_mismatch",
+            OWNER_TAG_MISMATCH,
             "critical",
             dt.timedelta(hours=24),
             1,

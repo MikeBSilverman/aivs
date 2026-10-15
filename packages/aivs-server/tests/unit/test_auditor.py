@@ -24,13 +24,17 @@ from aivs_schemas.enums import (
     OrgType,
     SubmissionState,
 )
+from aivs_server import main as main_module
 from aivs_server.audit.log import AuditAction, record
 from aivs_server.auth.context import AuthContext, AuthMethod
 from aivs_server.auth.policy import can_hold_evidence_pack, can_read_audit, can_view_submission
 from aivs_server.db.models import Acknowledgment, AuditLog, Submission
 from aivs_server.services.audit_stream import genesis
+from aivs_server.services.detections import ATTRIBUTION_RULES
 from aivs_server.services.operators import OperatorError, create_operator
 from tests.conftest import seed_filing
+from tests.unit.test_rules_from_real_rows import _forge_filing
+from tests.unit.test_submission_workflow import create_draft
 
 pytestmark = [pytest.mark.db, pytest.mark.horizon]
 
@@ -172,6 +176,48 @@ async def test_receipts_are_scoped_like_the_trail(client, session, world):
     member_view = await _all(client, RECEIPTS, world["member_auditor"])
     assert {e["org_id"] for e in member_view} == {str(world["member"].id)}
     assert {e["org_id"] for e in isac_view} == {str(world["member"].id), str(world["peer"].id)}
+
+
+@pytest.mark.requirement("SF-78")
+async def test_the_isacs_auditor_is_not_told_whom_a_finding_records_as_filer(
+    client, settings, member_engine, make_org, make_cert, world
+):
+    """Both attribution rules, raised by the detection job over a forged filing.
+
+    A finding names the submission and the firm it is recorded for; the
+    ISAC's auditor is not intel staff, so it learns that a filing is wrong,
+    and where, but not whose it is said to be (Q37).
+    """
+    filer = await make_org("finding-filer", org_type=OrgType.GSIB)
+    named = await make_org("finding-named", org_type=OrgType.GSIB)
+    pem, _ = await make_cert(filer)
+    real = await create_draft(client, pem)
+    forged = await _forge_filing(member_engine, like=real["id"], named=named.id)
+
+    await main_module._run_detections(settings)
+    findings = await _attribution_findings(client, world["isac_auditor"])
+
+    assert {f["details"]["subject"] for f in findings} == {str(forged)}
+    served = json.dumps(findings)
+    assert str(named.id) not in served
+    assert str(filer.id) not in served
+
+
+async def _attribution_findings(client, headers) -> list[dict]:
+    """The attribution findings served to ``headers``, once every rule's is there."""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + 60
+    while True:
+        findings = [
+            event
+            for event in await _all(client, EVENTS, headers)
+            if event["action"] == AuditAction.DETECTION_RAISED
+            and event["resource_id"] in ATTRIBUTION_RULES
+        ]
+        if {f["resource_id"] for f in findings} == ATTRIBUTION_RULES:
+            return findings
+        assert loop.time() < deadline, findings
+        await asyncio.sleep(0.5)
 
 
 async def _own_submission(session, org) -> Submission:

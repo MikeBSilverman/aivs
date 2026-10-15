@@ -17,7 +17,9 @@ rather than skips; the lag is visible to the caller as an unchanged cursor.
 rows recorded against its own organisation, and of their ``details`` only the
 keys that describe its own action: a detail naming another firm's circle or
 certificate is withheld whole, so the existence of what it names is not
-confirmed (the 404 property, applied to a field).
+confirmed (the 404 property, applied to a field). The ISAC's auditor is not
+intel staff, so a finding that names who filed a submission reaches it without
+the filer (Q37; ``detections.ATTRIBUTION_RULES``).
 
 **Hash chain.** Each served event carries ``hash = sha256(prev || event)``,
 starting from a genesis value that names the scope, and the cursor carries the
@@ -70,6 +72,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from aivs_server.audit.log import AuditAction
 from aivs_server.db.models import Acknowledgment, AuditLog
 from aivs_server.services.audit_stream_mode import AuditStreamMode, mode_in_force_at
+from aivs_server.services.detections import ATTRIBUTION_RULES
 
 __all__ = [
     "MAX_PAGE",
@@ -106,6 +109,11 @@ _OWN_SCOPE_DETAIL_KEYS: Final[frozenset[str]] = frozenset(
         "streams",
         "verb",
     }
+)
+#: What the ISAC's auditor is shown of an attribution finding: that it was
+#: raised, and on which submission, never the firm it is recorded for.
+_ATTRIBUTION_FINDING_KEYS: Final[frozenset[str]] = frozenset(
+    {"rule", "severity", "count", "summary", "subject"}
 )
 _HEX64: Final[re.Pattern[str]] = re.compile(r"^[0-9a-f]{64}$")
 #: The shape of each stream's row key. A cursor from one stream is refused by
@@ -258,9 +266,7 @@ def _link(previous: str, event: Mapping[str, Any]) -> str:
 
 def _audit_event(scope: uuid.UUID | None) -> Callable[[AuditLog], dict[str, Any]]:
     def render(row: AuditLog) -> dict[str, Any]:
-        details = row.details or {}
-        if scope is not None:
-            details = {k: v for k, v in details.items() if k in _OWN_SCOPE_DETAIL_KEYS}
+        details = _shown_details(row, scope)
         return {
             "id": row.id,
             "at": _stamp(row.at),
@@ -277,6 +283,20 @@ def _audit_event(scope: uuid.UUID | None) -> Callable[[AuditLog], dict[str, Any]
         }
 
     return render
+
+
+def _shown_details(row: AuditLog, scope: uuid.UUID | None) -> dict[str, Any]:
+    """The part of ``details`` the caller's scope is shown."""
+    details = row.details or {}
+    if scope is not None:
+        return _only(details, _OWN_SCOPE_DETAIL_KEYS)
+    if row.action == AuditAction.DETECTION_RAISED and details.get("rule") in ATTRIBUTION_RULES:
+        return _only(details, _ATTRIBUTION_FINDING_KEYS)
+    return details
+
+
+def _only(details: Mapping[str, Any], keys: frozenset[str]) -> dict[str, Any]:
+    return {k: v for k, v in details.items() if k in keys}
 
 
 def _receipt_event(row: Acknowledgment) -> dict[str, Any]:

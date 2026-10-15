@@ -218,6 +218,27 @@ Found while proving the client tests: a "caught" mutation was really the
 previous one. Run mutation proofs with `PYTHONDONTWRITEBYTECODE=1` and delete
 the module's `__pycache__` before each run.
 
+**A patch that applies is not a patch in the right place.** Three ways a
+proof stops proving what it names while still applying cleanly:
+
+- **A moved patch can land on a lookalike line.** M944 was regenerated onto a
+  different `database_now` call with identical surrounding lines, applied
+  cleanly, and showed up only as PARTLY KILLED. After moving or regenerating
+  a patch, diff its new hunk against the old one, and read PARTLY KILLED as a
+  placement problem before a test problem.
+- **A removed function lives on in the patches.** When you rename or delete
+  a function, grep `tests/mutations/` for it as well as the source. A patch
+  that *adds* a call has no context line to break: M606 still imported a
+  function the lists refactor deleted, applied, and reported ERROR at
+  collection, which proves nothing.
+- **A defect has to reach what the test reads.** M984 wrote the owner tag
+  into a template variable the page never received, so it rendered empty
+  and survived.
+
+**Never change a tree while a verification job runs on it.** The result then
+describes neither the old tree nor the new one. Stop the job, change the
+tree, and start the job again from the new commit.
+
 **`caplog.text` is only the messages.** A test that asserts "no content in the
 logs" against `caplog.text` passes while content sits in a structured field
 (`extra=`), which is where this codebase puts everything. Assert over the

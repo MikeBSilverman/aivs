@@ -29,7 +29,21 @@ from aivs_server.auth.context import AuthContext
 from aivs_server.auth.policy import can_review_submissions, distribution_visibility_clause
 from aivs_server.db.models import Distribution, StixObject, Submission
 
-__all__ = ["ever_related_stix_ids", "related_stix_ids", "visible_objects"]
+__all__ = [
+    "VulnerabilityNotVisibleError",
+    "ever_related_stix_ids",
+    "related_stix_ids",
+    "require_visible_vulnerability",
+    "visible_objects",
+]
+
+
+class VulnerabilityNotVisibleError(LookupError):
+    """The caller cannot see a vulnerability with that id -- or none exists.
+
+    One error for both, deliberately: a distinct answer for "exists but not
+    visible" would confirm a pre-CVE finding to an outsider (SF-47).
+    """
 
 
 def visible_objects(ctx: AuthContext, now: dt.datetime) -> Select[Any]:
@@ -52,6 +66,19 @@ def visible_objects(ctx: AuthContext, now: dt.datetime) -> Select[Any]:
     if can_review_submissions(ctx):
         return query.where(Submission.state.in_(tuple(VISIBLE_SUBMISSION_STATES)))
     return query.where(distribution_visibility_clause(ctx, now))
+
+
+async def require_visible_vulnerability(
+    session: AsyncSession, visible: Select[Any], stix_id: str
+) -> None:
+    """Raise :class:`VulnerabilityNotVisibleError` unless ``visible`` holds that vulnerability."""
+    found = await session.scalar(
+        visible.with_only_columns(StixObject.id)
+        .where(StixObject.stix_id == stix_id, StixObject.type == "vulnerability")
+        .limit(1)
+    )
+    if found is None:
+        raise VulnerabilityNotVisibleError(stix_id)
 
 
 async def related_stix_ids(session: AsyncSession, visible: Select[Any], stix_id: str) -> list[str]:

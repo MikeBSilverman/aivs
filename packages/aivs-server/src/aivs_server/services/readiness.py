@@ -18,15 +18,19 @@ import datetime as dt
 import enum
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
-from typing import Any, Final
+from typing import Final
 
-from sqlalchemy import Select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aivs_server.auth.context import AuthContext
 from aivs_server.db.models import StixObject
 from aivs_server.services.guidance import review_lapsed, stated_review_by
-from aivs_server.services.visible import related_stix_ids, visible_objects
+from aivs_server.services.visible import (
+    VulnerabilityNotVisibleError,
+    related_stix_ids,
+    require_visible_vulnerability,
+    visible_objects,
+)
 
 __all__ = [
     "Availability",
@@ -79,14 +83,6 @@ class Readiness:
     #: the last day anyone vouched for one. None when the only date given was
     #: not a date.
     not_confirmed_since: Mapping[str, dt.date | None] = field(default_factory=dict)
-
-
-class VulnerabilityNotVisibleError(LookupError):
-    """The caller cannot see a vulnerability with that id -- or none exists.
-
-    One error for both, deliberately: a distinct answer for "exists but not
-    visible" would confirm a pre-CVE finding to an outsider (SF-47).
-    """
 
 
 #: CSAF remediation categories (and ours) and the group each makes available.
@@ -216,8 +212,7 @@ async def readiness_for(
     object at its other end.
     """
     visible = visible_objects(ctx, now)
-    if not await _is_visible_vulnerability(session, visible, vulnerability_stix_id):
-        raise VulnerabilityNotVisibleError(vulnerability_stix_id)
+    await require_visible_vulnerability(session, visible, vulnerability_stix_id)
 
     related_ids = await related_stix_ids(session, visible, vulnerability_stix_id)
     rows = (
@@ -262,14 +257,3 @@ async def readiness_for(
         ),
         now,
     )
-
-
-async def _is_visible_vulnerability(
-    session: AsyncSession, visible: Select[Any], stix_id: str
-) -> bool:
-    found = await session.scalar(
-        visible.with_only_columns(StixObject.id)
-        .where(StixObject.stix_id == stix_id, StixObject.type == "vulnerability")
-        .limit(1)
-    )
-    return found is not None

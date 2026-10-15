@@ -10,18 +10,16 @@ from __future__ import annotations
 
 import datetime as dt
 import re
-from typing import Annotated, Final
+from typing import Annotated, Any, Final
 
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel
 
 from aivs_server.auth.deps import AuthenticatedContext, SessionDep
 from aivs_server.db.clock import database_now
-from aivs_server.services.readiness import (
-    Availability,
-    VulnerabilityNotVisibleError,
-    readiness_for,
-)
+from aivs_server.services.exploitability import ExploitabilityStatus, exploitability_for
+from aivs_server.services.readiness import Availability, readiness_for
+from aivs_server.services.visible import VulnerabilityNotVisibleError
 
 __all__ = ["router"]
 
@@ -78,4 +76,65 @@ async def readiness(
         detection=found.detection,
         validation=found.validation,
         not_confirmed_since=dict(found.not_confirmed_since),
+    )
+
+
+class ConditionSourceOut(BaseModel):
+    """One visible note's conditions, named by the note, never by who filed it."""
+
+    note: str
+    modified: dt.datetime
+    summary: str
+    conditions: list[dict[str, Any]]
+    unknowns: list[str]
+    reproduced: bool | None
+
+
+class ExploitabilityOut(BaseModel):
+    """What makes a vulnerability exploitable, as the caller can see it (Phase N).
+
+    ``not_established``: assume affected. ``agreed``: exploitable only when
+    every one of ``conditions`` holds, each by any one of its alternatives.
+    ``contested``: the sources differ and no merged set is given; a member is
+    not affected only if every source's conditions fail for it.
+    """
+
+    vulnerability: str
+    status: ExploitabilityStatus
+    conditions: list[dict[str, Any]]
+    sources: list[ConditionSourceOut]
+
+
+@router.get("/vulnerabilities/exploitability", response_model=ExploitabilityOut)
+async def exploitability(
+    ctx: AuthenticatedContext,
+    session: SessionDep,
+    stix_id: Annotated[str, Query(alias="id", max_length=100)],
+) -> ExploitabilityOut:
+    """The conditions under which a vulnerability is exploitable, from the notes the caller can see.
+
+    The same 404 for a malformed, an unknown and an invisible id, and the id in
+    the query rather than the path, for the reasons readiness gives (SF-47).
+    """
+    if _VULNERABILITY_ID.match(stix_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Not found")
+    try:
+        view = await exploitability_for(session, ctx, stix_id, now=await database_now(session))
+    except VulnerabilityNotVisibleError:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Not found") from None
+    return ExploitabilityOut(
+        vulnerability=stix_id,
+        status=view.status,
+        conditions=[dict(condition) for condition in view.conditions],
+        sources=[
+            ConditionSourceOut(
+                note=source.note_id,
+                modified=source.modified,
+                summary=source.summary,
+                conditions=[dict(condition) for condition in source.conditions],
+                unknowns=list(source.unknowns),
+                reproduced=source.reproduced,
+            )
+            for source in view.sources
+        ],
     )

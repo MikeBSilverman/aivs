@@ -3,7 +3,8 @@
 > **Status: mixed, by section.** §2 describes the running system through phase
 > E slice 3. §3.1 (phase E), §3.2 (phase M), §3.3 (phase F) and §3.4 (phase H)
 > describe what is built, and each line that is not built says so. §3.5
-> (phase I) and §5 (Tier 2) are design: nothing in them exists in the code. In
+> (phase N) is in progress and says which lines are built. §3.6 (phase I) and
+> §5 (Tier 2) are design: nothing in them exists in the code. In
 > §4, entries marked *(planned)* are designed and not built.
 
 This is the model the phases build toward. It was written down before phase E
@@ -331,7 +332,31 @@ Built, except where a line says otherwise:
   inventory, so each later phase that adds an operational table is held to
   it, and extends the test with whatever else it adds that can be revoked.
 
-### 3.5 Phase I: documents
+### 3.5 Phase N: what makes it exploitable
+
+In progress. Built:
+
+- **Conditions are typed data on a `note`** about the vulnerability, carrying
+  the 2.0 extension's note definition (body version 2.1;
+  [`stix-extension.md`](stix-extension.md) section 9). Exploitable only when
+  every condition holds, each by any one of its alternatives: a function
+  (purl and symbol), a file or module, a platform, a configuration setting,
+  a version range, or CVSS v4 exposure. A malformed term is refused at
+  ingest naming the note, and such a note is always reviewed, never
+  post-moderated (SF-83).
+- **The view** at `GET /api/v1/vulnerabilities/exploitability?id=`, computed
+  per caller from the condition notes it can see, at each note's latest
+  visible version (SF-84). No conditions is `not_established` ("assume
+  affected"); sources that claim the same conditions are `agreed`; sources
+  that differ are `contested`, listed each with no merged set, because a
+  merge would narrow what one of them says exists. Sources are named by
+  their note, never by their filer.
+
+Planned: intake from CVE 5.x and OSV records through the KEV/NVD script;
+readiness's fifth group, `scoping`; the OSV export; the page sections at each
+depth; and the posture form pre-filled from a condition that does not hold.
+
+### 3.6 Phase I: documents
 
 Designed; not built.
 

@@ -360,6 +360,12 @@ ROUTES: tuple[RouteCase, ...] = (
     ),
     RouteCase(
         "GET",
+        "/api/v1/vulnerabilities/exploitability",
+        RouteClass.VULNERABILITY_EXPORT,
+        lambda world: (f"{API}/vulnerabilities/exploitability?id={world.object_stix_id}", None),
+    ),
+    RouteCase(
+        "GET",
         "/api/v1/vulnerabilities/readiness",
         RouteClass.READINESS,
         lambda world: (f"{API}/vulnerabilities/readiness?id={world.object_stix_id}", None),

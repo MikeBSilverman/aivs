@@ -1,0 +1,19 @@
+Mutation M949: disagreeing sources are served as the first source's conditions
+Re-applies: the obvious merge: take one source as the answer
+
+Expect red: packages/aivs-server/tests/unit/test_exploitability.py::test_a_contested_view_gives_each_source_and_no_merged_conditions
+Expect red: packages/aivs-server/tests/unit/test_exploitability.py::test_conditions_shared_elsewhere_neither_count_nor_contest
+
+diff --git a/packages/aivs-server/src/aivs_server/services/exploitability.py b/packages/aivs-server/src/aivs_server/services/exploitability.py
+index e83f346..b22d453 100644
+--- a/packages/aivs-server/src/aivs_server/services/exploitability.py
++++ b/packages/aivs-server/src/aivs_server/services/exploitability.py
+@@ -80,8 +80,6 @@ def combine(sources: Sequence[ConditionSource]) -> ExploitabilityView:
+     if not ordered:
+         return ExploitabilityView(ExploitabilityStatus.NOT_ESTABLISHED, (), ())
+     statements = {_statement(source.conditions) for source in ordered}
+-    if len(statements) > 1:
+-        return ExploitabilityView(ExploitabilityStatus.CONTESTED, (), ordered)
+     return ExploitabilityView(ExploitabilityStatus.AGREED, ordered[0].conditions, ordered)
+ 
+ 

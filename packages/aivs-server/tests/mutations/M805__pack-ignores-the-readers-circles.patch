@@ -5,10 +5,10 @@ Expect red: packages/aivs-server/tests/unit/test_vulnerability_exports.py::test_
 Expect red: packages/aivs-server/tests/unit/test_vulnerability_exports.py::test_an_invisible_vulnerability_a_missing_one_and_a_malformed_id_answer_alike
 
 diff --git a/packages/aivs-server/src/aivs_server/services/visible.py b/packages/aivs-server/src/aivs_server/services/visible.py
-index 9c11d07..43959ad 100644
+index 76bd1f5..977352d 100644
 --- a/packages/aivs-server/src/aivs_server/services/visible.py
 +++ b/packages/aivs-server/src/aivs_server/services/visible.py
-@@ -51,7 +51,7 @@ def visible_objects(ctx: AuthContext, now: dt.datetime) -> Select[Any]:
+@@ -65,7 +65,7 @@ def visible_objects(ctx: AuthContext, now: dt.datetime) -> Select[Any]:
      )
      if can_review_submissions(ctx):
          return query.where(Submission.state.in_(tuple(VISIBLE_SUBMISSION_STATES)))
@@ -16,4 +16,4 @@ index 9c11d07..43959ad 100644
 +    return query
  
  
- async def related_stix_ids(session: AsyncSession, visible: Select[Any], stix_id: str) -> list[str]:
+ async def require_visible_vulnerability(

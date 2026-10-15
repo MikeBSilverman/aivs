@@ -1,0 +1,19 @@
+Mutation M950: no visible conditions is answered as agreed with an empty list
+Re-applies: an empty list for an empty view
+
+Expect red: packages/aivs-server/tests/unit/test_exploitability.py::test_no_conditions_is_not_established_never_an_empty_list
+Expect red: packages/aivs-server/tests/unit/test_exploitability.py::test_with_no_visible_conditions_a_member_is_told_to_assume_affected
+
+diff --git a/packages/aivs-server/src/aivs_server/services/exploitability.py b/packages/aivs-server/src/aivs_server/services/exploitability.py
+index e83f346..3c7d3aa 100644
+--- a/packages/aivs-server/src/aivs_server/services/exploitability.py
++++ b/packages/aivs-server/src/aivs_server/services/exploitability.py
+@@ -78,7 +78,7 @@ def combine(sources: Sequence[ConditionSource]) -> ExploitabilityView:
+     """The view over ``sources``, failing towards "affected" at every step."""
+     ordered = tuple(sorted(sources, key=lambda source: source.note_id))
+     if not ordered:
+-        return ExploitabilityView(ExploitabilityStatus.NOT_ESTABLISHED, (), ())
++        return ExploitabilityView(ExploitabilityStatus.AGREED, (), ())
+     statements = {_statement(source.conditions) for source in ordered}
+     if len(statements) > 1:
+         return ExploitabilityView(ExploitabilityStatus.CONTESTED, (), ordered)

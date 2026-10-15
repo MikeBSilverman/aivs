@@ -1,0 +1,18 @@
+Mutation M952: a revoked condition note still states its conditions
+Re-applies: latest-version reading without the revoked check
+
+Expect red: packages/aivs-server/tests/unit/test_exploitability.py::test_a_revoked_note_states_nothing
+
+diff --git a/packages/aivs-server/src/aivs_server/services/exploitability.py b/packages/aivs-server/src/aivs_server/services/exploitability.py
+index e83f346..2b0beba 100644
+--- a/packages/aivs-server/src/aivs_server/services/exploitability.py
++++ b/packages/aivs-server/src/aivs_server/services/exploitability.py
+@@ -134,8 +134,6 @@ def _condition_notes(visible: Select[Any], vulnerability_stix_id: str) -> Select
+ 
+ def _source(row: StixObject) -> ConditionSource | None:
+     raw = row.raw
+-    if raw.get("revoked"):
+-        return None
+     body = (raw.get("extensions") or {}).get(AIVS_INTEL_EXTENSION_ID)
+     if not isinstance(body, Mapping) or "conditions" not in body:
+         return None

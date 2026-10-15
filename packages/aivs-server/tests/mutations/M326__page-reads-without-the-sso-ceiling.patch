@@ -4,7 +4,7 @@ Re-applies: (T7, uncommitted) "The vulnerability page"; rewritten against servic
 Expect red: packages/aivs-server/tests/unit/test_vulnerability_page.py::test_an_sso_session_cannot_open_a_red_vulnerabilitys_page
 
 diff --git a/packages/aivs-server/src/aivs_server/services/visible.py b/packages/aivs-server/src/aivs_server/services/visible.py
-index 9c11d07..90aac8b 100644
+index 76bd1f5..4e864d6 100644
 --- a/packages/aivs-server/src/aivs_server/services/visible.py
 +++ b/packages/aivs-server/src/aivs_server/services/visible.py
 @@ -26,7 +26,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,8 +19,8 @@ index 9c11d07..90aac8b 100644
 +)
  from aivs_server.db.models import Distribution, StixObject, Submission
  
- __all__ = ["ever_related_stix_ids", "related_stix_ids", "visible_objects"]
-@@ -51,7 +55,7 @@ def visible_objects(ctx: AuthContext, now: dt.datetime) -> Select[Any]:
+ __all__ = [
+@@ -65,7 +69,7 @@ def visible_objects(ctx: AuthContext, now: dt.datetime) -> Select[Any]:
      )
      if can_review_submissions(ctx):
          return query.where(Submission.state.in_(tuple(VISIBLE_SUBMISSION_STATES)))
@@ -28,4 +28,4 @@ index 9c11d07..90aac8b 100644
 +    return query.where(visible_content_clause(readable_circle_grants(ctx), now))
  
  
- async def related_stix_ids(session: AsyncSession, visible: Select[Any], stix_id: str) -> list[str]:
+ async def require_visible_vulnerability(

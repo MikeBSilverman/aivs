@@ -1,0 +1,28 @@
+Mutation M951: condition notes are read from every stored object, not the caller's visible scope
+Re-applies: a query over stix_objects by object_refs alone
+
+Expect red: packages/aivs-server/tests/unit/test_exploitability.py::test_conditions_shared_elsewhere_neither_count_nor_contest
+Expect red: packages/aivs-server/tests/unit/test_exploitability.py::test_an_embargoed_condition_is_not_in_the_view_before_release
+
+diff --git a/packages/aivs-server/src/aivs_server/services/exploitability.py b/packages/aivs-server/src/aivs_server/services/exploitability.py
+index e83f346..4d73ff9 100644
+--- a/packages/aivs-server/src/aivs_server/services/exploitability.py
++++ b/packages/aivs-server/src/aivs_server/services/exploitability.py
+@@ -31,7 +31,7 @@ from collections.abc import Mapping, Sequence
+ from dataclasses import dataclass
+ from typing import Any
+ 
+-from sqlalchemy import Select
++from sqlalchemy import Select, select
+ from sqlalchemy.ext.asyncio import AsyncSession
+ 
+ from aivs_schemas.extension.builders import AIVS_INTEL_EXTENSION_ID
+@@ -111,7 +111,7 @@ async def exploitability_for(
+     """
+     visible = visible_objects(ctx, now)
+     await require_visible_vulnerability(session, visible, vulnerability_stix_id)
+-    rows = (await session.execute(_condition_notes(visible, vulnerability_stix_id))).scalars()
++    rows = (await session.execute(_condition_notes(select(StixObject), vulnerability_stix_id))).scalars()
+     latest: dict[str, StixObject] = {}
+     for row in rows:
+         current = latest.get(row.stix_id)

@@ -1,0 +1,20 @@
+Mutation M1035: the organisation's status is not checked before the person's
+Re-applies: (main, O slice 3) "Email-to-draft: a registered person's message makes a draft (SF-93)"
+
+Expect red: packages/aivs-server/tests/unit/test_email_intake.py::test_a_registered_person_at_an_organisation_that_may_not_transact_files_nothing[suspended]
+Expect red: packages/aivs-server/tests/unit/test_email_intake.py::test_a_registered_person_at_an_organisation_that_may_not_transact_files_nothing[quarantined]
+Expect red: packages/aivs-server/tests/unit/test_email_intake.py::test_a_registered_person_at_an_organisation_that_may_not_transact_files_nothing[pending]
+
+diff --git a/packages/aivs-server/src/aivs_server/services/email_intake.py b/packages/aivs-server/src/aivs_server/services/email_intake.py
+index 5ad51c4..5890210 100644
+--- a/packages/aivs-server/src/aivs_server/services/email_intake.py
++++ b/packages/aivs-server/src/aivs_server/services/email_intake.py
+@@ -280,7 +280,7 @@ async def _sender(
+     if operator is None:
+         return _Sender(Refusal.UNKNOWN_SENDER)
+     organisation = await session.get(Organization, operator.org_id)
+-    if organisation is None or organisation.status is not OrgStatus.ACTIVE:
++    if organisation is None:
+         return _Sender(Refusal.ORGANISATION_INACTIVE, None, operator.org_id, operator.id)
+     context = await _context(session, operator, organisation)
+     if not operator.is_active or not can_draft_by_email(context, now):

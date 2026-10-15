@@ -1,0 +1,18 @@
+Mutation M1041: the mailbox is read while distribution is paused
+Re-applies: (main, O slice 3) "Email-to-draft: a registered person's message makes a draft (SF-93)"
+
+Expect red: packages/aivs-server/tests/unit/test_email_intake.py::test_nothing_is_read_while_distribution_is_paused
+
+diff --git a/packages/aivs-server/src/aivs_server/services/email_intake.py b/packages/aivs-server/src/aivs_server/services/email_intake.py
+index cd4b110..15bea70 100644
+--- a/packages/aivs-server/src/aivs_server/services/email_intake.py
++++ b/packages/aivs-server/src/aivs_server/services/email_intake.py
+@@ -166,7 +166,7 @@ async def read_mailbox(
+         if read >= _BATCH:
+             break
+         async with sessions() as session:
+-            if await distribution_is_paused(session):
++            if False:
+                 break
+         outcome = await _read_one(mailbox, uid, intake=intake, key=key, sessions=sessions)
+         if outcome is None:

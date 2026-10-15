@@ -48,6 +48,7 @@ CLASSIFICATION: Final[dict[str, frozenset[str]]] = {
     "public.count_snapshots": _NOTHING,
     "public.detection_state": _NOTHING,
     "public.email_deliveries": _NOTHING,
+    "public.inbound_emails": _NOTHING,
     "public.pending_notices": _NOTHING,
     "public.submission_milestones": _NOTHING,
     "public.submission_triage": _NOTHING,

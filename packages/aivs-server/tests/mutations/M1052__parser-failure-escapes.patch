@@ -1,0 +1,18 @@
+Mutation M1052: only the parse errors expected are caught, so one hostile message stops the intake
+Re-applies: (main, O slice 3, T1's review) "Email-to-draft: a registered person's message makes a draft (SF-93)"
+
+Expect red: packages/aivs-server/tests/unit/test_email_intake.py::test_a_message_the_parser_cannot_read_is_refused_and_moved_not_left_first[group-from]
+
+diff --git a/packages/aivs-server/src/aivs_server/services/email_intake.py b/packages/aivs-server/src/aivs_server/services/email_intake.py
+index cd4b110..0715061 100644
+--- a/packages/aivs-server/src/aivs_server/services/email_intake.py
++++ b/packages/aivs-server/src/aivs_server/services/email_intake.py
+@@ -247,7 +247,7 @@ def _readable(raw: bytes) -> tuple[ParsedMessage, DraftContent] | None:
+     try:
+         message = parse_message(raw)
+         return message, draft_content(message)
+-    except Exception:  # noqa: BLE001 - see the docstring: any parser failure is "unreadable"
++    except ValueError:
+         return None
+ 
+ 

@@ -35,6 +35,11 @@ class AuthMethod(StrEnum):
     #: provider over ordinary TLS: bound to the IdP subject and a device cookie,
     #: not a certificate, and ceilinged below RED (policy.tlp_ceiling).
     SSO_SESSION = "sso_session"
+    #: A member's person, by a message the ISAC's own mail server recorded as
+    #: DMARC-aligned to a registered address (services.email_intake). No
+    #: certificate and no session: it creates one draft and nothing else, and
+    #: is held below RED like any way in off the certificate-bound path.
+    EMAIL = "email"
 
 
 @dataclass(frozen=True, slots=True)

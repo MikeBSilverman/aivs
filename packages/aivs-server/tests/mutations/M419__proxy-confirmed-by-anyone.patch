@@ -4,9 +4,10 @@ Re-applies: Phase E slice 4 (T7) -- the guard's absence
 Expect red: packages/aivs-server/tests/unit/test_proxy_filing.py::test_only_the_member_confirms_the_editor_is_refused_and_others_see_nothing
 
 diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs-server/src/aivs_server/auth/policy.py
+index f2c206b..b1e12ac 100644
 --- a/packages/aivs-server/src/aivs_server/auth/policy.py
 +++ b/packages/aivs-server/src/aivs_server/auth/policy.py
-@@ -522,7 +522,7 @@
+@@ -553,7 +553,7 @@ def can_confirm_proxy_filing(ctx: AuthContext, *, owner_is_caller: bool) -> bool
      exists so someone at the member can say "we did not send this"; a
      collector that confirms whatever arrives would close it unread.
      """
@@ -14,4 +15,4 @@ diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs
 +    return is_active(ctx) and ctx.operator_id is not None
  
  
- #: The organisations whose filings are the instance's own record: the ISAC and
+ #: Organisation types whose people may email a draft: the members, the same set

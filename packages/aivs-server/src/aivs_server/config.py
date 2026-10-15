@@ -377,6 +377,33 @@ class Settings(BaseSettings):
     email_dispatch_interval_seconds: int = Field(default=60, ge=10, le=3600)
     email_max_attempts: int = Field(default=5, ge=1, le=20)
 
+    # -- Email-to-draft (services.email_intake) -------------------------------
+    #: Unset, no mailbox is read. AIVS polls one mailbox the ISAC already runs,
+    #: over IMAP with TLS and the server's certificate verified; it opens no
+    #: listener of its own. Each message from a member's registered person
+    #: becomes a draft, never more: a person submits it in the portal.
+    email_intake_imap_host: str | None = None
+    email_intake_imap_port: int = Field(default=993, ge=1, le=65535)
+    email_intake_imap_username: str | None = None
+    #: Outside dev, read from ``email_intake_imap_password_file``, as the
+    #: relay's is: a credential in the environment is shown by ``docker inspect``.
+    email_intake_imap_password: SecretStr | None = None
+    email_intake_imap_password_file: Path | None = None
+    email_intake_mailbox: str = Field(default="INBOX", min_length=1, max_length=200)
+    #: Where each message is moved once read. Moved, never deleted: the mailbox
+    #: is the evidence of what arrived.
+    email_intake_accepted_folder: str = Field(default="AIVS/accepted", min_length=1, max_length=200)
+    email_intake_refused_folder: str = Field(default="AIVS/refused", min_length=1, max_length=200)
+    #: The authserv-id the ISAC's receiving mail server writes in the
+    #: Authentication-Results header it adds. Who sent a message is that
+    #: server's word, never the message's own (services.email_intake).
+    email_intake_authserv_id: str | None = None
+    email_intake_interval_seconds: int = Field(default=60, ge=10, le=3600)
+    email_intake_max_message_bytes: int = Field(default=10_000_000, ge=10_000, le=50_000_000)
+    #: Drafts one organisation may create by email in an hour.
+    email_intake_hourly_limit: int = Field(default=10, ge=1, le=1000)
+    email_intake_timeout_seconds: float = Field(default=30.0, gt=0, le=120)
+
     # -- Embargo sweeper ----------------------------------------------------
     embargo_sweep_interval_seconds: int = Field(default=30, ge=5, le=3600)
     #: How often submissions handed to the ISAC are read by the first pass
@@ -598,6 +625,7 @@ class Settings(BaseSettings):
             "secret_encryption_key_previous",
             "attribution_key",
             "smtp_password",
+            "email_intake_imap_password",
         ):
             path = resolved.get(f"{field}_file")
             if not path:
@@ -621,6 +649,19 @@ class Settings(BaseSettings):
         These four are optional, so mapping empty to ``None`` widens nothing:
         an empty ``smtp_host`` must read as "no relay", not as a relay named "".
         """
+        return None if value == "" else value
+
+    @field_validator(
+        "email_intake_imap_host",
+        "email_intake_imap_username",
+        "email_intake_imap_password_file",
+        "email_intake_authserv_id",
+        mode="before",
+    )
+    @classmethod
+    def _unset_intake_is_empty(cls, value: Any) -> Any:
+        """The relay's rule, for the same reason: all four are optional, and an
+        empty host must read as "no mailbox"."""
         return None if value == "" else value
 
     @field_validator("issuing_ca_certificate_file")
@@ -656,6 +697,7 @@ class Settings(BaseSettings):
             *self._database_login_violations(),
             *self._sso_violations(),
             *self._smtp_violations(),
+            *self._email_intake_violations(),
         ]
         if violations:
             msg = (
@@ -716,6 +758,32 @@ class Settings(BaseSettings):
             violations.append("smtp_from (required when smtp_host is set)")
         if self.smtp_username and self.smtp_password is None:
             violations.append("smtp_password (required when smtp_username is set)")
+        return violations
+
+    def _email_intake_violations(self) -> list[str]:
+        """A mailbox named without what it needs to be read and trusted, or
+        with its password in the environment."""
+        violations = []
+        if (
+            self.email_intake_imap_password is not None
+            and self.email_intake_imap_password_file is None
+        ):
+            violations.append(
+                "email_intake_imap_password (read it from email_intake_imap_password_file, "
+                "not the environment)"
+            )
+        if self.email_intake_imap_host is None:
+            return violations
+        required = {
+            "email_intake_imap_username": self.email_intake_imap_username,
+            "email_intake_imap_password": self.email_intake_imap_password,
+            "email_intake_authserv_id": self.email_intake_authserv_id,
+        }
+        violations.extend(
+            f"{name} (required when email_intake_imap_host is set)"
+            for name, value in required.items()
+            if value is None
+        )
         return violations
 
     def _output_violations(self) -> list[str]:

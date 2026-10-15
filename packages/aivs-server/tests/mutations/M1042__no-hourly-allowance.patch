@@ -1,0 +1,18 @@
+Mutation M1042: an organisation's email drafts have no hourly bound
+Re-applies: (main, O slice 3) "Email-to-draft: a registered person's message makes a draft (SF-93)"
+
+Expect red: packages/aivs-server/tests/unit/test_email_intake.py::test_an_organisations_email_drafts_stop_at_its_hourly_allowance
+
+diff --git a/packages/aivs-server/src/aivs_server/services/email_intake.py b/packages/aivs-server/src/aivs_server/services/email_intake.py
+index 5ad51c4..26efcfa 100644
+--- a/packages/aivs-server/src/aivs_server/services/email_intake.py
++++ b/packages/aivs-server/src/aivs_server/services/email_intake.py
+@@ -333,7 +333,7 @@ async def _within_allowance(
+             InboundEmail.received_at >= now - _HOUR,
+         )
+     )
+-    return (accepted or 0) < limit
++    return True
+ 
+ 
+ # ---------------------------------------------------------------------------

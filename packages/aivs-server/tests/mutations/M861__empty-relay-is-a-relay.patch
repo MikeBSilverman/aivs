@@ -4,14 +4,15 @@ Re-applies: Phase H, T10a (cadence and digest) -- the guard's absence
 Expect red: packages/aivs-server/tests/unit/test_smtp_settings.py::test_an_empty_relay_variable_means_no_relay
 
 diff --git a/packages/aivs-server/src/aivs_server/config.py b/packages/aivs-server/src/aivs_server/config.py
+index 7959312..27b7f69 100644
 --- a/packages/aivs-server/src/aivs_server/config.py
 +++ b/packages/aivs-server/src/aivs_server/config.py
-@@ -497,7 +497,7 @@
+@@ -649,7 +649,7 @@ class Settings(BaseSettings):
          These four are optional, so mapping empty to ``None`` widens nothing:
          an empty ``smtp_host`` must read as "no relay", not as a relay named "".
          """
 -        return None if value == "" else value
 +        return value
  
-     @field_validator("issuing_ca_certificate_file")
-     @classmethod
+     @field_validator(
+         "email_intake_imap_host",

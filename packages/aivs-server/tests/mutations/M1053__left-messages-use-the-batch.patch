@@ -1,0 +1,20 @@
+Mutation M1053: a message left in place uses up the run's batch
+Re-applies: (main, O slice 3, T1's review) "Email-to-draft: a registered person's message makes a draft (SF-93)"
+
+Expect red: packages/aivs-server/tests/unit/test_email_intake.py::test_a_message_left_in_place_does_not_use_up_the_runs_batch
+
+diff --git a/packages/aivs-server/src/aivs_server/services/email_intake.py b/packages/aivs-server/src/aivs_server/services/email_intake.py
+index cd4b110..2c3e29c 100644
+--- a/packages/aivs-server/src/aivs_server/services/email_intake.py
++++ b/packages/aivs-server/src/aivs_server/services/email_intake.py
+@@ -162,9 +162,7 @@ async def read_mailbox(
+     """Read each waiting message once, file or refuse it, then move it. How many were read."""
+     uids = await asyncio.to_thread(mailbox.uids)
+     read = 0
+-    for uid in uids[:_LOOKED_AT]:
+-        if read >= _BATCH:
+-            break
++    for uid in uids[:_BATCH]:
+         async with sessions() as session:
+             if await distribution_is_paused(session):
+                 break

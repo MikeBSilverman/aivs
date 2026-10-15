@@ -1054,7 +1054,13 @@ property's check in one place that the new structure obviously routes through.
   for `for_update`, `anonymous`, `expires_at`; the caller states the choice
   where a reviewer reads it.
 - **Exceptions are typed and raised near the cause.** `except Exception` only in
-  the one handler that owns the response headers (section 5).
+  the one handler that owns the response headers (section 5), and around a
+  parser fed untrusted bytes whose failures are not ours to enumerate:
+  `email_intake._readable`. The standard library's email parser raised
+  `AttributeError` for `From: x:;y`, and an intake catching only the
+  errors it expected left that message first in the inbox, stopping every
+  run for every member (T1's review of O3). Catch it there, call the input
+  unreadable, and record nothing else about it.
 - **Time is injected.** A function that reads the clock takes `now` from its
   caller, so embargo and membership tests are exact.
 - **Tests state the property.** One behaviour per test, named for it. Prove the

@@ -1,0 +1,18 @@
+Mutation M1055: a server that can move no message alone is used
+Re-applies: (main, O slice 3, T1's review) "Email-to-draft: a registered person's message makes a draft (SF-93)"
+
+Expect red: packages/aivs-server/tests/unit/test_imap_mailbox.py::test_a_server_that_cannot_move_one_message_alone_is_refused
+
+diff --git a/packages/aivs-server/src/aivs_server/services/imap_mailbox.py b/packages/aivs-server/src/aivs_server/services/imap_mailbox.py
+index 1585176..b258eaa 100644
+--- a/packages/aivs-server/src/aivs_server/services/imap_mailbox.py
++++ b/packages/aivs-server/src/aivs_server/services/imap_mailbox.py
+@@ -82,7 +82,7 @@ class ImapMailbox:
+         mailbox = cls(client)
+         mailbox._expect(client.login(login.username, login.password), "LOGIN")
+         mailbox._expect(client.select(login.mailbox), "SELECT")
+-        if not _MOVING & set(client.capabilities):
++        if False:
+             msg = "the IMAP server offers neither MOVE nor UIDPLUS: no message can be moved alone"
+             raise MailboxError(msg)
+         return mailbox

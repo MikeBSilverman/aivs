@@ -1,0 +1,18 @@
+Mutation M1045: the email way in reads RED and embargoed content
+Re-applies: (main, O slice 3) "Email-to-draft: a registered person's message makes a draft (SF-93)"
+
+Expect red: packages/aivs-server/tests/unit/test_email_intake.py::test_the_email_way_in_reads_below_red
+
+diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs-server/src/aivs_server/auth/policy.py
+index f2c206b..c238102 100644
+--- a/packages/aivs-server/src/aivs_server/auth/policy.py
++++ b/packages/aivs-server/src/aivs_server/auth/policy.py
+@@ -455,7 +455,7 @@ def writable_circle_ids(ctx: AuthContext) -> frozenset[uuid.UUID]:
+ #: access"). An allow-list, so a way in added later is limited until someone
+ #: names it here.
+ CERTIFICATE_BOUND_METHODS: Final[frozenset[AuthMethod]] = frozenset(
+-    {AuthMethod.MTLS, AuthMethod.PORTAL_SESSION}
++    {AuthMethod.MTLS, AuthMethod.PORTAL_SESSION, AuthMethod.EMAIL}
+ )
+ 
+ 

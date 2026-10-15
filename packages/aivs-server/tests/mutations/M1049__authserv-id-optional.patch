@@ -1,0 +1,17 @@
+Mutation M1049: a mailbox may be read with no authserv-id configured
+Re-applies: (main, O slice 3) "Email-to-draft: a registered person's message makes a draft (SF-93)"
+
+Expect red: packages/aivs-server/tests/unit/test_email_intake_settings.py::test_a_named_mailbox_needs_its_login_and_the_servers_authserv_id[email_intake_authserv_id]
+
+diff --git a/packages/aivs-server/src/aivs_server/config.py b/packages/aivs-server/src/aivs_server/config.py
+index 7959312..76e2a80 100644
+--- a/packages/aivs-server/src/aivs_server/config.py
++++ b/packages/aivs-server/src/aivs_server/config.py
+@@ -777,7 +777,6 @@ class Settings(BaseSettings):
+         required = {
+             "email_intake_imap_username": self.email_intake_imap_username,
+             "email_intake_imap_password": self.email_intake_imap_password,
+-            "email_intake_authserv_id": self.email_intake_authserv_id,
+         }
+         violations.extend(
+             f"{name} (required when email_intake_imap_host is set)"

@@ -1,0 +1,18 @@
+Mutation M1058: an oversize message's whole header is fetched
+Re-applies: (main, O slice 3, T1's review) "Email-to-draft: a registered person's message makes a draft (SF-93)"
+
+Expect red: packages/aivs-server/tests/unit/test_imap_mailbox.py::test_an_oversize_messages_header_is_fetched_only_up_to_its_bound
+
+diff --git a/packages/aivs-server/src/aivs_server/services/imap_mailbox.py b/packages/aivs-server/src/aivs_server/services/imap_mailbox.py
+index 1585176..95ae4cd 100644
+--- a/packages/aivs-server/src/aivs_server/services/imap_mailbox.py
++++ b/packages/aivs-server/src/aivs_server/services/imap_mailbox.py
+@@ -109,7 +109,7 @@ class ImapMailbox:
+ 
+     def fetch_header(self, uid: str) -> bytes:
+         """The start of the header alone, for a message too large to fetch."""
+-        return self._fetch_part(uid, f"(BODY.PEEK[HEADER]<0.{HEADER_BYTES}>)")
++        return self._fetch_part(uid, "(BODY.PEEK[HEADER])")
+ 
+     def move(self, uid: str, folder: str) -> None:
+         """Move, never delete: the folder is the record of what arrived.

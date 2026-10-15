@@ -1,0 +1,18 @@
+Mutation M1046: the mailbox's certificate is not verified
+Re-applies: (main, O slice 3) "Email-to-draft: a registered person's message makes a draft (SF-93)"
+
+Expect red: packages/aivs-server/tests/unit/test_imap_mailbox.py::test_the_mailbox_is_reached_over_tls_with_the_servers_certificate_verified
+
+diff --git a/packages/aivs-server/src/aivs_server/services/imap_mailbox.py b/packages/aivs-server/src/aivs_server/services/imap_mailbox.py
+index 345c829..7627394 100644
+--- a/packages/aivs-server/src/aivs_server/services/imap_mailbox.py
++++ b/packages/aivs-server/src/aivs_server/services/imap_mailbox.py
+@@ -67,7 +67,7 @@ class ImapMailbox:
+         client = imaplib.IMAP4_SSL(
+             login.host,
+             login.port,
+-            ssl_context=ssl.create_default_context(),
++            ssl_context=ssl._create_unverified_context(),
+             timeout=login.timeout_seconds,
+         )
+         mailbox = cls(client)

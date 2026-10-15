@@ -1,0 +1,18 @@
+Mutation M1054: the fallback move expunges every flagged message, not only its own
+Re-applies: (main, O slice 3, T1's review) "Email-to-draft: a registered person's message makes a draft (SF-93)"
+
+Expect red: packages/aivs-server/tests/unit/test_imap_mailbox.py::test_a_message_is_moved_where_the_server_can_and_copied_then_expunged_where_it_cannot
+
+diff --git a/packages/aivs-server/src/aivs_server/services/imap_mailbox.py b/packages/aivs-server/src/aivs_server/services/imap_mailbox.py
+index 1585176..06b640c 100644
+--- a/packages/aivs-server/src/aivs_server/services/imap_mailbox.py
++++ b/packages/aivs-server/src/aivs_server/services/imap_mailbox.py
+@@ -122,7 +122,7 @@ class ImapMailbox:
+             return
+         self._expect(self._client.uid("COPY", uid, folder), "COPY")
+         self._expect(self._client.uid("STORE", uid, "+FLAGS", r"(\Deleted)"), "STORE")
+-        self._expect(self._client.uid("EXPUNGE", uid), "UID EXPUNGE")
++        self._expect(self._client.expunge(), "EXPUNGE")
+ 
+     def _fetch_part(self, uid: str, part: str) -> bytes:
+         data = self._expect(self._client.uid("FETCH", uid, part), "FETCH")

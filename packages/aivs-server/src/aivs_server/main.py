@@ -81,7 +81,9 @@ from aivs_server.portal import vulnerability_routes as portal_vulnerability_rout
 from aivs_server.services.attribution import values_under_other_keys
 from aivs_server.services.audit_read_summary import summarise_audit_reads
 from aivs_server.services.detections import detection_rules, run_detections
+from aivs_server.services.email_intake import MailIntake, read_mailbox
 from aivs_server.services.embargo import sweep_due_embargoes
+from aivs_server.services.imap_mailbox import ImapMailbox
 from aivs_server.services.posture import publish_postures
 from aivs_server.services.publication import PublicationPausedError
 from aivs_server.services.telemetry import publish_telemetry
@@ -234,6 +236,11 @@ def background_components(settings: Settings) -> list[BackgroundComponent]:
             _triage_submissions,
         ),
         BackgroundComponent(
+            "email_intake",
+            dt.timedelta(seconds=settings.email_intake_interval_seconds),
+            lambda: _read_intake_mailbox(settings),
+        ),
+        BackgroundComponent(
             "audit_read_summary",
             dt.timedelta(seconds=settings.audit_read_summary_interval_seconds),
             _summarise_audit_reads,
@@ -258,6 +265,23 @@ async def _triage_submissions() -> None:
     key = AttributionKey.from_settings(get_settings())
     async with session_scope() as session:
         await triage_pending(session, key, now=await database_now(session))
+
+
+async def _read_intake_mailbox(settings: Settings) -> None:
+    """Turn members' emails into drafts. Nothing to do unless a mailbox is configured."""
+    intake = MailIntake.from_settings(settings)
+    if intake is None:
+        return
+    mailbox = await asyncio.to_thread(ImapMailbox.connect, intake.login)
+    try:
+        await read_mailbox(
+            mailbox,
+            intake=intake,
+            key=AttributionKey.from_settings(settings),
+            sessions=session_scope,
+        )
+    finally:
+        await asyncio.to_thread(mailbox.close)
 
 
 async def _summarise_audit_reads() -> None:

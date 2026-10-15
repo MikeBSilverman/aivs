@@ -1,0 +1,21 @@
+Mutation M1056: a result written inside a quoted-string is read as the server's
+Re-applies: (main, O slice 3, T1's review) "Email-to-draft: a registered person's message makes a draft (SF-93)"
+
+Expect red: packages/aivs-server/tests/unit/test_email_message.py::test_anything_but_our_servers_topmost_aligned_pass_is_unauthenticated[quoted-result]
+Expect red: packages/aivs-server/tests/unit/test_email_message.py::test_anything_but_our_servers_topmost_aligned_pass_is_unauthenticated[unclosed-quote]
+
+diff --git a/packages/aivs-server/src/aivs_server/services/email_message.py b/packages/aivs-server/src/aivs_server/services/email_message.py
+index f0e3bb5..73a9993 100644
+--- a/packages/aivs-server/src/aivs_server/services/email_message.py
++++ b/packages/aivs-server/src/aivs_server/services/email_message.py
+@@ -190,8 +190,8 @@ def _without_comments_or_quoted_text(header: str) -> str:
+     while index < len(header):
+         char = header[index]
+         if char == '"':
+-            index = _quoted_end(header, index)
+-            kept.append('""')
++            kept.append(char)
++            index += 1
+         elif char == "(":
+             index = _comment_end(header, index)
+             kept.append(" ")

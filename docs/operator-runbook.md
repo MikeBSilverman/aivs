@@ -1164,6 +1164,102 @@ to reads written after it. What was served before it is served the same way to
 anyone who reads it again, so a SIEM's cursor and the hash chain it keeps carry
 on unchanged. Changing to the mode already in force writes nothing.
 
+### 9.7 Email-to-draft: members email the ISAC
+
+Members can email a finding to a mailbox you already run, and it appears as
+a **draft** in their organisation's portal. Nothing an email does is
+distributed, reviewed or submitted: a person at the member opens the draft,
+checks it and submits it, and the first pass reads it then. A secure API for
+the same thing, for members who would rather not use email, may follow; it is
+planned, not built.
+
+AIVS reads the mailbox over IMAP with TLS (port 993, the server's certificate
+verified; there is no setting to relax either). It opens no port of its own.
+The server must offer `MOVE` (RFC 6851) or `UIDPLUS` (RFC 4315), so that a
+message is moved alone; one offering neither is refused, because a plain
+expunge would also erase whatever anyone else had flagged in the mailbox.
+
+**Who may be registered at an address is the identity link's question.** An
+operator's email is the key the intake looks the sender up by. Nothing yet
+ties a member's domain to its organisation, so the address must be one the
+member really holds; see the threat model's R30 before turning the intake
+on.
+
+**Who sent it is your mail server's word, not the message's.** A message is
+read only if the topmost `Authentication-Results` header carries your
+receiving server's authserv-id, a DMARC `pass`, and a `header.from` equal to
+the From address's domain, and that address belongs to exactly one active
+person (analyst or org admin) at a member organisation that is active. So:
+
+- **Your receiving server must stamp every message it delivers to the
+  mailbox**, adding its own `Authentication-Results` above the others, and
+  should remove inbound ones that claim its authserv-id (RFC 8601 section 5).
+  Only the topmost header is read, so a forged one below yours is ignored;
+  but a message that reaches the mailbox unstamped (a second delivery path,
+  or DMARC checking switched off) has the sender's own header on top. Before
+  turning the intake on, send a test message carrying a forged pass and
+  check the stamp above it is your server's.
+- **The topmost stamp must carry the DMARC result.** Where several filters
+  each add their own header (an SPF policy service, OpenDKIM and OpenDMARC
+  in front of Postfix, say), the topmost may be the SPF one, and every
+  legitimate message is then refused as `unauthenticated`. Order them so
+  the DMARC result is added last, or have the server write one combined
+  header, and send a legitimate test message from a member as well as the
+  forged one.
+- **Members' domains need DMARC published.** A domain with no DMARC policy
+  gets `dmarc=none`, which is refused.
+
+**A message that is refused gets no reply.** A reply to a spoofed From would
+mail the person being impersonated and tell the spoofer the address is read.
+Each message is moved, never deleted: to the accepted folder or the refused
+folder. `inbound_emails` and the audit log (`email_intake.accepted` /
+`email_intake.refused`) record the outcome and a reason code, never the
+subject, the body or a refused message's From:
+
+| Reason | Meaning |
+| --- | --- |
+| `unauthenticated` | no aligned DMARC pass from your server |
+| `unreadable` | the message could not be parsed at all |
+| `unreadable_sender` | the From header does not hold exactly one address |
+| `unknown_sender` | no single registered person has that address |
+| `organisation_inactive` | the person's organisation is suspended, quarantined, pending or offboarded |
+| `not_permitted` | the person is deactivated, an auditor, past their end date, or not at a member organisation |
+| `rate_limited` | the organisation's hourly allowance (`AIVS_EMAIL_INTAKE_HOURLY_LIMIT`, 10) is used |
+| `too_large` | over `AIVS_EMAIL_INTAKE_MAX_MESSAGE_BYTES` (10 MB); not fetched |
+
+What the draft holds: the subject as its title, the plain-text part as its
+summary (HTML is never read), and one `.json` attachment as its STIX bundle.
+Other attachments are named in the summary and not opened. If the bundle is
+refused, the draft keeps the text and says why. A new draft is AMBER+STRICT
+and "own estate"; the summary tells the member both are defaults. An email is
+not a certificate-bound way in, so the checks made while filing it see what
+an SSO session would: nothing above AMBER+STRICT, nothing under embargo.
+
+To turn it on:
+
+1. Create the accepted and refused folders in the mailbox
+   (`AIVS/accepted` and `AIVS/refused` unless you set
+   `AIVS_EMAIL_INTAKE_ACCEPTED_FOLDER` and `AIVS_EMAIL_INTAKE_REFUSED_FOLDER`).
+2. Put the mailbox password in a file only uid 10001 can read:
+   `umask 077; printf '%s' "$PASSWORD" > /srv/aivs/secrets/imap-password;
+   chown 10001:10001 /srv/aivs/secrets/imap-password`.
+3. Set `AIVS_EMAIL_INTAKE_IMAP_HOST`, `AIVS_EMAIL_INTAKE_IMAP_USERNAME`,
+   `AIVS_EMAIL_INTAKE_AUTHSERV_ID` (the id your receiving server writes, the
+   first word of its `Authentication-Results` headers) and
+   `AIVS_EMAIL_INTAKE_IMAP_PASSWORD_PATH` in `deploy/.env`.
+4. Start with the override:
+
+```bash
+docker compose --env-file deploy/.env -f docker-compose.yml -f docker-compose.email-intake.yml up -d
+```
+
+The `email_intake` job reads every `AIVS_EMAIL_INTAKE_INTERVAL_SECONDS` (60)
+and shows on the status page like every other job. Nothing is read while
+distribution is paused. A message that cannot be parsed is refused as
+`unreadable` and moved. One that cannot be stored (a database error) stays
+in the inbox, logged by its UID, and is tried again next run without
+holding back the others; if one stays there, read it by hand and move it.
+
 ## 10. Things that will bite you
 
 - **`AIVS_ENVIRONMENT=dev`** is the one value that relaxes

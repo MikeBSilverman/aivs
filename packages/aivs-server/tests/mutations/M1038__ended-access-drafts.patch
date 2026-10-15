@@ -1,0 +1,17 @@
+Mutation M1038: an operator past its end date may draft by email
+Re-applies: (main, O slice 3) "Email-to-draft: a registered person's message makes a draft (SF-93)"
+
+Expect red: packages/aivs-server/tests/unit/test_email_intake.py::test_a_person_who_may_not_draft_files_nothing[access_ended]
+
+diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs-server/src/aivs_server/auth/policy.py
+index f2c206b..195549a 100644
+--- a/packages/aivs-server/src/aivs_server/auth/policy.py
++++ b/packages/aivs-server/src/aivs_server/auth/policy.py
+@@ -585,7 +585,6 @@ def can_draft_by_email(ctx: AuthContext, now: dt.datetime) -> bool:
+     access_live = ctx.role_expires_at is None or now < ctx.role_expires_at
+     return (
+         is_active(ctx)
+-        and access_live
+         and ctx.operator_id is not None
+         and ctx.org_type in EMAIL_FILER_ORG_TYPES
+         and bool(ctx.operator_roles & _EMAIL_FILER_ROLES)

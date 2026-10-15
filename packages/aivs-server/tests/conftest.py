@@ -496,6 +496,7 @@ _ALL_TABLES = (
     "webhook_deliveries",
     "pending_notices",
     "email_deliveries",
+    "inbound_emails",
     "sector_events",
     "webhooks",
     "portal_sessions",

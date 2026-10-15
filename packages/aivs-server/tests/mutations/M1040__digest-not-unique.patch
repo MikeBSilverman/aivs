@@ -1,0 +1,18 @@
+Mutation M1040: two readers of one message both file it: the digest is not claimed uniquely
+Re-applies: (main, O slice 3) "Email-to-draft: a registered person's message makes a draft (SF-93)"
+
+Expect red: packages/aivs-server/tests/unit/test_email_intake.py::test_a_second_reader_that_missed_the_first_ones_record_files_nothing
+
+diff --git a/packages/aivs-server/src/aivs_server/db/models.py b/packages/aivs-server/src/aivs_server/db/models.py
+index 9758464..f9dafef 100644
+--- a/packages/aivs-server/src/aivs_server/db/models.py
++++ b/packages/aivs-server/src/aivs_server/db/models.py
+@@ -985,7 +985,7 @@ class InboundEmail(Base):
+     id: Mapped[uuid.UUID] = mapped_column(
+         primary_key=True, server_default=func.gen_random_uuid(), default=uuid.uuid4
+     )
+-    message_sha256: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
++    message_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+     received_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+     outcome: Mapped[str] = mapped_column(String(20), nullable=False)
+     #: The refusal's code; ``None`` when accepted.

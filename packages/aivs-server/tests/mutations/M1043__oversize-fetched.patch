@@ -1,0 +1,18 @@
+Mutation M1043: a message of any size is fetched and filed
+Re-applies: (main, O slice 3) "Email-to-draft: a registered person's message makes a draft (SF-93)"
+
+Expect red: packages/aivs-server/tests/unit/test_email_intake.py::test_each_message_is_moved_to_the_folder_for_its_outcome
+
+diff --git a/packages/aivs-server/src/aivs_server/services/email_intake.py b/packages/aivs-server/src/aivs_server/services/email_intake.py
+index cd4b110..822d453 100644
+--- a/packages/aivs-server/src/aivs_server/services/email_intake.py
++++ b/packages/aivs-server/src/aivs_server/services/email_intake.py
+@@ -187,7 +187,7 @@ async def _read_one(
+     batch.
+     """
+     size = await asyncio.to_thread(mailbox.size, uid)
+-    oversize = size > intake.max_message_bytes
++    oversize = False
+     raw = await asyncio.to_thread(mailbox.fetch_header if oversize else mailbox.fetch, uid)
+     async with sessions() as session:
+         try:

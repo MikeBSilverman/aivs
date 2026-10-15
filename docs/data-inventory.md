@@ -53,6 +53,7 @@ rather than deleting rows.
 | `sector_events` | operational | Which of the ISAC's canonical vulnerabilities is pinned as a sector event, by whom and when, and when it closed. |
 | `pending_notices` | operational | Visibility notices held for an organisation's next hourly or daily digest, one per subject. Deleted when the digest is queued. |
 | `email_deliveries` | operational | The digest email queue: the member's digest mailbox, and the contentless digest text. |
+| `inbound_emails` | operational | One row per message read from the email-to-draft mailbox: its SHA-256, when, accepted or refused with a reason code, and (once the sender is known) the organisation and operator. No subject, body or address: the message stays in the ISAC's mailbox, moved to the accepted or refused folder, and an accepted one's text is in the draft it made. |
 | `instance_controls` | operational | The instance-wide pause switch and who pressed it. |
 | `submission_milestones` | operational | Which telemetry milestones a submitter has been told about, so each is announced once. |
 | `count_snapshots` | operational | The k-anonymous counts last published per vulnerability (members' posture statuses) and per distributed submission (who could retrieve it, and the receipt types each holds), kept as each counted organisation's contribution so the next publication can be compared firm by firm. Never served as such; readers get only suppressed counts. An offboarded organisation is removed from every one. |

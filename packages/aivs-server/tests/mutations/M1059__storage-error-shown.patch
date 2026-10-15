@@ -1,0 +1,24 @@
+Mutation M1059: a storage error's text, its SQL, is shown in the member's draft
+Re-applies: (main, O slice 3, T1's review) "Email-to-draft: a registered person's message makes a draft (SF-93)"
+
+Expect red: packages/aivs-server/tests/unit/test_email_intake.py::test_a_storage_error_is_not_shown_to_the_member
+
+diff --git a/packages/aivs-server/src/aivs_server/services/email_intake.py b/packages/aivs-server/src/aivs_server/services/email_intake.py
+index cd4b110..8ed1f4b 100644
+--- a/packages/aivs-server/src/aivs_server/services/email_intake.py
++++ b/packages/aivs-server/src/aivs_server/services/email_intake.py
+@@ -381,13 +381,8 @@ async def _file_draft(
+     try:
+         async with session.begin_nested():
+             await _create(session, ctx, content, key=key)
+-    except (SubmissionError, ValueError) as exc:
++    except (SubmissionError, ValueError, *STORAGE_ERRORS) as exc:
+         reason = str(exc)
+-    except STORAGE_ERRORS:
+-        # A database error's text carries its SQL, which is not the member's
+-        # to read (T1's review); validation's text is about the member's own
+-        # content.
+-        reason = "it could not be stored"
+     else:
+         return
+     await _create(session, ctx, content.without_bundle(reason), key=key)

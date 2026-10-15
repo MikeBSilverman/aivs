@@ -54,6 +54,7 @@ Intervals = tuple[MembershipInterval, ...]
 
 __all__ = [
     "CERTIFICATE_BOUND_METHODS",
+    "EMAIL_FILER_ORG_TYPES",
     "ISAC_FILER_TYPES",
     "PolicyDeniedError",
     "audit_scope",
@@ -62,6 +63,7 @@ __all__ = [
     "can_assign_submission",
     "can_change_embargo",
     "can_confirm_proxy_filing",
+    "can_draft_by_email",
     "can_hold_evidence_pack",
     "can_manage_org",
     "can_manage_own_webhooks",
@@ -552,6 +554,42 @@ def can_confirm_proxy_filing(ctx: AuthContext, *, owner_is_caller: bool) -> bool
     collector that confirms whatever arrives would close it unread.
     """
     return is_active(ctx) and owner_is_caller and ctx.operator_id is not None
+
+
+#: Organisation types whose people may email a draft: the members, the same set
+#: as ``services.contributions.SHORTCUT_LANE_ORG_TYPES``, and a test holds the
+#: two equal. Never the ISAC's own organisation or its automation.
+EMAIL_FILER_ORG_TYPES: Final[frozenset[OrgType]] = frozenset(
+    {
+        OrgType.GSIB,
+        OrgType.SECTION9,
+        OrgType.CRIT_INFRA,
+        OrgType.VENDOR,
+        OrgType.RESEARCHER,
+        OrgType.GOVERNMENT,
+    }
+)
+#: A member's own roles: an auditor, or anyone holding only an ISAC role at a
+#: member organisation, files nothing by email.
+_EMAIL_FILER_ROLES: Final[frozenset[OperatorRole]] = frozenset(
+    {OperatorRole.ANALYST, OperatorRole.ORG_ADMIN}
+)
+
+
+def can_draft_by_email(ctx: AuthContext, now: dt.datetime) -> bool:
+    """A person at a member organisation who may draft, and whose access has not ended.
+
+    Sender authentication is the intake's (the receiving server's DMARC
+    result); this is what that person may do once known.
+    """
+    access_live = ctx.role_expires_at is None or now < ctx.role_expires_at
+    return (
+        is_active(ctx)
+        and access_live
+        and ctx.operator_id is not None
+        and ctx.org_type in EMAIL_FILER_ORG_TYPES
+        and bool(ctx.operator_roles & _EMAIL_FILER_ROLES)
+    )
 
 
 #: The organisations whose filings are the instance's own record: the ISAC and

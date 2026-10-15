@@ -81,6 +81,7 @@ __all__ = [
     "Distribution",
     "EmailDelivery",
     "Embargo",
+    "InboundEmail",
     "InstanceControl",
     "Operator",
     "OrgPosture",
@@ -963,6 +964,49 @@ class Acknowledgment(Base):
         ),
         Index("ix_acknowledgments_submission_org", "submission_id", "org_id"),
         Index("ix_acknowledgments_stream", "xact_id", "id"),
+    )
+
+
+class InboundEmail(Base):
+    """One message read from the email-to-draft mailbox, and what became of it.
+
+    Keyed on the digest of the message as fetched, so a message read twice (a
+    run that recorded it and stopped before moving it, or two processes polling
+    one mailbox) is recognised: the second insert waits on the unique index and
+    fails, and nothing is filed twice. Holds no content: the mailbox keeps the
+    message, moved to the accepted or refused folder, and the draft keeps what
+    was accepted. Deliberately no submission id: the draft's audit row records
+    its creation, and a second plain link between an organisation and a filing
+    is what Phase P keeps out of the database.
+    """
+
+    __tablename__ = "inbound_emails"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        primary_key=True, server_default=func.gen_random_uuid(), default=uuid.uuid4
+    )
+    message_sha256: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    received_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    outcome: Mapped[str] = mapped_column(String(20), nullable=False)
+    #: The refusal's code; ``None`` when accepted.
+    reason: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    #: The sender's organisation and person, once the sender is known: the
+    #: hourly allowance counts accepted rows per organisation.
+    org_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=True
+    )
+    operator_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("operators.id", ondelete="RESTRICT"), nullable=True
+    )
+
+    __table_args__ = (
+        CheckConstraint("outcome IN ('accepted', 'refused')", name="outcome_valid"),
+        CheckConstraint("(outcome = 'accepted') = (reason IS NULL)", name="refusal_has_reason"),
+        CheckConstraint(
+            "outcome <> 'accepted' OR (org_id IS NOT NULL AND operator_id IS NOT NULL)",
+            name="accepted_has_sender",
+        ),
+        Index("ix_inbound_emails_org_received", "org_id", "received_at"),
     )
 
 

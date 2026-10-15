@@ -1,0 +1,18 @@
+Mutation M1037: the ISAC's own organisation and its automation may draft by email
+Re-applies: (main, O slice 3) "Email-to-draft: a registered person's message makes a draft (SF-93)"
+
+Expect red: packages/aivs-server/tests/unit/test_email_intake.py::test_a_person_who_may_not_draft_files_nothing[isac_staff]
+Expect red: packages/aivs-server/tests/unit/test_email_intake.py::test_a_person_who_may_not_draft_files_nothing[automation]
+
+diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs-server/src/aivs_server/auth/policy.py
+index f2c206b..94a9275 100644
+--- a/packages/aivs-server/src/aivs_server/auth/policy.py
++++ b/packages/aivs-server/src/aivs_server/auth/policy.py
+@@ -587,7 +587,6 @@ def can_draft_by_email(ctx: AuthContext, now: dt.datetime) -> bool:
+         is_active(ctx)
+         and access_live
+         and ctx.operator_id is not None
+-        and ctx.org_type in EMAIL_FILER_ORG_TYPES
+         and bool(ctx.operator_roles & _EMAIL_FILER_ROLES)
+     )
+ 

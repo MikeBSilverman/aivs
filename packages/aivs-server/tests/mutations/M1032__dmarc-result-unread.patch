@@ -1,0 +1,19 @@
+Mutation M1032: a DMARC fail or none authenticates the sender
+Re-applies: (main, O slice 3) "Email-to-draft: a registered person's message makes a draft (SF-93)"
+
+Expect red: packages/aivs-server/tests/unit/test_email_message.py::test_anything_but_our_servers_topmost_aligned_pass_is_unauthenticated[dmarc-fail]
+Expect red: packages/aivs-server/tests/unit/test_email_message.py::test_anything_but_our_servers_topmost_aligned_pass_is_unauthenticated[dmarc-none]
+
+diff --git a/packages/aivs-server/src/aivs_server/services/email_message.py b/packages/aivs-server/src/aivs_server/services/email_message.py
+index c8a692a..fc61f73 100644
+--- a/packages/aivs-server/src/aivs_server/services/email_message.py
++++ b/packages/aivs-server/src/aivs_server/services/email_message.py
+@@ -123,7 +123,7 @@ def aligned_dmarc_pass(message: ParsedMessage, *, authserv_id: str) -> bool:
+     if stamp_id != authserv_id.lower() or len(dmarc) != 1:
+         return False
+     result, header_from = dmarc[0]
+-    return result == "pass" and header_from == message.sender.rpartition("@")[2]
++    return header_from == message.sender.rpartition("@")[2]
+ 
+ 
+ def draft_content(message: ParsedMessage) -> DraftContent:

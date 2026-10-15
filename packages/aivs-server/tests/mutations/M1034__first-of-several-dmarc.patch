@@ -1,0 +1,18 @@
+Mutation M1034: of two DMARC results in one stamp, the first is believed
+Re-applies: (main, O slice 3) "Email-to-draft: a registered person's message makes a draft (SF-93)"
+
+Expect red: packages/aivs-server/tests/unit/test_email_message.py::test_anything_but_our_servers_topmost_aligned_pass_is_unauthenticated[two-dmarc]
+
+diff --git a/packages/aivs-server/src/aivs_server/services/email_message.py b/packages/aivs-server/src/aivs_server/services/email_message.py
+index c8a692a..dedf140 100644
+--- a/packages/aivs-server/src/aivs_server/services/email_message.py
++++ b/packages/aivs-server/src/aivs_server/services/email_message.py
+@@ -120,7 +120,7 @@ def aligned_dmarc_pass(message: ParsedMessage, *, authserv_id: str) -> bool:
+     if message.sender is None or not message.authentication_results:
+         return False
+     stamp_id, dmarc = _read_authentication_results(message.authentication_results[0])
+-    if stamp_id != authserv_id.lower() or len(dmarc) != 1:
++    if stamp_id != authserv_id.lower() or not dmarc:
+         return False
+     result, header_from = dmarc[0]
+     return result == "pass" and header_from == message.sender.rpartition("@")[2]

@@ -1,0 +1,17 @@
+Mutation M1047: without MOVE, a message is deleted rather than copied first
+Re-applies: (main, O slice 3) "Email-to-draft: a registered person's message makes a draft (SF-93)"
+
+Expect red: packages/aivs-server/tests/unit/test_imap_mailbox.py::test_a_message_is_moved_where_the_server_can_and_copied_then_expunged_where_it_cannot
+
+diff --git a/packages/aivs-server/src/aivs_server/services/imap_mailbox.py b/packages/aivs-server/src/aivs_server/services/imap_mailbox.py
+index 1585176..2e76ce9 100644
+--- a/packages/aivs-server/src/aivs_server/services/imap_mailbox.py
++++ b/packages/aivs-server/src/aivs_server/services/imap_mailbox.py
+@@ -120,7 +120,6 @@ class ImapMailbox:
+         if "MOVE" in self._client.capabilities:
+             self._expect(self._client.uid("MOVE", uid, folder), "MOVE")
+             return
+-        self._expect(self._client.uid("COPY", uid, folder), "COPY")
+         self._expect(self._client.uid("STORE", uid, "+FLAGS", r"(\Deleted)"), "STORE")
+         self._expect(self._client.uid("EXPUNGE", uid), "UID EXPUNGE")
+ 

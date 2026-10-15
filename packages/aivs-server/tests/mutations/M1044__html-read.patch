@@ -1,0 +1,18 @@
+Mutation M1044: an HTML part is read when there is no plain one
+Re-applies: (main, O slice 3) "Email-to-draft: a registered person's message makes a draft (SF-93)"
+
+Expect red: packages/aivs-server/tests/unit/test_email_message.py::test_html_is_never_read
+
+diff --git a/packages/aivs-server/src/aivs_server/services/email_message.py b/packages/aivs-server/src/aivs_server/services/email_message.py
+index c8a692a..4d723ab 100644
+--- a/packages/aivs-server/src/aivs_server/services/email_message.py
++++ b/packages/aivs-server/src/aivs_server/services/email_message.py
+@@ -164,7 +164,7 @@ def _payload(part: EmailMessage) -> bytes:
+ 
+ 
+ def _plain_text(message: EmailMessage) -> str:
+-    body = message.get_body(preferencelist=("plain",))
++    body = message.get_body(preferencelist=("plain", "html"))
+     if body is None:
+         return ""
+     content = body.get_content()

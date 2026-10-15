@@ -1,0 +1,37 @@
+# =============================================================================
+# Email-to-draft: add this file when members are to email drafts to the ISAC
+# (runbook section 9.7).
+#
+#   docker compose --env-file deploy/.env \
+#     -f docker-compose.yml -f docker-compose.email-intake.yml up -d
+#
+# Without it no mailbox is read. With it, the application polls one mailbox
+# the ISAC already runs, over IMAP with TLS and the server's certificate
+# verified; it opens no port of its own. A message becomes a draft only when
+# the ISAC's receiving mail server recorded an aligned DMARC pass for a
+# registered person's address: that server must stamp every message it
+# delivers to the mailbox (runbook section 9.7).
+#
+#   AIVS_EMAIL_INTAKE_IMAP_HOST            the mailbox's IMAP server
+#   AIVS_EMAIL_INTAKE_IMAP_PORT            its IMAPS port (993 unless told otherwise)
+#   AIVS_EMAIL_INTAKE_IMAP_USERNAME        the mailbox account
+#   AIVS_EMAIL_INTAKE_AUTHSERV_ID          the authserv-id the receiving server
+#                                          writes in Authentication-Results
+#   AIVS_EMAIL_INTAKE_IMAP_PASSWORD_PATH   absolute path of a file holding the
+#                                          mailbox password (mode 0600, owned
+#                                          by uid 10001)
+# =============================================================================
+
+services:
+  app:
+    environment:
+      AIVS_EMAIL_INTAKE_IMAP_HOST: ${AIVS_EMAIL_INTAKE_IMAP_HOST:?set AIVS_EMAIL_INTAKE_IMAP_HOST to the intake mailbox's IMAP server}
+      AIVS_EMAIL_INTAKE_IMAP_PORT: ${AIVS_EMAIL_INTAKE_IMAP_PORT:-993}
+      AIVS_EMAIL_INTAKE_IMAP_USERNAME: ${AIVS_EMAIL_INTAKE_IMAP_USERNAME:?set AIVS_EMAIL_INTAKE_IMAP_USERNAME to the mailbox account}
+      AIVS_EMAIL_INTAKE_AUTHSERV_ID: ${AIVS_EMAIL_INTAKE_AUTHSERV_ID:?set AIVS_EMAIL_INTAKE_AUTHSERV_ID to the authserv-id your receiving mail server stamps}
+      AIVS_EMAIL_INTAKE_IMAP_PASSWORD_FILE: /run/aivs/imap-password
+    volumes:
+      - type: bind
+        source: ${AIVS_EMAIL_INTAKE_IMAP_PASSWORD_PATH:?set AIVS_EMAIL_INTAKE_IMAP_PASSWORD_PATH to the ABSOLUTE path of the mailbox password file}
+        target: /run/aivs/imap-password
+        read_only: true

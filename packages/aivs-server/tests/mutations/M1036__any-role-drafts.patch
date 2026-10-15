@@ -1,0 +1,17 @@
+Mutation M1036: any role at a member organisation may draft by email
+Re-applies: (main, O slice 3) "Email-to-draft: a registered person's message makes a draft (SF-93)"
+
+Expect red: packages/aivs-server/tests/unit/test_email_intake.py::test_a_person_who_may_not_draft_files_nothing[isac_role_only]
+
+diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs-server/src/aivs_server/auth/policy.py
+index f2c206b..a98e306 100644
+--- a/packages/aivs-server/src/aivs_server/auth/policy.py
++++ b/packages/aivs-server/src/aivs_server/auth/policy.py
+@@ -588,7 +588,6 @@ def can_draft_by_email(ctx: AuthContext, now: dt.datetime) -> bool:
+         and access_live
+         and ctx.operator_id is not None
+         and ctx.org_type in EMAIL_FILER_ORG_TYPES
+-        and bool(ctx.operator_roles & _EMAIL_FILER_ROLES)
+     )
+ 
+ 

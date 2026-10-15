@@ -440,7 +440,39 @@ each marking at a time, and the products of those below RED: a member's
 interests, at the granularity it chose. That is the price of email, and why
 email is opt-in per member (R18).
 
-## Cross-cutting: connection health, sandboxes, and government recipients
+## Cross-cutting: email-to-draft
+
+Mike's answer to Q39 opens a door members asked for: email a finding, and it
+appears as a draft. Email is the one channel where the sender writes the
+claim of who it is, so the door trusts nothing the message says about its
+sender, and it can do only one thing: create a draft a person must submit.
+
+| What they try | What stops it |
+| --- | --- |
+| Send as a member's analyst, with their address in From. | Only the topmost `Authentication-Results`, added by the ISAC's own receiving server, is read: it must carry the configured authserv-id and an aligned DMARC `pass` (SF-93). |
+| Write their own `Authentication-Results: <ours>; dmarc=pass` into the message. | It sits below the receiving server's stamp and is never read; the server should also remove it (RFC 8601 §5). |
+| Smuggle `;dmarc=pass header.from=<member>` into the server's own stamp, inside the envelope address an SPF result quotes. | Quoted-strings and comments, nested or not, are set aside before results are read; an unterminated one reads as nothing (T1's review). |
+| Stop the intake for every member with one malformed message, or fifty. | A message the parser cannot read is refused and moved; one left by a storage error does not count against the run's batch (T1's review). |
+| Have the intake erase other mail in the mailbox. | A message is moved by `UID MOVE`, or copied and expunged by its own UID; a server offering neither is refused (T1's review). |
+| Put two addresses in From, aligned to one domain and read as another. | A From with anything but one address is refused before the lookup. |
+| Email as a person of a suspended or quarantined member, or after an auditor's engagement ended. | The organisation's status, the person's activity, roles and end date are checked as a session would check them; each refusal is audited with its reason. |
+| Get a draft distributed, or read content, by email. | It makes one draft, nothing more; a person submits it in the portal. `AuthMethod.EMAIL` is off the certificate-bound path, so checks made while filing see nothing above AMBER+STRICT or under embargo. |
+| Learn which addresses AIVS knows, from replies. | No message gets a reply, accepted or refused. |
+| Hide instructions in HTML for whoever reads the draft. | HTML parts are never read; only the plain-text part becomes the summary. |
+| Flood a member's drafts, or the mailbox. | An hourly allowance per organisation; a size bound checked before a message is fetched; at most 50 messages a run. |
+| Replay a message, or race two readers. | One row per message digest, unique, written before the draft is filed: a second reader waits on it and files nothing. |
+
+**What this does not stop.** The rule is only as good as the receiving
+server: a message delivered to the mailbox without its stamp has the
+sender's header on top, which is why the runbook has the operator confirm
+it before turning the intake on (R29). Nor does it decide who may be
+registered at an address: the intake files a message into the organisation
+of the operator registered at its From address, and nothing yet ties a
+domain to an organisation (R30). A member's mail account, once
+compromised, files drafts as that person, as a stolen session would; they
+are drafts, and the member sees them.
+
+## Cross-cutting: connection health, sandboxes, and government recipients## Cross-cutting: connection health, sandboxes, and government recipients
 
 | What they try | What stops it |
 | --- | --- |
@@ -524,6 +556,8 @@ setting an attacker needs before a patch exists.
 | R26 | SQL on the member path can read every firm's receipts (`acknowledgments`, which SF-15 reserves to the ISAC's reviewers), postures (`org_postures`), circle memberships, distributions and operators: confidential across members, though none says who filed what. | Medium | Phase P slice 3e: the same staff-side reads, keyed on the caller's organisation, for those tables |
 | R27 | SQL on the member path can insert an operator row naming any organisation, the ISAC's included, because the member login inserts operators when a member's people first sign in through their IdP. | Low | Sign-in refuses it: SSO maps the organisation from the IdP's groups, refuses an ISAC organisation and an operator whose organisation differs from the mapped one, and a password sign-in to the ISAC needs an ISAC certificate. Phase P slice 3e moves the insert staff side |
 | R28 | SQL on the member path can rewrite a peer operator's sign-in bookkeeping: reset `failed_login_count`, undoing a lockout and helping a password guess (which still needs the peer's certificate), or push `last_totp_step` forward, locking the peer out of TOTP until that step passes. | Low–Medium | Phase P slice 3e: sign-in bookkeeping written staff side, keyed on the operator the certificate and password already identified |
+| R29 | Email-to-draft trusts the ISAC's receiving mail server to stamp every message it delivers to the intake mailbox. A message delivered unstamped (a second delivery path, DMARC checking switched off) carries the sender's own `Authentication-Results` on top, and a forged pass for a registered address would make a draft in that member's name. | Low | The runbook (§9.7) has the operator test with a forged header before turning the intake on; the result is a draft, never a distribution, and the member sees it |
+| R30 | Email-to-draft files a message into the organisation of the operator registered at its From address, and nothing ties a mail domain to an organisation. Whoever can register an address to an organisation (an ISAC operator; a member's IdP, where SSO creates operators from the `email` claim with no `email_verified` or domain check) can register another firm's person there, and that person's emails become the first organisation's drafts. The address being unique also keeps the real firm from registering it. | Medium | Q41: an ISAC-held list of each member's mail domains, checked at intake and at SSO linking; until answered, the intake stays off unless the ISAC controls every route by which an operator's email is set |
 | R11 | Webhook SSRF residual via DNS rebinding. | Low | Resolve-and-pin; egress policy |
 | R12 | A member firm can poison the corpus with plausible false findings. | Low–Medium | Reviewer judgement |
 

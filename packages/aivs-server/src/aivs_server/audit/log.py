@@ -158,6 +158,10 @@ class AuditAction:
     #: That an organisation exported its postures; never what, or how many.
     POSTURE_EXPORTED = "posture.exported"
     TAXII_INBOX_RECEIVED = "taxii.inbox_received"
+    #: One message read from the intake mailbox: the outcome and its reason
+    #: code, never the subject, the body, or a refused message's From.
+    EMAIL_INTAKE_ACCEPTED = "email_intake.accepted"
+    EMAIL_INTAKE_REFUSED = "email_intake.refused"
     DISTRIBUTION_PAUSED = "instance.distribution_paused"
     DISTRIBUTION_RESUMED = "instance.distribution_resumed"
 

@@ -1,0 +1,18 @@
+Mutation M1051: an empty mailbox variable is taken as a mailbox named empty
+Re-applies: (main, O slice 3) "Email-to-draft: a registered person's message makes a draft (SF-93)"
+
+Expect red: packages/aivs-server/tests/unit/test_email_intake_settings.py::test_no_mailbox_named_reads_nothing_and_empty_means_unset
+
+diff --git a/packages/aivs-server/src/aivs_server/config.py b/packages/aivs-server/src/aivs_server/config.py
+index 7959312..f2e47e3 100644
+--- a/packages/aivs-server/src/aivs_server/config.py
++++ b/packages/aivs-server/src/aivs_server/config.py
+@@ -662,7 +662,7 @@ class Settings(BaseSettings):
+     def _unset_intake_is_empty(cls, value: Any) -> Any:
+         """The relay's rule, for the same reason: all four are optional, and an
+         empty host must read as "no mailbox"."""
+-        return None if value == "" else value
++        return value
+ 
+     @field_validator("issuing_ca_certificate_file")
+     @classmethod

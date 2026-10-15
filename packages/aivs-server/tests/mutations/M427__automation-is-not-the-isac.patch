@@ -5,15 +5,16 @@ Expect red: packages/aivs-server/tests/unit/test_ownership.py::test_the_isacs_au
 Expect red: packages/aivs-server/tests/unit/test_enrich_kev.py::test_the_version_the_script_builds_is_validated_by_an_editor
 Expect red: packages/aivs-server/tests/unit/test_enrich_kev.py::test_the_kev_version_is_distributed_under_the_isacs_name_not_the_machines
 
-diff --git a/packages/aivs-server/src/aivs_server/services/ownership.py b/packages/aivs-server/src/aivs_server/services/ownership.py
---- a/packages/aivs-server/src/aivs_server/services/ownership.py
-+++ b/packages/aivs-server/src/aivs_server/services/ownership.py
-@@ -85,7 +85,7 @@
- async def _owners_like(session: AsyncSession, org_id: uuid.UUID) -> set[uuid.UUID]:
-     """``org_id`` and every organisation whose versions count as its own."""
-     org_type = await session.scalar(select(Organization.org_type).where(Organization.id == org_id))
--    if not is_isac_owner(org_type):
-+    if True:
-         return {org_id}
-     isac = await session.execute(
-         select(Organization.id).where(Organization.org_type.in_(tuple(ISAC_OWNER_TYPES)))
+diff --git a/packages/aivs-server/src/aivs_server/services/submissions.py b/packages/aivs-server/src/aivs_server/services/submissions.py
+--- a/packages/aivs-server/src/aivs_server/services/submissions.py
++++ b/packages/aivs-server/src/aivs_server/services/submissions.py
+@@ -544,7 +544,8 @@
+         session,
+         await submitter_of(session, submission),
+         (row.stix_id for row in rows),
+-        owner_is_isac=await is_isac_filing(session, submission),
++        owner_is_isac=await is_isac_filing(session, submission)
++        and submission.source is not SubmissionSource.SYSTEM,
+     )
+     for row in rows:
+         row.owner_token = tokens[row.stix_id]

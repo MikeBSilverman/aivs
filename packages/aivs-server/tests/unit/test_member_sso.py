@@ -52,6 +52,7 @@ from aivs_server.db.models import (
     Submission,
 )
 from aivs_server.main import create_app
+from aivs_server.services.attribution import submitted_by
 from aivs_server.taxii.filters import TaxiiFilters
 from aivs_server.taxii.queries import build_object_listing_query
 from tests.conftest import (
@@ -61,6 +62,8 @@ from tests.conftest import (
     TEST_SECRET_KEY_FILE,
     TEST_SESSION_SECRET,
     proxy_headers,
+    seed_filing,
+    seeded_owner_token,
 )
 from tests.sso_support import (
     CLIENT_ID,
@@ -433,23 +436,24 @@ async def _distributed(
 ) -> Submission:
     now = dt.datetime.now(dt.UTC)
     submission = Submission(
-        submitter_org_id=org.id,
         state=SubmissionState.DISTRIBUTED,
         tlp=marking,
         discovery_scope="own_product",
         title=f"{marking} content",
         distributed_at=now,
     )
-    session.add(submission)
+    await seed_filing(session, submission, org)
     await session.flush()
+    stix_id = f"vulnerability--{uuid.uuid4()}"
     obj = StixObject(
-        stix_id=f"vulnerability--{uuid.uuid4()}",
+        stix_id=stix_id,
         modified=now,
         created=now,
         type="vulnerability",
         spec_version="2.1",
         submission_id=submission.id,
         raw={"type": "vulnerability"},
+        owner_token=await seeded_owner_token(session, submission, stix_id),
     )
     session.add(obj)
     await session.flush()
@@ -587,13 +591,12 @@ async def test_an_sso_session_cannot_open_its_own_firms_red_filing(sso_app, idp,
     filings = {}
     for marking in (TLP.AMBER, TLP.RED):
         filing = Submission(
-            submitter_org_id=member.id,
             state=SubmissionState.DRAFT,
             tlp=marking,
             discovery_scope="own_product",
             title=f"{marking} filing",
         )
-        session.add(filing)
+        await seed_filing(session, filing, member)
         await session.commit()
         filings[marking] = filing.id
     assert (await client.get(f"/portal/submissions/{filings[TLP.AMBER]}")).status_code == 200
@@ -654,7 +657,7 @@ async def test_the_certificate_view_of_the_same_filings_lists_them_all(
         (
             await session.execute(
                 select(Submission.id).where(
-                    Submission.submitter_org_id == member.id, tlp_ceiling_clause(ctx)
+                    Submission.id.in_(submitted_by(member.id)), tlp_ceiling_clause(ctx)
                 )
             )
         ).scalars()

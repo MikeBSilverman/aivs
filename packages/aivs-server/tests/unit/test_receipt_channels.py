@@ -15,6 +15,7 @@ from sqlalchemy import func, select
 from aivs_schemas.enums import AckVia, SubmissionState
 from aivs_server.db.models import Acknowledgment, Submission
 from aivs_server.services.receipts import record_retrievals
+from tests.conftest import seed_filing
 
 pytestmark = pytest.mark.db
 
@@ -25,14 +26,13 @@ NOON = dt.datetime(2026, 10, 14, 12, 0, tzinfo=dt.UTC)
 async def received(session, make_org):
     org = await make_org("receipt-member")
     submission = Submission(
-        submitter_org_id=org.id,
         state=SubmissionState.DISTRIBUTED,
         tlp="amber",
         discovery_scope="own_product",
         title="Received",
         distributed_at=NOON,
     )
-    session.add(submission)
+    await seed_filing(session, submission, org)
     await session.commit()
     return org, submission
 

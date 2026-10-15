@@ -7,8 +7,8 @@ Expect red: packages/aivs-server/tests/unit/test_stale_versions.py::test_an_emba
 diff --git a/packages/aivs-server/src/aivs_server/services/content_rules.py b/packages/aivs-server/src/aivs_server/services/content_rules.py
 --- a/packages/aivs-server/src/aivs_server/services/content_rules.py
 +++ b/packages/aivs-server/src/aivs_server/services/content_rules.py
-@@ -49,9 +49,7 @@
-     owned = await foreign_owned_versions_problem(session, raws, owner_org_id=submitter)
+@@ -48,9 +48,7 @@
+     owned = await foreign_owned_versions_problem(session, submission)
      if owned is not None:
          return owned
 -    stale = await stale_version_problem(session, submission)

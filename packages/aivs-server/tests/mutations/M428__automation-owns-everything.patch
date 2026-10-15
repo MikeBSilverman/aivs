@@ -6,12 +6,12 @@ Expect red: packages/aivs-server/tests/unit/test_ownership.py::test_the_isacs_au
 diff --git a/packages/aivs-server/src/aivs_server/services/ownership.py b/packages/aivs-server/src/aivs_server/services/ownership.py
 --- a/packages/aivs-server/src/aivs_server/services/ownership.py
 +++ b/packages/aivs-server/src/aivs_server/services/ownership.py
-@@ -85,6 +85,8 @@
- async def _owners_like(session: AsyncSession, org_id: uuid.UUID) -> set[uuid.UUID]:
-     """``org_id`` and every organisation whose versions count as its own."""
-     org_type = await session.scalar(select(Organization.org_type).where(Organization.id == org_id))
-+    if org_type is OrgType.AUTOMATION:
-+        return set((await session.execute(select(Organization.id))).scalars().all())
-     if not is_isac_owner(org_type):
-         return {org_id}
-     isac = await session.execute(
+@@ -84,6 +84,8 @@
+     distributed row of the same id whose owner token is not this
+     submission's own for that id.
+     """
++    if submission.source.value == "system":
++        return None
+     own = aliased(StixObject)
+     other = aliased(StixObject)
+     taken = (

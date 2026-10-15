@@ -110,6 +110,8 @@ def _revoked_version(stored: StixObject, stamp: dt.datetime) -> StixObject:
         modified=modified,
         submission_id=stored.submission_id,
         raw=raw,
+        # The same submission's object: the same owner, so the same token.
+        owner_token=stored.owner_token,
         **index_columns(raw),
     )
 

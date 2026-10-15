@@ -6,11 +6,19 @@ Expect red: packages/aivs-server/tests/unit/test_ownership.py::test_a_kev_versio
 diff --git a/packages/aivs-server/src/aivs_server/taxii/queries.py b/packages/aivs-server/src/aivs_server/taxii/queries.py
 --- a/packages/aivs-server/src/aivs_server/taxii/queries.py
 +++ b/packages/aivs-server/src/aivs_server/taxii/queries.py
-@@ -62,7 +62,7 @@
-             StixObject.spec_version.label("spec_version"),
-             StixObject.raw.label("raw"),
+@@ -23,6 +23,7 @@
+ 
+ from aivs_server.auth.policy import Intervals, visible_content_clause
+ from aivs_server.db.models import Distribution, StixObject, Submission
++from aivs_server.services.attribution import submitter_column
+ from aivs_server.taxii.filters import TaxiiFilters, VersionSelector
+ from aivs_server.taxii.paging import Cursor
+ 
+@@ -62,7 +63,7 @@
              Distribution.submission_id.label("submission_id"),
--            owner_key(submitter_column(Submission)).label("owner"),
+             # Which owner each version counts as, for match[version] (SF-48's
+             # read-side layer). A token per owner and id: it names nobody.
+-            StixObject.owner_token.label("owner"),
 +            submitter_column(Submission).label("owner"),
          )
          .select_from(Distribution)

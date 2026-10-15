@@ -22,6 +22,7 @@ from aivs_server.auth.secretbox import SecretPurpose
 from aivs_server.db.models import Acknowledgment, AuditLog, Submission, Webhook, WebhookDelivery
 from aivs_server.observability import HEARTBEATS, Heartbeats, render_metrics
 from aivs_server.services.detections import RULES, Rule, run_detections
+from tests.conftest import seed_filing
 
 pytestmark = pytest.mark.db
 
@@ -81,18 +82,19 @@ async def test_one_organisation_retrieving_far_more_than_members_do_raises(sessi
     scraper = await make_org("scraper", org_type=OrgType.GSIB)
     normal = await make_org("normal", org_type=OrgType.GSIB)
     submissions = [
-        Submission(
-            submitter_org_id=normal.id,
-            state=SubmissionState.DISTRIBUTED,
-            distributed_at=NOW - dt.timedelta(hours=1),
-            tlp=TLP.AMBER,
-            discovery_scope=DiscoveryScope.AI_SYSTEM,
-            title=f"finding {i}",
+        await seed_filing(
+            session,
+            Submission(
+                state=SubmissionState.DISTRIBUTED,
+                distributed_at=NOW - dt.timedelta(hours=1),
+                tlp=TLP.AMBER,
+                discovery_scope=DiscoveryScope.AI_SYSTEM,
+                title=f"finding {i}",
+            ),
+            normal,
         )
         for i in range(3)
     ]
-    session.add_all(submissions)
-    await session.flush()
 
     def receipt(org_id: uuid.UUID, submission: Submission) -> Acknowledgment:
         return Acknowledgment(

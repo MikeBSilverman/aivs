@@ -6,9 +6,9 @@ Expect red: packages/aivs-server/tests/unit/test_isac_filings.py::test_the_autom
 diff --git a/packages/aivs-server/src/aivs_server/services/submissions.py b/packages/aivs-server/src/aivs_server/services/submissions.py
 --- a/packages/aivs-server/src/aivs_server/services/submissions.py
 +++ b/packages/aivs-server/src/aivs_server/services/submissions.py
-@@ -781,7 +781,7 @@
-             Organization.id == await submitter_of(session, submission)
-         )
+@@ -793,7 +793,7 @@
+         .join(Organization, Organization.id == submitter_column(Submission))
+         .where(Submission.id == submission.id)
      )
 -    return owner_type is None or owner_type in ISAC_FILER_TYPES
 +    return owner_type is None or owner_type is OrgType.ADMIN

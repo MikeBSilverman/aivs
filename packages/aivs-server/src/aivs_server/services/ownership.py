@@ -26,25 +26,27 @@ KEV enrichment script versions the ISAC's canonical record. An editor still
 validates each such submission, and the AI gate compares it with the ISAC's
 previous version (SF-6). It versions nobody else's object.
 
-Everything that asks "whose version is this" -- this check, the feed's
-``match[version]``, the AI gate's previous version, the canonical record --
-asks it through ``owner_key``, so the equivalence has one definition.
+Everything that asks "the same owner's versions of this object" -- this
+check, newest-only, the anonymity pin, the feed's ``match[version]``, the AI
+gate's previous version, the canonical record -- asks it of
+``stix_objects.owner_token``: equal tokens on one id are one owner, and the
+ISAC's and its automation's token is the constant ``ISAC_OWNER``
+(``services.attribution.owner_tokens_for``, which ingest calls). So the
+equivalence has one definition, and none of these asks who the owner is:
+the token names nobody (Phase P, S2-1).
 """
 
 from __future__ import annotations
 
-import uuid
-from collections.abc import Iterable, Mapping
-from typing import Any, Final
+from typing import Final
 
-from sqlalchemy import String, case, cast, literal, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
-from sqlalchemy.sql.elements import ColumnElement
 
 from aivs_schemas.enums import OrgType
-from aivs_server.db.models import Distribution, Organization, StixObject, Submission
-from aivs_server.services.attribution import submitter_column, submitter_of
+from aivs_server.db.models import Distribution, StixObject, Submission
+from aivs_server.services.attribution import ISAC_OWNER
 
 __all__ = [
     "ISAC_OWNER",
@@ -52,15 +54,11 @@ __all__ = [
     "STALE_VERSION",
     "foreign_owned_versions_problem",
     "is_isac_owner",
-    "owner_key",
     "stale_version_problem",
 ]
 
 #: The organisations that are the ISAC, for ownership: its own, and its machine.
 ISAC_OWNER_TYPES: Final[frozenset[OrgType]] = frozenset({OrgType.ADMIN, OrgType.AUTOMATION})
-
-#: ``owner_key``'s value for a version the ISAC or its automation filed.
-ISAC_OWNER: Final[str] = "isac"
 
 
 def is_isac_owner(org_type: OrgType | None) -> bool:
@@ -71,50 +69,38 @@ def is_isac_owner(org_type: OrgType | None) -> bool:
     whose name a version carries. Asked separately, the two drifted: the KEV
     script versioned the ISAC's record as the ISAC, and distribution stamped
     the version with the automation's own identity, so members saw the ISAC's
-    canonical record re-attributed to a machine. ``owner_key`` is the same
-    rule in SQL, over the same ``ISAC_OWNER_TYPES``.
+    canonical record re-attributed to a machine. Ingest gives the ISAC's
+    versions the one token ``ISAC_OWNER`` by ``policy.ISAC_FILER_TYPES``, which
+    a test holds equal to ``ISAC_OWNER_TYPES``.
     """
     return org_type in ISAC_OWNER_TYPES
 
 
-def owner_key(submitter_org_id: Any) -> ColumnElement[str]:
-    """The owner a version counts as, in SQL: ``ISAC_OWNER``, or the submitting org's id."""
-    isac_orgs = select(Organization.id).where(Organization.org_type.in_(tuple(ISAC_OWNER_TYPES)))
-    return case(
-        (submitter_org_id.in_(isac_orgs), literal(ISAC_OWNER)),
-        else_=cast(submitter_org_id, String),
-    )
-
-
-async def _owners_like(session: AsyncSession, org_id: uuid.UUID) -> set[uuid.UUID]:
-    """``org_id`` and every organisation whose versions count as its own."""
-    org_type = await session.scalar(select(Organization.org_type).where(Organization.id == org_id))
-    if not is_isac_owner(org_type):
-        return {org_id}
-    isac = await session.execute(
-        select(Organization.id).where(Organization.org_type.in_(tuple(ISAC_OWNER_TYPES)))
-    )
-    return set(isac.scalars().all())
-
-
 async def foreign_owned_versions_problem(
-    session: AsyncSession, objects: Iterable[Mapping[str, Any]], *, owner_org_id: uuid.UUID
+    session: AsyncSession, submission: Submission
 ) -> str | None:
-    """Why these objects may not be published by ``owner_org_id``, or ``None``."""
-    ids = {obj["id"] for obj in objects if isinstance(obj.get("id"), str)}
-    if not ids:
-        return None
-    owners = await _owners_like(session, owner_org_id)
+    """Why ``submission`` may not publish these versions, or ``None``.
+
+    Some other owner already distributed a version of one of its ids: a
+    distributed row of the same id whose owner token is not this
+    submission's own for that id.
+    """
+    own = aliased(StixObject)
+    other = aliased(StixObject)
     taken = (
         await session.execute(
-            select(StixObject.stix_id)
+            select(own.stix_id)
             .distinct()
-            .join(Distribution, Distribution.stix_object_id == StixObject.id)
-            .join(Submission, Submission.id == StixObject.submission_id)
-            .where(StixObject.stix_id.in_(ids), submitter_column(Submission).not_in(owners))
+            .join(
+                other,
+                (other.stix_id == own.stix_id) & (other.owner_token != own.owner_token),
+            )
+            .join(Distribution, Distribution.stix_object_id == other.id)
+            .where(own.submission_id == submission.id)
+            .order_by(own.stix_id)
         )
     ).scalars()
-    foreign = sorted(taken)
+    foreign = list(taken)
     if not foreign:
         return None
     return (
@@ -151,8 +137,6 @@ async def stale_version_problem(session: AsyncSession, submission: Submission) -
     """
     own = aliased(StixObject)
     other = aliased(StixObject)
-    other_submission = aliased(Submission)
-    owners = await _owners_like(session, await submitter_of(session, submission))
     stale = (
         (
             await session.execute(
@@ -161,15 +145,12 @@ async def stale_version_problem(session: AsyncSession, submission: Submission) -
                 .join(
                     other,
                     (other.stix_id == own.stix_id)
+                    & (other.owner_token == own.owner_token)
                     & (other.submission_id != own.submission_id)
                     & (other.modified >= own.modified),
                 )
                 .join(Distribution, Distribution.stix_object_id == other.id)
-                .join(other_submission, other_submission.id == other.submission_id)
-                .where(
-                    own.submission_id == submission.id,
-                    submitter_column(other_submission).in_(owners),
-                )
+                .where(own.submission_id == submission.id)
                 .order_by(own.stix_id)
             )
         )

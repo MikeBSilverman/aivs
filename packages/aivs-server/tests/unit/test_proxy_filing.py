@@ -21,6 +21,7 @@ from aivs_schemas.enums import OrgStatus, OrgType, SubmissionState
 from aivs_server.auth.secretbox import SecretPurpose
 from aivs_server.auth.sessions import establish_session
 from aivs_server.db.models import Operator, Submission, Webhook, WebhookDelivery
+from aivs_server.services.attribution import filing_record, submitted_by
 from aivs_server.services.proxy_filing import (
     CONFIRM_WITHIN,
     EVENT_FILED_ON_BEHALF,
@@ -123,11 +124,12 @@ async def test_a_filing_with_consent_is_the_members_and_records_who_filed_it(
 
     assert response.status_code == 201, response.text
     submission = await _stored(session, response)
-    assert submission.submitter_org_id == world.member.org.id
+    filing = await filing_record(session, submission)
+    assert filing.org_id == world.member.org.id
     editor = await session.scalar(select(Operator).where(Operator.org_id == world.isac_org.id))
-    assert submission.filed_by_operator_id == editor.id
-    assert submission.created_by_operator_id is None
-    assert submission.proxy_consent_sha256 == CONSENT
+    assert filing.proxy_editor == editor.id
+    assert filing.created_by is None
+    assert filing.proxy_consent == CONSENT
     assert submission.state is SubmissionState.SUBMITTED
     assert submission.distribute_anonymously is True, "anonymous unless the member asks"
 
@@ -143,7 +145,7 @@ async def test_a_filing_without_a_consent_artefact_is_refused_and_nothing_is_fil
 
     assert response.status_code in (400, 422)
     filed = await session.scalar(
-        select(Submission).where(Submission.submitter_org_id == world.member.org.id)
+        select(Submission).where(Submission.id.in_(submitted_by(world.member.org.id)))
     )
     assert filed is None
 

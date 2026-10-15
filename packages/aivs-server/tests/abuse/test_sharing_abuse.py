@@ -19,6 +19,7 @@ from sqlalchemy import func, select
 
 from aivs_schemas.enums import SubmissionState
 from aivs_server.db.models import Distribution, StixObject, Submission
+from aivs_server.services.attribution import submitted_by
 from aivs_server.services.detections import RULES, run_detections
 from tests.authz_matrix.world import inbox_note
 from tests.unit.sharing_world import API, SharingWorld, build_sharing_world, one_click
@@ -69,7 +70,7 @@ async def _published_count(session, org_id) -> int:
         select(func.count(func.distinct(Submission.id)))
         .join(StixObject, StixObject.submission_id == Submission.id)
         .join(Distribution, Distribution.stix_object_id == StixObject.id)
-        .where(Submission.submitter_org_id == org_id)
+        .where(Submission.id.in_(submitted_by(org_id)))
     )
 
 

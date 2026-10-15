@@ -17,7 +17,10 @@ from aivs_server.db.base import Base
 
 INVENTORY = Path(__file__).resolve().parents[4] / "docs" / "data-inventory.md"
 CLASSES = frozenset({"content", "pii", "evidence", "operational"})
-_ROW = re.compile(r"^\| `(?P<table>[a-z_]+)` \| (?P<cls>[a-z]+) \|", re.MULTILINE)
+#: A table name, schema-qualified where the table is outside ``public``
+#: (``attribution.submitters``): a narrower pattern silently skipped those rows,
+#: and the test then passed while ignoring them.
+_ROW = re.compile(r"^\| `(?P<table>[a-z_]+(?:\.[a-z_]+)?)` \| (?P<cls>[a-z]+) \|", re.MULTILINE)
 
 
 def _declared() -> dict[str, str]:

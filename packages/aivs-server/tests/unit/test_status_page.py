@@ -26,7 +26,7 @@ from aivs_server.db.models import (
     Webhook,
 )
 from aivs_server.observability import HEARTBEATS
-from tests.conftest import proxy_headers
+from tests.conftest import proxy_headers, seed_filing
 from tests.unit.test_portal_admin import sign_in
 
 pytestmark = pytest.mark.db
@@ -118,13 +118,12 @@ async def test_attention_lists_name_what_needs_it_and_leave_out_what_does_not(
 
     # healthy-member retrieved something today; expiring-soon never has.
     submission = Submission(
-        submitter_org_id=healthy.id,
         state="submitted",
         tlp="amber",
         discovery_scope="ai_system",
         title="t",
     )
-    session.add(submission)
+    await seed_filing(session, submission, healthy)
     await session.flush()
     session.add(
         Acknowledgment(

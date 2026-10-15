@@ -6,11 +6,11 @@ Expect red: packages/aivs-server/tests/unit/test_ownership.py::test_a_takeover_v
 diff --git a/packages/aivs-server/src/aivs_server/services/content_rules.py b/packages/aivs-server/src/aivs_server/services/content_rules.py
 --- a/packages/aivs-server/src/aivs_server/services/content_rules.py
 +++ b/packages/aivs-server/src/aivs_server/services/content_rules.py
-@@ -46,7 +46,7 @@
+@@ -45,7 +45,7 @@
+ ) -> str | None:
      """Why ``submission``'s ``objects`` may not become readable now, or ``None``."""
      raws = list(objects)
-     submitter = await submitter_of(session, submission)
--    owned = await foreign_owned_versions_problem(session, raws, owner_org_id=submitter)
+-    owned = await foreign_owned_versions_problem(session, submission)
 +    owned = None
      if owned is not None:
          return owned

@@ -6,9 +6,9 @@ Expect red: packages/aivs-server/tests/unit/test_anonymity.py::test_a_version_fi
 diff --git a/packages/aivs-server/src/aivs_server/services/submissions.py b/packages/aivs-server/src/aivs_server/services/submissions.py
 --- a/packages/aivs-server/src/aivs_server/services/submissions.py
 +++ b/packages/aivs-server/src/aivs_server/services/submissions.py
-@@ -883,7 +883,6 @@
-             session, raws, owner_org_id=await submitter_of(session, submission)
-         ),
+@@ -893,7 +893,6 @@
+     for problem in (
+         await foreign_owned_versions_problem(session, submission),
          await stale_version_problem(session, submission),
 -        await anonymity_change_problem(session, submission),
          await contribution_problem(session, submission, raws, visible_to=None, now=now),

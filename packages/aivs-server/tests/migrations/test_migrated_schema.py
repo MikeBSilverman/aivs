@@ -140,9 +140,11 @@ _SEED_SUBMISSION = "00000000-0000-4000-8000-000000000002"
 _SEED_STATEMENTS = (
     "INSERT INTO organizations (id, name, slug, org_type, status, stix_identity_id) "
     "VALUES (:org, 'Seed', 'seed-org', 'gsib', 'active', :identity)",
-    "INSERT INTO submissions (id, submitter_org_id, state, tlp, discovery_scope, "
-    "distribute_anonymously, title) "
-    "VALUES (:submission, :org, 'draft', 'amber', 'ai_system', false, 's')",
+    "INSERT INTO submissions (id, state, tlp, discovery_scope, distribute_anonymously, title) "
+    "VALUES (:submission, 'draft', 'amber', 'ai_system', false, 's')",
+    "INSERT INTO attribution.submitters (submission_id, org_id) VALUES (:submission, :org)",
+    "INSERT INTO attribution.object_owners (owner_token, stix_id, org_id) "
+    "VALUES ('seed-token', 'vulnerability--seed', :org)",
     "INSERT INTO submission_transitions (submission_id, to_state) VALUES (:submission, 'draft')",
     "INSERT INTO audit_log (actor_type, action, outcome, details) "
     "VALUES ('system', 'seed', 'success', '{}')",
@@ -175,10 +177,22 @@ def seeded_url(migrated_url: str) -> str:
     return migrated_url
 
 
-@pytest.mark.parametrize("table", ["audit_log", "submission_transitions", "audit_stream_modes"])
+#: Each append-only table, and a column an UPDATE can name in it.
+_APPEND_ONLY = {
+    "audit_log": "id",
+    "submission_transitions": "id",
+    "audit_stream_modes": "id",
+    # Who filed what (Phase P): rewriting it would re-attribute a filing.
+    "attribution.submitters": "org_id",
+    "attribution.object_owners": "org_id",
+}
+
+
+@pytest.mark.parametrize("table", list(_APPEND_ONLY))
 @pytest.mark.parametrize(
     "statement",
-    ["UPDATE {table} SET id = id", "DELETE FROM {table}", "TRUNCATE {table} CASCADE"],
+    ["UPDATE {table} SET {column} = {column}", "DELETE FROM {table}", "TRUNCATE {table} CASCADE"],
+    ids=["update", "delete", "truncate"],
 )
 @pytest.mark.requirement("NFR-S6")
 def test_append_only_tables_refuse_to_change_and_still_accept_inserts(
@@ -190,7 +204,7 @@ def test_append_only_tables_refuse_to_change_and_still_accept_inserts(
     try:
         with engine.connect() as connection:
             with pytest.raises(DBAPIError, match="append-only"):
-                connection.execute(text(statement.format(table=table)))
+                connection.execute(text(statement.format(table=table, column=_APPEND_ONLY[table])))
             connection.rollback()
             count = connection.execute(text(f"SELECT count(*) FROM {table}")).scalar_one()  # noqa: S608 - table from the parametrize list
     finally:

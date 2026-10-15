@@ -45,8 +45,7 @@ async def content_problem(
 ) -> str | None:
     """Why ``submission``'s ``objects`` may not become readable now, or ``None``."""
     raws = list(objects)
-    submitter = await submitter_of(session, submission)
-    owned = await foreign_owned_versions_problem(session, raws, owner_org_id=submitter)
+    owned = await foreign_owned_versions_problem(session, submission)
     if owned is not None:
         return owned
     stale = await stale_version_problem(session, submission)

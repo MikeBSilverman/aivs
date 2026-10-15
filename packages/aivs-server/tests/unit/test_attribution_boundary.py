@@ -35,6 +35,8 @@ FILING_COLUMNS = frozenset(
     {"submitter_org_id", "created_by_operator_id", "filed_by_operator_id", "proxy_consent_sha256"}
 )
 SCHEMA_PREFIX = "attribution."
+#: The models of the ``attribution`` schema.
+ATTRIBUTION_MODELS = frozenset({"SubmissionFiler", "ObjectOwner"})
 
 
 def _sources() -> Iterator[Path]:
@@ -58,6 +60,21 @@ def _submission_constructed_with_filer(tree: ast.AST) -> Iterator[ast.Call]:
             and node.func.id == "Submission"
             and any(keyword.arg in FILING_COLUMNS for keyword in node.keywords)
         ):
+            yield node
+
+
+def _attribution_models_named(tree: ast.AST) -> Iterator[ast.AST]:
+    """An import of, or a reference to, a model of the ``attribution`` schema."""
+    for node in ast.walk(tree):
+        named = (
+            (isinstance(node, ast.Name) and node.id in ATTRIBUTION_MODELS)
+            or (isinstance(node, ast.Attribute) and node.attr in ATTRIBUTION_MODELS)
+            or (
+                isinstance(node, ast.ImportFrom)
+                and any(alias.name in ATTRIBUTION_MODELS for alias in node.names)
+            )
+        )
+        if named:
             yield node
 
 
@@ -104,6 +121,11 @@ def test_nothing_outside_the_attribution_module_records_who_filed_a_submission()
 
 
 @pytest.mark.requirement("SF-88")
+def test_nothing_outside_the_attribution_module_queries_its_models():
+    assert _offences(_attribution_models_named) == []
+
+
+@pytest.mark.requirement("SF-88")
 def test_no_hand_written_query_names_the_attribution_schema():
     assert _offences(_sql_naming_the_schema) == []
 
@@ -116,8 +138,11 @@ def test_the_checks_find_what_they_are_for():
         "Submission(created_by_operator_id=None)\n"
         'text("SELECT org_id FROM attribution.submitters")\n'
         'def f():\n    """Reads attribution.submitters, in prose."""\n'
+        "from aivs_server.db.models import SubmissionFiler\n"
+        "select(models.ObjectOwner)\n"
     )
 
     assert len(list(_filing_column_reads(tree))) == 1
     assert len(list(_submission_constructed_with_filer(tree))) == 1
     assert len(list(_sql_naming_the_schema(tree))) == 1
+    assert len(list(_attribution_models_named(tree))) == 2

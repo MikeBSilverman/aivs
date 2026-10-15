@@ -42,7 +42,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.x509.oid import NameOID
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -58,11 +58,18 @@ from aivs_schemas.enums import (
 )
 from aivs_server.auth.context import AuthContext, AuthMethod
 from aivs_server.auth.passwords import hash_password
+from aivs_server.auth.policy import ISAC_FILER_TYPES
 from aivs_server.auth.secretbox import SecretBox, SecretPurpose
 from aivs_server.auth.sessions import establish_session
 from aivs_server.config import Settings
 from aivs_server.db import models
 from aivs_server.db.base import Base
+from aivs_server.services.attribution import (
+    FilingRecord,
+    owner_tokens_for,
+    record_filing,
+    submitter_of,
+)
 from aivs_server.taxii.resources import truncate_to_taxii_precision
 
 # ---------------------------------------------------------------------------
@@ -286,7 +293,7 @@ async def _schema(engine: Any) -> AsyncIterator[None]:
             for operation in ("UPDATE", "DELETE", "TRUNCATE"):
                 await connection.execute(
                     text(
-                        f'CREATE TRIGGER "{table}_deny_{operation.lower()}" '
+                        f'CREATE TRIGGER "{table.rpartition(".")[2]}_deny_{operation.lower()}" '
                         f"BEFORE {operation} ON {table} "
                         "FOR EACH STATEMENT EXECUTE FUNCTION aivs_deny_mutation();"
                     )
@@ -349,9 +356,13 @@ _APPEND_ONLY_TABLES: Final[tuple[str, ...]] = (
     "audit_log",
     "submission_transitions",
     "audit_stream_modes",
+    "attribution.submitters",
+    "attribution.object_owners",
 )
 
 _ALL_TABLES = (
+    "attribution.submitters",
+    "attribution.object_owners",
     "audit_log",
     "webhook_deliveries",
     "pending_notices",
@@ -672,14 +683,13 @@ async def publish(session: AsyncSession):
 
         if submission is None:
             submission = models.Submission(
-                submitter_org_id=org.id,
                 state=state,
                 tlp=TLP.AMBER,
                 discovery_scope=DiscoveryScope.AI_SYSTEM,
                 title=name,
                 distributed_at=now if state is SubmissionState.DISTRIBUTED else None,
             )
-            session.add(submission)
+            await seed_filing(session, submission, org)
             await session.commit()
             await session.refresh(submission)
 
@@ -691,6 +701,7 @@ async def publish(session: AsyncSession):
             spec_version="2.1",
             submission_id=submission.id,
             name=name,
+            owner_token=await seeded_owner_token(session, submission, stix_id),
             raw={
                 "type": stix_type,
                 "spec_version": "2.1",
@@ -892,14 +903,12 @@ async def make_validated(session: AsyncSession, make_org):
 
     async def _make(name: str) -> uuid.UUID:
         submission = models.Submission(
-            submitter_org_id=member.id,
             state=SubmissionState.VALIDATED,
             tlp=TLP.AMBER,
             discovery_scope=DiscoveryScope.AI_SYSTEM,
             title=name,
         )
-        session.add(submission)
-        await session.flush()
+        await seed_filing(session, submission, member)
         stix_id = f"vulnerability--{uuid.uuid4()}"
         session.add(
             models.StixObject(
@@ -910,6 +919,7 @@ async def make_validated(session: AsyncSession, make_org):
                 spec_version="2.1",
                 submission_id=submission.id,
                 name=name,
+                owner_token=await seeded_owner_token(session, submission, stix_id),
                 raw={"type": "vulnerability", "spec_version": "2.1", "id": stix_id, "name": name},
             )
         )
@@ -917,6 +927,44 @@ async def make_validated(session: AsyncSession, make_org):
         return submission.id
 
     return _make
+
+
+async def seed_filing(
+    session: AsyncSession,
+    submission: models.Submission,
+    org: models.Organization,
+    *,
+    created_by: uuid.UUID | None = None,
+) -> models.Submission:
+    """Add a hand-built submission, recorded as ``org``'s filing by the writer ingest uses.
+
+    Who filed it is held apart (``services.attribution``); a seeded row gets
+    its filer through the same function as a filed one, so it is the row the
+    readers will meet (CLAUDE.md section 2: build seeded rows with the
+    writer's own functions).
+    """
+    session.add(submission)
+    await session.flush()
+    await record_filing(
+        session,
+        submission,
+        FilingRecord(org_id=org.id, created_by=created_by, proxy_editor=None, proxy_consent=None),
+    )
+    return submission
+
+
+async def seeded_owner_token(
+    session: AsyncSession, submission: models.Submission, stix_id: str
+) -> str:
+    """The owner token ingest would store a version of ``stix_id`` in ``submission`` with."""
+    org_id = await submitter_of(session, submission)
+    org_type = await session.scalar(
+        select(models.Organization.org_type).where(models.Organization.id == org_id)
+    )
+    tokens = await owner_tokens_for(
+        session, org_id, [stix_id], owner_is_isac=org_type in ISAC_FILER_TYPES
+    )
+    return tokens[stix_id]
 
 
 async def is_blocked(operation: Awaitable[Any]) -> tuple[bool, asyncio.Task[Any]]:

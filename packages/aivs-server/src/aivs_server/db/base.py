@@ -42,6 +42,13 @@ def _require_btree_gist(_target: MetaData, connection: Connection, **_kw: object
     connection.execute(text("CREATE EXTENSION IF NOT EXISTS btree_gist"))
 
 
+# Phase P's ``attribution`` schema, created beside the tables in it for the
+# same reason as the extension above: create_all and the migration then agree.
+@event.listens_for(Base.metadata, "before_create")
+def _create_attribution_schema(_target: MetaData, connection: Connection, **_kw: object) -> None:
+    connection.execute(text("CREATE SCHEMA IF NOT EXISTS attribution"))
+
+
 def utc_now() -> dt.datetime:
     """Return an aware UTC timestamp.
 

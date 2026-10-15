@@ -71,6 +71,7 @@ if TYPE_CHECKING:  # pragma: no cover
     pass
 
 __all__ = [
+    "ATTRIBUTION_SCHEMA",
     "Acknowledgment",
     "AuditLog",
     "Circle",
@@ -81,6 +82,7 @@ __all__ = [
     "EmailDelivery",
     "Embargo",
     "InstanceControl",
+    "ObjectOwner",
     "Operator",
     "OrgPosture",
     "Organization",
@@ -89,6 +91,7 @@ __all__ = [
     "SectorEvent",
     "StixObject",
     "Submission",
+    "SubmissionFiler",
     "SubmissionTransition",
     "SubmissionTriage",
     "TaxiiCollection",
@@ -531,13 +534,9 @@ class Submission(TimestampMixin, Base):
     id: Mapped[uuid.UUID] = mapped_column(
         primary_key=True, server_default=func.gen_random_uuid(), default=uuid.uuid4
     )
-    submitter_org_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False, index=True
-    )
-    #: Null when submitted machine-to-machine over mTLS rather than by a person.
-    created_by_operator_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("operators.id", ondelete="RESTRICT"), nullable=True
-    )
+    # Who filed it, and for whom, is not here: it is held apart in
+    # ``attribution.submitters`` (``SubmissionFiler``), read only through
+    # ``services.attribution`` (Phase P).
     state: Mapped[SubmissionState] = mapped_column(
         pg_enum(SubmissionState, "submission_state"),
         nullable=False,
@@ -577,15 +576,11 @@ class Submission(TimestampMixin, Base):
         default=SubmissionLane.REVIEW,
         server_default=SubmissionLane.REVIEW.value,
     )
-    #: Set when an ISAC analyst filed this for the member it is attributed to
-    #: (SF-68). The member may confirm or withdraw it; until it does, or until
-    #: ``proxy_confirm_by`` passes, it is not distributed.
-    filed_by_operator_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("operators.id", ondelete="RESTRICT"), nullable=True
-    )
-    #: SHA-256 of the member's consent: the forwarded mail, or the click. The
-    #: artefact itself stays with the ISAC; this binds the filing to it.
-    proxy_consent_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    #: Set on, and only on, a filing an ISAC analyst made for the member it is
+    #: attributed to (SF-68): when silence confirms it. The member may confirm
+    #: or withdraw it; until it does, or until this passes, it is not
+    #: distributed. Which analyst filed it, and on what consent, are held apart
+    #: with the submitter (``SubmissionFiler``).
     proxy_confirm_by: Mapped[dt.datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -614,11 +609,6 @@ class Submission(TimestampMixin, Base):
             "(state <> 'distributed') OR (distributed_at IS NOT NULL)",
             name="distributed_has_timestamp",
         ),
-        CheckConstraint(
-            "(filed_by_operator_id IS NULL) = (proxy_consent_sha256 IS NULL)",
-            name="proxy_filing_has_consent",
-        ),
-        Index("ix_submissions_org_state", "submitter_org_id", "state"),
     )
 
     embargo: Mapped[Embargo | None] = relationship(back_populates="submission", uselist=False)
@@ -711,6 +701,13 @@ class StixObject(Base):
         ForeignKey("submissions.id", ondelete="RESTRICT"), nullable=False, index=True
     )
     raw: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    #: Which owner this version counts as, for "the same owner's versions of
+    #: this object" (SF-48, SF-82, SF-85, and the feed's ``match[version]``):
+    #: ``'isac'`` for the ISAC and its automation, else a random token for this
+    #: owner *and this id* (``ObjectOwner``). Equal tokens on one id mean one
+    #: owner; tokens on two ids say nothing about each other, so the column
+    #: cannot be used to gather one firm's objects. Set at ingest.
+    owner_token: Mapped[str] = mapped_column(String(36), nullable=False)
 
     # -- Extracted for indexing and search only; ``raw`` remains canonical. --
     name: Mapped[str | None] = mapped_column(String(300), nullable=True)
@@ -745,6 +742,77 @@ class StixObject(Base):
     )
 
     submission: Mapped[Submission] = relationship(back_populates="stix_objects")
+
+
+#: The schema that holds who filed what (Phase P). Its own schema, so that
+#: grants can withhold it whole from a role that must never read it.
+ATTRIBUTION_SCHEMA = "attribution"
+
+
+class SubmissionFiler(Base):
+    """Who filed a submission, and for whom (Phase P; Mike, Q16 and Q37).
+
+    ISAC-only and treated as TLP:RED: read and written only through
+    ``services.attribution``. Held apart from ``submissions`` rather than in a
+    column of it, so that a query over submissions -- the member read paths
+    join it everywhere -- cannot reach the submitter by accident, and so that
+    a database role can be denied the whole schema.
+    """
+
+    __tablename__ = "submitters"
+
+    submission_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("submissions.id", ondelete="RESTRICT"), primary_key=True
+    )
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    #: The person who filed it in the submitter's name; null for a machine.
+    created_by_operator_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("operators.id", ondelete="RESTRICT"), nullable=True
+    )
+    #: The ISAC analyst who filed it for the member (SF-68).
+    filed_by_operator_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("operators.id", ondelete="RESTRICT"), nullable=True
+    )
+    #: SHA-256 of the member's consent: the forwarded mail, or the click. The
+    #: artefact itself stays with the ISAC; this binds the filing to it. One
+    #: member's proxy filings would share nothing else, so it is held here.
+    proxy_consent_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    __table_args__ = (
+        CheckConstraint(
+            "(filed_by_operator_id IS NULL) = (proxy_consent_sha256 IS NULL)",
+            name="proxy_filing_has_consent",
+        ),
+        {"schema": ATTRIBUTION_SCHEMA},
+    )
+
+
+class ObjectOwner(Base):
+    """The owner token of one organisation's versions of one object id (Phase P, S2-1).
+
+    ``stix_objects.owner_token`` lets the read path group versions by owner
+    -- SF-48's read-side layer -- without naming the owner. This table is the
+    mapping back. A token per *(owner, id)* rather than per owner, so tokens
+    cannot be matched across ids to gather one firm's work; random rather
+    than a hash of the pair, which a reader holding the few dozen organisation
+    ids could reverse. The ISAC and its automation need no row: their token
+    is the constant ``'isac'``, and the ISAC's authorship is public anyway.
+    """
+
+    __tablename__ = "object_owners"
+
+    owner_token: Mapped[str] = mapped_column(String(36), primary_key=True)
+    stix_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint("stix_id", "org_id", name="uq_object_owners_stix_id_org_id"),
+        {"schema": ATTRIBUTION_SCHEMA},
+    )
 
 
 class Distribution(Base):

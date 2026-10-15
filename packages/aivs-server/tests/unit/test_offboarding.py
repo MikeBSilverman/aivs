@@ -23,6 +23,7 @@ from aivs_server.audit.log import AuditAction
 from aivs_server.auth.secretbox import SecretPurpose
 from aivs_server.db import models
 from aivs_server.db.base import Base
+from aivs_server.services.attribution import filing_record, submitted_by
 from aivs_server.services.detections import RULES, run_detections
 from tests.authz_matrix.world import inbox_note
 from tests.conftest import proxy_headers
@@ -118,7 +119,10 @@ async def _count(session, table: str, column: str, org_id: uuid.UUID) -> int:
 
 
 def _classes() -> dict[str, str]:
-    rows = re.findall(r"^\| `([a-z_]+)` \| ([a-z]+) \|", INVENTORY.read_text("utf-8"), re.M)
+    # Schema-qualified names too (``attribution.submitters``), as the inventory test reads them.
+    rows = re.findall(
+        r"^\| `([a-z_]+(?:\.[a-z_]+)?)` \| ([a-z]+) \|", INVENTORY.read_text("utf-8"), re.M
+    )
     return dict(rows)
 
 
@@ -184,6 +188,41 @@ async def test_its_people_are_pseudonymised_and_their_ids_kept(client, session, 
 
 
 @pytest.mark.requirement("SF-72")
+@pytest.mark.requirement("SF-88")
+async def test_a_filing_record_keeps_the_pseudonymised_persons_id(client, session, holdings):
+    """Who filed a contribution is append-only (``attribution.submitters``), so
+    offboarding cannot rewrite it, and need not: the record keeps the
+    person's id, and the person's row behind the id is what is scrubbed. If
+    offboarding touched the record, the trigger would refuse it and the
+    offboarding would fail."""
+    operator_id = holdings.member.operator.id
+    filed = (
+        await session.scalars(
+            select(models.Submission).where(
+                models.Submission.id.in_(submitted_by(holdings.member.org.id))
+            )
+        )
+    ).all()
+    ids = [item.id for item in filed]
+    before = {item.id: await filing_record(session, item) for item in filed}
+    assert operator_id in {record.created_by for record in before.values()}
+
+    response = await offboard(client, holdings)
+
+    assert response.status_code == 200, response.text
+    session.expire_all()
+    after = {
+        submission_id: await filing_record(
+            session, await session.get(models.Submission, submission_id)
+        )
+        for submission_id in ids
+    }
+    assert after == before
+    operator = await session.get(models.Operator, operator_id, populate_existing=True)
+    assert operator.display_name == "Offboarded operator"
+
+
+@pytest.mark.requirement("SF-72")
 async def test_its_credentials_end_and_its_memberships_close_as_offboarding(
     client, session, holdings
 ):
@@ -218,12 +257,13 @@ async def test_its_credentials_end_and_its_memberships_close_as_offboarding(
 @pytest.mark.requirement("SF-72")
 async def test_its_contributions_and_receipts_are_kept(client, session, holdings):
     org_id = holdings.member.org.id
-    submissions = await _count(session, "submissions", "submitter_org_id", org_id)
+    # Who filed each is held apart (Phase P): the filings are counted there.
+    submissions = await _count(session, "attribution.submitters", "org_id", org_id)
 
     await offboard(client, holdings)
 
     assert submissions > 0
-    assert await _count(session, "submissions", "submitter_org_id", org_id) == submissions
+    assert await _count(session, "attribution.submitters", "org_id", org_id) == submissions
 
 
 @pytest.mark.requirement("SF-72")

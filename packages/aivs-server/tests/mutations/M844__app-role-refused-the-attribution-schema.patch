@@ -1,0 +1,17 @@
+Mutation M844: the application role is never granted the attribution schema, so every filing fails at its first write
+Re-applies: Phase P slice 2b (SF-88)
+
+Expect red: packages/aivs-server/tests/migrations/test_app_role_grants.py::test_the_app_role_may_record_who_filed_and_read_it_back
+
+diff --git a/packages/aivs-server/src/aivs_server/db/grants.py b/packages/aivs-server/src/aivs_server/db/grants.py
+--- a/packages/aivs-server/src/aivs_server/db/grants.py
++++ b/packages/aivs-server/src/aivs_server/db/grants.py
+@@ -37,7 +37,7 @@
+ #: Every schema the application's tables live in. ``attribution`` holds who
+ #: filed what (Phase P); granted here to the one application role, until the
+ #: member path is given a login of its own that is refused it.
+-_SCHEMAS: Final[tuple[str, ...]] = ("public", "attribution")
++_SCHEMAS: Final[tuple[str, ...]] = ("public",)
+ 
+ 
+ class UnsafeAppRoleError(RuntimeError):

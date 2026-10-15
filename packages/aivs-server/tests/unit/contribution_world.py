@@ -14,7 +14,7 @@ from typing import Any
 from aivs_schemas.enums import TLP, DiscoveryScope, SubmissionState
 from aivs_schemas.extension.builders import AIVS_EXTENSION_ID
 from aivs_server.db import models
-from tests.conftest import proxy_headers
+from tests.conftest import proxy_headers, seed_filing, seeded_owner_token
 
 API = "/api/v1/submissions"
 STAMP = "2026-08-01T00:00:00.000Z"
@@ -54,14 +54,13 @@ async def seed(
     now = dt.datetime.now(dt.UTC)
     modified = dt.datetime.fromisoformat(raw["modified"].replace("Z", "+00:00"))
     submission = models.Submission(
-        submitter_org_id=org.id,
         state=state,
         tlp=tlp,
         discovery_scope=discovery_scope,
         title=raw.get("name", "seeded"),
         distributed_at=now if state is SubmissionState.DISTRIBUTED else None,
     )
-    session.add(submission)
+    await seed_filing(session, submission, org)
     await session.flush()
     stored = models.StixObject(
         stix_id=raw["id"],
@@ -71,6 +70,7 @@ async def seed(
         modified=modified,
         submission_id=submission.id,
         raw=raw,
+        owner_token=await seeded_owner_token(session, submission, raw["id"]),
     )
     session.add(stored)
     await session.flush()

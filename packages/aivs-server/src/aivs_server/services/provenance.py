@@ -26,8 +26,9 @@ import uuid
 from collections.abc import Iterable, Mapping
 from typing import Any, Final
 
-from sqlalchemy import literal, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from aivs_schemas.enums import SubmissionSource
 from aivs_schemas.extension.builders import (
@@ -36,8 +37,6 @@ from aivs_schemas.extension.builders import (
     AIVS_PROVENANCE_EXTENSION_ID,
 )
 from aivs_server.db.models import Distribution, StixObject, Submission
-from aivs_server.services.attribution import submitter_column, submitter_of
-from aivs_server.services.ownership import owner_key
 from aivs_server.taxii.resources import to_taxii_timestamp
 
 __all__ = [
@@ -131,16 +130,19 @@ async def _distributed_versions(
     organisation found no previous version there, so a machine lowering the
     ISAC's score needed no acknowledgement.
     """
+    own = aliased(StixObject)
     rows = (
         await session.execute(
             select(StixObject.stix_id, StixObject.raw)
             .join(Distribution, Distribution.stix_object_id == StixObject.id)
-            .join(Submission, Submission.id == StixObject.submission_id)
+            .join(
+                own,
+                (own.stix_id == StixObject.stix_id) & (own.owner_token == StixObject.owner_token),
+            )
             .where(
                 StixObject.stix_id.in_(stix_ids),
-                owner_key(submitter_column(Submission))
-                == owner_key(literal(await submitter_of(session, submission))),
-                Submission.id != submission.id,
+                own.submission_id == submission.id,
+                StixObject.submission_id != submission.id,
             )
             .order_by(StixObject.stix_id, StixObject.modified.desc())
             .distinct(StixObject.stix_id)

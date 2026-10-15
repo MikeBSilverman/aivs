@@ -17,10 +17,10 @@ diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs
 diff --git a/packages/aivs-server/src/aivs_server/services/isac_records.py b/packages/aivs-server/src/aivs_server/services/isac_records.py
 --- a/packages/aivs-server/src/aivs_server/services/isac_records.py
 +++ b/packages/aivs-server/src/aivs_server/services/isac_records.py
-@@ -56,7 +56,7 @@
+@@ -55,7 +55,7 @@
          .where(
              StixObject.type == "vulnerability",
-             owner_key(submitter_column(Submission)) == ISAC_OWNER,
+             StixObject.owner_token == ISAC_OWNER,
 -            Submission.state.in_(tuple(VISIBLE_SUBMISSION_STATES)),
 +
              distributed,

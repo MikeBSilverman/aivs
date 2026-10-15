@@ -30,6 +30,7 @@ from aivs_server.auth.policy import can_hold_evidence_pack, can_read_audit, can_
 from aivs_server.db.models import Acknowledgment, AuditLog, Submission
 from aivs_server.services.audit_stream import genesis
 from aivs_server.services.operators import OperatorError, create_operator
+from tests.conftest import seed_filing
 
 pytestmark = pytest.mark.db
 
@@ -175,13 +176,12 @@ async def test_receipts_are_scoped_like_the_trail(client, session, world):
 
 async def _own_submission(session, org) -> Submission:
     submission = Submission(
-        submitter_org_id=org.id,
         state=SubmissionState.SUBMITTED,
         tlp=TLP.AMBER,
         discovery_scope=DiscoveryScope.AI_SYSTEM,
         title="The firm's own filing",
     )
-    session.add(submission)
+    await seed_filing(session, submission, org)
     await session.commit()
     return submission
 
@@ -444,7 +444,7 @@ def test_policy_refuses_an_auditor_what_its_firms_people_may_do():
     later route that forgot the door would still be closed. The pair is the
     same firm's analyst, who may."""
     org_id = uuid.uuid4()
-    own = Submission(submitter_org_id=org_id, tlp=TLP.AMBER)
+    own = Submission(tlp=TLP.AMBER)
 
     def ctx(role: OperatorRole) -> AuthContext:
         return AuthContext(

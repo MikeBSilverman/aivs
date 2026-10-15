@@ -57,7 +57,9 @@ from aivs_server.services.anonymity import anonymity_change_problem
 from aivs_server.services.attribution import (
     FilingRecord,
     is_submitted_by,
+    owner_tokens_for,
     record_filing,
+    submitter_column,
     submitter_of,
 )
 from aivs_server.services.disclosure import DisclosureScope, disclosure_problem
@@ -533,10 +535,19 @@ async def replace_submission_objects(
                 modified=parsed.modified,
                 submission_id=submission.id,
                 raw=obj,
+                owner_token="",
                 **_extract_indexed_fields(obj),
             )
         )
 
+    tokens = await owner_tokens_for(
+        session,
+        await submitter_of(session, submission),
+        (row.stix_id for row in rows),
+        owner_is_isac=await is_isac_filing(session, submission),
+    )
+    for row in rows:
+        row.owner_token = tokens[row.stix_id]
     session.add_all(rows)
     return len(rows)
 
@@ -726,9 +737,9 @@ async def create_submission(
         title=title,
         summary=summary,
     )
-    record_filing(submission, _filing_record(ctx, filed_for))
     session.add(submission)
     await session.flush()
+    await record_filing(session, submission, _filing_record(ctx, filed_for))
 
     object_count = await replace_submission_objects(session, submission, bundle)
     # An analyst filing for a member is ISAC staff, who see everything; the
@@ -777,9 +788,10 @@ async def is_isac_filing(session: AsyncSession, submission: Submission) -> bool:
     an editor.
     """
     owner_type = await session.scalar(
-        select(Organization.org_type).where(
-            Organization.id == await submitter_of(session, submission)
-        )
+        select(Organization.org_type)
+        .select_from(Submission)
+        .join(Organization, Organization.id == submitter_column(Submission))
+        .where(Submission.id == submission.id)
     )
     return owner_type is None or owner_type in ISAC_FILER_TYPES
 
@@ -879,9 +891,7 @@ async def _prepare_validation(
     raws = [row.raw for row in rows]
     now = await database_now(session)
     for problem in (
-        await foreign_owned_versions_problem(
-            session, raws, owner_org_id=await submitter_of(session, submission)
-        ),
+        await foreign_owned_versions_problem(session, submission),
         await stale_version_problem(session, submission),
         await anonymity_change_problem(session, submission),
         await contribution_problem(session, submission, raws, visible_to=None, now=now),
@@ -1009,9 +1019,7 @@ async def check_content_rules(session: AsyncSession, submission: Submission) -> 
     """
     raws = await _stored_raws(session, submission)
     for problem in (
-        await foreign_owned_versions_problem(
-            session, raws, owner_org_id=await submitter_of(session, submission)
-        ),
+        await foreign_owned_versions_problem(session, submission),
         await stale_version_problem(session, submission),
         await anonymity_change_problem(session, submission),
         await contribution_problem(

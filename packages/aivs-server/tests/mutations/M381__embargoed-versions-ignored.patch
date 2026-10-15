@@ -6,25 +6,25 @@ Expect red: packages/aivs-server/tests/unit/test_stale_versions.py::test_an_emba
 diff --git a/packages/aivs-server/src/aivs_server/services/ownership.py b/packages/aivs-server/src/aivs_server/services/ownership.py
 --- a/packages/aivs-server/src/aivs_server/services/ownership.py
 +++ b/packages/aivs-server/src/aivs_server/services/ownership.py
-@@ -37,7 +37,7 @@
- from collections.abc import Iterable, Mapping
- from typing import Any, Final
+@@ -40,7 +40,7 @@
  
--from sqlalchemy import String, case, cast, literal, select
-+from sqlalchemy import String, case, cast, func, literal, select
+ from typing import Final
+ 
+-from sqlalchemy import select
++from sqlalchemy import func, select
  from sqlalchemy.ext.asyncio import AsyncSession
  from sqlalchemy.orm import aliased
- from sqlalchemy.sql.elements import ColumnElement
-@@ -163,7 +163,11 @@
+ 
+@@ -148,7 +148,11 @@
                      & (other.submission_id != own.submission_id)
                      & (other.modified >= own.modified),
                  )
 -                .join(Distribution, Distribution.stix_object_id == other.id)
 +                .join(
-+                Distribution,
-+                (Distribution.stix_object_id == other.id)
-+                & (Distribution.date_added <= func.now()),
-+            )
-                 .join(other_submission, other_submission.id == other.submission_id)
-                 .where(
-                     own.submission_id == submission.id,
++                    Distribution,
++                    (Distribution.stix_object_id == other.id)
++                    & (Distribution.date_added <= func.now()),
++                )
+                 .where(own.submission_id == submission.id)
+                 .order_by(own.stix_id)
+             )

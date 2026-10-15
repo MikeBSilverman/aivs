@@ -34,7 +34,10 @@ __all__ = ["APP_ROLE_ENV_VAR", "UnsafeAppRoleError", "connection_role_problem", 
 APP_ROLE_ENV_VAR: Final[str] = "AIVS_APP_DB_ROLE"
 
 _DENY_FUNCTION: Final[str] = "aivs_deny_mutation"
-_SCHEMA: Final[str] = "public"
+#: Every schema the application's tables live in. ``attribution`` holds who
+#: filed what (Phase P); granted here to the one application role, until the
+#: member path is given a login of its own that is refused it.
+_SCHEMAS: Final[tuple[str, ...]] = ("public", "attribution")
 
 
 class UnsafeAppRoleError(RuntimeError):
@@ -57,7 +60,7 @@ _HOLDS_AN_OWNER: Final = text(
     SELECT EXISTS (
         SELECT 1 FROM pg_class c
         JOIN pg_namespace n ON n.oid = c.relnamespace
-        WHERE n.nspname = :schema AND pg_has_role(:role, c.relowner, 'MEMBER')
+        WHERE n.nspname = ANY(:schemas) AND pg_has_role(:role, c.relowner, 'MEMBER')
     )
     """
 )
@@ -80,7 +83,7 @@ def _role_problem(role: str, *, is_superuser: bool | None, holds_an_owner: bool)
 
 
 def _refuse_unsafe_role(connection: Connection, role: str) -> None:
-    params = {"role": role, "schema": _SCHEMA}
+    params = {"role": role, "schemas": list(_SCHEMAS)}
     is_superuser = connection.execute(_IS_SUPERUSER, params).scalar_one_or_none()
     # pg_has_role raises for a role that does not exist, so only ask of one that does.
     holds_an_owner = is_superuser is not None and bool(
@@ -102,46 +105,52 @@ async def connection_role_problem(session: AsyncSession) -> str | None:
     with the role it set.
     """
     role = (await session.execute(text("SELECT current_user"))).scalar_one()
-    params = {"role": role, "schema": _SCHEMA}
+    params = {"role": role, "schemas": list(_SCHEMAS)}
     is_superuser = (await session.execute(_IS_SUPERUSER, params)).scalar_one_or_none()
     holds_an_owner = bool((await session.execute(_HOLDS_AN_OWNER, params)).scalar_one())
     return _role_problem(role, is_superuser=is_superuser, holds_an_owner=holds_an_owner)
 
 
-def _append_only_tables(connection: Connection) -> list[str]:
+def _append_only_tables(connection: Connection) -> list[tuple[str, str]]:
+    """Each table carrying the deny trigger, as ``(schema, table)``."""
     rows = connection.execute(
         text(
             """
-            SELECT DISTINCT c.relname
+            SELECT DISTINCT n.nspname, c.relname
             FROM pg_trigger t
             JOIN pg_proc p ON p.oid = t.tgfoid
             JOIN pg_class c ON c.oid = t.tgrelid
             JOIN pg_namespace n ON n.oid = c.relnamespace
-            WHERE p.proname = :function AND n.nspname = :schema
-            ORDER BY c.relname
+            WHERE p.proname = :function AND n.nspname = ANY(:schemas)
+            ORDER BY n.nspname, c.relname
             """
         ),
-        {"function": _DENY_FUNCTION, "schema": _SCHEMA},
+        {"function": _DENY_FUNCTION, "schemas": list(_SCHEMAS)},
     )
-    return [str(name) for (name,) in rows]
+    return [(str(schema), str(name)) for schema, name in rows]
 
 
-def _grant_statements(role: str, append_only_tables: list[str]) -> list[str]:
+def _grant_statements(role: str, append_only_tables: list[tuple[str, str]]) -> list[str]:
     """Data manipulation everywhere; append and read only where history lives.
 
     TRUNCATE is never granted. ``alembic_version`` is readable and nothing more:
     the application has no reason to move the schema's recorded revision.
     """
     quoted_role = _quote(role)
-    statements = [
-        f"GRANT USAGE ON SCHEMA {_SCHEMA} TO {quoted_role}",
-        f"GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA {_SCHEMA} TO {quoted_role}",
-        f"GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA {_SCHEMA} TO {quoted_role}",
-        f"REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON {_SCHEMA}.alembic_version FROM {quoted_role}",
-    ]
+    statements = []
+    for schema in _SCHEMAS:
+        statements += [
+            f"GRANT USAGE ON SCHEMA {schema} TO {quoted_role}",
+            f"GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA {schema} "
+            f"TO {quoted_role}",
+            f"GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA {schema} TO {quoted_role}",
+        ]
+    statements.append(
+        f"REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON public.alembic_version FROM {quoted_role}"
+    )
     statements.extend(
-        f"REVOKE UPDATE, DELETE, TRUNCATE ON {_SCHEMA}.{_quote(table)} FROM {quoted_role}"
-        for table in append_only_tables
+        f"REVOKE UPDATE, DELETE, TRUNCATE ON {schema}.{_quote(table)} FROM {quoted_role}"
+        for schema, table in append_only_tables
     )
     return statements
 

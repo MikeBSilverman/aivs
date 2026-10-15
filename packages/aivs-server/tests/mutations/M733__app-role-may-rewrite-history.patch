@@ -7,12 +7,12 @@ Expect red: packages/aivs-server/tests/migrations/test_app_role_grants.py::test_
 diff --git a/packages/aivs-server/src/aivs_server/db/grants.py b/packages/aivs-server/src/aivs_server/db/grants.py
 --- a/packages/aivs-server/src/aivs_server/db/grants.py
 +++ b/packages/aivs-server/src/aivs_server/db/grants.py
-@@ -115,7 +115,7 @@ def _grant_statements(role: str, append_only_tables: list[str]) -> list[str]:
-     ]
+@@ -150,7 +150,7 @@
+     )
      statements.extend(
-         f"REVOKE UPDATE, DELETE, TRUNCATE ON {_SCHEMA}.{_quote(table)} FROM {quoted_role}"
--        for table in append_only_tables
-+        for table in append_only_tables[:0]
+         f"REVOKE UPDATE, DELETE, TRUNCATE ON {schema}.{_quote(table)} FROM {quoted_role}"
+-        for schema, table in append_only_tables
++        for schema, table in append_only_tables[:0]
      )
      return statements
  

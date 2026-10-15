@@ -50,6 +50,17 @@ def _database_url() -> str:
     return url
 
 
+def _include_name(name: str | None, type_: str, _parent_names: object) -> bool:
+    """Compare our two schemas and nothing else on the server (Phase P).
+
+    Without ``include_schemas`` autogenerate and ``alembic check`` look at the
+    default schema only, so a table in ``attribution`` would drift unseen.
+    """
+    if type_ == "schema":
+        return name in (None, "public", "attribution")
+    return True
+
+
 def run_migrations_offline() -> None:
     """Emit SQL to stdout instead of executing it.
 
@@ -59,6 +70,8 @@ def run_migrations_offline() -> None:
     context.configure(
         url=_database_url(),
         target_metadata=target_metadata,
+        include_schemas=True,
+        include_name=_include_name,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         compare_type=True,
@@ -72,6 +85,8 @@ def do_run_migrations(connection: Connection) -> None:
     context.configure(
         connection=connection,
         target_metadata=target_metadata,
+        include_schemas=True,
+        include_name=_include_name,
         compare_type=True,
         compare_server_default=True,
         # Migrations run in one transaction so a failure part-way leaves the

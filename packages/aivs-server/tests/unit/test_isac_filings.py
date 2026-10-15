@@ -244,7 +244,6 @@ async def test_a_filing_whose_owner_cannot_be_found_needs_an_editor(session):
     a member, whose answer would hand the submitter's verbs to whoever shares
     the filing's organisation id."""
     orphan = Submission(
-        submitter_org_id=uuid.uuid4(),
         state=SubmissionState.DRAFT,
         tlp=TLP.AMBER,
         discovery_scope=DiscoveryScope.OWN_ESTATE,

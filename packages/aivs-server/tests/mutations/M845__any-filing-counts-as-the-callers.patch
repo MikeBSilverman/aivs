@@ -1,0 +1,17 @@
+Mutation M845: is_submitted_by answers yes for any filed submission, so a member acts on another firm's
+Re-applies: Phase P slice 2b (SF-88)
+
+Expect red: packages/aivs-server/tests/unit/test_submission_workflow.py::test_another_member_cannot_see_a_submission
+
+diff --git a/packages/aivs-server/src/aivs_server/services/attribution.py b/packages/aivs-server/src/aivs_server/services/attribution.py
+--- a/packages/aivs-server/src/aivs_server/services/attribution.py
++++ b/packages/aivs-server/src/aivs_server/services/attribution.py
+@@ -149,7 +149,7 @@
+     """Whether ``org_id`` filed ``submission``: the member's own question, about itself."""
+     filed = await session.scalar(
+         select(SubmissionFiler.submission_id).where(
+-            SubmissionFiler.submission_id == submission.id, SubmissionFiler.org_id == org_id
++            SubmissionFiler.submission_id == submission.id
+         )
+     )
+     return filed is not None

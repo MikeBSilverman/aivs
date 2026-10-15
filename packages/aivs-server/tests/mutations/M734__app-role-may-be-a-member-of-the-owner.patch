@@ -7,12 +7,12 @@ Expect red: packages/aivs-server/tests/unit/test_readiness_role.py::test_a_membe
 diff --git a/packages/aivs-server/src/aivs_server/db/grants.py b/packages/aivs-server/src/aivs_server/db/grants.py
 --- a/packages/aivs-server/src/aivs_server/db/grants.py
 +++ b/packages/aivs-server/src/aivs_server/db/grants.py
-@@ -57,7 +57,7 @@ _HOLDS_AN_OWNER: Final = text(
+@@ -60,7 +60,7 @@
      SELECT EXISTS (
          SELECT 1 FROM pg_class c
          JOIN pg_namespace n ON n.oid = c.relnamespace
--        WHERE n.nspname = :schema AND pg_has_role(:role, c.relowner, 'MEMBER')
-+        WHERE n.nspname = :schema AND pg_has_role(:role, c.relowner, 'MEMBER') AND false
+-        WHERE n.nspname = ANY(:schemas) AND pg_has_role(:role, c.relowner, 'MEMBER')
++        WHERE n.nspname = ANY(:schemas) AND pg_has_role(:role, c.relowner, 'MEMBER') AND false
      )
      """
  )

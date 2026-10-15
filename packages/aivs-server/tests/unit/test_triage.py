@@ -21,10 +21,11 @@ from aivs_schemas.enums import OperatorRole, SsvcPriority, SubmissionState
 from aivs_schemas.extension.builders import AIVS_EXTENSION_ID, AIVS_INTEL_EXTENSION_ID
 from aivs_server.audit.log import AuditAction
 from aivs_server.auth.sessions import establish_session
-from aivs_server.db.models import AuditLog, Submission
+from aivs_server.db.models import AuditLog, Organization, Submission
+from aivs_server.services.attribution import submitter_of
 from aivs_server.services.priority import assess_priority, cisa_table, decision_points
 from aivs_server.services.review_queue import queued_for_review
-from tests.conftest import proxy_headers
+from tests.conftest import proxy_headers, seed_filing
 
 pytestmark = pytest.mark.db
 
@@ -103,13 +104,12 @@ def test_decision_points_come_only_from_a_vulnerabilitys_2_0_body():
 async def queued(session, make_org, make_cert):
     org = await make_org("triage-member")
     submission = Submission(
-        submitter_org_id=org.id,
         state=SubmissionState.SUBMITTED,
         tlp="amber",
         discovery_scope="own_product",
         title="Triage me",
     )
-    session.add(submission)
+    await seed_filing(session, submission, org)
     await session.commit()
     return submission
 
@@ -179,14 +179,14 @@ async def test_a_member_cannot_see_whether_a_submission_exists_to_triage(
 
 async def test_the_queue_puts_an_editors_priority_before_the_default(session, queued, make_org):
     later = Submission(
-        submitter_org_id=queued.submitter_org_id,
         state=SubmissionState.SUBMITTED,
         tlp="amber",
         discovery_scope="own_product",
         title="Raised by an editor",
         priority=SsvcPriority.ACT,
     )
-    session.add(later)
+    queued_by = await session.get(Organization, await submitter_of(session, queued))
+    await seed_filing(session, later, queued_by)
     await session.commit()
 
     (group,) = await queued_for_review(session, mission_impact="high")

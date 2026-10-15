@@ -6,12 +6,12 @@ Expect red: packages/aivs-server/tests/unit/test_stale_versions.py::test_a_versi
 diff --git a/packages/aivs-server/src/aivs_server/services/ownership.py b/packages/aivs-server/src/aivs_server/services/ownership.py
 --- a/packages/aivs-server/src/aivs_server/services/ownership.py
 +++ b/packages/aivs-server/src/aivs_server/services/ownership.py
-@@ -161,7 +161,7 @@
-                     other,
+@@ -146,7 +146,7 @@
                      (other.stix_id == own.stix_id)
+                     & (other.owner_token == own.owner_token)
                      & (other.submission_id != own.submission_id)
 -                    & (other.modified >= own.modified),
 +                    & (other.modified > own.modified),
                  )
                  .join(Distribution, Distribution.stix_object_id == other.id)
-                 .join(other_submission, other_submission.id == other.submission_id)
+                 .where(own.submission_id == submission.id)

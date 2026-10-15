@@ -6,12 +6,12 @@ Expect red: packages/aivs-server/tests/unit/test_anonymity.py::test_an_undistrib
 diff --git a/packages/aivs-server/src/aivs_server/services/anonymity.py b/packages/aivs-server/src/aivs_server/services/anonymity.py
 --- a/packages/aivs-server/src/aivs_server/services/anonymity.py
 +++ b/packages/aivs-server/src/aivs_server/services/anonymity.py
-@@ -71,7 +71,7 @@
-     rows = await session.execute(
-         select(other.stix_id, other_submission.distribute_anonymously)
-         .distinct(other.stix_id)
+@@ -72,7 +72,7 @@
+             own,
+             (own.stix_id == other.stix_id) & (own.owner_token == other.owner_token),
+         )
 -        .join(Distribution, Distribution.stix_object_id == other.id)
 +        .outerjoin(Distribution, Distribution.stix_object_id == other.id)
          .join(other_submission, other_submission.id == other.submission_id)
          .where(
-             other.stix_id.in_(select(own.stix_id).where(own.submission_id == submission.id)),
+             own.submission_id == submission.id,

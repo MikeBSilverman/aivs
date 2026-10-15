@@ -52,6 +52,7 @@ async def waiting_isac_drafts(session: AsyncSession) -> list[WaitingDraft]:
     """
     rows = await session.execute(
         select(Submission, Operator.display_name, Organization.org_type)
+        .select_from(Submission)
         .join(Organization, Organization.id == submitter_column(Submission))
         .outerjoin(Operator, Operator.id == creator_column(Submission))
         .where(

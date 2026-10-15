@@ -1,0 +1,19 @@
+Mutation M841: a member's versions are stored with its organisation id as the owner token, which names it and gathers its work across ids
+Re-applies: Phase P slice 2b (SF-88)
+
+Expect red: packages/aivs-server/tests/unit/test_owner_tokens.py::test_one_owners_versions_of_one_id_share_a_token_and_nothing_more
+
+diff --git a/packages/aivs-server/src/aivs_server/services/attribution.py b/packages/aivs-server/src/aivs_server/services/attribution.py
+--- a/packages/aivs-server/src/aivs_server/services/attribution.py
++++ b/packages/aivs-server/src/aivs_server/services/attribution.py
+@@ -193,8 +193,8 @@
+     one new id racing each other agree on one token.
+     """
+     ids = sorted(set(stix_ids))
+-    if owner_is_isac:
+-        return dict.fromkeys(ids, ISAC_OWNER)
++    if owner_is_isac or not owner_is_isac:
++        return dict.fromkeys(ids, ISAC_OWNER if owner_is_isac else str(org_id))
+     if not ids:
+         return {}
+     await session.execute(

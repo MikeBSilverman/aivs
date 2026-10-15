@@ -1,0 +1,18 @@
+Mutation M842: the migration leaves who filed what rewritable: no deny triggers, so the grant step strips nothing either
+Re-applies: Phase P slice 2b (SF-88)
+
+Expect red: packages/aivs-server/tests/migrations/test_migrated_schema.py::test_append_only_tables_refuse_to_change_and_still_accept_inserts[delete-attribution.submitters]
+Expect red: packages/aivs-server/tests/migrations/test_app_role_grants.py::test_the_app_role_cannot_rewrite_who_filed[delete-filer]
+
+diff --git a/packages/aivs-server/alembic/versions/20261015_1400_740334d0e829_attribution_schema.py b/packages/aivs-server/alembic/versions/20261015_1400_740334d0e829_attribution_schema.py
+--- a/packages/aivs-server/alembic/versions/20261015_1400_740334d0e829_attribution_schema.py
++++ b/packages/aivs-server/alembic/versions/20261015_1400_740334d0e829_attribution_schema.py
+@@ -45,7 +45,7 @@
+ depends_on: str | Sequence[str] | None = None
+ 
+ _SCHEMA = "attribution"
+-_APPEND_ONLY = ("submitters", "object_owners")
++_APPEND_ONLY: tuple[str, ...] = ()
+ _ISAC_TYPES = "('admin', 'automation')"
+ 
+ 

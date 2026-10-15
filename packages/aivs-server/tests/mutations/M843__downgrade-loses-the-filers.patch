@@ -1,0 +1,18 @@
+Mutation M843: the downgrade drops the attribution schema without first putting each filer back on its submission
+Re-applies: Phase P slice 2b (SF-88)
+
+Expect red: packages/aivs-server/tests/migrations/test_attribution_move.py::test_the_move_keeps_every_filer_and_the_downgrade_puts_them_back
+
+diff --git a/packages/aivs-server/alembic/versions/20261015_1400_740334d0e829_attribution_schema.py b/packages/aivs-server/alembic/versions/20261015_1400_740334d0e829_attribution_schema.py
+--- a/packages/aivs-server/alembic/versions/20261015_1400_740334d0e829_attribution_schema.py
++++ b/packages/aivs-server/alembic/versions/20261015_1400_740334d0e829_attribution_schema.py
+@@ -211,7 +211,8 @@
+         "submissions", sa.Column("proxy_consent_sha256", sa.String(length=64), nullable=True)
+     )
+     op.add_column("submissions", sa.Column("created_by_operator_id", sa.Uuid(), nullable=True))
+-    op.execute(
++    op.execute("SELECT 1")
++    _unused = (
+         f"""
+         UPDATE submissions s
+         SET submitter_org_id = f.org_id,

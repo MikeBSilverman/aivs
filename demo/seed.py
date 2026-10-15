@@ -49,7 +49,7 @@ from aivs_server.db.models import (
     Submission,
     TaxiiCollection,
 )
-from aivs_server.services.attribution import FilingRecord, record_filing
+from aivs_server.services.attribution import FilingRecord, owner_tokens_for, record_filing
 from aivs_server.taxii.resources import truncate_to_taxii_precision
 
 DEFAULT_DATABASE_URL = os.environ.get(
@@ -274,14 +274,18 @@ async def seed(database_url: str, *, reset: bool) -> None:
             ),
             distributed_at=dt.datetime.now(dt.UTC),
         )
-        record_filing(
+        session.add(submission)
+        await session.flush()
+        await record_filing(
+            session,
             submission,
             FilingRecord(
                 org_id=submitter.id, created_by=None, proxy_editor=None, proxy_consent=None
             ),
         )
-        session.add(submission)
-        await session.flush()
+        tokens = await owner_tokens_for(
+            session, submitter.id, (obj["id"] for obj in objects), owner_is_isac=False
+        )
 
         stored: list[StixObject] = []
         for obj in objects:
@@ -294,6 +298,7 @@ async def seed(database_url: str, *, reset: bool) -> None:
                 modified=moment,
                 submission_id=submission.id,
                 raw=obj,
+                owner_token=tokens[obj["id"]],
                 name=obj.get("name"),
             )
             session.add(row)

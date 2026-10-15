@@ -17,7 +17,7 @@ What the application adds is named per class.
 | --- | --- | --- | --- |
 | `content` | Intelligence: what was shared, and the free text around it. | Volume and backup encryption only. The application reads it, because analytics depend on that (BYOK is an option, deferred; `encryption-design.md`). | **Kept.** Other members received it, and the record of what was shared is the evidence. |
 | `pii` | Identifies a person. | Volume and backup encryption. Credentials within it are hashed (passwords, Argon2id) or sealed (TOTP seeds, `auth/secretbox.py`). | **Pseudonymised**: identifying fields scrubbed, the row id kept so the audit trail still resolves. When its organisation is offboarded (`services/offboarding.py`, SF-72). A single person who leaves an organisation that stays is only deactivated today. |
-| `evidence` | The record of who could see what, when, and what they did. | Volume and backup encryption. `audit_log`, `submission_transitions` and `audit_stream_modes` are append-only, enforced by trigger. | **Kept.** Deleting it would destroy the "we warned member X" proof (runbook §8). |
+| `evidence` | The record of who could see what, when, and what they did. | Volume and backup encryption. `audit_log`, `submission_transitions`, `audit_stream_modes` and the two `attribution` tables are append-only, enforced by trigger. | **Kept.** Deleting it would destroy the "we warned member X" proof (runbook §8). |
 | `operational` | Needed to run the service, and worth nothing once the relationship ends. | Volume and backup encryption. Webhook signing keys are sealed. | **Deleted** when the organisation is offboarded (`services/offboarding.py`, SF-72), except postures under a legal hold, which go when the hold is lifted. |
 
 Some evidence rows hold personal data incidentally. `audit_log` records the
@@ -35,6 +35,8 @@ rather than deleting rows.
 | `embargoes` | content | Release policy and time, and free-text coordination notes. |
 | `distributions` | evidence | Which object became visible to which circle, and from when (`date_added`). |
 | `submission_transitions` | evidence | Every workflow state change, by whom and when. Append-only. |
+| `attribution.submitters` | evidence | Who filed each submission (Phase P): the organisation, the person who filed it in its name, and for a proxy filing the ISAC analyst and the SHA-256 of the member's consent. ISAC-only and treated as TLP:RED; held in its own schema so a database role can be refused all of it, and read only through `services/attribution.py`. Append-only, enforced by trigger: re-attributing a filing after the fact is what must not be possible. Kept under a legal hold like any evidence. |
+| `attribution.object_owners` | evidence | The owner token of one organisation's versions of one object id (Phase P): the mapping back from `stix_objects.owner_token`, which names nobody, to the organisation. A random token per organisation and id, so tokens cannot be matched across ids. Append-only, enforced by trigger. |
 | `submission_triage` | evidence | What the first pass found each time a submission was handed to the ISAC, and whether it returned it (Phase O): finding codes, field paths and the member-facing wording, never anything from another member. The record of what the ISAC told a member and of every automated return. |
 | `acknowledgments` | evidence | Receipts: retrieved, acknowledged, actioned, per organisation. |
 | `audit_log` | evidence | Every security-relevant decision. Append-only. |

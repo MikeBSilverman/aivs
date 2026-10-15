@@ -36,6 +36,7 @@ from aivs_server.db.models import (
     Submission,
     SubmissionTransition,
 )
+from aivs_server.services.attribution import submitted_by
 from aivs_server.services.contributions import (
     ISAC_CLICK_NEEDS_AN_EDITOR,
     NEEDS_AN_EDITOR,
@@ -205,7 +206,7 @@ async def test_the_isacs_staff_without_the_editor_role_cannot_file_by_clicking(
     count_isacs = (
         select(func.count())
         .select_from(Submission)
-        .where(Submission.submitter_org_id == isac_org.id)
+        .where(Submission.id.in_(submitted_by(isac_org.id)))
     )
     before = await session.scalar(count_isacs)
 

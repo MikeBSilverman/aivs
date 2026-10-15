@@ -18,7 +18,7 @@ from aivs_schemas.enums import OperatorRole, OrgStatus, OrgType
 from aivs_server.audit.log import AuditAction
 from aivs_server.db.models import AuditLog, Organization
 from aivs_server.services.detections import RULES, Rule, run_detections
-from tests.conftest import proxy_headers
+from tests.conftest import proxy_headers, seed_filing
 from tests.unit.test_portal_admin import sign_in
 
 pytestmark = pytest.mark.db
@@ -84,13 +84,12 @@ async def test_enforce_never_quarantines_the_isac_itself(session, isac_org, make
     member = await make_org("member", org_type=OrgType.GSIB)
     for index in range(3):
         submission = Submission(
-            submitter_org_id=member.id,
             state="submitted",
             tlp="amber",
             discovery_scope="ai_system",
             title=f"s{index}",
         )
-        session.add(submission)
+        await seed_filing(session, submission, member)
         await session.flush()
         session.add(
             Acknowledgment(

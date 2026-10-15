@@ -50,6 +50,7 @@ from aivs_server.api import (
     vulnerabilities,
 )
 from aivs_server.audit.log import AuditAction, record_denial
+from aivs_server.auth.attribution_key import AttributionKey, ForeignAttributionKeyError
 from aivs_server.auth.deps import request_source_ip
 from aivs_server.auth.policy import PolicyDeniedError
 from aivs_server.config import Settings, get_settings
@@ -71,6 +72,7 @@ from aivs_server.portal import reading_routes as portal_reading_routes
 from aivs_server.portal import routes as portal_routes
 from aivs_server.portal import sso_routes as portal_sso_routes
 from aivs_server.portal import vulnerability_routes as portal_vulnerability_routes
+from aivs_server.services.attribution import values_under_other_keys
 from aivs_server.services.audit_read_summary import summarise_audit_reads
 from aivs_server.services.detections import run_detections
 from aivs_server.services.embargo import sweep_due_embargoes
@@ -136,6 +138,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # rather than on a member's first request.
     get_engine()
     get_member_engine()
+    await refuse_values_under_other_keys(AttributionKey.from_settings(settings))
 
     background = [
         asyncio.create_task(run_periodically(component.name, component.interval, component.work))
@@ -151,6 +154,25 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 await task
         await dispose_engine()
         logger.info("stopped AIVS")
+
+
+async def refuse_values_under_other_keys(key: AttributionKey) -> None:
+    """Refuse to start while any owner tag or token is under a key other than ``key``.
+
+    That is a rotation half done, or the wrong key file mounted. Served, every
+    member's submissions would fault on "is this mine?", and ingest would store
+    a member's new versions under a token its old ones do not carry, so its own
+    object would read as another owner's.
+    """
+    async with session_scope() as session:
+        foreign = await values_under_other_keys(session, key)
+    if foreign:
+        msg = (
+            f"{', '.join(foreign)} hold values under an attribution key other than "
+            f"{key.key_id}: mount the key they were made with, or finish the rekey "
+            "(python -m aivs_server.rekey_attribution, runbook section 7.4a)"
+        )
+        raise ForeignAttributionKeyError(msg)
 
 
 @dataclass(frozen=True, slots=True)

@@ -168,8 +168,8 @@ def test_the_app_role_may_record_who_filed_and_read_it_back(scratch: Scratch):
         "VALUES ('00000000-0000-4000-8000-00000000f11f', 'Filer', 'filer-org', 'gsib', "
         "'active', 'identity--00000000-0000-4000-8000-00000000f11f')",
         "INSERT INTO submissions (id, state, tlp, discovery_scope, distribute_anonymously, "
-        "title) VALUES ('00000000-0000-4000-8000-00000000f11e', 'draft', 'amber', "
-        "'ai_system', true, 'filed')",
+        "title, owner_tag) VALUES ('00000000-0000-4000-8000-00000000f11e', 'draft', 'amber', "
+        "'ai_system', true, 'filed', 'seed-tag')",
         "INSERT INTO attribution.submitters (submission_id, org_id) "
         "VALUES ('00000000-0000-4000-8000-00000000f11e', "
         "'00000000-0000-4000-8000-00000000f11f')",
@@ -183,9 +183,8 @@ def test_the_app_role_may_record_who_filed_and_read_it_back(scratch: Scratch):
     [
         ("submitters", "UPDATE attribution.submitters SET org_id = org_id"),
         ("submitters", "DELETE FROM attribution.submitters"),
-        ("object_owners", "UPDATE attribution.object_owners SET org_id = org_id"),
     ],
-    ids=["update-filer", "delete-filer", "update-owner"],
+    ids=["update-filer", "delete-filer"],
 )
 def test_the_app_role_cannot_rewrite_who_filed(scratch: Scratch, table: str, statement: str):
     """Refused by the grant, as the audit log is: re-attributing a filing after

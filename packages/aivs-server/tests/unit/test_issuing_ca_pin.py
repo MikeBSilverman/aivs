@@ -25,6 +25,7 @@ from aivs_server.auth.mtls import CertificateRejectedError, verify_issued_by
 from aivs_server.config import Settings
 from aivs_server.db.models import ClientCertificate
 from tests.conftest import (
+    TEST_ATTRIBUTION_KEY_FILE,
     TEST_CA_CERT_FILE,
     TEST_DATABASE_URL,
     TEST_MEMBER_DATABASE_URL,
@@ -195,6 +196,7 @@ def _settings(**overrides: object) -> Settings:
         "member_database_url": TEST_MEMBER_DATABASE_URL,
         "proxy_shared_secret": TEST_PROXY_SECRET,
         "session_secret": TEST_SESSION_SECRET,
+        "attribution_key_file": TEST_ATTRIBUTION_KEY_FILE,
         "secret_encryption_key_file": TEST_SECRET_KEY_FILE,
         "issuing_ca_certificate_file": TEST_CA_CERT_FILE,
     }

@@ -1,0 +1,15 @@
+Mutation M982: a rekey recomputes the tags and leaves the tokens under the old key
+Re-applies: Phase P slice 3b (SF-90)
+
+Expect red: packages/aivs-server/tests/unit/test_attribution_key.py::test_a_rekey_needs_only_the_new_key_and_the_mapping
+
+diff --git a/packages/aivs-server/src/aivs_server/services/attribution.py b/packages/aivs-server/src/aivs_server/services/attribution.py
+--- a/packages/aivs-server/src/aivs_server/services/attribution.py
++++ b/packages/aivs-server/src/aivs_server/services/attribution.py
+@@ -272,6 +272,4 @@
+     ]
+     if tags:
+         await session.execute(update(Submission), tags)
+-    if tokens:
+-        await session.execute(update(StixObject), tokens)
+     return RekeyCounts(tags=len(tags), tokens=len(tokens))

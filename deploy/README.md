@@ -105,6 +105,7 @@ $EDITOR deploy/.env
 #    - AIVS_NGINX_ALLOWLIST       ABSOLUTE path to your allowlist (step 6)
 #    - AIVS_CA_DIR                ABSOLUTE path to deploy/ca/out
 #    - AIVS_SECRET_ENCRYPTION_KEY_PATH  ABSOLUTE path to the key file (step 5)
+#    - AIVS_ATTRIBUTION_KEY_PATH  ABSOLUTE path to the attribution key (step 5)
 #    - AIVS_PUBLIC_BASE_URL       exactly what members will dial, https://
 #    - AIVS_BIND_PORT             only if 443 is taken; then the base URL carries it
 
@@ -134,6 +135,14 @@ sudo chmod 0600 /srv/aivs/secrets/secret-encryption-key
 sudo chown 10001:10001 /srv/aivs/secrets/secret-encryption-key
 #    then in deploy/.env:
 #      AIVS_SECRET_ENCRYPTION_KEY_PATH=/srv/aivs/secrets/secret-encryption-key
+#    The attribution key, the same way and a different value: with a database
+#    dump it says who filed what, so it is kept apart from the backups too.
+#    Losing it costs a rekey, not data (docs/operator-runbook.md section 7.4a).
+openssl rand -base64 32 | sudo tee /srv/aivs/secrets/attribution-key >/dev/null
+sudo chmod 0600 /srv/aivs/secrets/attribution-key
+sudo chown 10001:10001 /srv/aivs/secrets/attribution-key
+#    then in deploy/.env:
+#      AIVS_ATTRIBUTION_KEY_PATH=/srv/aivs/secrets/attribution-key
 
 # 6. Network allowlist. There is no default: compose refuses to start until
 #    AIVS_NGINX_ALLOWLIST names a file. The example's ranges (every RFC 1918

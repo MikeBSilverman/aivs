@@ -15,6 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from aivs_schemas.enums import EDITABLE_SUBMISSION_STATES
+from aivs_server.auth.attribution_key import AttributionKey
 from aivs_server.auth.context import AuthContext
 from aivs_server.db.models import Organization, StixObject, Submission
 from aivs_server.services.attribution import is_submitted_by
@@ -46,10 +47,10 @@ def _shown(count: Count) -> dict[str, Any]:
 
 
 async def telemetry_rows(
-    session: AsyncSession, ctx: AuthContext, submission: Submission
+    session: AsyncSession, ctx: AuthContext, submission: Submission, key: AttributionKey
 ) -> dict[str, Any] | None:
     """The submitter's telemetry, or ``None`` for anyone else or before distribution."""
-    if not await is_submitted_by(session, submission, ctx.org_id):
+    if not is_submitted_by(key, submission, ctx.org_id):
         return None
     telemetry = await submission_telemetry(session, submission)
     if not telemetry.distributed:
@@ -74,15 +75,15 @@ async def _stored_free_text(session: AsyncSession, submission: Submission) -> di
 
 
 async def lint_hits(
-    session: AsyncSession, ctx: AuthContext, submission: Submission
+    session: AsyncSession, ctx: AuthContext, submission: Submission, key: AttributionKey
 ) -> list[dict[str, str]] | None:
     """Spans in the submitter's own draft worth a second look, or ``None``.
 
     Only while it is a draft or returned, when the submitter can still change it; after
     that the answer would be a worry with nothing to do about it.
     """
-    if submission.state not in EDITABLE_SUBMISSION_STATES or not await is_submitted_by(
-        session, submission, ctx.org_id
+    if submission.state not in EDITABLE_SUBMISSION_STATES or not is_submitted_by(
+        key, submission, ctx.org_id
     ):
         return None
     organisation = await session.get(Organization, ctx.org_id)

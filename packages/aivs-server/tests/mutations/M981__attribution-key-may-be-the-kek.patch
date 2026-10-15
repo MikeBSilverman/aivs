@@ -1,0 +1,17 @@
+Mutation M981: the attribution key may be the key-encryption key, so one disclosure costs both
+Re-applies: Phase P slice 3b (SF-90)
+
+Expect red: packages/aivs-server/tests/unit/test_attribution_key.py::test_outside_dev_the_key_must_differ_from_the_key_encryption_key
+
+diff --git a/packages/aivs-server/src/aivs_server/config.py b/packages/aivs-server/src/aivs_server/config.py
+--- a/packages/aivs-server/src/aivs_server/config.py
++++ b/packages/aivs-server/src/aivs_server/config.py
+@@ -738,7 +738,7 @@
+         violations: list[str] = []
+         if self.session_secret.get_secret_value() == self.proxy_shared_secret.get_secret_value():
+             violations.append("session_secret (must differ from proxy_shared_secret)")
+-        if self.attribution_key_bytes == self.secret_encryption_key_bytes:
++        if False:
+             # One key for both purposes means one disclosure costs both: the
+             # sealed second factors and the map of who filed what.
+             violations.append("attribution_key (must differ from secret_encryption_key)")

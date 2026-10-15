@@ -18,6 +18,7 @@ from sqlalchemy.exc import IntegrityError
 from aivs_server.config import ConfigurationError, Settings, get_settings
 from aivs_server.db.models import Distribution, TaxiiCollection
 from tests.conftest import (
+    TEST_ATTRIBUTION_KEY_FILE,
     TEST_CA_CERT_FILE,
     TEST_PROXY_SECRET,
     TEST_SECRET_KEY_FILE,
@@ -38,6 +39,7 @@ def _settings(**overrides: object) -> dict[str, object]:
         "proxy_shared_secret": TEST_PROXY_SECRET,
         "session_secret": TEST_SESSION_SECRET,
         "secret_encryption_key_file": TEST_SECRET_KEY_FILE,
+        "attribution_key_file": TEST_ATTRIBUTION_KEY_FILE,
         "issuing_ca_certificate_file": TEST_CA_CERT_FILE,
     }
     return {**base, **overrides}
@@ -278,6 +280,7 @@ def test_a_rejected_configuration_never_prints_the_values(monkeypatch):
         "AIVS_PROXY_SHARED_SECRET": TEST_PROXY_SECRET,
         "AIVS_SESSION_SECRET": TEST_SESSION_SECRET,
         "AIVS_SECRET_ENCRYPTION_KEY_FILE": str(TEST_SECRET_KEY_FILE),
+        "AIVS_ATTRIBUTION_KEY_FILE": str(TEST_ATTRIBUTION_KEY_FILE),
         "AIVS_ISSUING_CA_CERTIFICATE_FILE": str(TEST_CA_CERT_FILE),
         # Malformed: not base64. A trailing newline from a file-backed secret
         # is enough to land here.

@@ -16,8 +16,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from aivs_schemas.enums import OperatorRole, OrgType, SsvcPriority
 from aivs_server.audit.log import AuditAction, record
+from aivs_server.auth.attribution_key import AttributionKey
 from aivs_server.auth.context import AuthContext
-from aivs_server.auth.deps import AuthenticatedContext, SessionDep
+from aivs_server.auth.deps import AttributionKeyDep, AuthenticatedContext, SessionDep
 from aivs_server.auth.policy import (
     can_assign_submission,
     can_review_submissions,
@@ -88,8 +89,9 @@ async def assign(
     payload: AssigneeChange,
     ctx: AuthenticatedContext,
     session: SessionDep,
+    key: AttributionKeyDep,
 ) -> TriageOut:
-    submission = await _locked_visible(session, ctx, submission_id)
+    submission = await _locked_visible(session, ctx, submission_id, key=key)
     require(can_assign_submission(ctx), "assign_requires_isac_reviewer")
     if payload.operator_id is not None:
         await _require_reviewer(session, payload.operator_id)
@@ -112,8 +114,9 @@ async def set_priority(
     payload: PriorityChange,
     ctx: AuthenticatedContext,
     session: SessionDep,
+    key: AttributionKeyDep,
 ) -> TriageOut:
-    submission = await _locked_visible(session, ctx, submission_id)
+    submission = await _locked_visible(session, ctx, submission_id, key=key)
     require(can_set_priority(ctx), "priority_requires_isac_editor")
     previous = submission.priority
     submission.priority = payload.priority
@@ -134,7 +137,10 @@ async def set_priority(
 
 @router.get("/submissions/{submission_id}/duplicates", response_model=list[DuplicateOut])
 async def duplicates(
-    submission_id: uuid.UUID, ctx: AuthenticatedContext, session: SessionDep
+    submission_id: uuid.UUID,
+    ctx: AuthenticatedContext,
+    session: SessionDep,
+    key: AttributionKeyDep,
 ) -> list[DuplicateOut]:
     """Vulnerabilities elsewhere that share a CVE, package, platform or CWE with this one.
 
@@ -143,7 +149,7 @@ async def duplicates(
     """
     submission = await load_submission(session, submission_id, for_update=False)
     if submission is None or not can_view_submission(
-        ctx, submission, owner_is_caller=await is_submitted_by(session, submission, ctx.org_id)
+        ctx, submission, owner_is_caller=is_submitted_by(key, submission, ctx.org_id)
     ):
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Not found")
     found = await duplicate_candidates(session, ctx, submission, now=await database_now(session))
@@ -188,7 +194,10 @@ async def first_pass_findings(
 
 @router.post("/review/validate", response_model=GroupValidated)
 async def validate_review_group(
-    payload: GroupValidation, ctx: AuthenticatedContext, session: SessionDep
+    payload: GroupValidation,
+    ctx: AuthenticatedContext,
+    session: SessionDep,
+    key: AttributionKeyDep,
 ) -> GroupValidated:
     """Validate one review group in one audited action. An editor only.
 
@@ -196,7 +205,7 @@ async def validate_review_group(
     submissions from two groups, is refused whole (``services.bulk_validation``).
     """
     try:
-        validated = await validate_group(session, ctx, payload.submission_ids)
+        validated = await validate_group(session, ctx, payload.submission_ids, key=key)
         await session.commit()
     except GroupMemberNotFoundError:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Not found") from None
@@ -206,12 +215,12 @@ async def validate_review_group(
 
 
 async def _locked_visible(
-    session: AsyncSession, ctx: AuthContext, submission_id: uuid.UUID
+    session: AsyncSession, ctx: AuthContext, submission_id: uuid.UUID, key: AttributionKey
 ) -> Submission:
     """The submission, row-locked; 404 unless the caller may see it (SF-47)."""
     submission = await load_submission(session, submission_id, for_update=True)
     if submission is None or not can_view_submission(
-        ctx, submission, owner_is_caller=await is_submitted_by(session, submission, ctx.org_id)
+        ctx, submission, owner_is_caller=is_submitted_by(key, submission, ctx.org_id)
     ):
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Not found")
     return submission

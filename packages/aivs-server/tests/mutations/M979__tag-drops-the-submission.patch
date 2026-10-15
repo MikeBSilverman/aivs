@@ -1,0 +1,17 @@
+Mutation M979: the owner tag omits the submission id, so one firm's tags match across its filings
+Re-applies: Phase P slice 3b (SF-90)
+
+Expect red: packages/aivs-server/tests/unit/test_attribution_key.py::test_one_firms_tags_cannot_be_matched_across_its_submissions
+
+diff --git a/packages/aivs-server/src/aivs_server/auth/attribution_key.py b/packages/aivs-server/src/aivs_server/auth/attribution_key.py
+--- a/packages/aivs-server/src/aivs_server/auth/attribution_key.py
++++ b/packages/aivs-server/src/aivs_server/auth/attribution_key.py
+@@ -111,7 +111,7 @@
+ 
+     def owner_tag(self, org_id: uuid.UUID, submission_id: uuid.UUID) -> str:
+         """The tag of ``submission_id`` filed by ``org_id``."""
+-        return self.prefix + _mac(self._tag_key, org_id.bytes, submission_id.bytes)
++        return self.prefix + _mac(self._tag_key, org_id.bytes)
+ 
+     def owner_token(self, org_id: uuid.UUID, stix_id: str) -> str:
+         """The token ``org_id``'s versions of ``stix_id`` are stored with.

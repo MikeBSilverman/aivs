@@ -1,0 +1,16 @@
+Mutation M983: the creation's audit row carries the owner tag, a copy a rekey cannot reach
+Re-applies: Phase P slice 3b (SF-90)
+
+Expect red: packages/aivs-server/tests/unit/test_owner_values_stay_inside.py::test_no_audit_row_records_a_tag_or_token
+
+diff --git a/packages/aivs-server/src/aivs_server/services/submissions.py b/packages/aivs-server/src/aivs_server/services/submissions.py
+--- a/packages/aivs-server/src/aivs_server/services/submissions.py
++++ b/packages/aivs-server/src/aivs_server/services/submissions.py
+@@ -767,6 +767,7 @@
+         resource_id=str(submission.id),
+         details={
+             "title": title,
++            "owner_tag": submission.owner_tag,
+             "tlp": str(tlp),
+             "discovery_scope": str(discovery_scope),
+             "object_count": object_count,

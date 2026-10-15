@@ -6,14 +6,12 @@ Expect red: packages/aivs-server/tests/unit/test_owner_tokens.py::test_one_owner
 diff --git a/packages/aivs-server/src/aivs_server/services/attribution.py b/packages/aivs-server/src/aivs_server/services/attribution.py
 --- a/packages/aivs-server/src/aivs_server/services/attribution.py
 +++ b/packages/aivs-server/src/aivs_server/services/attribution.py
-@@ -193,8 +193,8 @@
-     one new id racing each other agree on one token.
-     """
-     ids = sorted(set(stix_ids))
--    if owner_is_isac:
--        return dict.fromkeys(ids, ISAC_OWNER)
-+    if owner_is_isac or not owner_is_isac:
-+        return dict.fromkeys(ids, ISAC_OWNER if owner_is_isac else str(org_id))
-     if not ids:
-         return {}
-     await session.execute(
+@@ -215,7 +215,7 @@
+     ids = set(stix_ids)
+     if owner_is_isac:
+         return dict.fromkeys(ids, ISAC_OWNER)
+-    return {stix_id: key.owner_token(org_id, stix_id) for stix_id in ids}
++    return {stix_id: str(org_id) for stix_id in ids}
+ 
+ 
+ async def values_under_other_keys(session: AsyncSession, key: AttributionKey) -> list[str]:

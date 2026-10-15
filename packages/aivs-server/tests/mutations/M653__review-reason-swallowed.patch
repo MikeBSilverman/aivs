@@ -6,10 +6,10 @@ Expect red: packages/aivs-server/tests/unit/test_one_click.py::test_the_rule_tha
 diff --git a/packages/aivs-server/src/aivs_server/services/contributions.py b/packages/aivs-server/src/aivs_server/services/contributions.py
 --- a/packages/aivs-server/src/aivs_server/services/contributions.py
 +++ b/packages/aivs-server/src/aivs_server/services/contributions.py
-@@ -343,7 +343,6 @@ async def publish_without_review(
+@@ -363,7 +363,6 @@
              )
      except _REVIEW_INSTEAD as refusal:
-         await _file_for_review(session, ctx, submission)
+         await _file_for_review(session, ctx, submission, key=key)
 -        await _keep_the_reason(session, ctx, submission, lane=lane, refusal=refusal)
          return False
      return True

@@ -22,6 +22,12 @@ Two kinds of caller:
 ``owner_tokens_for`` is ingest's: the token each version is stored with, so
 that "the same owner's versions of this object" can be asked of
 ``stix_objects`` alone, without the mapping.
+
+Tags and tokens are HMACs under the attribution key (``auth.attribution_key``,
+SF-90), which the database never holds: the member path computes them, and SQL
+can neither compute nor reverse one. ``rekey`` recomputes every one of them
+under a new key from the mapping, and ``values_under_other_keys`` is what
+startup asks before it serves anything.
 """
 
 from __future__ import annotations
@@ -29,28 +35,31 @@ from __future__ import annotations
 import uuid
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Any, Final
+from typing import Any, Final, cast
 
-from sqlalchemy import Select, select
-from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy import Select, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
-from aivs_server.db.models import ObjectOwner, Submission, SubmissionFiler
+from aivs_server.auth.attribution_key import AttributionKey
+from aivs_server.db.models import StixObject, Submission, SubmissionFiler
 
 __all__ = [
     "ISAC_OWNER",
     "FilingRecord",
+    "RekeyCounts",
     "creator_column",
     "filing_record",
     "is_submitted_by",
     "owner_tokens_for",
     "record_filing",
+    "rekey",
     "submitted_by",
     "submitter_column",
     "submitter_of",
     "submitter_shown_to",
     "submitters_of",
+    "values_under_other_keys",
 ]
 
 #: The owner token of every version the ISAC or its automation files: they are
@@ -75,9 +84,20 @@ class FilingRecord:
 
 
 async def record_filing(
-    session: AsyncSession, submission: Submission, record: FilingRecord
+    session: AsyncSession, key: AttributionKey, submission: Submission, record: FilingRecord
 ) -> None:
-    """Record who filed ``submission``, once its row exists (after its first flush)."""
+    """Add the new ``submission``, tagged with its filer, and record who filed it.
+
+    The tag is bound to the submission's id, which SQLAlchemy would otherwise
+    choose only at INSERT; so the id is chosen here, before the row exists
+    (CLAUDE.md section 5, "a value bound to a row id").
+    """
+    # The annotation says UUID; before the INSERT the attribute is None.
+    if cast("uuid.UUID | None", submission.id) is None:
+        submission.id = uuid.uuid4()
+    submission.owner_tag = key.owner_tag(record.org_id, submission.id)
+    session.add(submission)
+    await session.flush()
     session.add(
         SubmissionFiler(
             submission_id=submission.id,
@@ -145,14 +165,15 @@ async def submitter_shown_to(
     return submitter
 
 
-async def is_submitted_by(session: AsyncSession, submission: Submission, org_id: uuid.UUID) -> bool:
-    """Whether ``org_id`` filed ``submission``: the member's own question, about itself."""
-    filed = await session.scalar(
-        select(SubmissionFiler.submission_id).where(
-            SubmissionFiler.submission_id == submission.id, SubmissionFiler.org_id == org_id
-        )
-    )
-    return filed is not None
+def is_submitted_by(key: AttributionKey, submission: Submission, org_id: uuid.UUID) -> bool:
+    """Whether ``org_id`` filed ``submission``: the member's own question, about itself.
+
+    Answered from the submission's tag, without reading the mapping, so it
+    holds within the transaction that filed the submission and on a login that
+    cannot read ``attribution``. A tag under another key raises
+    ``ForeignAttributionKeyError``: a fault, not "no".
+    """
+    return key.is_owner_tag(submission.owner_tag, org_id, submission.id)
 
 
 def submitted_by(org_id: uuid.UUID) -> Select[tuple[uuid.UUID]]:
@@ -183,33 +204,74 @@ def creator_column(entity: Any = Submission) -> ColumnElement[uuid.UUID | None]:
     )
 
 
-async def owner_tokens_for(
-    session: AsyncSession, org_id: uuid.UUID, stix_ids: Iterable[str], *, owner_is_isac: bool
+def owner_tokens_for(
+    key: AttributionKey, org_id: uuid.UUID, stix_ids: Iterable[str], *, owner_is_isac: bool
 ) -> dict[str, str]:
-    """The owner token ``org_id``'s versions of each id are stored with (``ObjectOwner``).
+    """The owner token ``org_id``'s versions of each id are stored with.
 
-    The ISAC's are ``ISAC_OWNER``. A member's are found or made, one per id:
-    inserted with ``ON CONFLICT DO NOTHING`` and read back, so two filings of
-    one new id racing each other agree on one token.
+    The ISAC's are ``ISAC_OWNER``. A member's are computed, so two filings of
+    one new id agree on one token without reading anything back.
     """
-    ids = sorted(set(stix_ids))
+    ids = set(stix_ids)
     if owner_is_isac:
         return dict.fromkeys(ids, ISAC_OWNER)
-    if not ids:
-        return {}
-    await session.execute(
-        insert(ObjectOwner)
-        .values(
-            [
-                {"owner_token": str(uuid.uuid4()), "stix_id": stix_id, "org_id": org_id}
-                for stix_id in ids
-            ]
-        )
-        .on_conflict_do_nothing(index_elements=["stix_id", "org_id"])
+    return {stix_id: key.owner_token(org_id, stix_id) for stix_id in ids}
+
+
+async def values_under_other_keys(session: AsyncSession, key: AttributionKey) -> list[str]:
+    """Which columns hold a tag or token not made under ``key``; empty when none do.
+
+    Startup refuses an instance where this is not empty: a half-finished
+    rotation would make ingest store a member's new versions under a token
+    that no longer matches its old ones, so its own object would read as
+    another owner's.
+    """
+    pattern = f"{key.prefix}%"
+    foreign_tag = await session.scalar(
+        select(Submission.id).where(Submission.owner_tag.not_like(pattern)).limit(1)
     )
-    rows = await session.execute(
-        select(ObjectOwner.stix_id, ObjectOwner.owner_token).where(
-            ObjectOwner.org_id == org_id, ObjectOwner.stix_id.in_(ids)
-        )
+    foreign_token = await session.scalar(
+        select(StixObject.id)
+        .where(StixObject.owner_token != ISAC_OWNER, StixObject.owner_token.not_like(pattern))
+        .limit(1)
     )
-    return dict(rows.tuples().all())
+    found = {"submissions.owner_tag": foreign_tag, "stix_objects.owner_token": foreign_token}
+    return [column for column, row in found.items() if row is not None]
+
+
+@dataclass(frozen=True, slots=True)
+class RekeyCounts:
+    tags: int
+    tokens: int
+
+
+async def rekey(session: AsyncSession, key: AttributionKey) -> RekeyCounts:
+    """Recompute every tag and every member's token under ``key``. The caller commits.
+
+    Only the mapping is needed, never the key being replaced: a version's owner
+    is the filer of its submission (a revocation is written into the same
+    submission, ``services.revocation``), and the ISAC's token names no key.
+    """
+    filers = (
+        await session.execute(select(SubmissionFiler.submission_id, SubmissionFiler.org_id))
+    ).all()
+    tags = [
+        {"id": submission_id, "owner_tag": key.owner_tag(org_id, submission_id)}
+        for submission_id, org_id in filers
+    ]
+    versions = (
+        await session.execute(
+            select(StixObject.id, StixObject.stix_id, SubmissionFiler.org_id)
+            .join(SubmissionFiler, SubmissionFiler.submission_id == StixObject.submission_id)
+            .where(StixObject.owner_token != ISAC_OWNER)
+        )
+    ).all()
+    tokens = [
+        {"id": version_id, "owner_token": key.owner_token(org_id, stix_id)}
+        for version_id, stix_id, org_id in versions
+    ]
+    if tags:
+        await session.execute(update(Submission), tags)
+    if tokens:
+        await session.execute(update(StixObject), tokens)
+    return RekeyCounts(tags=len(tags), tokens=len(tokens))

@@ -1,0 +1,19 @@
+Mutation M978: a placeholder, short or malformed attribution key is accepted
+Re-applies: Phase P slice 3b (SF-90)
+
+Expect red: packages/aivs-server/tests/unit/test_attribution_key.py::test_an_unusable_attribution_key_is_refused_everywhere[placeholder]
+Expect red: packages/aivs-server/tests/unit/test_attribution_key.py::test_an_unusable_attribution_key_is_refused_everywhere[short]
+Expect red: packages/aivs-server/tests/unit/test_attribution_key.py::test_an_unusable_attribution_key_is_refused_everywhere[malformed]
+
+diff --git a/packages/aivs-server/src/aivs_server/config.py b/packages/aivs-server/src/aivs_server/config.py
+--- a/packages/aivs-server/src/aivs_server/config.py
++++ b/packages/aivs-server/src/aivs_server/config.py
+@@ -567,7 +567,7 @@
+         A model validator for the reason ``_keys_fit_the_algorithm`` gives: a
+         field validator's error carries the raw value.
+         """
+-        _check_kek(self.attribution_key)
++        return self
+         length = len(self.attribution_key_bytes)
+         if length != ATTRIBUTION_KEY_BYTES:
+             msg = f"attribution_key must decode to {ATTRIBUTION_KEY_BYTES} bytes, got {length}"

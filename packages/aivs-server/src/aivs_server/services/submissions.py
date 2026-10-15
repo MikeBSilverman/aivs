@@ -43,6 +43,7 @@ from aivs_schemas.extension.builders import (
     validate_bundle,
 )
 from aivs_server.audit.log import AuditAction, record
+from aivs_server.auth.attribution_key import AttributionKey
 from aivs_server.auth.context import AuthContext
 from aivs_server.auth.policy import (
     ISAC_FILER_TYPES,
@@ -491,7 +492,7 @@ async def _reject_identity_problems(
 
 
 async def replace_submission_objects(
-    session: AsyncSession, submission: Submission, bundle: dict[str, Any]
+    session: AsyncSession, submission: Submission, bundle: dict[str, Any], *, key: AttributionKey
 ) -> int:
     """Validate a bundle and store its objects against ``submission``.
 
@@ -515,8 +516,8 @@ async def replace_submission_objects(
     parsed_objects: list[tuple[_ParsedObject, dict[str, Any]]] = []
     for obj in objects:
         parsed = _parse_object(obj)
-        key = (parsed.stix_id, parsed.modified)
-        if key in seen:
+        version = (parsed.stix_id, parsed.modified)
+        if version in seen:
             # The same version twice in one bundle would violate the per-
             # submission uniqueness constraint; report it as the client error it
             # is rather than surfacing a database exception.
@@ -525,11 +526,11 @@ async def replace_submission_objects(
                 f"{parsed.modified.isoformat()} more than once"
             )
             raise SubmissionError(msg)
-        seen.add(key)
+        seen.add(version)
         parsed_objects.append((parsed, obj))
 
-    tokens = await owner_tokens_for(
-        session,
+    tokens = owner_tokens_for(
+        key,
         await submitter_of(session, submission),
         (parsed.stix_id for parsed, _obj in parsed_objects),
         owner_is_isac=await is_isac_filing(session, submission),
@@ -698,6 +699,7 @@ async def create_submission(
     session: AsyncSession,
     ctx: AuthContext,
     *,
+    key: AttributionKey,
     title: str,
     summary: str | None,
     tlp: Any,
@@ -737,11 +739,9 @@ async def create_submission(
         title=title,
         summary=summary,
     )
-    session.add(submission)
-    await session.flush()
-    await record_filing(session, submission, _filing_record(ctx, filed_for))
+    await record_filing(session, key, submission, _filing_record(ctx, filed_for))
 
-    object_count = await replace_submission_objects(session, submission, bundle)
+    object_count = await replace_submission_objects(session, submission, bundle, key=key)
     # An analyst filing for a member is ISAC staff, who see everything; the
     # rules are then checked from that view, as validate will check them.
     await _refuse_contribution_problem(
@@ -809,6 +809,7 @@ async def update_submission(
     submission: Submission,
     *,
     changes: dict[str, Any],
+    key: AttributionKey,
 ) -> Submission:
     """Amend a draft or returned submission.
 
@@ -821,7 +822,7 @@ async def update_submission(
         msg = f"a submission in state '{submission.state.value}' can no longer be edited"
         raise SubmissionError(msg)
     owner_is_isac = await is_isac_filing(session, submission)
-    owner_is_caller = await is_submitted_by(session, submission, ctx.org_id)
+    owner_is_caller = is_submitted_by(key, submission, ctx.org_id)
     require(
         holds_submitter_rights(ctx, owner_is_isac=owner_is_isac, owner_is_caller=owner_is_caller),
         _submitter_refusal(ctx, owner_is_isac=owner_is_isac),
@@ -836,7 +837,7 @@ async def update_submission(
         setattr(submission, field, value)
 
     if bundle is not None:
-        await replace_submission_objects(session, submission, bundle)
+        await replace_submission_objects(session, submission, bundle, key=key)
     elif submission.distribute_anonymously:
         # Anonymity is a property of the submission as it stands, not of the
         # write that happened to carry a bundle. PATCH {"distribute_anonymously":
@@ -918,6 +919,7 @@ async def apply_transition(
     submission: Submission,
     target: SubmissionState,
     *,
+    key: AttributionKey,
     reason: str | None = None,
     acknowledged_changes: frozenset[str] = frozenset(),
 ) -> Submission:
@@ -939,7 +941,7 @@ async def apply_transition(
         raise SubmissionError(msg)
 
     owner_is_isac = await is_isac_filing(session, submission)
-    owner_is_caller = await is_submitted_by(session, submission, ctx.org_id)
+    owner_is_caller = is_submitted_by(key, submission, ctx.org_id)
     require(
         can_transition_submission(
             ctx,

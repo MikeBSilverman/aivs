@@ -136,6 +136,8 @@ make_env() {
     mkdir -p "${WORK}/secrets"
     openssl rand -base64 32 > "${WORK}/secrets/secret-encryption-key"
     chmod 0600 "${WORK}/secrets/secret-encryption-key"
+    openssl rand -base64 32 > "${WORK}/secrets/attribution-key"
+    chmod 0600 "${WORK}/secrets/attribution-key"
     cat > "${WORK}/.env" <<EOF
 AIVS_INSTANCE_NAME=E2E Test ISAC
 AIVS_PUBLIC_BASE_URL=https://localhost:${PORT}
@@ -149,6 +151,7 @@ AIVS_CA_DIR=${WORK}/ca/out
 AIVS_PROXY_SHARED_SECRET=$(random_secret)
 AIVS_SESSION_SECRET=$(random_secret)
 AIVS_SECRET_ENCRYPTION_KEY_PATH=${WORK}/secrets/secret-encryption-key
+AIVS_ATTRIBUTION_KEY_PATH=${WORK}/secrets/attribution-key
 AIVS_DB_USER=aivs
 AIVS_DB_NAME=aivs
 AIVS_DB_PASSWORD=$(random_secret)
@@ -165,7 +168,7 @@ hand_files_to_container_users() {
     # already, so a throwaway container does it without asking for a password.
     docker run --rm --user 0:0 --entrypoint sh -v "${WORK}:/w" "${PROXY_IMAGE}" -c '
         chown 101:101 /w/ca/out/nginx/server.key && chmod 0400 /w/ca/out/nginx/server.key &&
-        chown 10001:10001 /w/secrets/secret-encryption-key'
+        chown 10001:10001 /w/secrets/secret-encryption-key /w/secrets/attribution-key'
 }
 
 start_stack() {

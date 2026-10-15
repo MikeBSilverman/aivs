@@ -35,6 +35,7 @@ from pydantic import Field, SecretStr, ValidationError, field_validator, model_v
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import make_url
 
+from aivs_server.auth.attribution_key import KEY_BYTES as ATTRIBUTION_KEY_BYTES
 from aivs_server.auth.secretbox import (
     DEFAULT_ALGORITHM_NAME,
     algorithm_by_name,
@@ -319,6 +320,15 @@ class Settings(BaseSettings):
     #: Left at the default unless a member's cryptography policy or a platform
     #: without AES hardware calls for something else.
     secret_encryption_algorithm: str = DEFAULT_ALGORITHM_NAME
+    #: Keys the owner tags and owner tokens (``auth.attribution_key``), so that
+    #: SQL alone can neither compute nor reverse who filed what. Base64 of 32
+    #: bytes: ``openssl rand -base64 32``. Required, like the key-encryption
+    #: key and for the same reason: one the application invented would be stored
+    #: where SQL can read it. Changing it is a rekey (runbook section 7.4a).
+    attribution_key: SecretStr
+    #: Where the key above was read from (``AIVS_ATTRIBUTION_KEY_FILE``).
+    #: Outside dev the key must come from one.
+    attribution_key_file: Path | None = None
 
     # -- Outbound webhooks --------------------------------------------------
     webhook_timeout_seconds: float = Field(default=5.0, gt=0, le=30)
@@ -550,6 +560,20 @@ class Settings(BaseSettings):
             raise ValueError(msg)
         return self
 
+    @model_validator(mode="after")
+    def _attribution_key_is_usable(self) -> Self:
+        """Refuse a placeholder, malformed or wrong-length attribution key.
+
+        A model validator for the reason ``_keys_fit_the_algorithm`` gives: a
+        field validator's error carries the raw value.
+        """
+        _check_kek(self.attribution_key)
+        length = len(self.attribution_key_bytes)
+        if length != ATTRIBUTION_KEY_BYTES:
+            msg = f"attribution_key must decode to {ATTRIBUTION_KEY_BYTES} bytes, got {length}"
+            raise ValueError(msg)
+        return self
+
     @model_validator(mode="before")
     @classmethod
     def _read_key_files(cls, data: Any) -> Any:
@@ -562,7 +586,12 @@ class Settings(BaseSettings):
         if not isinstance(data, dict):
             return data
         resolved = dict(data)
-        for field in ("secret_encryption_key", "secret_encryption_key_previous", "smtp_password"):
+        for field in (
+            "secret_encryption_key",
+            "secret_encryption_key_previous",
+            "attribution_key",
+            "smtp_password",
+        ):
             path = resolved.get(f"{field}_file")
             if not path:
                 # An empty value is how compose and Kubernetes spell "unset".
@@ -706,9 +735,14 @@ class Settings(BaseSettings):
         operator sessions. The env file's comment asked for different values and
         nothing checked.
         """
+        violations: list[str] = []
         if self.session_secret.get_secret_value() == self.proxy_shared_secret.get_secret_value():
-            return ["session_secret (must differ from proxy_shared_secret)"]
-        return []
+            violations.append("session_secret (must differ from proxy_shared_secret)")
+        if self.attribution_key_bytes == self.secret_encryption_key_bytes:
+            # One key for both purposes means one disclosure costs both: the
+            # sealed second factors and the map of who filed what.
+            violations.append("attribution_key (must differ from secret_encryption_key)")
+        return violations
 
     def _database_login_violations(self) -> list[str]:
         """The member path has a login of its own, and it is not the staff login.
@@ -748,6 +782,10 @@ class Settings(BaseSettings):
             violations.append(
                 "secret_encryption_key_previous_file (a rotation's old key is a file too)"
             )
+        if self.attribution_key_file is None:
+            # The key is all that stands between a database dump and the map
+            # of who filed what; the environment shows it to too many readers.
+            violations.append("attribution_key_file (outside dev the key comes from a 0600 file)")
         if self.issuing_ca_certificate_file is None:
             # Without it the proxy's handshake verdict is the only thing
             # between a self-signed certificate and a member identity.
@@ -795,6 +833,11 @@ class Settings(BaseSettings):
     def secret_encryption_key_bytes(self) -> bytes:
         """The active key-encryption key. Validated at construction."""
         return _decode_kek(self.secret_encryption_key)
+
+    @property
+    def attribution_key_bytes(self) -> bytes:
+        """The attribution key. Validated at construction."""
+        return _decode_kek(self.attribution_key)
 
     @property
     def secret_encryption_key_previous_bytes(self) -> bytes | None:

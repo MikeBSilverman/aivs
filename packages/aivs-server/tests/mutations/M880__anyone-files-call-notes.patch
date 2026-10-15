@@ -6,8 +6,8 @@ Expect red: packages/aivs-server/tests/authz_matrix/test_principal_matrix.py::te
 diff --git a/packages/aivs-server/src/aivs_server/api/sector_events.py b/packages/aivs-server/src/aivs_server/api/sector_events.py
 --- a/packages/aivs-server/src/aivs_server/api/sector_events.py
 +++ b/packages/aivs-server/src/aivs_server/api/sector_events.py
-@@ -98,7 +98,7 @@
-     event_id: uuid.UUID, payload: CallNotes, ctx: AuthenticatedContext, session: SessionDep
+@@ -102,7 +102,7 @@
+     key: AttributionKeyDep,
  ) -> dict[str, str]:
      """File a call's notes on the pinned advisory as an ISAC draft, for review. An editor only."""
 -    require(is_isac_editor(ctx), "sector_event_requires_isac_editor")

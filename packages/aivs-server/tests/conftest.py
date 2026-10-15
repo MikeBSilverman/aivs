@@ -57,6 +57,7 @@ from aivs_schemas.enums import (
     OrgType,
     SubmissionState,
 )
+from aivs_server.auth.attribution_key import AttributionKey
 from aivs_server.auth.context import AuthContext, AuthMethod
 from aivs_server.auth.passwords import hash_password
 from aivs_server.auth.policy import ISAC_FILER_TYPES
@@ -102,6 +103,17 @@ TEST_SECRET_KEY_FILE.write_text(TEST_SECRET_KEY + "\n", encoding="utf-8")
 TEST_SECRET_KEY_FILE.chmod(0o600)
 atexit.register(shutil.rmtree, _secrets_directory, ignore_errors=True)
 
+#: The attribution key for the suite (SF-90), fixed for the same reason, and a
+#: file for the same posture. Every seeded tag and token is made with it, as the
+#: application's would be.
+TEST_ATTRIBUTION_KEY_BYTES = b"aivs-test-attribution-not-a-key!"
+TEST_ATTRIBUTION_KEY_FILE = _secrets_directory / "attribution-key"
+TEST_ATTRIBUTION_KEY_FILE.write_text(
+    base64.b64encode(TEST_ATTRIBUTION_KEY_BYTES).decode("ascii") + "\n", encoding="utf-8"
+)
+TEST_ATTRIBUTION_KEY_FILE.chmod(0o600)
+TEST_ATTRIBUTION_KEY = AttributionKey(TEST_ATTRIBUTION_KEY_BYTES)
+
 
 #: The member login's URL in the suite's settings: the test database under
 #: another role name, which no test connects as.
@@ -132,10 +144,17 @@ def settings() -> Settings:
         proxy_shared_secret=TEST_PROXY_SECRET,  # type: ignore[arg-type]
         session_secret=TEST_SESSION_SECRET,  # type: ignore[arg-type]
         secret_encryption_key_file=TEST_SECRET_KEY_FILE,
+        attribution_key_file=TEST_ATTRIBUTION_KEY_FILE,
         trusted_proxy_cidrs=["127.0.0.1/32"],
         issuing_ca_certificate_file=TEST_CA_CERT_FILE,
         log_level="WARNING",
     )
+
+
+@pytest.fixture(scope="session")
+def attribution_key(settings: Settings) -> AttributionKey:
+    """The key the app makes and checks owner tags and tokens with."""
+    return AttributionKey.from_settings(settings)
 
 
 @pytest.fixture(scope="session")
@@ -371,12 +390,10 @@ _APPEND_ONLY_TABLES: Final[tuple[str, ...]] = (
     "submission_transitions",
     "audit_stream_modes",
     "attribution.submitters",
-    "attribution.object_owners",
 )
 
 _ALL_TABLES = (
     "attribution.submitters",
-    "attribution.object_owners",
     "audit_log",
     "webhook_deliveries",
     "pending_notices",
@@ -963,10 +980,9 @@ async def seed_filing(
     readers will meet (CLAUDE.md section 2: build seeded rows with the
     writer's own functions).
     """
-    session.add(submission)
-    await session.flush()
     await record_filing(
         session,
+        TEST_ATTRIBUTION_KEY,
         submission,
         FilingRecord(org_id=org.id, created_by=created_by, proxy_editor=None, proxy_consent=None),
     )
@@ -981,8 +997,8 @@ async def seeded_owner_token(
     org_type = await session.scalar(
         select(models.Organization.org_type).where(models.Organization.id == org_id)
     )
-    tokens = await owner_tokens_for(
-        session, org_id, [stix_id], owner_is_isac=org_type in ISAC_FILER_TYPES
+    tokens = owner_tokens_for(
+        TEST_ATTRIBUTION_KEY, org_id, [stix_id], owner_is_isac=org_type in ISAC_FILER_TYPES
     )
     return tokens[stix_id]
 

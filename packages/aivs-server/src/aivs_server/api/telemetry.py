@@ -13,7 +13,7 @@ import uuid
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 
-from aivs_server.auth.deps import AuthenticatedContext, SessionDep
+from aivs_server.auth.deps import AttributionKeyDep, AuthenticatedContext, SessionDep
 from aivs_server.db.models import Submission
 from aivs_server.services.attribution import is_submitted_by
 from aivs_server.services.telemetry import Count, submission_telemetry
@@ -47,11 +47,14 @@ def _out(count: Count) -> CountOut:
 
 @router.get("/{submission_id}/telemetry", response_model=TelemetryOut)
 async def get_telemetry(
-    submission_id: uuid.UUID, ctx: AuthenticatedContext, session: SessionDep
+    submission_id: uuid.UUID,
+    ctx: AuthenticatedContext,
+    session: SessionDep,
+    key: AttributionKeyDep,
 ) -> TelemetryOut:
     """Reach and engagement for one of the caller's own submissions, k-suppressed."""
     submission = await session.get(Submission, submission_id)
-    if submission is None or not await is_submitted_by(session, submission, ctx.org_id):
+    if submission is None or not is_submitted_by(key, submission, ctx.org_id):
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Submission not found")
     telemetry = await submission_telemetry(session, submission)
     return TelemetryOut(

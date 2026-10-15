@@ -128,6 +128,8 @@ jobs:
           umask 077
           python3 -c 'import base64, os; print(base64.b64encode(os.urandom(32)).decode())' > "$RUNNER_TEMP/kek"
           export AIVS_SECRET_ENCRYPTION_KEY_FILE="$RUNNER_TEMP/kek"
+          python3 -c 'import base64, os; print(base64.b64encode(os.urandom(32)).decode())' > "$RUNNER_TEMP/attribution-key"
+          export AIVS_ATTRIBUTION_KEY_FILE="$RUNNER_TEMP/attribution-key"
           # Scoped to this step: job-wide, alembic's preference for it
           # silently redirected the migrated-schema test's scratch database.
           export AIVS_MIGRATION_DATABASE_URL=postgresql+psycopg://aivs:aivs@localhost:5432/aivs_dev

@@ -281,6 +281,11 @@ services:
       # Which AEAD seals new values. Stored values name their own, so this is
       # safe to change; see deploy/env.example for the two supported names.
       AIVS_SECRET_ENCRYPTION_ALGORITHM: ${AIVS_SECRET_ENCRYPTION_ALGORITHM:-aes-256-gcm}
+      # Keys the owner tags and tokens, so a database dump alone cannot say
+      # who filed what (SF-90). A file for the same reason as the key above,
+      # and a different key: one disclosure must not cost both. Changing it
+      # is a rekey with the app stopped (runbook section 7.4a).
+      AIVS_ATTRIBUTION_KEY_FILE: /run/aivs/attribution-key
 
       # -- Logging ----------------------------------------------------------
       # DEBUG is refused outright in production by validate_production_posture,
@@ -296,6 +301,13 @@ services:
         type: bind
         source: ${AIVS_SECRET_ENCRYPTION_KEY_PATH:?set AIVS_SECRET_ENCRYPTION_KEY_PATH in deploy/.env to the ABSOLUTE path of a 0600 key file}
         target: /run/aivs/secret-encryption-key
+        read_only: true
+      # The attribution key, likewise. Anchored: migration c6f2a9d41e7b
+      # computes every tag and token with it.
+      - &attribution-key-mount
+        type: bind
+        source: ${AIVS_ATTRIBUTION_KEY_PATH:?set AIVS_ATTRIBUTION_KEY_PATH in deploy/.env to the ABSOLUTE path of a 0600 key file}
+        target: /run/aivs/attribution-key
         read_only: true
       # The issuing CA's *certificate* only, as one read-only file. The proxy
       # mounts the whole CA output directory; the application must not, because
@@ -374,8 +386,10 @@ services:
       AIVS_MEMBER_DB_ROLE: ${AIVS_DB_MEMBER_USER:-aivs_member}
       AIVS_SECRET_ENCRYPTION_KEY_FILE: /run/aivs/secret-encryption-key
       AIVS_SECRET_ENCRYPTION_ALGORITHM: ${AIVS_SECRET_ENCRYPTION_ALGORITHM:-aes-256-gcm}
+      AIVS_ATTRIBUTION_KEY_FILE: /run/aivs/attribution-key
     volumes:
       - *kek-mount
+      - *attribution-key-mount
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=64m,uid=10001,gid=10001,mode=0700
     networks:

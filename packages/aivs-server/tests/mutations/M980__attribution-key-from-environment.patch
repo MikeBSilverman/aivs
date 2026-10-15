@@ -1,0 +1,17 @@
+Mutation M980: outside dev the attribution key may come from the environment
+Re-applies: Phase P slice 3b (SF-90)
+
+Expect red: packages/aivs-server/tests/unit/test_attribution_key.py::test_outside_dev_the_key_comes_from_a_file
+
+diff --git a/packages/aivs-server/src/aivs_server/config.py b/packages/aivs-server/src/aivs_server/config.py
+--- a/packages/aivs-server/src/aivs_server/config.py
++++ b/packages/aivs-server/src/aivs_server/config.py
+@@ -782,7 +782,7 @@
+             violations.append(
+                 "secret_encryption_key_previous_file (a rotation's old key is a file too)"
+             )
+-        if self.attribution_key_file is None:
++        if False:
+             # The key is all that stands between a database dump and the map
+             # of who filed what; the environment shows it to too many readers.
+             violations.append("attribution_key_file (outside dev the key comes from a 0600 file)")

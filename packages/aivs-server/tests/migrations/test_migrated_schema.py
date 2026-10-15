@@ -140,11 +140,9 @@ _SEED_SUBMISSION = "00000000-0000-4000-8000-000000000002"
 _SEED_STATEMENTS = (
     "INSERT INTO organizations (id, name, slug, org_type, status, stix_identity_id) "
     "VALUES (:org, 'Seed', 'seed-org', 'gsib', 'active', :identity)",
-    "INSERT INTO submissions (id, state, tlp, discovery_scope, distribute_anonymously, title) "
-    "VALUES (:submission, 'draft', 'amber', 'ai_system', false, 's')",
+    "INSERT INTO submissions (id, state, tlp, discovery_scope, distribute_anonymously, title, "
+    "owner_tag) VALUES (:submission, 'draft', 'amber', 'ai_system', false, 's', 'seed-tag')",
     "INSERT INTO attribution.submitters (submission_id, org_id) VALUES (:submission, :org)",
-    "INSERT INTO attribution.object_owners (owner_token, stix_id, org_id) "
-    "VALUES ('seed-token', 'vulnerability--seed', :org)",
     "INSERT INTO submission_transitions (submission_id, to_state) VALUES (:submission, 'draft')",
     "INSERT INTO audit_log (actor_type, action, outcome, details) "
     "VALUES ('system', 'seed', 'success', '{}')",
@@ -184,7 +182,6 @@ _APPEND_ONLY = {
     "audit_stream_modes": "id",
     # Who filed what (Phase P): rewriting it would re-attribute a filing.
     "attribution.submitters": "org_id",
-    "attribution.object_owners": "org_id",
 }
 
 

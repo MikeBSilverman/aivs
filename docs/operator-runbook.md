@@ -733,6 +733,69 @@ webhook signing key as known: re-enrol the operators and have members
 re-register their webhooks. Re-sealing already-disclosed plaintext under a new
 key protects nothing.
 
+### 7.4a Rekeying the attribution key
+
+The attribution key (`AIVS_ATTRIBUTION_KEY_PATH`) keys the owner tags and owner
+tokens: how the member path asks "is this mine?" without the database being able
+to answer "whose is this?" (SF-90). Rekey on suspected disclosure of the key, on
+the departure of anyone who held it, and otherwise on the ISAC's own schedule.
+
+**The key being replaced is not needed.** Every tag and token is recomputed from
+who filed what, which the database holds, so a lost key is recovered by this
+same procedure with a new one. That works because tokens never leave the server:
+nothing a member holds stops matching.
+
+**It needs the application stopped.** A running instance would go on writing
+values under the old key while the rekey writes them under the new one. The
+rekey is one transaction, and the application refuses to start while any value
+is under a key other than the one it is given, naming the columns -- so an
+interrupted rekey cannot be served by mistake.
+
+The key is a file, as the secret-encryption key is; do not set
+`AIVS_ATTRIBUTION_KEY` in the environment, or the application will not start.
+
+1. Write the new key to a **new** file, readable only by the app's uid:
+
+   ```bash
+   umask 077
+   openssl rand -base64 32 > /srv/aivs/secrets/attribution-key.new
+   chown 10001:10001 /srv/aivs/secrets/attribution-key.new
+   ```
+
+2. Stop the application:
+
+   ```bash
+   docker compose --env-file deploy/.env stop app
+   ```
+
+3. In `deploy/.env`, point `AIVS_ATTRIBUTION_KEY_PATH` at the new file. Report
+   what is not on it, then recompute it:
+
+   ```bash
+   docker compose --env-file deploy/.env \
+     run --rm --no-deps app python -m aivs_server.rekey_attribution            # report
+   docker compose --env-file deploy/.env \
+     run --rm --no-deps app python -m aivs_server.rekey_attribution --apply    # recompute
+   ```
+
+4. Re-run the report. **When it says `not on this key: nothing`**, start the
+   application:
+
+   ```bash
+   docker compose --env-file deploy/.env up -d
+   ```
+
+   If it refuses to start with "hold values under an attribution key other
+   than", step 3 did not finish: run it again.
+
+Destroy the old file once the instance is serving. Unlike the secret-encryption
+key, it opens nothing that is not recomputed.
+
+**A rekey is not a remediation for a disclosure of the database together with
+the key.** Whoever holds both can already recover who filed everything up to
+then. Treat it as a disclosure of every filer's identity, including anonymous
+filers', and notify as for content (section 7.5).
+
 ### 7.5 Instance compromise
 
 Assume every piece of content is disclosed. That is the honest starting

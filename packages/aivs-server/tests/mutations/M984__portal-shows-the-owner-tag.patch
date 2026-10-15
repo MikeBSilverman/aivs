@@ -1,0 +1,28 @@
+Mutation M984: the portal's submission page puts the owner tag in its view and renders it
+Re-applies: Phase P slice 3b (SF-90)
+
+Expect red: packages/aivs-server/tests/unit/test_owner_values_stay_inside.py::test_no_tag_or_token_reaches_any_reader
+
+diff --git a/packages/aivs-server/src/aivs_server/portal/routes.py b/packages/aivs-server/src/aivs_server/portal/routes.py
+--- a/packages/aivs-server/src/aivs_server/portal/routes.py
++++ b/packages/aivs-server/src/aivs_server/portal/routes.py
+@@ -680,6 +680,7 @@
+                 "summary": submission.summary,
+                 "object_count": object_count,
+                 "anonymous": submission.distribute_anonymously,
++                "owner_tag": submission.owner_tag,
+                 "distributed_at": stamp(submission.distributed_at),
+                 "confirm_by": _confirm_by_for(ctx, submission, owner_is_caller=owner_is_caller),
+             },
+diff --git a/packages/aivs-server/src/aivs_server/portal/templates/submission_detail.html b/packages/aivs-server/src/aivs_server/portal/templates/submission_detail.html
+--- a/packages/aivs-server/src/aivs_server/portal/templates/submission_detail.html
++++ b/packages/aivs-server/src/aivs_server/portal/templates/submission_detail.html
+@@ -3,7 +3,7 @@
+ 
+ {% block content %}
+ <div class="page-head">
+-  <h1>{{ submission.title }}</h1>
++  <h1>{{ submission.title }} {{ submission.owner_tag }}</h1>
+   <p>
+     <span class="badge state-{{ submission.state }}">{{ submission.state }}</span>
+     <span class="badge tlp tlp-{{ submission.tlp }}">{{ submission.tlp_label }}</span>

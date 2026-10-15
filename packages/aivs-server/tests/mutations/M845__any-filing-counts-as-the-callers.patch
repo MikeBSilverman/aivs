@@ -6,12 +6,12 @@ Expect red: packages/aivs-server/tests/unit/test_submission_workflow.py::test_an
 diff --git a/packages/aivs-server/src/aivs_server/services/attribution.py b/packages/aivs-server/src/aivs_server/services/attribution.py
 --- a/packages/aivs-server/src/aivs_server/services/attribution.py
 +++ b/packages/aivs-server/src/aivs_server/services/attribution.py
-@@ -149,7 +149,7 @@
-     """Whether ``org_id`` filed ``submission``: the member's own question, about itself."""
-     filed = await session.scalar(
-         select(SubmissionFiler.submission_id).where(
--            SubmissionFiler.submission_id == submission.id, SubmissionFiler.org_id == org_id
-+            SubmissionFiler.submission_id == submission.id
-         )
-     )
-     return filed is not None
+@@ -173,7 +173,7 @@
+     cannot read ``attribution``. A tag under another key raises
+     ``ForeignAttributionKeyError``: a fault, not "no".
+     """
+-    return key.is_owner_tag(submission.owner_tag, org_id, submission.id)
++    return submission.owner_tag.startswith(key.prefix)
+ 
+ 
+ def submitted_by(org_id: uuid.UUID) -> Select[tuple[uuid.UUID]]:

@@ -34,7 +34,7 @@ from aivs_server.services.circles import (
 from aivs_server.services.inbox import receive_envelope
 from aivs_server.services.posture import VexStatement, record_posture
 from tests.authz_matrix.world import inbox_note
-from tests.conftest import is_blocked
+from tests.conftest import TEST_ATTRIBUTION_KEY, is_blocked
 from tests.unit.sharing_world import API, SharingWorld, build_sharing_world
 
 pytestmark = pytest.mark.db
@@ -171,6 +171,7 @@ async def test_an_inbox_post_in_flight_is_refused_after_offboarding(client, sess
             envelope={"objects": [inbox_note(world.published)]},
             hourly_limit=10,
             now=dt.datetime.now(dt.UTC),
+            key=TEST_ATTRIBUTION_KEY,
         )
     await session.rollback()
     assert await session.scalar(select(func.count()).select_from(models.TaxiiStatus)) == 0

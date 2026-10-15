@@ -30,7 +30,7 @@ from aivs_schemas.extension.builders import (
 )
 from aivs_server.audit.log import AuditAction, record
 from aivs_server.auth.context import AuthContext
-from aivs_server.auth.deps import AuthenticatedContext, SessionDep, SettingsDep
+from aivs_server.auth.deps import AttributionKeyDep, AuthenticatedContext, SessionDep, SettingsDep
 from aivs_server.auth.policy import (
     Intervals,
     can_read_circle,
@@ -643,6 +643,7 @@ async def add_objects(
     _: TaxiiAccept,
     ctx: AuthenticatedContext,
     session: SessionDep,
+    key: AttributionKeyDep,
     settings: SettingsDep,
 ) -> Response:
     """Contribute objects to a collection (section 5.5), as one submission for review.
@@ -670,6 +671,7 @@ async def add_objects(
             envelope=envelope,
             hourly_limit=settings.contribution_hourly_limit,
             now=await database_now(session),
+            key=key,
         )
         await session.commit()
     except ContributionRateLimitedError:

@@ -82,7 +82,6 @@ __all__ = [
     "EmailDelivery",
     "Embargo",
     "InstanceControl",
-    "ObjectOwner",
     "Operator",
     "OrgPosture",
     "Organization",
@@ -537,6 +536,12 @@ class Submission(TimestampMixin, Base):
     # Who filed it, and for whom, is not here: it is held apart in
     # ``attribution.submitters`` (``SubmissionFiler``), read only through
     # ``services.attribution`` (Phase P).
+    #: An HMAC of the filer and this submission's id under the attribution key
+    #: (``auth.attribution_key``): how the member path asks "is this mine?"
+    #: without reading ``attribution``. Per submission, so tags cannot be
+    #: matched to gather one firm's filings; keyed outside the database, so SQL
+    #: can neither compute nor reverse one. Set by ``attribution.record_filing``.
+    owner_tag: Mapped[str] = mapped_column(String(36), nullable=False)
     state: Mapped[SubmissionState] = mapped_column(
         pg_enum(SubmissionState, "submission_state"),
         nullable=False,
@@ -703,10 +708,11 @@ class StixObject(Base):
     raw: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     #: Which owner this version counts as, for "the same owner's versions of
     #: this object" (SF-48, SF-82, SF-85, and the feed's ``match[version]``):
-    #: ``'isac'`` for the ISAC and its automation, else a random token for this
-    #: owner *and this id* (``ObjectOwner``). Equal tokens on one id mean one
-    #: owner; tokens on two ids say nothing about each other, so the column
-    #: cannot be used to gather one firm's objects. Set at ingest.
+    #: ``'isac'`` for the ISAC and its automation, else an HMAC of this owner
+    #: *and this id* under the attribution key (``auth.attribution_key``).
+    #: Equal tokens on one id mean one owner; tokens on two ids say nothing
+    #: about each other, so the column cannot be used to gather one firm's
+    #: objects, and SQL cannot compute one for a guessed owner. Set at ingest.
     owner_token: Mapped[str] = mapped_column(String(36), nullable=False)
 
     # -- Extracted for indexing and search only; ``raw`` remains canonical. --
@@ -785,32 +791,6 @@ class SubmissionFiler(Base):
             "(filed_by_operator_id IS NULL) = (proxy_consent_sha256 IS NULL)",
             name="proxy_filing_has_consent",
         ),
-        {"schema": ATTRIBUTION_SCHEMA},
-    )
-
-
-class ObjectOwner(Base):
-    """The owner token of one organisation's versions of one object id (Phase P, S2-1).
-
-    ``stix_objects.owner_token`` lets the read path group versions by owner
-    -- SF-48's read-side layer -- without naming the owner. This table is the
-    mapping back. A token per *(owner, id)* rather than per owner, so tokens
-    cannot be matched across ids to gather one firm's work; random rather
-    than a hash of the pair, which a reader holding the few dozen organisation
-    ids could reverse. The ISAC and its automation need no row: their token
-    is the constant ``'isac'``, and the ISAC's authorship is public anyway.
-    """
-
-    __tablename__ = "object_owners"
-
-    owner_token: Mapped[str] = mapped_column(String(36), primary_key=True)
-    stix_id: Mapped[str] = mapped_column(String(100), nullable=False)
-    org_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
-    )
-
-    __table_args__ = (
-        UniqueConstraint("stix_id", "org_id", name="uq_object_owners_stix_id_org_id"),
         {"schema": ATTRIBUTION_SCHEMA},
     )
 

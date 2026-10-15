@@ -246,6 +246,65 @@ def test_the_e2e_stack_sets_the_member_login():
     assert "AIVS_DB_MEMBER_PASSWORD=$(random_secret)" in script
 
 
+_ATTRIBUTION_KEY_TARGET = "/run/aivs/attribution-key"
+
+
+@pytest.mark.requirement("SF-90")
+@pytest.mark.parametrize("service", ["app", "migrate"])
+def test_the_attribution_key_is_mounted_as_a_file(service: str):
+    """The app makes and checks tags with it; migration c6f2a9d41e7b computes them."""
+    definition = _compose("docker-compose.yml")["services"][service]
+
+    assert definition["environment"]["AIVS_ATTRIBUTION_KEY_FILE"] == _ATTRIBUTION_KEY_TARGET
+    [mount] = [v for v in definition["volumes"] if v["target"] == _ATTRIBUTION_KEY_TARGET]
+    assert mount["read_only"] is True
+    assert mount["source"].startswith("${AIVS_ATTRIBUTION_KEY_PATH:?")
+    assert "AIVS_ATTRIBUTION_KEY" not in definition["environment"], "never the environment form"
+
+
+def test_the_attribution_key_is_a_placeholder_in_the_example_and_minted_by_e2e():
+    example = (ROOT / "deploy/env.example").read_text(encoding="utf-8")
+    script = (ROOT / "scripts/e2e.sh").read_text(encoding="utf-8")
+
+    assert re.search(r"^AIVS_ATTRIBUTION_KEY_PATH=REPLACE_ME$", example, re.M)
+    assert "AIVS_ATTRIBUTION_KEY_PATH=${WORK}/secrets/attribution-key" in script
+    assert 'openssl rand -base64 32 > "${WORK}/secrets/attribution-key"' in script
+    assert "/w/secrets/attribution-key" in script, "handed to the app's uid"
+
+
+def _runbook_section(heading: str) -> str:
+    runbook = (ROOT / "docs/operator-runbook.md").read_text(encoding="utf-8")
+    return runbook.split(f"### {heading}", 1)[1].split("\n### ", 1)[0]
+
+
+@pytest.mark.requirement("SF-90")
+def test_the_runbook_rekeys_with_the_application_stopped():
+    """Stop, rekey, report, start, in that order: a running instance would write
+    under the old key while the rekey writes under the new one."""
+    rekey = _runbook_section("7.4a")
+    commands = [line for block in _fenced_shell(rekey) for line in _logical_lines(block)]
+
+    def first(fragment: str) -> int:
+        return next(i for i, command in enumerate(commands) if fragment in command)
+
+    stop = first("stop app")
+    apply = first("aivs_server.rekey_attribution --apply")
+    start = first("up -d")
+    assert stop < apply < start
+    assert "AIVS_ATTRIBUTION_KEY_PATH" in rekey
+    assert not re.search(r"^\d+\. Set `AIVS_ATTRIBUTION_KEY`", rekey, re.M)
+    assert "--apply" in _declared_flags("aivs_server.rekey_attribution")
+
+
+def test_the_rekey_refusal_the_runbook_quotes_is_the_one_startup_raises():
+    """The runbook tells the operator what a half-finished rekey looks like."""
+    quoted = "hold values under an attribution key other than"
+    main = (ROOT / "packages/aivs-server/src/aivs_server/main.py").read_text(encoding="utf-8")
+
+    assert quoted in " ".join(_runbook_section("7.4a").split())
+    assert quoted in main
+
+
 def test_the_db_healthcheck_signs_in_as_the_application_role():
     """pg_isready never authenticates, under a comment saying it checked the role."""
     kind, command = _compose("docker-compose.yml")["services"]["db"]["healthcheck"]["test"]

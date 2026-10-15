@@ -1,0 +1,16 @@
+Mutation M977: a tag under another key answers "not yours", hiding a member's submissions from it with no fault
+Re-applies: Phase P slice 3b (SF-90)
+
+Expect red: packages/aivs-server/tests/unit/test_attribution_key.py::test_a_tag_under_another_key_is_a_fault_not_a_no
+
+diff --git a/packages/aivs-server/src/aivs_server/auth/attribution_key.py b/packages/aivs-server/src/aivs_server/auth/attribution_key.py
+--- a/packages/aivs-server/src/aivs_server/auth/attribution_key.py
++++ b/packages/aivs-server/src/aivs_server/auth/attribution_key.py
+@@ -124,6 +124,5 @@
+     def is_owner_tag(self, tag: str, org_id: uuid.UUID, submission_id: uuid.UUID) -> bool:
+         """Whether ``tag`` says ``org_id`` filed ``submission_id``."""
+         if not tag.startswith(self.prefix):
+-            msg = f"owner tag of submission {submission_id} is not under key {self.key_id}"
+-            raise ForeignAttributionKeyError(msg)
++            return False
+         return hmac.compare_digest(tag, self.owner_tag(org_id, submission_id))

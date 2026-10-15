@@ -29,6 +29,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from aivs_schemas.enums import OrgStatus, OrgType, SubmissionState
 from aivs_server.audit.log import AuditAction, record
+from aivs_server.auth.attribution_key import AttributionKey
 from aivs_server.auth.context import AuthContext
 from aivs_server.auth.policy import can_confirm_proxy_filing, is_isac_editor, require
 from aivs_server.db.models import Organization, Submission, Webhook, WebhookDelivery
@@ -102,6 +103,7 @@ async def file_on_behalf(
     consent_sha256: str,
     content: dict[str, Any],
     now: dt.datetime,
+    key: AttributionKey,
 ) -> Submission:
     """File ``content`` for ``org_id`` and hand it to review. Editors only.
 
@@ -121,6 +123,7 @@ async def file_on_behalf(
             org_id=member.id, consent_sha256=consent_sha256, confirm_by=now + CONFIRM_WITHIN
         ),
         via="proxy",
+        key=key,
         **content,
     )
     await record_transition(
@@ -144,10 +147,15 @@ async def file_on_behalf(
 
 
 async def confirm_proxy_filing(
-    session: AsyncSession, ctx: AuthContext, submission: Submission, *, now: dt.datetime
+    session: AsyncSession,
+    ctx: AuthContext,
+    submission: Submission,
+    *,
+    now: dt.datetime,
+    key: AttributionKey,
 ) -> Submission:
     """A person at the member confirms a filing made in its name. Nobody else."""
-    owner_is_caller = await is_submitted_by(session, submission, ctx.org_id)
+    owner_is_caller = is_submitted_by(key, submission, ctx.org_id)
     require(
         can_confirm_proxy_filing(ctx, owner_is_caller=owner_is_caller),
         "proxy_confirm_requires_member_person",

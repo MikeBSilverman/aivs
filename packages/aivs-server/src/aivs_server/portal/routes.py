@@ -28,8 +28,10 @@ from sqlalchemy import func, select
 from aivs_schemas.enums import TLP, CertStatus, OrgStatus, ReadingDepth, SubmissionState
 from aivs_schemas.models import SubmissionCreate
 from aivs_server.audit.log import AuditAction, account_reference, record_independently
+from aivs_server.auth.attribution_key import AttributionKey
 from aivs_server.auth.context import AuthContext
 from aivs_server.auth.deps import (
+    AttributionKeyDep,
     SessionDep,
     SettingsDep,
     request_certificate_fingerprint,
@@ -555,6 +557,7 @@ async def validate_review_group(
     request: Request,
     settings: SettingsDep,
     session: SessionDep,
+    key: AttributionKeyDep,
     csrf_token: Annotated[str, Form()],
     submission_ids: Annotated[list[uuid.UUID], Form()],
 ) -> Response:
@@ -563,7 +566,7 @@ async def validate_review_group(
     require_csrf(csrf_token, csrf_hash)
     response = redirect_within_portal("/portal/review")
     try:
-        validated = await validate_group(session, ctx, submission_ids)
+        validated = await validate_group(session, ctx, submission_ids, key=key)
         await session.commit()
     except GroupMemberNotFoundError:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Not found") from None
@@ -608,13 +611,12 @@ async def submission_detail(
     request: Request,
     settings: SettingsDep,
     session: SessionDep,
+    key: AttributionKeyDep,
 ) -> Response:
     """One submission, its history, and the actions this analyst may take."""
     ctx, csrf_hash = await current_session(request, settings)
     submission = await load_submission(session, submission_id, for_update=False)
-    owner_is_caller = submission is not None and await is_submitted_by(
-        session, submission, ctx.org_id
-    )
+    owner_is_caller = submission is not None and is_submitted_by(key, submission, ctx.org_id)
     if submission is None or not can_view_submission(
         ctx, submission, owner_is_caller=owner_is_caller
     ):
@@ -640,7 +642,7 @@ async def submission_detail(
         .all()
     )
 
-    actions, circles = await _available_actions(session, ctx, submission)
+    actions, circles = await _available_actions(session, ctx, submission, key=key)
 
     receipts: list[dict[str, Any]] | None = None
     if can_view_submission_receipts(ctx):
@@ -693,8 +695,8 @@ async def submission_detail(
             "actions": actions,
             "distribute_circles": circles,
             "receipts": receipts,
-            "telemetry": await telemetry_rows(session, ctx, submission),
-            "lint_hits": await lint_hits(session, ctx, submission),
+            "telemetry": await telemetry_rows(session, ctx, submission, key=key),
+            "lint_hits": await lint_hits(session, ctx, submission, key=key),
             "first_pass": await _first_pass_view(session, ctx, submission),
             "csrf_token": request.cookies.get("aivs_csrf", ""),
         }
@@ -728,7 +730,10 @@ def _confirm_by_for(
 
 
 async def _available_actions(
-    session: SessionDep, ctx: AuthContext, submission: Submission
+    session: SessionDep,
+    ctx: AuthContext,
+    submission: Submission,
+    key: AttributionKey,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Which workflow verbs this caller may perform, and where they may release.
 
@@ -736,7 +741,7 @@ async def _available_actions(
     appears for something the API would refuse.
     """
     owner_is_isac = await is_isac_filing(session, submission)
-    owner_is_caller = await is_submitted_by(session, submission, ctx.org_id)
+    owner_is_caller = is_submitted_by(key, submission, ctx.org_id)
     verbs = [
         (SubmissionState.SUBMITTED, "submit", "Send for review", True),
         (SubmissionState.VALIDATED, "validate", "Accept for sharing", True),
@@ -863,6 +868,7 @@ async def perform_action(
     request: Request,
     settings: SettingsDep,
     session: SessionDep,
+    key: AttributionKeyDep,
     csrf_token: Annotated[str, Form()],
 ) -> Response:
     """Perform a workflow verb from the detail screen.
@@ -876,7 +882,7 @@ async def perform_action(
 
     submission = await load_submission(session, submission_id, for_update=True)
     if submission is None or not can_view_submission(
-        ctx, submission, owner_is_caller=await is_submitted_by(session, submission, ctx.org_id)
+        ctx, submission, owner_is_caller=is_submitted_by(key, submission, ctx.org_id)
     ):
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Not found")
 
@@ -902,7 +908,7 @@ async def perform_action(
                 submission,
                 SubmissionState.DISTRIBUTED,
                 owner_is_isac=await is_isac_filing(session, submission),
-                owner_is_caller=await is_submitted_by(session, submission, ctx.org_id),
+                owner_is_caller=is_submitted_by(key, submission, ctx.org_id),
             ),
             "portal_distribute",
         )
@@ -914,7 +920,7 @@ async def perform_action(
         # circle", "the hold-until time could not be read") are ordinary operator
         # mistakes raised as SubmissionError, and outside the block they reached
         # the catch-all handler and became a 500.
-        await _perform_verb(verb, targets, request, settings, session, ctx, submission)
+        await _perform_verb(verb, targets, request, settings, session, ctx, submission, key=key)
         await session.commit()
     except (SubmissionError, DistributionError, PublicationPausedError, ValueError) as exc:
         await session.rollback()
@@ -942,6 +948,7 @@ async def _perform_verb(
     session: SessionDep,
     ctx: AuthContext,
     submission: Submission,
+    key: AttributionKey,
 ) -> None:
     """Run one workflow verb on a submission the caller holds under a row lock.
 
@@ -950,9 +957,9 @@ async def _perform_verb(
     """
     now = await database_now(session)
     if verb == "distribute":
-        await _distribute_from_portal(request, session, ctx, submission)
+        await _distribute_from_portal(request, session, ctx, submission, key=key)
     elif verb == "confirm":
-        await confirm_proxy_filing(session, ctx, submission, now=now)
+        await confirm_proxy_filing(session, ctx, submission, now=now, key=key)
     elif verb == "revoke":
         reason = str((await request.form()).get("reason", "")).strip()
         await revoke_contribution(session, ctx, submission, reason=reason)
@@ -964,26 +971,31 @@ async def _perform_verb(
             reason=None,
             hourly_limit=settings.contribution_hourly_limit,
             now=now,
+            key=key,
         )
     elif verb == "validate":
         acknowledged = frozenset(
             str(value) for value in (await request.form()).getlist("acknowledge")
         )
         await apply_transition(
-            session, ctx, submission, targets[verb], acknowledged_changes=acknowledged
+            session, ctx, submission, targets[verb], acknowledged_changes=acknowledged, key=key
         )
     else:
-        await apply_transition(session, ctx, submission, targets[verb])
+        await apply_transition(session, ctx, submission, targets[verb], key=key)
 
 
 async def _distribute_from_portal(
-    request: Request, session: SessionDep, ctx: AuthContext, submission: Submission
+    request: Request,
+    session: SessionDep,
+    ctx: AuthContext,
+    submission: Submission,
+    key: AttributionKey,
 ) -> None:
     circle_ids, release_at = _parse_distribute_form(await request.form())
     result = await distribute_submission(
         session, ctx, submission, circle_ids=circle_ids, release_at=release_at
     )
-    await apply_transition(session, ctx, submission, SubmissionState.DISTRIBUTED)
+    await apply_transition(session, ctx, submission, SubmissionState.DISTRIBUTED, key=key)
     # The same queue the API path writes, in the same transaction as the
     # visibility rows. Omitted here originally, so a distribution made
     # from this screen -- the one ISAC analysts actually work in --
@@ -1024,6 +1036,7 @@ async def submit_finding(
     request: Request,
     settings: SettingsDep,
     session: SessionDep,
+    key: AttributionKeyDep,
     title: Annotated[str, Form()],
     discovery_scope: Annotated[str, Form()],
     tlp: Annotated[str, Form()],
@@ -1097,6 +1110,7 @@ async def submit_finding(
             bundle=payload.bundle,
             filed_for=None,
             via="portal",
+            key=key,
         )
         # One commit, so the submission and the record of it land together. A
         # second SUBMISSION_CREATED row used to be written here after the first

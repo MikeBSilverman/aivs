@@ -1,0 +1,17 @@
+Mutation M986: the migration tags submissions and leaves slice 2's random tokens in place
+Re-applies: Phase P slice 3b (SF-90)
+
+Expect red: packages/aivs-server/tests/migrations/test_keyed_owner_values.py::test_every_tag_and_token_is_the_one_the_application_computes
+
+diff --git a/packages/aivs-server/alembic/versions/20261015_1500_c6f2a9d41e7b_keyed_owner_tags_and_tokens.py b/packages/aivs-server/alembic/versions/20261015_1500_c6f2a9d41e7b_keyed_owner_tags_and_tokens.py
+--- a/packages/aivs-server/alembic/versions/20261015_1500_c6f2a9d41e7b_keyed_owner_tags_and_tokens.py
++++ b/packages/aivs-server/alembic/versions/20261015_1500_c6f2a9d41e7b_keyed_owner_tags_and_tokens.py
+@@ -97,7 +97,7 @@
+             bind,
+             _VERSIONS,
+             "owner_token",
+-            [(vid, key.owner_token(org_id, stix_id)) for vid, stix_id, org_id in versions],
++            [],
+         )
+     op.alter_column("submissions", "owner_tag", nullable=False)
+     op.drop_table("object_owners", schema=_SCHEMA)

@@ -26,6 +26,7 @@ from aivs_server.auth.secretbox import (
 )
 from aivs_server.config import Settings
 from tests.conftest import (
+    TEST_ATTRIBUTION_KEY_BYTES,
     TEST_CA_CERT_FILE,
     TEST_DATABASE_URL,
     TEST_PROXY_SECRET,
@@ -200,6 +201,7 @@ def _settings(**overrides: object) -> Settings:
         "proxy_shared_secret": TEST_PROXY_SECRET,
         "session_secret": TEST_SESSION_SECRET,
         "secret_encryption_key": TEST_SECRET_KEY,
+        "attribution_key": base64.b64encode(TEST_ATTRIBUTION_KEY_BYTES).decode(),
         "issuing_ca_certificate_file": TEST_CA_CERT_FILE,
     }
     return Settings(**(base | overrides))

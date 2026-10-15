@@ -6,11 +6,11 @@ Expect red: packages/aivs-server/tests/unit/test_portal.py::test_the_isac_reads_
 diff --git a/packages/aivs-server/src/aivs_server/portal/submitter_view.py b/packages/aivs-server/src/aivs_server/portal/submitter_view.py
 --- a/packages/aivs-server/src/aivs_server/portal/submitter_view.py
 +++ b/packages/aivs-server/src/aivs_server/portal/submitter_view.py
-@@ -49,8 +49,6 @@
-     session: AsyncSession, ctx: AuthContext, submission: Submission
+@@ -50,8 +50,6 @@
+     session: AsyncSession, ctx: AuthContext, submission: Submission, key: AttributionKey
  ) -> dict[str, Any] | None:
      """The submitter's telemetry, or ``None`` for anyone else or before distribution."""
--    if not await is_submitted_by(session, submission, ctx.org_id):
+-    if not is_submitted_by(key, submission, ctx.org_id):
 -        return None
      telemetry = await submission_telemetry(session, submission)
      if not telemetry.distributed:

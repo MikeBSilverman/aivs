@@ -16,7 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 
 from aivs_schemas.enums import TLP, DiscoveryScope
-from aivs_server.auth.deps import AuthenticatedContext, SessionDep
+from aivs_server.auth.deps import AttributionKeyDep, AuthenticatedContext, SessionDep
 from aivs_server.auth.policy import is_isac_editor, require
 from aivs_server.db.clock import database_now
 from aivs_server.db.models import SectorEvent
@@ -95,7 +95,11 @@ async def close_event(
 
 @router.post("/sector-events/{event_id}/call-notes", status_code=status.HTTP_201_CREATED)
 async def file_call_notes(
-    event_id: uuid.UUID, payload: CallNotes, ctx: AuthenticatedContext, session: SessionDep
+    event_id: uuid.UUID,
+    payload: CallNotes,
+    ctx: AuthenticatedContext,
+    session: SessionDep,
+    key: AttributionKeyDep,
 ) -> dict[str, str]:
     """File a call's notes on the pinned advisory as an ISAC draft, for review. An editor only."""
     require(is_isac_editor(ctx), "sector_event_requires_isac_editor")
@@ -119,6 +123,7 @@ async def file_call_notes(
             distribute_anonymously=False,
             bundle=bundle,
             filed_for=None,
+            key=key,
         )
         await session.commit()
     except (SectorEventError, SubmissionError) as exc:

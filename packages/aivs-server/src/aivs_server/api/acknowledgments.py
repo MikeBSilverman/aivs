@@ -29,7 +29,7 @@ from sqlalchemy import func, select
 
 from aivs_schemas.enums import AckVia
 from aivs_schemas.models import AcknowledgmentCreate, AcknowledgmentOut, ReceiptOut
-from aivs_server.auth.deps import AuthenticatedContext, SessionDep
+from aivs_server.auth.deps import AttributionKeyDep, AuthenticatedContext, SessionDep
 from aivs_server.auth.policy import (
     can_view_submission_receipts,
 )
@@ -48,7 +48,10 @@ router = APIRouter(prefix="/api/v1", tags=["acknowledgments"])
     response_model=AcknowledgmentOut,
 )
 async def acknowledge(
-    payload: AcknowledgmentCreate, ctx: AuthenticatedContext, session: SessionDep
+    payload: AcknowledgmentCreate,
+    ctx: AuthenticatedContext,
+    session: SessionDep,
+    key: AttributionKeyDep,
 ) -> Acknowledgment:
     """Record that the caller's organisation acknowledged or actioned a submission.
 
@@ -71,6 +74,7 @@ async def acknowledge(
             via=AckVia.API,
             note=payload.note,
             now=dt.datetime.now(dt.UTC),
+            key=key,
         )
     except AssertionNotFoundError:
         # Never delivered to the caller: the same answer as an absent id.

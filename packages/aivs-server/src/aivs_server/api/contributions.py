@@ -32,6 +32,7 @@ from aivs_server.api.submissions import present_submission
 from aivs_server.audit.log import AuditAction, record, record_denial
 from aivs_server.auth.context import AuthContext
 from aivs_server.auth.deps import (
+    AttributionKeyDep,
     AuthenticatedContext,
     SessionDep,
     SettingsDep,
@@ -198,6 +199,7 @@ async def one_click(
     request: Request,
     ctx: AuthenticatedContext,
     session: SessionDep,
+    key: AttributionKeyDep,
     settings: SettingsDep,
 ) -> ContributionOut:
     """ "We see this too", "works", "doesn't work": the server builds the STIX.
@@ -212,6 +214,7 @@ async def one_click(
             kind=payload.kind,
             hourly_limit=settings.contribution_hourly_limit,
             now=await database_now(session),
+            key=key,
         )
         await session.commit()
     except TargetNotFoundError:
@@ -373,7 +376,7 @@ async def set_taxii_inbox_switch(
     "/submissions/on-behalf", status_code=status.HTTP_201_CREATED, response_model=SubmissionOut
 )
 async def file_for_member(
-    payload: OnBehalfIn, ctx: AuthenticatedContext, session: SessionDep
+    payload: OnBehalfIn, ctx: AuthenticatedContext, session: SessionDep, key: AttributionKeyDep
 ) -> SubmissionOut:
     """File a member's contribution for it, on its consent (SF-68). Editors only."""
     content = {
@@ -392,6 +395,7 @@ async def file_for_member(
             consent_sha256=payload.consent_sha256,
             content=content,
             now=await database_now(session),
+            key=key,
         )
         await session.commit()
     except _CLIENT_ERRORS as exc:
@@ -407,16 +411,19 @@ async def file_for_member(
 
 @router.post("/submissions/{submission_id}/confirm", response_model=SubmissionOut)
 async def confirm(
-    submission_id: uuid.UUID, ctx: AuthenticatedContext, session: SessionDep
+    submission_id: uuid.UUID,
+    ctx: AuthenticatedContext,
+    session: SessionDep,
+    key: AttributionKeyDep,
 ) -> SubmissionOut:
     """The member confirms a filing made in its name."""
     submission = await load_submission(session, submission_id, for_update=True)
     if submission is None or not can_view_submission(
-        ctx, submission, owner_is_caller=await is_submitted_by(session, submission, ctx.org_id)
+        ctx, submission, owner_is_caller=is_submitted_by(key, submission, ctx.org_id)
     ):
         raise _NOT_FOUND
     try:
-        await confirm_proxy_filing(session, ctx, submission, now=dt.datetime.now(dt.UTC))
+        await confirm_proxy_filing(session, ctx, submission, now=dt.datetime.now(dt.UTC), key=key)
     except SubmissionError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     await session.commit()

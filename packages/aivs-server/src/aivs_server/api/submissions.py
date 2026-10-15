@@ -42,8 +42,9 @@ from aivs_schemas.models import (
     ValidateRequest,
 )
 from aivs_server.audit.log import AuditAction, record, record_independently
+from aivs_server.auth.attribution_key import AttributionKey
 from aivs_server.auth.context import AuthContext
-from aivs_server.auth.deps import AuthenticatedContext, SessionDep, SettingsDep
+from aivs_server.auth.deps import AttributionKeyDep, AuthenticatedContext, SessionDep, SettingsDep
 from aivs_server.auth.policy import (
     can_change_embargo,
     can_reveal_submitter,
@@ -113,6 +114,7 @@ async def _require_visible_submission(
     submission_id: uuid.UUID,
     *,
     for_update: bool,
+    key: AttributionKey,
 ) -> Submission:
     """Load a submission the caller may see, or 404.
 
@@ -125,7 +127,7 @@ async def _require_visible_submission(
     """
     submission = await load_submission(session, submission_id, for_update=for_update)
     if submission is None or not can_view_submission(
-        ctx, submission, owner_is_caller=await is_submitted_by(session, submission, ctx.org_id)
+        ctx, submission, owner_is_caller=is_submitted_by(key, submission, ctx.org_id)
     ):
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Submission not found")
     return submission
@@ -153,7 +155,10 @@ async def present_submission(
 
 @router.post("", status_code=status.HTTP_201_CREATED, response_model=SubmissionOut)
 async def create(
-    payload: SubmissionCreate, ctx: AuthenticatedContext, session: SessionDep
+    payload: SubmissionCreate,
+    ctx: AuthenticatedContext,
+    session: SessionDep,
+    key: AttributionKeyDep,
 ) -> SubmissionOut:
     """Create a draft submission owned by the caller's organisation."""
     try:
@@ -167,6 +172,7 @@ async def create(
             distribute_anonymously=payload.distribute_anonymously,
             bundle=payload.bundle,
             filed_for=None,
+            key=key,
         )
         await session.commit()
     except _CLIENT_ERRORS as exc:
@@ -204,10 +210,15 @@ async def list_submissions(
 
 @router.get("/{submission_id}", response_model=SubmissionDetail)
 async def get_submission(
-    submission_id: uuid.UUID, ctx: AuthenticatedContext, session: SessionDep
+    submission_id: uuid.UUID,
+    ctx: AuthenticatedContext,
+    session: SessionDep,
+    key: AttributionKeyDep,
 ) -> SubmissionDetail:
     """Full view of one submission, including its workflow history."""
-    submission = await _require_visible_submission(session, ctx, submission_id, for_update=False)
+    submission = await _require_visible_submission(
+        session, ctx, submission_id, for_update=False, key=key
+    )
 
     stix_ids = list(
         (
@@ -279,12 +290,15 @@ async def amend(
     payload: SubmissionUpdate,
     ctx: AuthenticatedContext,
     session: SessionDep,
+    key: AttributionKeyDep,
 ) -> SubmissionOut:
     """Amend a draft. Refused once the submission has left the submitter."""
-    submission = await _require_visible_submission(session, ctx, submission_id, for_update=True)
+    submission = await _require_visible_submission(
+        session, ctx, submission_id, for_update=True, key=key
+    )
     try:
         await update_submission(
-            session, ctx, submission, changes=payload.model_dump(exclude_none=True)
+            session, ctx, submission, changes=payload.model_dump(exclude_none=True), key=key
         )
         await session.commit()
     except _CLIENT_ERRORS as exc:
@@ -325,10 +339,13 @@ async def _transition(
     submission_id: uuid.UUID,
     target: SubmissionState,
     reason: str | None,
+    key: AttributionKey,
 ) -> Submission:
-    submission = await _require_visible_submission(session, ctx, submission_id, for_update=True)
+    submission = await _require_visible_submission(
+        session, ctx, submission_id, for_update=True, key=key
+    )
     try:
-        await apply_transition(session, ctx, submission, target, reason=reason)
+        await apply_transition(session, ctx, submission, target, reason=reason, key=key)
         await session.commit()
     except _CLIENT_ERRORS as exc:
         raise await _refused(ctx, submission_id, target.value, exc) from exc
@@ -342,6 +359,7 @@ async def submit(
     payload: TransitionRequest,
     ctx: AuthenticatedContext,
     session: SessionDep,
+    key: AttributionKeyDep,
     settings: SettingsDep,
 ) -> SubmissionOut:
     """Hand a draft to the hosting ISAC for review.
@@ -349,7 +367,9 @@ async def submit(
     A short contribution on public content in a circle an editor opened to
     post-moderation is published at once instead (``services.contributions``).
     """
-    submission = await _require_visible_submission(session, ctx, submission_id, for_update=True)
+    submission = await _require_visible_submission(
+        session, ctx, submission_id, for_update=True, key=key
+    )
     try:
         await submit_submission(
             session,
@@ -358,6 +378,7 @@ async def submit(
             reason=payload.reason,
             hourly_limit=settings.contribution_hourly_limit,
             now=await database_now(session),
+            key=key,
         )
         await session.commit()
     except _CLIENT_ERRORS as exc:
@@ -372,6 +393,7 @@ async def validate(
     payload: ValidateRequest,
     ctx: AuthenticatedContext,
     session: SessionDep,
+    key: AttributionKeyDep,
 ) -> SubmissionOut:
     """Accept a submission as fit to share. Hosting ISAC only.
 
@@ -381,7 +403,9 @@ async def validate(
     content rules (owner-only versioning, the disclosure split, TLP inheritance,
     the AI gate) are checked here and answer 409 with the reason.
     """
-    submission = await _require_visible_submission(session, ctx, submission_id, for_update=True)
+    submission = await _require_visible_submission(
+        session, ctx, submission_id, for_update=True, key=key
+    )
     try:
         await apply_transition(
             session,
@@ -390,6 +414,7 @@ async def validate(
             SubmissionState.VALIDATED,
             reason=payload.reason,
             acknowledged_changes=frozenset(payload.acknowledge),
+            key=key,
         )
         await session.commit()
     except _CLIENT_ERRORS as exc:
@@ -404,6 +429,7 @@ async def withdraw(
     payload: TransitionRequest,
     ctx: AuthenticatedContext,
     session: SessionDep,
+    key: AttributionKeyDep,
 ) -> SubmissionOut:
     """Withdraw a submission that has not yet been distributed.
 
@@ -411,7 +437,7 @@ async def withdraw(
     pretending otherwise would be a false promise.
     """
     withdrawn = await _transition(
-        session, ctx, submission_id, SubmissionState.WITHDRAWN, payload.reason
+        session, ctx, submission_id, SubmissionState.WITHDRAWN, payload.reason, key=key
     )
     return await present_submission(session, withdrawn, ctx)
 
@@ -422,6 +448,7 @@ async def distribute(
     payload: DistributeRequest,
     ctx: AuthenticatedContext,
     session: SessionDep,
+    key: AttributionKeyDep,
 ) -> SubmissionOut:
     """Release a validated submission into circles. Hosting ISAC only.
 
@@ -429,7 +456,9 @@ async def distribute(
     polling concurrently sees the whole batch or none of it. A ``release_at`` in
     the future produces an embargo that holds without any scheduler running.
     """
-    submission = await _require_visible_submission(session, ctx, submission_id, for_update=True)
+    submission = await _require_visible_submission(
+        session, ctx, submission_id, for_update=True, key=key
+    )
 
     require(is_isac_editor(ctx), "distribute_requires_isac_editor")
 
@@ -442,7 +471,7 @@ async def distribute(
             release_at=payload.release_at,
         )
         await apply_transition(
-            session, ctx, submission, SubmissionState.DISTRIBUTED, reason=payload.reason
+            session, ctx, submission, SubmissionState.DISTRIBUTED, reason=payload.reason, key=key
         )
         # Queued in the same transaction as the visibility rows. Nothing is
         # queued for an embargoed distribution: the content is not readable yet,
@@ -472,13 +501,16 @@ async def release_embargo(
     payload: TransitionRequest,
     ctx: AuthenticatedContext,
     session: SessionDep,
+    key: AttributionKeyDep,
 ) -> SubmissionOut:
     """Release an embargoed submission immediately. Hosting ISAC only.
 
     The operational escape hatch: when a finding starts being exploited in the
     wild, waiting for a timer set days ago is the wrong answer.
     """
-    submission = await _require_visible_submission(session, ctx, submission_id, for_update=True)
+    submission = await _require_visible_submission(
+        session, ctx, submission_id, for_update=True, key=key
+    )
     require(can_change_embargo(ctx), "embargo_release_requires_isac_editor")
 
     try:
@@ -510,13 +542,16 @@ async def extend_embargo_endpoint(
     payload: DistributeRequest,
     ctx: AuthenticatedContext,
     session: SessionDep,
+    key: AttributionKeyDep,
 ) -> SubmissionOut:
     """Push an embargo further out. Hosting ISAC only.
 
     Reuses ``DistributeRequest`` for its ``release_at`` validation; the circle
     list it carries is ignored, since extension does not change who receives.
     """
-    submission = await _require_visible_submission(session, ctx, submission_id, for_update=True)
+    submission = await _require_visible_submission(
+        session, ctx, submission_id, for_update=True, key=key
+    )
     require(can_change_embargo(ctx), "embargo_extend_requires_isac_editor")
 
     if payload.release_at is None:
@@ -547,13 +582,16 @@ async def revoke(
     payload: RevokeRequest,
     ctx: AuthenticatedContext,
     session: SessionDep,
+    key: AttributionKeyDep,
 ) -> RevokeOut:
     """Revoke content that was published without review. An ISAC editor only.
 
     Members receive a newer, ``revoked`` version of each object
     (``services.revocation``); nothing they already hold is edited in place.
     """
-    submission = await _require_visible_submission(session, ctx, submission_id, for_update=True)
+    submission = await _require_visible_submission(
+        session, ctx, submission_id, for_update=True, key=key
+    )
     try:
         result = await revoke_contribution(session, ctx, submission, reason=payload.reason)
         await session.commit()
@@ -573,6 +611,7 @@ async def reveal_submitter(
     payload: RevealRequest,
     ctx: AuthenticatedContext,
     session: SessionDep,
+    key: AttributionKeyDep,
 ) -> RevealOut:
     """Name the submitter of an anonymous submission. An ISAC editor only.
 
@@ -583,7 +622,9 @@ async def reveal_submitter(
     and *not* the identity revealed: the log is read by auditors whose scope
     must not include every anonymous submitter by way of the audit trail.
     """
-    submission = await _require_visible_submission(session, ctx, submission_id, for_update=False)
+    submission = await _require_visible_submission(
+        session, ctx, submission_id, for_update=False, key=key
+    )
     require(can_reveal_submitter(ctx), "reveal_requires_isac_editor")
     if not submission.distribute_anonymously:
         raise HTTPException(

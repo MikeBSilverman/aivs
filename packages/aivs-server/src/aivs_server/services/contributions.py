@@ -57,6 +57,7 @@ from aivs_schemas.enums import (
 )
 from aivs_schemas.extension.builders import AIVS_INTEL_EXTENSION_ID, format_stix_timestamp
 from aivs_server.audit.log import AuditAction, record, record_independently
+from aivs_server.auth.attribution_key import AttributionKey
 from aivs_server.auth.context import AuthContext
 from aivs_server.auth.policy import (
     distribution_visibility_clause,
@@ -338,6 +339,7 @@ async def publish_without_review(
     ctx: AuthContext,
     submission: Submission,
     *,
+    key: AttributionKey,
     lane: SubmissionLane,
     circle_ids: Iterable[uuid.UUID],
 ) -> bool:
@@ -360,7 +362,7 @@ async def publish_without_review(
                 session, ctx, submission, lane=lane, circle_ids=circle_ids
             )
     except _REVIEW_INSTEAD as refusal:
-        await _file_for_review(session, ctx, submission)
+        await _file_for_review(session, ctx, submission, key=key)
         await _keep_the_reason(session, ctx, submission, lane=lane, refusal=refusal)
         return False
     return True
@@ -396,13 +398,15 @@ async def _keep_the_reason(
     )
 
 
-async def _file_for_review(session: AsyncSession, ctx: AuthContext, submission: Submission) -> None:
+async def _file_for_review(
+    session: AsyncSession, ctx: AuthContext, submission: Submission, key: AttributionKey
+) -> None:
     # The savepoint's rollback expired what it changed; reload before reading.
     await session.refresh(submission)
     submission.lane = SubmissionLane.REVIEW
     if submission.state is SubmissionState.DRAFT:
         await apply_transition(
-            session, ctx, submission, SubmissionState.SUBMITTED, reason=NEEDS_AN_EDITOR
+            session, ctx, submission, SubmissionState.SUBMITTED, reason=NEEDS_AN_EDITOR, key=key
         )
 
 
@@ -479,6 +483,7 @@ async def contribute(
     kind: OneClick,
     hourly_limit: int,
     now: dt.datetime,
+    key: AttributionKey,
 ) -> Submission:
     """File a one-click contribution, published at once if the lane rule allows.
 
@@ -512,6 +517,7 @@ async def contribute(
         bundle={"type": "bundle", "id": f"bundle--{uuid.uuid4()}", "objects": [built]},
         filed_for=None,
         via="one-click",
+        key=key,
     )
     if lane_problem is None:
         await publish_without_review(
@@ -520,10 +526,16 @@ async def contribute(
             submission,
             lane=SubmissionLane.FAST,
             circle_ids=publishable_circles(ctx, target),
+            key=key,
         )
     else:
         await apply_transition(
-            session, ctx, submission, SubmissionState.SUBMITTED, reason=f"review: {lane_problem}"
+            session,
+            ctx,
+            submission,
+            SubmissionState.SUBMITTED,
+            reason=f"review: {lane_problem}",
+            key=key,
         )
     return submission
 
@@ -585,13 +597,16 @@ async def submit_submission(
     reason: str | None,
     hourly_limit: int,
     now: dt.datetime,
+    key: AttributionKey,
 ) -> Submission:
     """Hand a draft to the ISAC, publishing it at once if a post-moderated circle takes it.
 
     Both surfaces that submit come through here, so the post-moderation rule
     has one home.
     """
-    await apply_transition(session, ctx, submission, SubmissionState.SUBMITTED, reason=reason)
+    await apply_transition(
+        session, ctx, submission, SubmissionState.SUBMITTED, reason=reason, key=key
+    )
     if submission.source is not SubmissionSource.MEMBER or ctx.operator_id is None:
         return submission
     raws = list(
@@ -615,6 +630,6 @@ async def submit_submission(
         await record_rate_limited(ctx, lane=SubmissionLane.POST_MODERATED.value, limit=hourly_limit)
         return submission
     await publish_without_review(
-        session, ctx, submission, lane=SubmissionLane.POST_MODERATED, circle_ids=circles
+        session, ctx, submission, lane=SubmissionLane.POST_MODERATED, circle_ids=circles, key=key
     )
     return submission

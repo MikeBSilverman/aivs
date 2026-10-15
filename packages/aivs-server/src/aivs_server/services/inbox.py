@@ -42,6 +42,7 @@ from aivs_schemas.enums import (
 )
 from aivs_schemas.extension.builders import MAX_BUNDLE_OBJECTS
 from aivs_server.audit.log import AuditAction, record
+from aivs_server.auth.attribution_key import AttributionKey
 from aivs_server.auth.context import AuthContext
 from aivs_server.auth.policy import PolicyDeniedError
 from aivs_server.db.models import Circle, TaxiiCollection, TaxiiStatus
@@ -79,6 +80,7 @@ async def receive_envelope(
     envelope: Any,
     hourly_limit: int,
     now: dt.datetime,
+    key: AttributionKey,
 ) -> TaxiiStatus:
     """File an envelope as one submitted submission and record its status.
 
@@ -105,11 +107,12 @@ async def receive_envelope(
         bundle={"type": "bundle", "id": f"bundle--{uuid.uuid4()}", "objects": objects},
         filed_for=None,
         via="taxii",
+        key=key,
     )
     submission.source = SubmissionSource.SYSTEM
     submission.lane = SubmissionLane.REVIEW
     await apply_transition(
-        session, ctx, submission, SubmissionState.SUBMITTED, reason="TAXII inbox"
+        session, ctx, submission, SubmissionState.SUBMITTED, reason="TAXII inbox", key=key
     )
 
     status = TaxiiStatus(

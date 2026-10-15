@@ -27,6 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from aivs_schemas.enums import SubmissionState
 from aivs_server.audit.log import AuditAction, record
+from aivs_server.auth.attribution_key import AttributionKey
 from aivs_server.auth.context import AuthContext
 from aivs_server.auth.policy import can_validate_in_bulk, require
 from aivs_server.db.models import Submission
@@ -45,7 +46,10 @@ class GroupMemberNotFoundError(LookupError):
 
 
 async def validate_group(
-    session: AsyncSession, ctx: AuthContext, submission_ids: Sequence[uuid.UUID]
+    session: AsyncSession,
+    ctx: AuthContext,
+    submission_ids: Sequence[uuid.UUID],
+    key: AttributionKey,
 ) -> list[Submission]:
     """Validate every submission in one review group, or none of them."""
     require(can_validate_in_bulk(ctx), "bulk_validate")
@@ -58,7 +62,7 @@ async def validate_group(
     submitters = await submitters_of(session, submissions)
     _require_one_group(submissions, submitters)
     for submission in submissions:
-        await apply_transition(session, ctx, submission, SubmissionState.VALIDATED)
+        await apply_transition(session, ctx, submission, SubmissionState.VALIDATED, key=key)
 
     first = submissions[0]
     await record(

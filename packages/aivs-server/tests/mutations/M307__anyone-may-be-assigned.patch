@@ -6,9 +6,9 @@ Expect red: packages/aivs-server/tests/unit/test_triage.py::test_a_reviewer_assi
 diff --git a/packages/aivs-server/src/aivs_server/api/triage.py b/packages/aivs-server/src/aivs_server/api/triage.py
 --- a/packages/aivs-server/src/aivs_server/api/triage.py
 +++ b/packages/aivs-server/src/aivs_server/api/triage.py
-@@ -72,7 +72,7 @@
+@@ -93,7 +93,7 @@
  ) -> TriageOut:
-     submission = await _locked_visible(session, ctx, submission_id)
+     submission = await _locked_visible(session, ctx, submission_id, key=key)
      require(can_assign_submission(ctx), "assign_requires_isac_reviewer")
 -    if payload.operator_id is not None:
 +    if False:

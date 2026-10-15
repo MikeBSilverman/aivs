@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from aivs_schemas.enums import AckType, AckVia
 from aivs_server.audit.log import AuditAction, record
+from aivs_server.auth.attribution_key import AttributionKey
 from aivs_server.auth.context import AuthContext
 from aivs_server.auth.policy import can_acknowledge_own_submission, require
 from aivs_server.db.models import Acknowledgment, Submission
@@ -47,6 +48,7 @@ async def assert_receipt(
     via: AckVia,
     note: str | None,
     now: dt.datetime,
+    key: AttributionKey,
 ) -> Acknowledgment:
     """Record ``ack_type`` for the caller's organisation, or return today's. Commits.
 
@@ -56,7 +58,7 @@ async def assert_receipt(
     if ack_type is AckType.RETRIEVED:
         msg = "retrieved is written by the server on delivery, never asserted"
         raise ValueError(msg)
-    await _require_assertable(session, ctx, submission)
+    await _require_assertable(session, ctx, submission, key)
     # Held before the write: the rollback on a repeat expires every loaded
     # object, and reading an attribute after it would be a lazy load.
     submission_id = submission.id
@@ -110,9 +112,9 @@ async def retrieved_submission_ids(
 
 
 async def _require_assertable(
-    session: AsyncSession, ctx: AuthContext, submission: Submission
+    session: AsyncSession, ctx: AuthContext, submission: Submission, key: AttributionKey
 ) -> None:
-    if await is_submitted_by(session, submission, ctx.org_id):
+    if is_submitted_by(key, submission, ctx.org_id):
         # 403, not 404: the submitter knows the submission exists.
         require(can_acknowledge_own_submission(ctx), "acknowledge_own_submission")
         return

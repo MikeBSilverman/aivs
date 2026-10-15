@@ -23,20 +23,30 @@ REPO = Path(__file__).resolve().parents[4]
 #: Where application code lives. Tests and migrations are left out: a test
 #: builds the rows it reads, and a migration moves them.
 SCANNED = (REPO / "packages" / "aivs-server" / "src", REPO / "demo", REPO / "scripts")
-#: The module that owns the mapping, and the model that declares it.
+#: The module that owns the mapping, the model that declares it, and the key
+#: that makes and checks its tags (SF-90).
 OWNERS = frozenset(
     {
         REPO / "packages/aivs-server/src/aivs_server/services/attribution.py",
         REPO / "packages/aivs-server/src/aivs_server/db/models.py",
+        REPO / "packages/aivs-server/src/aivs_server/auth/attribution_key.py",
     }
 )
-#: Who filed a submission, for whom, and on what consent.
+#: Who filed a submission, for whom, and on what consent; and the tag that
+#: answers "is this mine?" without them (SF-90), which only the module holding
+#: the key may compute or compare.
 FILING_COLUMNS = frozenset(
-    {"submitter_org_id", "created_by_operator_id", "filed_by_operator_id", "proxy_consent_sha256"}
+    {
+        "submitter_org_id",
+        "created_by_operator_id",
+        "filed_by_operator_id",
+        "proxy_consent_sha256",
+        "owner_tag",
+    }
 )
 SCHEMA_PREFIX = "attribution."
 #: The models of the ``attribution`` schema.
-ATTRIBUTION_MODELS = frozenset({"SubmissionFiler", "ObjectOwner"})
+ATTRIBUTION_MODELS = frozenset({"SubmissionFiler"})
 
 
 def _sources() -> Iterator[Path]:
@@ -139,7 +149,7 @@ def test_the_checks_find_what_they_are_for():
         'text("SELECT org_id FROM attribution.submitters")\n'
         'def f():\n    """Reads attribution.submitters, in prose."""\n'
         "from aivs_server.db.models import SubmissionFiler\n"
-        "select(models.ObjectOwner)\n"
+        "select(models.SubmissionFiler)\n"
     )
 
     assert len(list(_filing_column_reads(tree))) == 1

@@ -56,6 +56,7 @@ from aivs_server.services.attribution import submitted_by
 from aivs_server.taxii.filters import TaxiiFilters
 from aivs_server.taxii.queries import build_object_listing_query
 from tests.conftest import (
+    TEST_ATTRIBUTION_KEY_FILE,
     TEST_CA_CERT_FILE,
     TEST_DATABASE_URL,
     TEST_MEMBER_DATABASE_URL,
@@ -563,6 +564,7 @@ def _staging(**overrides: object) -> Settings:
         "member_database_url": TEST_MEMBER_DATABASE_URL,
         "proxy_shared_secret": TEST_PROXY_SECRET,
         "session_secret": TEST_SESSION_SECRET,
+        "attribution_key_file": TEST_ATTRIBUTION_KEY_FILE,
         "issuing_ca_certificate_file": TEST_CA_CERT_FILE,
         "secret_encryption_key_file": TEST_SECRET_KEY_FILE,
         "oidc_member_issuer": ISSUER,

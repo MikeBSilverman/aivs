@@ -569,6 +569,14 @@ in every authorization predicate.
   **Back it up separately from the database.** Held together, they are one
   artefact with no encryption at rest; lost entirely, every operator re-enrols
   their second factor and every member re-registers their webhook.
+- The **attribution key**, as a file the same way (`AIVS_ATTRIBUTION_KEY_FILE`;
+  under compose, `AIVS_ATTRIBUTION_KEY_PATH`) and a different value, which
+  startup checks. Base64 of 32 bytes. It keys the owner tags and owner tokens,
+  so that SQL alone can neither compute nor reverse who filed what (SF-90).
+  Held with a database dump it recovers that mapping, so it is kept apart from
+  the backups as the key-encryption key is. Lost, nothing is lost: a rekey
+  under a new key recomputes every value (runbook §7.4a). The `migrate`
+  service mounts it too.
 - Two database roles. The **owner** (`AIVS_DB_USER`, the image's superuser)
   owns the tables and runs migrations; the **application role**
   (`AIVS_DB_APP_USER`, default `aivs_app`) is a plain login that is not a
@@ -619,6 +627,7 @@ AIVS_MEMBER_DATABASE_URL=postgresql+psycopg://aivs_member:...@db:5432/aivs   # t
 AIVS_PROXY_SHARED_SECRET=<32+ chars>
 AIVS_SESSION_SECRET=<32+ chars>
 AIVS_SECRET_ENCRYPTION_KEY_FILE=/run/aivs/secret-encryption-key   # 0600, never the env form
+AIVS_ATTRIBUTION_KEY_FILE=/run/aivs/attribution-key                # 0600, a different key
 AIVS_ISSUING_CA_CERTIFICATE_FILE=/etc/aivs/issuing-ca.pem          # required outside dev
 # AIVS_SECRET_ENCRYPTION_ALGORITHM=aes-256-gcm   # or chacha20-poly1305
 AIVS_TRUSTED_PROXY_CIDRS=["10.20.0.2/32"]   # the nginx container address

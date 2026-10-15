@@ -1,0 +1,16 @@
+Mutation M976: the instance starts with owner values under a key it was not given, so a half-finished rekey is served
+Re-applies: Phase P slice 3b (SF-90)
+
+Expect red: packages/aivs-server/tests/unit/test_attribution_key.py::test_the_instance_refuses_to_start_on_values_under_another_key
+
+diff --git a/packages/aivs-server/src/aivs_server/main.py b/packages/aivs-server/src/aivs_server/main.py
+--- a/packages/aivs-server/src/aivs_server/main.py
++++ b/packages/aivs-server/src/aivs_server/main.py
+@@ -138,7 +138,6 @@
+     # rather than on a member's first request.
+     get_engine()
+     get_member_engine()
+-    await refuse_values_under_other_keys(AttributionKey.from_settings(settings))
+ 
+     background = [
+         asyncio.create_task(run_periodically(component.name, component.interval, component.work))

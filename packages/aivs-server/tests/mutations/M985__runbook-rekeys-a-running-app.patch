@@ -1,0 +1,17 @@
+Mutation M985: runbook 7.4a rekeys with the application running
+Re-applies: Phase P slice 3b (SF-90)
+
+Expect red: packages/aivs-server/tests/unit/test_deployment_contract.py::test_the_runbook_rekeys_with_the_application_stopped
+
+diff --git a/docs/operator-runbook.md b/docs/operator-runbook.md
+--- a/docs/operator-runbook.md
++++ b/docs/operator-runbook.md
+@@ -765,7 +765,7 @@
+ 2. Stop the application:
+ 
+    ```bash
+-   docker compose --env-file deploy/.env stop app
++   docker compose --env-file deploy/.env restart app
+    ```
+ 
+ 3. In `deploy/.env`, point `AIVS_ATTRIBUTION_KEY_PATH` at the new file. Report

@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from aivs_schemas.enums import CertStatus, CircleRole, OrgStatus
 from aivs_server.audit.log import AuditAction, record_independently
+from aivs_server.auth.attribution_key import AttributionKey
 from aivs_server.auth.context import AuthContext, AuthMethod
 from aivs_server.auth.memberships import load_circle_grants
 from aivs_server.auth.mtls import (
@@ -42,6 +43,7 @@ from aivs_server.db.engine import (
 from aivs_server.db.models import ClientCertificate, Organization
 
 __all__ = [
+    "AttributionKeyDep",
     "AuthSessionDep",
     "AuthenticatedContext",
     "SessionDep",
@@ -71,6 +73,14 @@ def _settings_dependency(request: Request) -> Settings:
 
 
 SettingsDep = Annotated[Settings, Depends(_settings_dependency)]
+
+
+def _attribution_key_dependency(settings: SettingsDep) -> AttributionKey:
+    return AttributionKey.from_settings(settings)
+
+
+#: The key owner tags and tokens are made and checked with (SF-90).
+AttributionKeyDep = Annotated[AttributionKey, Depends(_attribution_key_dependency)]
 
 
 async def get_request_session(request: Request) -> AsyncIterator[AsyncSession]:

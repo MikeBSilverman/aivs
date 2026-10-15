@@ -512,7 +512,7 @@ async def replace_submission_objects(
     await session.execute(delete(StixObject).where(StixObject.submission_id == submission.id))
 
     seen: set[tuple[str, dt.datetime]] = set()
-    rows: list[StixObject] = []
+    parsed_objects: list[tuple[_ParsedObject, dict[str, Any]]] = []
     for obj in objects:
         parsed = _parse_object(obj)
         key = (parsed.stix_id, parsed.modified)
@@ -526,28 +526,28 @@ async def replace_submission_objects(
             )
             raise SubmissionError(msg)
         seen.add(key)
-        rows.append(
-            StixObject(
-                stix_id=parsed.stix_id,
-                type=parsed.stix_type,
-                spec_version=parsed.spec_version,
-                created=parsed.created,
-                modified=parsed.modified,
-                submission_id=submission.id,
-                raw=obj,
-                owner_token="",
-                **_extract_indexed_fields(obj),
-            )
-        )
+        parsed_objects.append((parsed, obj))
 
     tokens = await owner_tokens_for(
         session,
         await submitter_of(session, submission),
-        (row.stix_id for row in rows),
+        (parsed.stix_id for parsed, _obj in parsed_objects),
         owner_is_isac=await is_isac_filing(session, submission),
     )
-    for row in rows:
-        row.owner_token = tokens[row.stix_id]
+    rows = [
+        StixObject(
+            stix_id=parsed.stix_id,
+            type=parsed.stix_type,
+            spec_version=parsed.spec_version,
+            created=parsed.created,
+            modified=parsed.modified,
+            submission_id=submission.id,
+            raw=obj,
+            owner_token=tokens[parsed.stix_id],
+            **_extract_indexed_fields(obj),
+        )
+        for parsed, obj in parsed_objects
+    ]
     session.add_all(rows)
     return len(rows)
 

@@ -8,13 +8,13 @@ Expect red: packages/aivs-server/tests/unit/test_enrich_kev.py::test_the_kev_ver
 diff --git a/packages/aivs-server/src/aivs_server/services/submissions.py b/packages/aivs-server/src/aivs_server/services/submissions.py
 --- a/packages/aivs-server/src/aivs_server/services/submissions.py
 +++ b/packages/aivs-server/src/aivs_server/services/submissions.py
-@@ -544,7 +544,8 @@
+@@ -532,7 +532,8 @@
          session,
          await submitter_of(session, submission),
-         (row.stix_id for row in rows),
+         (parsed.stix_id for parsed, _obj in parsed_objects),
 -        owner_is_isac=await is_isac_filing(session, submission),
 +        owner_is_isac=await is_isac_filing(session, submission)
 +        and submission.source is not SubmissionSource.SYSTEM,
      )
-     for row in rows:
-         row.owner_token = tokens[row.stix_id]
+     rows = [
+         StixObject(

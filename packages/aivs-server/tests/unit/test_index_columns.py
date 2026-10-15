@@ -134,17 +134,6 @@ async def test_valid_until_is_the_indicators_expiry_at_taxii_precision(stored):
 
 
 @pytest.mark.requirement("NFR-M2")
-async def test_ssvc_exploitation_and_kev_listed_are_the_vulnerabilitys_own(stored):
-    row = stored["Gateway auth bypass"]
-    body = row.raw["extensions"][AIVS_INTEL_EXTENSION_ID]
-    assert row.ssvc_exploitation == body["ssvc_exploitation"] == "active"
-    assert row.kev_listed is body["kev_listed"] is True
-    plain = stored["Nothing indexed here"]
-    assert plain.ssvc_exploitation is None
-    assert plain.kev_listed is None
-
-
-@pytest.mark.requirement("NFR-M2")
 async def test_cwe_ids_are_the_cwe_references_in_order_without_repeats(stored):
     row = stored["Gateway auth bypass"]
     in_raw = [r["external_id"] for r in row.raw["external_references"] if r["source_name"] == "cwe"]

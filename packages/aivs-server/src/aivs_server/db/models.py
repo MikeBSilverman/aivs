@@ -685,8 +685,6 @@ class StixObject(Base):
     remediation_category: Mapped[str | None] = mapped_column(String(40), nullable=True)
     pattern_type: Mapped[str | None] = mapped_column(String(40), nullable=True)
     valid_until: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    ssvc_exploitation: Mapped[str | None] = mapped_column(String(10), nullable=True)
-    kev_listed: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     cwe_ids: Mapped[list[str] | None] = mapped_column(ARRAY(String(20)), nullable=True)
 
     __table_args__ = (

@@ -75,9 +75,8 @@ E. Later phases are described, as built, in their own sections below:
   and CAPEC references must be in their scheme's format.
 - **Index columns** on `stix_objects`, extracted from `raw` and backfilled for
   existing rows, each held equal to its source by a test:
-  `remediation_category`, `pattern_type`, `valid_until`,
-  `ssvc_exploitation`, `kev_listed`, `cwe_ids`. `services/indexing.py`
-  names each column's reader.
+  `remediation_category`, `pattern_type`, `valid_until` and `cwe_ids`.
+  `services/indexing.py` names each column's reader.
 - **Readiness** (SF-8). For remediation, mitigation, detection and validation,
   the value is `available`, `none_available`, `lapsed` or `unavailable`.
   `lapsed` is a claim either way whose `review_by` has passed; it is served
@@ -192,10 +191,6 @@ against members.
 **Extension 2.0 and the index columns exist (§2).** What remains for this
 phase:
 
-- two index columns are written and read by nothing, because their readers
-  read `raw` instead: `ssvc_exploitation` (the default priority) and
-  `kev_listed` (the KEV script and lead time). Either route the readers
-  through them or drop them, as CLAUDE.md §5 requires (not yet done);
 - two columns wait for a reader:
   - `epss_score`, for EPSS enrichment, which the plan defers until an analyst
     asks for it;

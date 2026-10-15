@@ -768,14 +768,12 @@ Until it does, nothing writes them, and nothing accepts them from outside.
 
 ### What the server indexes from 2.0
 
-Six columns on `stix_objects` are extracted from `raw` at ingest, and are
+Four columns on `stix_objects` are extracted from `raw` at ingest, and are
 backfilled for rows stored before them:
 
 - `remediation_category`
 - `pattern_type`
 - `valid_until` (at TAXII's millisecond precision)
-- `ssvc_exploitation`
-- `kev_listed`
 - `cwe_ids`
 
 `raw` stays canonical, and a test holds each column equal to its source.

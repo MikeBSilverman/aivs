@@ -13,10 +13,12 @@ Who reads each, all in phase E unless noted:
 - ``pattern_type`` -- readiness, for the detection group; the IoC pack (F).
 - ``valid_until`` -- readiness and the IoC pack exclude expired indicators
   (SF-46).
-- ``ssvc_exploitation`` -- the default priority, from the SSVC coordinator
-  tree.
-- ``kev_listed`` -- the KEV enrichment script and the lead-time measure.
 - ``cwe_ids`` -- duplicate detection at intake.
+
+There were two more, ``ssvc_exploitation`` and ``kev_listed``, dropped in
+``102b931e1599`` because nothing filtered on them: the priority and the KEV
+readers need the whole object and read ``raw``. Add a column here only with
+the reader that filters on it.
 """
 
 from __future__ import annotations
@@ -35,8 +37,6 @@ INTEL_INDEX_COLUMNS: Final[tuple[str, ...]] = (
     "remediation_category",
     "pattern_type",
     "valid_until",
-    "ssvc_exploitation",
-    "kev_listed",
     "cwe_ids",
 )
 
@@ -58,10 +58,6 @@ def intel_index_fields(obj: Mapping[str, Any]) -> dict[str, Any]:
         else None,
         "pattern_type": _string(obj, "pattern_type") if object_type == "indicator" else None,
         "valid_until": _timestamp(obj, "valid_until") if object_type == "indicator" else None,
-        "ssvc_exploitation": _string(body, "ssvc_exploitation")
-        if object_type == "vulnerability"
-        else None,
-        "kev_listed": _boolean(body, "kev_listed") if object_type == "vulnerability" else None,
         "cwe_ids": _cwe_ids(obj) if object_type == "vulnerability" else None,
     }
 
@@ -74,11 +70,6 @@ def _intel_body(obj: Mapping[str, Any]) -> Mapping[str, Any]:
 def _string(source: Mapping[str, Any], key: str) -> str | None:
     value = source.get(key)
     return value if isinstance(value, str) and len(value) <= _SHORT else None
-
-
-def _boolean(source: Mapping[str, Any], key: str) -> bool | None:
-    value = source.get(key)
-    return value if isinstance(value, bool) else None
 
 
 def _timestamp(source: Mapping[str, Any], key: str) -> dt.datetime | None:

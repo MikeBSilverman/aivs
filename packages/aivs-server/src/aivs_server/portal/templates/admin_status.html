@@ -195,6 +195,21 @@
   {% else %}
     <div class="empty">None.</div>
   {% endif %}
+
+  <h3>Undelivered digest email</h3>
+  <p class="muted">Per member mailbox domain. The relay's last error is in <span class="mono">email_deliveries.error</span> (runbook &sect;9.5); it is not shown here because it usually repeats the address.</p>
+  {% if status.undelivered_email %}
+    <ul>
+      {% for mail in status.undelivered_email %}
+        <li {% if mail.given_up %}data-email-given-up{% else %}data-email-retrying{% endif %}="{{ mail.org }}"><span class="mono">{{ mail.org }}</span>
+            &rarr; <span class="mono">{{ mail.domain }}</span>:
+            {{ mail.retrying }} retrying, {{ mail.given_up }} given up; oldest
+            <span class="mono">{{ mail.oldest }}</span></li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <div class="empty">None.</div>
+  {% endif %}
 </div>
 
 <div class="card">

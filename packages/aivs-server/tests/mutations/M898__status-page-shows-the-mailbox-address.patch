@@ -1,0 +1,18 @@
+Mutation M898: the status page lists a digest mailbox by its full address
+Re-applies: the obvious first version of H2-4, which grouped by recipient
+
+Expect red: packages/aivs-server/tests/unit/test_status_page.py::test_undelivered_digest_email_is_shown_by_mailbox_domain
+
+diff --git a/packages/aivs-server/src/aivs_server/services/instance_status.py b/packages/aivs-server/src/aivs_server/services/instance_status.py
+index 99ea4e5..5ee4c06 100644
+--- a/packages/aivs-server/src/aivs_server/services/instance_status.py
++++ b/packages/aivs-server/src/aivs_server/services/instance_status.py
+@@ -215,7 +215,7 @@ async def _undelivered_email(session: AsyncSession, max_attempts: int) -> list[d
+     ``max_attempts``). The domain only, and never the relay's error: a mailbox
+     address is personal data, and an SMTP refusal usually echoes it.
+     """
+-    domain = func.split_part(EmailDelivery.recipient, "@", 2)
++    domain = EmailDelivery.recipient
+     given_up = EmailDelivery.attempts >= max_attempts
+     rows = await session.execute(
+         select(

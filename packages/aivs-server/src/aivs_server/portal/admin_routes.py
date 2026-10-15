@@ -665,7 +665,10 @@ async def status_screen(request: Request, settings: SettingsDep, session: Sessio
     require(can_view_instance_status(ctx), "portal_admin_status")
 
     facts = await gather_status(
-        session, now=dt.datetime.now(dt.UTC), box=SecretBox.from_settings(settings)
+        session,
+        now=dt.datetime.now(dt.UTC),
+        box=SecretBox.from_settings(settings),
+        email_max_attempts=settings.email_max_attempts,
     )
     context = base_context(
         request, settings, ctx, await operator_name(session, ctx), "admin-status"

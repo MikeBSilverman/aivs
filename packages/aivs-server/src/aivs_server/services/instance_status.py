@@ -27,6 +27,7 @@ from aivs_server.db.models import (
     AuditLog,
     ClientCertificate,
     Distribution,
+    EmailDelivery,
     Embargo,
     InstanceControl,
     Operator,
@@ -71,6 +72,7 @@ class InstanceStatus:
     silent_members: list[dict[str, Any]]
     stale_connections: list[StaleConnection]
     failing_webhooks: list[dict[str, Any]]
+    undelivered_email: list[dict[str, Any]]
     detections: list[dict[str, Any]]
     proposed_quarantines: list[dict[str, Any]]
     key_fingerprint: str
@@ -206,6 +208,40 @@ async def _failing_webhooks(session: AsyncSession) -> list[dict[str, Any]]:
     ]
 
 
+async def _undelivered_email(session: AsyncSession, max_attempts: int) -> list[dict[str, Any]]:
+    """Digest email not yet delivered, per organisation and mailbox domain.
+
+    ``given_up`` counts what the dispatcher will no longer retry (it stops at
+    ``max_attempts``). The domain only, and never the relay's error: a mailbox
+    address is personal data, and an SMTP refusal usually echoes it.
+    """
+    domain = func.split_part(EmailDelivery.recipient, "@", 2)
+    given_up = EmailDelivery.attempts >= max_attempts
+    rows = await session.execute(
+        select(
+            Organization.slug,
+            domain,
+            func.count().filter(~given_up),
+            func.count().filter(given_up),
+            func.min(EmailDelivery.created_at),
+        )
+        .join(Organization, Organization.id == EmailDelivery.org_id)
+        .where(EmailDelivery.delivered_at.is_(None), EmailDelivery.attempts > 0)
+        .group_by(Organization.slug, domain)
+        .order_by(func.min(EmailDelivery.created_at))
+    )
+    return [
+        {
+            "org": slug,
+            "domain": mailbox_domain,
+            "retrying": retrying,
+            "given_up": gave_up,
+            "oldest": oldest,
+        }
+        for slug, mailbox_domain, retrying, gave_up, oldest in rows.all()
+    ]
+
+
 async def _recent_detections(session: AsyncSession, now: dt.datetime) -> list[dict[str, Any]]:
     rows = await session.execute(
         select(AuditLog.at, AuditLog.details)
@@ -268,7 +304,7 @@ async def _pause_state(session: AsyncSession) -> InstanceControl | None:
 
 
 async def gather_status(
-    session: AsyncSession, *, now: dt.datetime, box: SecretBox
+    session: AsyncSession, *, now: dt.datetime, box: SecretBox, email_max_attempts: int
 ) -> InstanceStatus:
     """Read every fact the status page shows. Writes nothing."""
     control = await _pause_state(session)
@@ -287,6 +323,7 @@ async def gather_status(
         silent_members=await _silent_members(session, now),
         stale_connections=await stale_connections(session, now),
         failing_webhooks=await _failing_webhooks(session),
+        undelivered_email=await _undelivered_email(session, email_max_attempts),
         detections=await _recent_detections(session, now),
         proposed_quarantines=await _proposed_quarantines(session, now),
         key_fingerprint=box.active_fingerprint,

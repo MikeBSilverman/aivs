@@ -1,0 +1,18 @@
+Mutation M899: delivered digest email is listed as undelivered
+Re-applies: a filter on attempts alone (H2-4)
+
+Expect red: packages/aivs-server/tests/unit/test_status_page.py::test_undelivered_digest_email_is_shown_by_mailbox_domain
+
+diff --git a/packages/aivs-server/src/aivs_server/services/instance_status.py b/packages/aivs-server/src/aivs_server/services/instance_status.py
+index 99ea4e5..a87504d 100644
+--- a/packages/aivs-server/src/aivs_server/services/instance_status.py
++++ b/packages/aivs-server/src/aivs_server/services/instance_status.py
+@@ -226,7 +226,7 @@ async def _undelivered_email(session: AsyncSession, max_attempts: int) -> list[d
+             func.min(EmailDelivery.created_at),
+         )
+         .join(Organization, Organization.id == EmailDelivery.org_id)
+-        .where(EmailDelivery.delivered_at.is_(None), EmailDelivery.attempts > 0)
++        .where(EmailDelivery.attempts > 0)
+         .group_by(Organization.slug, domain)
+         .order_by(func.min(EmailDelivery.created_at))
+     )

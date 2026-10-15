@@ -19,6 +19,7 @@ from aivs_server.auth.secretbox import SecretPurpose
 from aivs_server.db.models import (
     Acknowledgment,
     AuditLog,
+    EmailDelivery,
     InstanceControl,
     Organization,
     Submission,
@@ -213,3 +214,41 @@ async def test_a_running_instance_shows_no_pause_and_nothing_to_rewrap(open_stat
 
     assert "Distribution is paused" not in page
     assert 'data-fact="secrets_needing_rewrap">0<' in page
+
+
+async def test_undelivered_digest_email_is_shown_by_mailbox_domain(
+    open_status, make_org, session, settings
+):
+    """A digest the relay keeps refusing was invisible until someone read the table."""
+    retrying = await make_org("relay-refused", org_type=OrgType.GSIB)
+    given_up = await make_org("relay-gave-up", org_type=OrgType.GSIB)
+    delivered = await make_org("relay-fine", org_type=OrgType.GSIB)
+    now = dt.datetime.now(dt.UTC)
+    rows = (
+        (retrying, 2, None),
+        (given_up, settings.email_max_attempts, None),
+        (delivered, 1, now),
+    )
+    for org, attempts, delivered_at in rows:
+        session.add(
+            EmailDelivery(
+                org_id=org.id,
+                recipient=f"soc-desk@{org.slug}.example",
+                subject="AIVS digest",
+                body="b",
+                attempts=attempts,
+                error="550 5.1.1 <soc-desk@example> refused",
+                delivered_at=delivered_at,
+            )
+        )
+    await session.commit()
+
+    page = (await open_status(OperatorRole.ISAC_MEMBERSHIP)).text
+
+    assert 'data-email-retrying="relay-refused"' in page
+    assert 'data-email-given-up="relay-gave-up"' in page
+    assert 'data-email-retrying="relay-gave-up"' not in page, "given up is not retrying"
+    assert "relay-fine.example" not in page, "delivered mail is not listed"
+    assert "relay-refused.example" in page, "the mailbox's domain names where to look"
+    assert "soc-desk@" not in page, "a mailbox address is personal data; the domain is enough"
+    assert "550 5.1.1" not in page, "a relay's error can echo the address"

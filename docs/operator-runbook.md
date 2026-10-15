@@ -857,7 +857,8 @@ collapses under examination:
 `isac_membership`: component health, queue depths, detections from the last
 24 hours, usage for the past week, quarantined organisations, certificates
 expiring within 30 days, members that have retrieved nothing for 14 days,
-failing webhook endpoints, and sealed secrets not yet on the active key. Three
+failing webhook endpoints, digest email the relay has not accepted, and sealed
+secrets not yet on the active key. Three
 of the monthly reviews in the table above start there. It cannot see backups,
 and it says so.
 
@@ -1005,7 +1006,11 @@ docker compose --env-file deploy/.env -f docker-compose.yml -f docker-compose.di
 STARTTLS with the relay's certificate verified is always required; there is
 no setting to relax it. A message the relay refuses is retried with backoff,
 up to `AIVS_EMAIL_MAX_ATTEMPTS`, and keeps its last error in
-`email_deliveries.error`; the status page does not show it yet.
+`email_deliveries.error`. The status page lists undelivered digests per
+member and mailbox domain, split into retrying and given up, but not the error:
+a relay's refusal usually repeats the address, and `isac_membership` reads that
+page. Read the error in the table. A message given up on is not retried; once
+the member has fixed its mailbox, the next digest is a new message.
 ### 9.6 An auditor, and the audit stream your SIEM polls
 
 An auditor reads the audit trail and receipts and nothing else (SF-78). At the

@@ -32,7 +32,7 @@ from aivs_server.services.audit_stream import genesis
 from aivs_server.services.operators import OperatorError, create_operator
 from tests.conftest import seed_filing
 
-pytestmark = pytest.mark.db
+pytestmark = [pytest.mark.db, pytest.mark.horizon]
 
 EVENTS = "/api/v1/audit/events"
 RECEIPTS = "/api/v1/audit/receipts"

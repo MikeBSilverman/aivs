@@ -42,7 +42,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.x509.oid import NameOID
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import select, text
+from sqlalchemy import create_engine, select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -74,14 +74,61 @@ from aivs_server.services.attribution import (
 )
 from aivs_server.taxii.resources import truncate_to_taxii_precision
 
+
+def pytest_runtest_setup(item: pytest.Item) -> None:
+    """A ``horizon`` test on a parallel worker fails at once, saying how to run it.
+
+    The audit stream serves rows below the oldest transaction open anywhere on
+    the cluster, and parallel workers always have one open, so the stream
+    stalls and the test would wait out its minute and fail on a timeout that
+    names nothing. Refused, never skipped: a skip would read as covered.
+    """
+    if os.environ.get("PYTEST_XDIST_WORKER") and item.get_closest_marker("horizon"):
+        pytest.fail(
+            "horizon tests read the cluster-wide transaction horizon and cannot run beside "
+            "parallel workers: run them serially (scripts/test-parallel.sh does both phases)",
+            pytrace=False,
+        )
+
+
 # ---------------------------------------------------------------------------
 # Test configuration
 # ---------------------------------------------------------------------------
 #: Point at a scratch database, never a real one. Overridable so CI can supply
 #: its own service container.
-TEST_DATABASE_URL = os.environ.get(
+_BASE_TEST_DATABASE_URL = os.environ.get(
     "AIVS_TEST_DATABASE_URL",
     "postgresql+psycopg://aivs@127.0.0.1:55432/aivs_test",
+)
+
+
+def _database_for_this_process(base_url: str, worker: str | None) -> str:
+    """The base database alone, or under ``pytest -n`` one of its own per worker.
+
+    Cleanup is TRUNCATE, so two processes sharing a database block each other
+    (section 3 of CLAUDE.md); each xdist worker gets ``<base>_<worker>``,
+    created if it is missing. Every scratch database and role a test makes is
+    named after this one, so workers never share those either.
+    """
+    if worker is None:
+        return base_url
+    url = make_url(base_url)
+    name = f"{url.database}_{worker}"
+    admin = create_engine(url.set(database="postgres"), isolation_level="AUTOCOMMIT")
+    try:
+        with admin.connect() as connection:
+            exists = connection.execute(
+                text("SELECT 1 FROM pg_database WHERE datname = :name"), {"name": name}
+            ).first()
+            if exists is None:
+                connection.execute(text(f'CREATE DATABASE "{name}"'))
+    finally:
+        admin.dispose()
+    return url.set(database=name).render_as_string(hide_password=False)
+
+
+TEST_DATABASE_URL = _database_for_this_process(
+    _BASE_TEST_DATABASE_URL, os.environ.get("PYTEST_XDIST_WORKER")
 )
 
 #: Fixed test secrets. Long enough to satisfy the production-strength validator,

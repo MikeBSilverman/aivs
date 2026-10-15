@@ -23,7 +23,7 @@ from aivs_server.services.detections import RULES, run_detections
 from tests.conftest import proxy_headers
 from tests.unit.test_vulnerability_page import build_case
 
-pytestmark = [pytest.mark.db, pytest.mark.abuse]
+pytestmark = [pytest.mark.db, pytest.mark.abuse, pytest.mark.horizon]
 
 #: Low enough that a scenario reaches it in a few requests; the shipped
 #: thresholds are in RULES and in runbook section 9.1.

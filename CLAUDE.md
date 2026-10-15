@@ -85,7 +85,8 @@ find . -name '*.sh' -not -path './.venv/*' -not -path './.git/*' -print0 | xargs
 find . -name '*.sh' -not -path './.venv/*' -not -path './.git/*' -print0 \
   | xargs -0 uvx --from shellcheck-py==0.11.0.1 shellcheck -S warning   # CI: the runner's shellcheck
 uv run alembic -c packages/aivs-server/alembic.ini check     # no model/migration drift
-uv run pytest -q --cov=aivs_server --cov=aivs_schemas --cov=aivs_client
+uv run pytest -q --cov=aivs_server --cov=aivs_schemas --cov=aivs_client   # or, locally:
+scripts/test-parallel.sh           # the same tests and coverage in a third of the time
 uv run coverage report --fail-under=93 --include='*/aivs_server/auth/*,*/aivs_server/services/distribution.py,*/aivs_server/services/embargo.py,*/aivs_server/services/publication.py,*/aivs_server/taxii/queries.py'
 gitleaks dir . --config .gitleaks.toml    # before any commit that adds files
 ```
@@ -93,6 +94,35 @@ gitleaks dir . --config .gitleaks.toml    # before any commit that adds files
 `.github/workflows/ci.yml` runs the same set in the same order, plus zizmor over
 the workflows and gitleaks over the full history. Fast checks first, so
 a formatting mistake fails in a minute rather than after the full suite.
+
+**The suite runs in parallel, except the tests that read the audit stream.**
+`scripts/test-parallel.sh` runs everything on `pytest-xdist` workers, each on
+its own database (`<base>_gw0`, … from `conftest.py`, for the TRUNCATE
+reason in section 3), then the `horizon`-marked tests on their own. Serial
+it took 20-27 minutes; parallel it takes 8, with the same 1,974 tests and the
+same coverage. The audit stream serves rows below the oldest transaction open
+anywhere on the cluster. Parallel workers always have one open, so six
+auditor tests stalled for their full minute and failed on a timeout that
+named nothing. Under a worker a `horizon` test now refuses to run, with the
+instruction, rather than skip, because a skip reads as covered. Any new test
+that pages the audit stream gets the marker.
+
+**The machine is shared, so a parallel run budgets memory.** Eight workers
+beside another project's `pytest -n auto` left 600 MB free, and the OS killed
+a third session's verification chain, which produced no result. The runner
+reads `MemAvailable`, gives each worker 500 MB, keeps 3 GB in hand, and
+refuses to start rather than run on fewer than two. Before a long chain (the
+full mutation set, e2e), say so to the other sessions and wait for quiet.
+
+**What runs when.** While working: lint, types, and `scripts/test-parallel.sh
+<paths>` for what changed, without coverage. To land a commit:
+- every gate above, with the full suite through `scripts/test-parallel.sh`;
+- every mutation patch whose `+++` target is a file the commit changes, which
+  is the "run that patch in the same commit" rule below;
+- e2e when compose, `deploy/` or nginx change.
+The full mutation set runs nightly in CI (`mutations.yml`), but only over
+what has been pushed. Until main is pushed, run the full set locally before
+the push that would carry it.
 
 **A gate is its exit status, not its output.** Two sessions landed a commit
 with bandit red, each having read bandit through `tail`: the last lines said

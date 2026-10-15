@@ -38,6 +38,7 @@ dev = [
     "pytest-asyncio>=0.24",
     "pytest-cov>=6.0",
     "pytest-randomly>=3.16",     # shuffles test order: catches inter-test state leaks
+    "pytest-xdist>=3.6",         # -n N: one database per worker (conftest.py)
     "hypothesis>=6.120",         # property-based tests for parsers/validators
     "httpx>=0.28",
     "freezegun>=1.5",            # deterministic embargo/expiry tests
@@ -219,6 +220,7 @@ markers = [
     "db: test requires a live PostgreSQL database",
     "e2e: runs against the real stack through nginx (scripts/e2e.sh up); skipped, with the reason, when no stack is up",
     "slow: migrates a scratch database or similar; deselect with '-m \"not slow\"'",
+    "horizon: reads the audit stream, whose horizon is the whole cluster's oldest open transaction; runs serially, after the parallel phase (scripts/test-parallel.sh)",
     "authz: authorization matrix test -- the deny-by-default proof",
     "conformance: TAXII 2.1 / STIX 2.1 specification conformance test",
     "abuse: an adversary's sequence of requests, asserting the step at which it is noticed or refused",

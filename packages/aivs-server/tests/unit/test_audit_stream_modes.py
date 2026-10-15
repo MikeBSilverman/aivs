@@ -24,7 +24,7 @@ from aivs_server.db.models import AuditLog, AuditStreamModeChange
 from aivs_server.services.audit_read_summary import summarise_audit_reads
 from aivs_server.services.detections import RULES, run_detections
 
-pytestmark = pytest.mark.db
+pytestmark = [pytest.mark.db, pytest.mark.horizon]
 
 EVENTS = "/api/v1/audit/events"
 MODE = "/api/v1/instance/audit-stream"

@@ -47,15 +47,17 @@ async def test_pausing_withholds_everything_until_resumed(client, isac, reader, 
     pem, org, circle, collection = reader
     now = dt.datetime.now(dt.UTC)
     await publish(org, circle, name="already out", date_added=now - dt.timedelta(hours=1))
-    # An embargo stamped long ago that comes due during the pause.
-    await publish(org, circle, name="comes due", date_added=now + dt.timedelta(seconds=1))
+    # An embargo stamped long ago that comes due during the pause. Three
+    # seconds out, not one: on a loaded machine the publishing and first read
+    # took over a second and the object was already visible (Q41's suite run).
+    await publish(org, circle, name="comes due", date_added=now + dt.timedelta(seconds=3))
 
     assert await _names(client, collection, pem) == {"already out"}
     paused = await client.post(
         f"{API}/instance/distribution/pause", json=REASON, headers=isac_headers
     )
     assert paused.status_code == 200
-    await _wait_until(now + dt.timedelta(seconds=1.5))
+    await _wait_until(now + dt.timedelta(seconds=3.5))
 
     assert await _names(client, collection, pem) == set(), "nothing is served while paused"
 

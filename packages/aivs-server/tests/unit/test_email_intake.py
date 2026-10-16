@@ -102,8 +102,10 @@ def sessions_of(session):
 
 
 @pytest.fixture
-async def bank(make_org):
-    return await make_org("bank", org_type=OrgType.GSIB)
+async def bank(make_org, record_mail_domain):
+    org = await make_org("bank", org_type=OrgType.GSIB)
+    await record_mail_domain(org, "bank.test")
+    return org
 
 
 @pytest.fixture
@@ -260,6 +262,69 @@ async def test_a_person_who_may_not_draft_files_nothing(
 
     assert await submissions(session) == []
     assert await refused_for(session) == ["not_permitted"]
+
+
+# ---------------------------------------------------------------------------
+# Whose domain (Q41, R30)
+# ---------------------------------------------------------------------------
+@pytest.mark.requirement("SF-104")
+async def test_a_person_registered_in_another_firms_domain_files_nothing(
+    session, attribution_key, bank, make_org, make_operator, record_mail_domain
+):
+    """A firm that registers another firm's person files nothing in that person's name.
+
+    Bank holds ``bank.test``; Meridian has registered ``alice@bank.test`` as its
+    own analyst (an operator's mistake, or a member IdP's claim). Alice's mail
+    carries an aligned pass for ``bank.test``, so before Q41 it became
+    Meridian's draft, which Meridian can read.
+    """
+    meridian = await make_org("meridian", org_type=OrgType.GSIB)
+    await record_mail_domain(meridian, "meridian.test")
+    await make_operator(meridian, email=ALICE)
+
+    assert await receive(session, attribution_key, raw_message()) == "refused"
+
+    assert await submissions(session) == []
+    assert await refused_for(session) == ["outside_organisation_domains"]
+    [refusal] = await audit_rows(session, AuditAction.EMAIL_INTAKE_REFUSED)
+    assert refusal.org_id == meridian.id
+
+
+@pytest.mark.requirement("SF-104")
+async def test_an_organisation_with_no_recorded_domain_takes_no_mail(
+    session, attribution_key, make_org, make_operator
+):
+    """Fail closed: nobody having said which domains are a firm's is not "all of them"."""
+    org = await make_org("bank", org_type=OrgType.GSIB)
+    await make_operator(org, email=ALICE)
+
+    assert await receive(session, attribution_key, raw_message()) == "refused"
+
+    assert await submissions(session) == []
+    assert await refused_for(session) == ["outside_organisation_domains"]
+
+
+@pytest.mark.requirement("SF-104")
+async def test_a_subdomain_is_not_its_parents(session, attribution_key, bank, make_operator):
+    """Exact match: each domain the intake accepts is one the ISAC wrote down."""
+    await make_operator(bank, email="alice@mail.bank.test")
+    stamp = PASS.replace("header.from=bank.test", "header.from=mail.bank.test")
+    raw = raw_message(sender="Alice <alice@mail.bank.test>", stamps=(stamp,))
+
+    assert await receive(session, attribution_key, raw) == "refused"
+
+    assert await refused_for(session) == ["outside_organisation_domains"]
+
+
+@pytest.mark.requirement("SF-104")
+async def test_an_address_in_the_domain_matches_whatever_its_case(
+    session, attribution_key, bank, alice
+):
+    raw = raw_message(sender="Alice <Alice@BANK.Test>").replace(
+        b"header.from=bank.test", b"header.from=BANK.Test"
+    )
+
+    assert await receive(session, attribution_key, raw) == "accepted"
 
 
 @pytest.mark.requirement("SF-93")

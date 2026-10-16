@@ -44,6 +44,7 @@ rather than deleting rows.
 | `document_grants` | evidence | Who could read or edit which document, from when, until when or until revoked, and who granted it. Never deleted: a grant is closed (by its owner, by finishing, or `offboarded` when either side leaves), so the record of who could see the document survives. |
 | `document_reads` | evidence | A receipt for every read of a document: which version, by which organisation and person, when. Append-only, enforced by trigger. |
 | `org_sharing_codes` | operational | The SHA-256 of each firm's document sharing code, when it was last rotated and by whom. The code is how another firm's document names this one, so it is the firm's consent to be found; the code itself is shown once, to the org admin who rotated it, and never stored. Deleted when the firm is offboarded. |
+| `org_mail_domains` | operational | Each member's mail domains, as ISAC membership staff recorded them, when and by whom (Q41). An address counts for an organisation, at the email intake and at a first SSO sign-in, only in one of its domains. No person's address is kept here. Deleted when the firm is offboarded, so the domain can be recorded for another member. |
 | `acknowledgments` | evidence | Receipts: retrieved, acknowledged, actioned, per organisation. |
 | `audit_log` | evidence | Every security-relevant decision. Append-only. |
 | `audit_stream_modes` | evidence | Each choice of what the audit stream serves of its own reading, and who made it. Append-only: the stream judges each read by the mode in force when it was written. |

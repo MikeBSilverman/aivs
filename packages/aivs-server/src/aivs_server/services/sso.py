@@ -12,7 +12,10 @@ never downgraded:
 - A group that maps to no organisation grants nothing. A person in two
   members' groups is refused rather than guessed at.
 - The operator is found by issuer and subject. Email is used once, to link a
-  pre-provisioned operator on first sign-in, and never again (§4).
+  pre-provisioned operator on first sign-in, and never again (§4); and only
+  an address in one of the organisation's recorded mail domains is linked or
+  created (``services.mail_domains``, Q41), so a member's IdP cannot claim
+  another firm's person.
 - A first sign-in with no operator creates one when JIT provisioning is on.
   It gets ``ANALYST`` and nothing more: the directory says who is a member,
   not who may edit other firms' content (§5).
@@ -28,6 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from aivs_schemas.enums import OperatorRole, OrgStatus, OrgType
 from aivs_server.auth.oidc import SsoRejectedError, VerifiedIdentity
 from aivs_server.db.models import Operator, Organization
+from aivs_server.services.mail_domains import address_in_organisation_domains
 
 __all__ = ["SignIn", "resolve_member_sign_in"]
 
@@ -113,6 +117,12 @@ async def _link_or_create(
         reason = "no_email_claim"
         raise SsoRejectedError(reason)
     email = identity.email.strip().lower()
+    # The IdP asserts the address; the ISAC decides which domains are this
+    # firm's. Without this a member tenant could link another firm's person,
+    # and with the email intake on, file that person's mail as its own (R30).
+    if not await address_in_organisation_domains(session, address=email, org_id=organization.id):
+        reason = "email_outside_organisation_domains"
+        raise SsoRejectedError(reason)
     existing = (
         await session.execute(select(Operator).where(Operator.email == email))
     ).scalar_one_or_none()

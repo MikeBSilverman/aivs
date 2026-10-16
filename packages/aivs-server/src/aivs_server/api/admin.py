@@ -29,6 +29,8 @@ from aivs_schemas.models import (
     InstanceControlChange,
     InstanceControlOut,
     LegalHoldRequest,
+    MailDomainList,
+    MailDomainRequest,
     OffboardRequest,
     OrganizationCreate,
     OrganizationOut,
@@ -46,6 +48,7 @@ from aivs_server.auth.policy import (
     can_pause_distribution,
     can_quarantine_org,
     can_reconnect_org,
+    can_record_mail_domains,
     can_register_webhook,
     can_resume_distribution,
     can_set_audit_stream_mode,
@@ -78,6 +81,12 @@ from aivs_server.services.circles import (
 )
 from aivs_server.services.enrolment import enrolment_problem
 from aivs_server.services.instance import pause_distribution, resume_distribution
+from aivs_server.services.mail_domains import (
+    MailDomainError,
+    add_mail_domain,
+    mail_domains_of,
+    remove_mail_domain,
+)
 from aivs_server.services.member_staff_reads import own_webhooks
 from aivs_server.services.member_staff_writes import (
     delete_own_webhook,
@@ -710,6 +719,69 @@ async def lift_hold(
         raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     await session.refresh(organisation)
     return organisation
+
+
+@router.get("/orgs/{org_id}/mail-domains", response_model=MailDomainList)
+async def list_mail_domains(
+    org_id: uuid.UUID, ctx: AuthenticatedContext, session: SessionDep
+) -> MailDomainList:
+    """The domains an organisation's people may be registered in (Q41)."""
+    require(can_record_mail_domains(ctx), "mail_domains_require_isac_membership")
+    if await session.get(Organization, org_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Organisation not found")
+    return MailDomainList(domains=await mail_domains_of(session, org_id))
+
+
+@router.post(
+    "/orgs/{org_id}/mail-domains",
+    status_code=status.HTTP_201_CREATED,
+    response_model=MailDomainList,
+)
+async def record_mail_domain(
+    org_id: uuid.UUID, payload: MailDomainRequest, ctx: AuthenticatedContext, session: SessionDep
+) -> MailDomainList:
+    """Record a mail domain as the organisation's; 409 if it is another's, or malformed."""
+    require(can_record_mail_domains(ctx), "mail_domains_require_isac_membership")
+    organisation = await load_org_for_update(session, org_id)
+    if organisation is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Organisation not found")
+    try:
+        await add_mail_domain(
+            session,
+            ctx,
+            organisation=organisation,
+            domain=payload.domain,
+            now=await database_now(session),
+        )
+        await session.commit()
+    except MailDomainError as exc:
+        await session.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except IntegrityError as exc:
+        # Another session recorded the same domain between the check and the
+        # INSERT; the primary key is the arbiter.
+        await session.rollback()
+        detail = "That domain was recorded for an organisation a moment ago"
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=detail) from exc
+    return MailDomainList(domains=await mail_domains_of(session, org_id))
+
+
+@router.post("/orgs/{org_id}/mail-domains/remove", response_model=MailDomainList)
+async def unrecord_mail_domain(
+    org_id: uuid.UUID, payload: MailDomainRequest, ctx: AuthenticatedContext, session: SessionDep
+) -> MailDomainList:
+    """Stop counting a domain as the organisation's. People in it keep their accounts."""
+    require(can_record_mail_domains(ctx), "mail_domains_require_isac_membership")
+    organisation = await load_org_for_update(session, org_id)
+    if organisation is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Organisation not found")
+    try:
+        await remove_mail_domain(session, ctx, organisation=organisation, domain=payload.domain)
+        await session.commit()
+    except MailDomainError as exc:
+        await session.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    return MailDomainList(domains=await mail_domains_of(session, org_id))
 
 
 @router.post("/orgs/{org_id}/reconnect", response_model=OrganizationOut)

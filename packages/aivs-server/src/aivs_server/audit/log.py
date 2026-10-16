@@ -125,6 +125,9 @@ class AuditAction:
     LEGAL_HOLD_SET = "org.legal_hold.set"
     LEGAL_HOLD_LIFTED = "org.legal_hold.lifted"
     ORG_RECONNECTED = "org.reconnected"
+    #: A mail domain recorded as, or no longer, one organisation's (Q41).
+    ORG_MAIL_DOMAIN_ADDED = "org.mail_domain.added"
+    ORG_MAIL_DOMAIN_REMOVED = "org.mail_domain.removed"
     CERT_REGISTERED = "cert.registered"
     CERT_REVOKED = "cert.revoked"
 

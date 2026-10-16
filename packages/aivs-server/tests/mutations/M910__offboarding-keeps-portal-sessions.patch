@@ -4,11 +4,12 @@ Re-applies: deleting only the tables someone remembered
 Expect red: packages/aivs-server/tests/unit/test_offboarding.py::test_every_operational_row_of_the_member_is_deleted
 
 diff --git a/packages/aivs-server/src/aivs_server/services/offboarding.py b/packages/aivs-server/src/aivs_server/services/offboarding.py
+index 758d853..352865f 100644
 --- a/packages/aivs-server/src/aivs_server/services/offboarding.py
 +++ b/packages/aivs-server/src/aivs_server/services/offboarding.py
-@@ -120,8 +120,6 @@
-     """Delete the member's own operational data. Returns what happened to its postures."""
+@@ -123,8 +123,6 @@ async def _delete_operational(session: AsyncSession, organisation: Organization)
      for table in (
+         OrgMailDomain,
          Webhook,
 -        PortalSession,
 -        TaxiiStatus,

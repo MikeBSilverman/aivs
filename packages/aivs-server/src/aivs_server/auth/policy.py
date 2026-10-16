@@ -787,6 +787,16 @@ def can_set_legal_hold(ctx: AuthContext) -> bool:
     return is_isac_membership(ctx)
 
 
+def can_record_mail_domains(ctx: AuthContext) -> bool:
+    """Record which mail domains are a member's (Q41). Membership staff only.
+
+    Never the member's own org admin: the list is how the ISAC bounds what a
+    member's IdP and its people's addresses can claim, so a member that could
+    extend it could claim another firm's domain and that firm's people.
+    """
+    return is_isac_membership(ctx)
+
+
 def can_reconnect_org(ctx: AuthContext) -> bool:
     """Return a quarantined organisation to service. The ISAC's alone: a member
     reconnecting itself would let whoever holds its compromised credentials do

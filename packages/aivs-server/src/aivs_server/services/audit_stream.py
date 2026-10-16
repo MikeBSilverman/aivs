@@ -177,6 +177,8 @@ _PROJECTIONS: Final[Mapping[str, Projection]] = MappingProxyType(
         AuditAction.LEGAL_HOLD_SET: _WHOLE,
         AuditAction.LEGAL_HOLD_LIFTED: _WHOLE,
         AuditAction.ORG_RECONNECTED: _WHOLE,
+        AuditAction.ORG_MAIL_DOMAIN_ADDED: _WHOLE,
+        AuditAction.ORG_MAIL_DOMAIN_REMOVED: _WHOLE,
         AuditAction.CERT_REGISTERED: _WHOLE,
         AuditAction.CERT_REVOKED: _WHOLE,
         AuditAction.CIRCLE_CREATED: _WHOLE,

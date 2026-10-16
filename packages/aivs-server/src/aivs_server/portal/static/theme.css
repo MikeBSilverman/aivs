@@ -538,3 +538,21 @@ td form {
 
 /* A document's plain text: kept as written, wrapped to the page. */
 .document-body { white-space: pre-wrap; overflow-wrap: anywhere; font-family: inherit; margin: 0; }
+
+/* One recorded mail domain, or the field to add one, per line of a table cell. */
+.domain-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0.15rem 0;
+}
+
+.domain-form input[name="domain"] {
+  font: inherit;
+  width: 12rem;
+  max-width: 100%;
+  padding: 0.25rem 0.4rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}

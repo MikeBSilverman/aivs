@@ -61,8 +61,7 @@ def upgrade() -> None:
     op.create_check_constraint(
         op.f("ck_operators_auditor_alone_and_expiring"),
         "operators",
-        "NOT ('auditor' = ANY (roles)) "
-        "OR (cardinality(roles) = 1 AND role_expires_at IS NOT NULL)",
+        "NOT ('auditor' = ANY (roles)) OR (cardinality(roles) = 1 AND role_expires_at IS NOT NULL)",
     )
     for table, index in _STREAMS:
         op.add_column(

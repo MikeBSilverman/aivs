@@ -75,6 +75,10 @@ CLASSIFICATION: Final[dict[str, frozenset[str]]] = {
     # Which code finds which firm: with SELECT, SQL on the member path could
     # read every firm's code hash, and name any firm it held a code for.
     "public.org_sharing_codes": _NOTHING,
+    # Which domains are whose: read by the intake and the SSO link, both staff
+    # side, and written by membership staff. A member that could write it
+    # could claim another firm's people (Q41).
+    "public.org_mail_domains": _NOTHING,
     # Read, and written only where listed.
     "public.circle_memberships": _READ,
     "public.circles": _READ,

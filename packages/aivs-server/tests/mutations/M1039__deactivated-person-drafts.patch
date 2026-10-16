@@ -14,5 +14,5 @@ index 5ad51c4..91b6ccd 100644
 -    if not operator.is_active or not can_draft_by_email(context, now):
 +    if not can_draft_by_email(context, now):
          return _Sender(Refusal.NOT_PERMITTED, None, operator.org_id, operator.id)
-     return _Sender(None, context, operator.org_id, operator.id)
- 
+     if not await address_in_organisation_domains(
+         session, address=message.sender, org_id=operator.org_id

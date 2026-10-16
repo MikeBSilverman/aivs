@@ -1,0 +1,18 @@
+Mutation M1174: a member's own org admin records mail domains
+Re-applies: no earlier commit; Q41's domain-to-organisation mapping is new in this commit
+
+Expect red: packages/aivs-server/tests/unit/test_mail_domains.py::test_a_member_org_admin_cannot_extend_its_own_list
+
+diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs-server/src/aivs_server/auth/policy.py
+index 8fdf01d..517620f 100644
+--- a/packages/aivs-server/src/aivs_server/auth/policy.py
++++ b/packages/aivs-server/src/aivs_server/auth/policy.py
+@@ -794,7 +794,7 @@ def can_record_mail_domains(ctx: AuthContext) -> bool:
+     member's IdP and its people's addresses can claim, so a member that could
+     extend it could claim another firm's domain and that firm's people.
+     """
+-    return is_isac_membership(ctx)
++    return is_isac_membership(ctx) or is_org_admin(ctx)
+ 
+ 
+ def can_reconnect_org(ctx: AuthContext) -> bool:

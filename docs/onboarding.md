@@ -120,7 +120,12 @@ openssl req -new -newkey rsa:3072 -nodes \
 - the `.csr` file (safe to send over ordinary channels — it contains only your
   public key and subject);
 - the label you want it recorded under;
-- what will use it.
+- what will use it;
+- the mail domains your people's addresses are in, each one exactly
+  (`bank.example` does not cover `mail.bank.example`). AIVS counts an address
+  as yours only in these: email to the ISAC's intake and a first sign-in
+  through the ISAC's SSO are refused from anywhere else. Tell the ISAC when
+  you gain or lose a domain.
 
 **Never send the `.key`.** If anyone asks you to, that is an incident, not a
 process step.

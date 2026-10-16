@@ -43,6 +43,7 @@ from aivs_server.auth.deps import SessionDep, SettingsDep
 from aivs_server.auth.policy import (
     can_administer_circle,
     can_quarantine_org,
+    can_record_mail_domains,
     can_view_instance_status,
     is_isac_editor,
     is_isac_membership,
@@ -55,6 +56,7 @@ from aivs_server.db.models import (
     CircleMembership,
     ClientCertificate,
     Organization,
+    OrgMailDomain,
     TaxiiCollection,
 )
 from aivs_server.portal.shared import (
@@ -76,6 +78,11 @@ from aivs_server.services.circles import (
 )
 from aivs_server.services.enrolment import enrolment_problem
 from aivs_server.services.instance_status import gather_status
+from aivs_server.services.mail_domains import (
+    MailDomainError,
+    add_mail_domain,
+    remove_mail_domain,
+)
 from aivs_server.services.member_staff_writes import quarantine_organisation
 from aivs_server.services.org_status import (
     OrgStatusError,
@@ -132,6 +139,12 @@ async def orgs_screen(request: Request, settings: SettingsDep, session: SessionD
         ).all()
     }
 
+    domains: dict[uuid.UUID, list[str]] = {}
+    for row in await session.execute(
+        select(OrgMailDomain.org_id, OrgMailDomain.domain).order_by(OrgMailDomain.domain)
+    ):
+        domains.setdefault(row.org_id, []).append(row.domain)
+
     context = base_context(request, settings, ctx, await operator_name(session, ctx), "admin-orgs")
     context.update(
         {
@@ -143,6 +156,7 @@ async def orgs_screen(request: Request, settings: SettingsDep, session: SessionD
                     "org_type": org.org_type.value,
                     "status": org.status.value,
                     "certificates": certificate_counts.get(org.id, 0),
+                    "mail_domains": domains.get(org.id, []),
                 }
                 for org in orgs
             ],
@@ -251,6 +265,74 @@ async def quarantine_screen(
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Not found")
     await session.commit()
     set_notice(response, settings, "info", f"{organization.slug} is quarantined.")
+    return response
+
+
+@router.post("/orgs/{org_id}/mail-domains")
+async def add_mail_domain_screen(
+    org_id: uuid.UUID,
+    request: Request,
+    settings: SettingsDep,
+    session: SessionDep,
+    csrf_token: Annotated[str, Form()],
+    domain: Annotated[str, Form(min_length=3, max_length=253)],
+) -> Response:
+    """Record a mail domain as the organisation's, through the API's service (Q41).
+
+    Declared before ``/orgs/{org_id}/{action}``, which would otherwise match
+    "mail-domains" first and answer 404.
+    """
+    ctx, csrf_hash = await current_session(request, settings)
+    require_csrf(csrf_token, csrf_hash)
+    require(can_record_mail_domains(ctx), "portal_mail_domains")
+    organisation = await load_org_for_update(session, org_id)
+    if organisation is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Not found")
+
+    response = redirect_within_portal("/portal/admin/orgs")
+    try:
+        stored = await add_mail_domain(
+            session, ctx, organisation=organisation, domain=domain, now=await database_now(session)
+        )
+        await session.commit()
+    except MailDomainError as exc:
+        await session.rollback()
+        set_notice(response, settings, "error", f"Not recorded: {exc}.")
+        return response
+    except IntegrityError:
+        await session.rollback()
+        set_notice(response, settings, "error", "Not recorded: another session just recorded it.")
+        return response
+    set_notice(response, settings, "info", f"{stored} is now {organisation.slug}'s.")
+    return response
+
+
+@router.post("/orgs/{org_id}/mail-domains/remove")
+async def remove_mail_domain_screen(
+    org_id: uuid.UUID,
+    request: Request,
+    settings: SettingsDep,
+    session: SessionDep,
+    csrf_token: Annotated[str, Form()],
+    domain: Annotated[str, Form(min_length=3, max_length=253)],
+) -> Response:
+    """Stop counting a domain as the organisation's, through the API's service."""
+    ctx, csrf_hash = await current_session(request, settings)
+    require_csrf(csrf_token, csrf_hash)
+    require(can_record_mail_domains(ctx), "portal_mail_domains")
+    organisation = await load_org_for_update(session, org_id)
+    if organisation is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Not found")
+
+    response = redirect_within_portal("/portal/admin/orgs")
+    try:
+        removed = await remove_mail_domain(session, ctx, organisation=organisation, domain=domain)
+        await session.commit()
+    except MailDomainError as exc:
+        await session.rollback()
+        set_notice(response, settings, "error", f"Not removed: {exc}.")
+        return response
+    set_notice(response, settings, "info", f"{removed} is no longer {organisation.slug}'s.")
     return response
 
 

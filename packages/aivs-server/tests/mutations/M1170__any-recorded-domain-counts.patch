@@ -1,0 +1,20 @@
+Mutation M1170: an address counts for an organisation in any firm's recorded domain
+Re-applies: no earlier commit; Q41's domain-to-organisation mapping is new in this commit
+
+Expect red: packages/aivs-server/tests/unit/test_email_intake.py::test_a_person_registered_in_another_firms_domain_files_nothing
+Expect red: packages/aivs-server/tests/unit/test_member_sso.py::test_a_member_idp_cannot_create_a_person_in_another_firms_domain
+Expect red: packages/aivs-server/tests/unit/test_member_sso.py::test_a_member_idp_cannot_link_another_firms_registered_person
+
+diff --git a/packages/aivs-server/src/aivs_server/services/mail_domains.py b/packages/aivs-server/src/aivs_server/services/mail_domains.py
+index 09df2aa..1ebf4e4 100644
+--- a/packages/aivs-server/src/aivs_server/services/mail_domains.py
++++ b/packages/aivs-server/src/aivs_server/services/mail_domains.py
+@@ -117,7 +117,7 @@ async def address_in_organisation_domains(
+     holder = await session.scalar(
+         select(OrgMailDomain.org_id).where(OrgMailDomain.domain == domain)
+     )
+-    return holder == org_id
++    return holder is not None
+ 
+ 
+ async def mail_domains_of(session: AsyncSession, org_id: uuid.UUID) -> list[str]:

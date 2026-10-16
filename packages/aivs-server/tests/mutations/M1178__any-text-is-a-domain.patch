@@ -1,0 +1,18 @@
+Mutation M1178: anything that encodes is recorded as a domain
+Re-applies: no earlier commit; Q41's domain-to-organisation mapping is new in this commit
+
+Expect red: packages/aivs-server/tests/unit/test_mail_domains.py::test_anything_but_a_host_name_is_refused_not_repaired
+
+diff --git a/packages/aivs-server/src/aivs_server/services/mail_domains.py b/packages/aivs-server/src/aivs_server/services/mail_domains.py
+index 09df2aa..1708c8b 100644
+--- a/packages/aivs-server/src/aivs_server/services/mail_domains.py
++++ b/packages/aivs-server/src/aivs_server/services/mail_domains.py
+@@ -68,7 +68,7 @@ def parse_mail_domain(text: str) -> str:
+     except UnicodeError as exc:
+         reason = "not a valid domain name"
+         raise MailDomainError(reason) from exc
+-    if not _is_host_name(ascii_form):
++    if not ascii_form:
+         reason = "not a domain name of two or more labels (for example example.com)"
+         raise MailDomainError(reason)
+     return ascii_form

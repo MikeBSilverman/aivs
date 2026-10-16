@@ -204,6 +204,42 @@ class Organization(TimestampMixin, Base):
     operators: Mapped[list[Operator]] = relationship(back_populates="organization")
 
 
+class OrgMailDomain(Base):
+    """A mail domain the ISAC has recorded as one member's (Q41, R30).
+
+    An address names a person to the email intake and, on a first SSO sign-in,
+    to the identity link; without this, whoever could register an address to an
+    organisation decided where that address's mail was filed and could squat
+    another firm's person. Now an address counts for an organisation only in
+    one of its domains. The domain is the key, so one domain is one
+    organisation's: a domain two members both claim is a question for the ISAC,
+    never a choice the server makes. Exact match, no subdomains, so each one
+    the ISAC accepts is one it wrote down.
+    """
+
+    __tablename__ = "org_mail_domains"
+
+    domain: Mapped[str] = mapped_column(String(253), primary_key=True)
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    added_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    added_by_operator_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("operators.id", ondelete="RESTRICT"), nullable=False
+    )
+
+    __table_args__ = (
+        # The parser's output, restated where a hand-written row would bypass
+        # it: lower case, ASCII (an IDN is stored as its A-label), two labels
+        # at least, no address and no wildcard.
+        CheckConstraint(
+            "domain ~ '^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\\.)+"
+            "[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$'",
+            name="domain_format",
+        ),
+    )
+
+
 class Operator(TimestampMixin, Base):
     """A human user at a member organisation.
 

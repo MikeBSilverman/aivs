@@ -164,6 +164,14 @@ account, history and role. Subjects are not reassigned.
 
 Email is still used once: to *locate* the pre-provisioned operator on first
 federated login, at which point the link is written and never re-derived.
+And only an address in one of the organisation's recorded mail domains is
+used at all (`services/mail_domains.py`, Q41): the IdP asserts the address,
+but the ISAC decides which domains are the firm's. Without that, a member
+tenant able to set its users' `email` claim could create or link another
+firm's person, keep the real firm from registering that address, and, with
+the email intake on, receive that person's mail as its own drafts (threat
+model R30). A person already linked signs in by issuer and subject whatever
+later happens to the domain.
 
 ---
 
@@ -203,6 +211,9 @@ behaviour lives in the bounds instead:
   authority. (The design named an organisation-slug claim; the group's object
   id is what the directory already has, and needs no claim mapping in the
   tenant.)
+- The address must be in one of the organisation's mail domains, which
+  membership staff record (§4). An organisation with none links and creates
+  nobody new.
 - The role is always `ANALYST`. Elevation is a deliberate act in AIVS, because
   the directory's groups describe membership, not editorial authority over other
   firms' embargoed content.

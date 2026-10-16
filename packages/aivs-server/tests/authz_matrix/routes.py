@@ -729,6 +729,24 @@ ROUTES: tuple[RouteCase, ...] = (
         _org("lift", "/legal-hold/lift", {"reason": "matrix: litigation settled"}),
     ),
     RouteCase(
+        "GET",
+        "/api/v1/orgs/{org_id}/mail-domains",
+        RouteClass.MEMBERSHIP,
+        _org("member", "/mail-domains"),
+    ),
+    RouteCase(
+        "POST",
+        "/api/v1/orgs/{org_id}/mail-domains",
+        RouteClass.MEMBERSHIP,
+        _org("member", "/mail-domains", {"domain": "matrix-added.example"}),
+    ),
+    RouteCase(
+        "POST",
+        "/api/v1/orgs/{org_id}/mail-domains/remove",
+        RouteClass.MEMBERSHIP,
+        _org("member", "/mail-domains/remove", {"domain": "matrix-remove.example"}),
+    ),
+    RouteCase(
         "POST",
         "/api/v1/orgs/{org_id}/reconnect",
         RouteClass.RECONNECT,
@@ -788,6 +806,26 @@ ROUTES: tuple[RouteCase, ...] = (
         lambda world: (
             f"/portal/admin/orgs/{world.orgs['quarantine_portal']}/quarantine",
             {"reason": "matrix: suspected compromise"},
+        ),
+        is_portal=True,
+    ),
+    RouteCase(
+        "POST",
+        "/portal/admin/orgs/{org_id}/mail-domains",
+        RouteClass.MEMBERSHIP,
+        lambda world: (
+            f"/portal/admin/orgs/{world.orgs['member']}/mail-domains",
+            {"domain": "matrix-added-portal.example"},
+        ),
+        is_portal=True,
+    ),
+    RouteCase(
+        "POST",
+        "/portal/admin/orgs/{org_id}/mail-domains/remove",
+        RouteClass.MEMBERSHIP,
+        lambda world: (
+            f"/portal/admin/orgs/{world.orgs['member']}/mail-domains/remove",
+            {"domain": "matrix-remove-portal.example"},
         ),
         is_portal=True,
     ),

@@ -255,6 +255,22 @@ class LegalHoldRequest(_In):
     reason: Annotated[str, Field(min_length=10, max_length=1000)]
 
 
+class MailDomainRequest(_In):
+    """A mail domain to record as, or remove from, one organisation's (Q41).
+
+    Bounded here; whether it is a domain at all is the server's parser's
+    question, which is the one normalisation stored and compared values get.
+    """
+
+    domain: Annotated[str, Field(min_length=3, max_length=253)]
+
+
+class MailDomainList(_Out):
+    """An organisation's recorded mail domains, in order."""
+
+    domains: list[str]
+
+
 class ReconnectRequest(_In):
     reason: Annotated[str, Field(min_length=10, max_length=1000)]
     #: Whether content shared during the quarantine reaches the member.

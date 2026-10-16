@@ -49,7 +49,9 @@ def upgrade() -> None:
         ),
         sa.Column("changed_by_operator_id", sa.Uuid(), nullable=True),
         sa.Column("reason", sa.Text(), nullable=False),
-        sa.CheckConstraint("mode IN ('full', 'condensed')", name=op.f("ck_audit_stream_modes_mode_known")),
+        sa.CheckConstraint(
+            "mode IN ('full', 'condensed')", name=op.f("ck_audit_stream_modes_mode_known")
+        ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_audit_stream_modes")),
     )
     op.create_index("ix_audit_stream_modes_xact", _TABLE, ["xact_id", "id"], unique=False)

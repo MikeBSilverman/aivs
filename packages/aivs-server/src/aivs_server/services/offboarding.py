@@ -14,7 +14,8 @@ its test, which is how "an offboarded member holds nothing" stays true.
   about.
 - **Deleted**: every row of the data inventory's ``operational`` class that is
   the member's own -- its postures, its webhooks (with their queued
-  deliveries), its portal sessions and its TAXII inbox statuses. Unless a legal
+  deliveries), its portal sessions, its TAXII inbox statuses and its mail
+  domains (which another member may then be given). Unless a legal
   hold is set: a hold keeps the postures until it is lifted, and lifting it on
   an offboarded organisation deletes them then. ``test_offboarding`` reads the
   inventory, so a new operational table that this misses fails it.
@@ -43,6 +44,7 @@ from aivs_server.db.models import (
     EmailDelivery,
     Operator,
     Organization,
+    OrgMailDomain,
     OrgPosture,
     OrgSharingCode,
     PendingNotice,
@@ -119,6 +121,7 @@ async def _close_memberships(
 async def _delete_operational(session: AsyncSession, organisation: Organization) -> str:
     """Delete the member's own operational data. Returns what happened to its postures."""
     for table in (
+        OrgMailDomain,
         Webhook,
         PortalSession,
         TaxiiStatus,

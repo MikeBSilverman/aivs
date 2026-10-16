@@ -1,0 +1,21 @@
+Mutation M1172: a member IdP creates or links a person at any address it asserts
+Re-applies: no earlier commit; before Q41 the SSO link took the email claim as given (R30)
+
+Expect red: packages/aivs-server/tests/unit/test_member_sso.py::test_a_member_idp_cannot_create_a_person_in_another_firms_domain
+Expect red: packages/aivs-server/tests/unit/test_member_sso.py::test_a_member_idp_cannot_link_another_firms_registered_person
+Expect red: packages/aivs-server/tests/unit/test_member_sso.py::test_a_firm_with_no_recorded_domain_links_nobody_new
+
+diff --git a/packages/aivs-server/src/aivs_server/services/sso.py b/packages/aivs-server/src/aivs_server/services/sso.py
+index e5d9800..57677bd 100644
+--- a/packages/aivs-server/src/aivs_server/services/sso.py
++++ b/packages/aivs-server/src/aivs_server/services/sso.py
+@@ -120,9 +120,6 @@ async def _link_or_create(
+     # The IdP asserts the address; the ISAC decides which domains are this
+     # firm's. Without this a member tenant could link another firm's person,
+     # and with the email intake on, file that person's mail as its own (R30).
+-    if not await address_in_organisation_domains(session, address=email, org_id=organization.id):
+-        reason = "email_outside_organisation_domains"
+-        raise SsoRejectedError(reason)
+     existing = (
+         await session.execute(select(Operator).where(Operator.email == email))
+     ).scalar_one_or_none()

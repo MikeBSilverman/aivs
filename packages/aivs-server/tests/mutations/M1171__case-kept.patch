@@ -1,0 +1,18 @@
+Mutation M1171: a domain keeps the case it was typed or sent in
+Re-applies: no earlier commit; Q41's domain-to-organisation mapping is new in this commit
+
+Expect red: packages/aivs-server/tests/unit/test_mail_domains.py::test_a_domain_is_stored_in_one_form
+
+diff --git a/packages/aivs-server/src/aivs_server/services/mail_domains.py b/packages/aivs-server/src/aivs_server/services/mail_domains.py
+index 09df2aa..be7c298 100644
+--- a/packages/aivs-server/src/aivs_server/services/mail_domains.py
++++ b/packages/aivs-server/src/aivs_server/services/mail_domains.py
+@@ -62,7 +62,7 @@ def parse_mail_domain(text: str) -> str:
+     refused rather than repaired, because a repaired value is one the ISAC
+     did not type.
+     """
+-    candidate = text.strip().lower().removesuffix(".")
++    candidate = text.strip().removesuffix(".")
+     try:
+         ascii_form = candidate.encode("idna").decode("ascii")
+     except UnicodeError as exc:

@@ -1197,11 +1197,20 @@ The server must offer `MOVE` (RFC 6851) or `UIDPLUS` (RFC 4315), so that a
 message is moved alone; one offering neither is refused, because a plain
 expunge would also erase whatever anyone else had flagged in the mailbox.
 
-**Who may be registered at an address is the identity link's question.** An
-operator's email is the key the intake looks the sender up by. Nothing yet
-ties a member's domain to its organisation, so the address must be one the
-member really holds; see the threat model's R30 before turning the intake
-on.
+**Record each member's mail domains first.** An operator's email is the key
+the intake looks the sender up by, and a message is filed only when that
+address is in one of the domains recorded as the sender's organisation's
+(Organisations screen, or `POST /api/v1/orgs/{id}/mail-domains`; membership
+staff only). Record each domain the member really holds, exactly: a
+subdomain is its own entry. A domain is one organisation's; a second claim is
+refused and names the first, which is a question to settle with both firms.
+An organisation with no domain takes no mail (`outside_organisation_domains`
+in the audit row) and links no new SSO person
+(`email_outside_organisation_domains`). After upgrading to migration
+`4c4b33ef59f3` no organisation has a domain, so record them before relying on
+the intake or on first SSO sign-ins; people already linked by SSO are
+unaffected. Removing a domain leaves its people's accounts in place; the
+intake stops filing their mail.
 
 **Who sent it is your mail server's word, not the message's.** A message is
 read only if the topmost `Authentication-Results` header carries your

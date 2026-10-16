@@ -74,6 +74,7 @@ from aivs_server.services.attribution import (
     record_filing,
     submitter_of,
 )
+from aivs_server.services.mail_domains import add_mail_domain
 from aivs_server.taxii.resources import truncate_to_taxii_precision
 
 
@@ -509,6 +510,7 @@ _ALL_TABLES = (
     "taxii_status",
     "stix_objects",
     "org_sharing_codes",
+    "org_mail_domains",
     "document_reads",
     "document_comments",
     "document_versions",
@@ -1034,6 +1036,37 @@ async def open_session(engine: Any) -> AsyncIterator[Any]:
     for session in opened:
         await session.rollback()
         await session.close()
+
+
+@pytest.fixture
+async def record_mail_domain(session: AsyncSession, isac_org, make_operator):
+    """Factory: record a mail domain as ``org``'s, through the service membership staff use.
+
+    Through the writer, not a seeded row, so a test of a reader (the intake,
+    the SSO link) reads what the writer produces (CLAUDE.md section 2).
+    """
+    recorder: list[models.Operator] = []
+
+    async def _record(org: models.Organization, domain: str) -> str:
+        if not recorder:
+            operator, _seed = await make_operator(isac_org, roles=(OperatorRole.ISAC_MEMBERSHIP,))
+            recorder.append(operator)
+        ctx = AuthContext(
+            org_id=isac_org.id,
+            org_slug=isac_org.slug,
+            org_type=OrgType.ADMIN,
+            org_status=OrgStatus.ACTIVE,
+            auth_method=AuthMethod.PORTAL_SESSION,
+            operator_id=recorder[0].id,
+            operator_roles=frozenset({OperatorRole.ISAC_MEMBERSHIP}),
+        )
+        stored = await add_mail_domain(
+            session, ctx, organisation=org, domain=domain, now=dt.datetime.now(dt.UTC)
+        )
+        await session.commit()
+        return stored
+
+    return _record
 
 
 @pytest.fixture

@@ -36,6 +36,7 @@ from aivs_server.auth.sessions import establish_session, establish_sso_session
 from aivs_server.config import Settings
 from aivs_server.db.models import Organization, SectorEvent, Webhook
 from aivs_server.services import documents
+from aivs_server.services.mail_domains import add_mail_domain
 from tests.authz_matrix.principals import (
     CERTIFICATE_ORGS,
     SESSION_ROLES,
@@ -393,6 +394,11 @@ async def build_world(f: Factories) -> tuple[World, dict[Principal, Credentials]
     world.unregistered_pem, _fingerprint, _cert = f.ca.issue("matrix-register")
     world.orgs = {name: org.id for name, org in orgs.items()}
 
+    # Taken away by the two mail-domain remove cases.
+    await record_mail_domains(
+        f, orgs["isac"], orgs["member"], "matrix-remove.example", "matrix-remove-portal.example"
+    )
+
     circle = await f.make_circle("matrix-circle")
     # The member contributes to the circle; the peer only reads it.
     await f.join_circle(orgs["member"], circle, role=CircleRole.CONTRIBUTOR)
@@ -551,3 +557,24 @@ async def _credentials(
             f, orgs[org_name], world.pems[org_name], (role,)
         )
     return principals
+
+
+async def record_mail_domains(
+    f: Factories, isac: Organization, org: Organization, *domains: str
+) -> None:
+    """Record ``domains`` as ``org``'s, through the writer membership staff use."""
+    recorder, _seed = await f.make_operator(isac, roles=(OperatorRole.ISAC_MEMBERSHIP,))
+    ctx = AuthContext(
+        org_id=isac.id,
+        org_slug=isac.slug,
+        org_type=OrgType.ADMIN,
+        org_status=OrgStatus.ACTIVE,
+        auth_method=AuthMethod.PORTAL_SESSION,
+        operator_id=recorder.id,
+        operator_roles=frozenset({OperatorRole.ISAC_MEMBERSHIP}),
+    )
+    for domain in domains:
+        await add_mail_domain(
+            f.session, ctx, organisation=org, domain=domain, now=dt.datetime.now(dt.UTC)
+        )
+    await f.session.commit()

@@ -16,7 +16,7 @@ import httpx
 import jwt
 import pytest
 from pydantic import ValidationError
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 
 from aivs_schemas.enums import (
     TLP,
@@ -47,6 +47,7 @@ from aivs_server.db.models import (
     Distribution,
     Embargo,
     Operator,
+    OrgMailDomain,
     PortalSession,
     StixObject,
     Submission,
@@ -97,11 +98,12 @@ async def sso_app(app, settings, idp):
 
 
 @pytest.fixture
-async def member(session, make_org, isac_org):
+async def member(session, make_org, isac_org, record_mail_domain):
     org = await make_org("meridian-global", org_type=OrgType.GSIB)
     org.directory_object_id = MEMBER_GROUP
     isac_org.directory_object_id = STAFF_GROUP
     await session.commit()
+    await record_mail_domain(org, "meridian.test")
     return org
 
 
@@ -166,7 +168,7 @@ async def test_a_callback_without_the_pending_cookie_or_with_another_state_is_re
     client = browser(sso_app)
     started = await client.get("/portal/sso/login")
     code, state = idp.authorize(
-        started.headers["location"], sub="s", groups=[MEMBER_GROUP], email="a@m.test"
+        started.headers["location"], sub="s", groups=[MEMBER_GROUP], email="a@meridian.test"
     )
 
     stranger = browser(sso_app)  # the code replayed into a browser that never started a login
@@ -222,7 +224,7 @@ async def test_signing_in_rotates_the_session(sso_app, idp, member):
     client = browser(sso_app, aivs_session="planted-by-someone-else")
     started = await client.get("/portal/sso/login")
     code, state = idp.authorize(
-        started.headers["location"], sub="s1", groups=[MEMBER_GROUP], email="a@m.test"
+        started.headers["location"], sub="s1", groups=[MEMBER_GROUP], email="a@meridian.test"
     )
     finished = await client.get("/portal/sso/callback", params={"code": code, "state": state})
     assert finished.status_code == 200
@@ -258,7 +260,7 @@ async def test_a_member_tenant_token_carrying_a_staff_group_is_refused(
     assert refused.status_code == 403
     assert await refused_reason(session) == "staff_group_on_member_issuer"
     _client, allowed, _subject = await sign_in(
-        sso_app, idp, groups=(MEMBER_GROUP,), email="b@m.test"
+        sso_app, idp, groups=(MEMBER_GROUP,), email="b@meridian.test"
     )
     assert allowed.status_code == 200
 
@@ -309,6 +311,94 @@ async def test_a_person_moved_to_another_firm_does_not_carry_the_old_operator(
     _client, moved, _ = await sign_in(sso_app, idp, groups=("grp-other",), sub=subject)
     assert moved.status_code == 403
     assert await refused_reason(session) == "organisation_changed"
+
+
+# ---------------------------------------------------------------------------
+# Whose addresses a member's IdP may link (Q41, R30)
+# ---------------------------------------------------------------------------
+async def operators_at(session, email: str) -> list[Operator]:
+    return list((await session.scalars(select(Operator).where(Operator.email == email))).all())
+
+
+@pytest.mark.requirement("SF-104")
+async def test_a_member_idp_cannot_create_a_person_in_another_firms_domain(
+    sso_app, idp, member, make_org, record_mail_domain, session
+):
+    """Before Q41 this created ``analyst@bank.test`` at Meridian, which then
+    owned the address: Bank could not register its own person, and with the
+    intake on, that person's mail became Meridian's drafts."""
+    bank = await make_org("bank", org_type=OrgType.GSIB)
+    await record_mail_domain(bank, "bank.test")
+
+    _client, refused, _subject = await sign_in(sso_app, idp, email="analyst@bank.test")
+
+    assert refused.status_code == 403
+    assert await refused_reason(session) == "email_outside_organisation_domains"
+    assert await operators_at(session, "analyst@bank.test") == []
+
+
+@pytest.mark.requirement("SF-104")
+async def test_a_member_idp_cannot_link_another_firms_registered_person(
+    sso_app, idp, member, make_org, make_operator, record_mail_domain, session
+):
+    """Refused for the domain, before the existing person is even looked up."""
+    bank = await make_org("bank", org_type=OrgType.GSIB)
+    await record_mail_domain(bank, "bank.test")
+    person, _seed = await make_operator(bank, email="analyst@bank.test")
+
+    _client, refused, _subject = await sign_in(sso_app, idp, email="analyst@bank.test")
+
+    assert refused.status_code == 403
+    assert await refused_reason(session) == "email_outside_organisation_domains"
+    await session.refresh(person)
+    assert person.federated_subject is None
+
+
+@pytest.mark.requirement("SF-104")
+async def test_a_pre_provisioned_person_outside_the_domains_is_not_linked(
+    sso_app, idp, member, make_operator, session
+):
+    """The domain bounds linking as well as creating: a person registered at the
+    member under an address outside its domains is not taken over by whoever
+    the IdP says holds that address."""
+    person, _seed = await make_operator(member, email="analyst@webmail.example")
+
+    _client, refused, _subject = await sign_in(sso_app, idp, email="analyst@webmail.example")
+
+    assert refused.status_code == 403
+    assert await refused_reason(session) == "email_outside_organisation_domains"
+    await session.refresh(person)
+    assert person.federated_subject is None
+
+
+@pytest.mark.requirement("SF-104")
+async def test_a_firm_with_no_recorded_domain_links_nobody_new(
+    sso_app, idp, make_org, isac_org, session
+):
+    org = await make_org("unrecorded", org_type=OrgType.GSIB)
+    org.directory_object_id = "grp-unrecorded"
+    await session.commit()
+
+    _client, refused, _subject = await sign_in(
+        sso_app, idp, groups=("grp-unrecorded",), email="analyst@unrecorded.test"
+    )
+
+    assert refused.status_code == 403
+    assert await refused_reason(session) == "email_outside_organisation_domains"
+
+
+async def test_a_linked_person_signs_in_by_subject_after_the_domain_is_removed(
+    sso_app, idp, member, session
+):
+    """The domain decides the link, once; the link is issuer and subject (§4)."""
+    _client, first, subject = await sign_in(sso_app, idp)
+    assert first.status_code == 200
+    await session.execute(delete(OrgMailDomain).where(OrgMailDomain.domain == "meridian.test"))
+    await session.commit()
+
+    _client, again, _ = await sign_in(sso_app, idp, sub=subject)
+
+    assert again.status_code == 200
 
 
 # ---------------------------------------------------------------------------
@@ -806,7 +896,7 @@ async def test_a_single_group_given_as_a_string_still_maps(sso_app, idp, member)
     client = browser(sso_app)
     started = await client.get("/portal/sso/login")
     code, state = idp.authorize(
-        started.headers["location"], sub="s", groups=MEMBER_GROUP, email="a@m.test"
+        started.headers["location"], sub="s", groups=MEMBER_GROUP, email="a@meridian.test"
     )
     finished = await client.get("/portal/sso/callback", params={"code": code, "state": state})
     assert finished.status_code == 200, finished.text

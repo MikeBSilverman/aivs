@@ -8,7 +8,9 @@ kind of door usually goes wrong:
   over verified TLS.
 * **The sender is the receiving server's word** (``services.email_message``),
   and then a registered person at a member organisation that may transact,
-  allowed to draft (``policy.can_draft_by_email``), within its hourly allowance.
+  at an address in one of that organisation's recorded mail domains
+  (``services.mail_domains``), allowed to draft (``policy.can_draft_by_email``),
+  within its hourly allowance.
 * **A draft, never a submission.** One message makes one draft for the
   sender's organisation, and nothing moves until a person submits it in the
   portal, where the first pass reads it. The way in is ``AuthMethod.EMAIL``,
@@ -62,6 +64,7 @@ from aivs_server.services.email_message import (
 )
 from aivs_server.services.imap_mailbox import Mailbox, MailboxLogin
 from aivs_server.services.instance import distribution_is_paused
+from aivs_server.services.mail_domains import address_in_organisation_domains
 from aivs_server.services.submissions import STORAGE_ERRORS, SubmissionError, create_submission
 
 __all__ = ["MailIntake", "Refusal", "read_mailbox", "receive_message", "receive_oversize"]
@@ -96,6 +99,9 @@ class Refusal(StrEnum):
     #: No aligned DMARC pass from the ISAC's own receiving server.
     UNAUTHENTICATED = "unauthenticated"
     UNKNOWN_SENDER = "unknown_sender"
+    #: The person is registered at an address outside every domain the ISAC
+    #: has recorded as their organisation's (Q41, R30).
+    OUTSIDE_ORGANISATION_DOMAINS = "outside_organisation_domains"
     ORGANISATION_INACTIVE = "organisation_inactive"
     NOT_PERMITTED = "not_permitted"
     RATE_LIMITED = "rate_limited"
@@ -315,6 +321,10 @@ async def _sender(
     context = await _context(session, operator, organisation)
     if not operator.is_active or not can_draft_by_email(context, now):
         return _Sender(Refusal.NOT_PERMITTED, None, operator.org_id, operator.id)
+    if not await address_in_organisation_domains(
+        session, address=message.sender, org_id=operator.org_id
+    ):
+        return _Sender(Refusal.OUTSIDE_ORGANISATION_DOMAINS, None, operator.org_id, operator.id)
     return _Sender(None, context, operator.org_id, operator.id)
 
 

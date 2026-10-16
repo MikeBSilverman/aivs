@@ -1,0 +1,18 @@
+Mutation M1175: a domain another firm holds is not refused up front
+Re-applies: no earlier commit; Q41's domain-to-organisation mapping is new in this commit
+
+Expect red: packages/aivs-server/tests/unit/test_mail_domains.py::test_a_domain_is_one_firms_and_a_second_claim_names_the_first
+
+diff --git a/packages/aivs-server/src/aivs_server/services/mail_domains.py b/packages/aivs-server/src/aivs_server/services/mail_domains.py
+index 09df2aa..ed716a4 100644
+--- a/packages/aivs-server/src/aivs_server/services/mail_domains.py
++++ b/packages/aivs-server/src/aivs_server/services/mail_domains.py
+@@ -156,7 +156,7 @@ async def add_mail_domain(
+         raise MailDomainError(reason)
+     stored = parse_mail_domain(domain)
+     holder = await session.get(OrgMailDomain, stored)
+-    if holder is not None:
++    if holder is not None and holder.org_id == organisation.id:
+         await _refuse_held(session, holder, organisation)
+     session.add(
+         OrgMailDomain(

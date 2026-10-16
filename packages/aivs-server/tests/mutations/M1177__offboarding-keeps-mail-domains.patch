@@ -1,0 +1,17 @@
+Mutation M1177: offboarding leaves the departed member's mail domains recorded
+Re-applies: no earlier commit; Q41's domain-to-organisation mapping is new in this commit
+
+Expect red: packages/aivs-server/tests/unit/test_offboarding.py::test_every_operational_row_of_the_member_is_deleted
+
+diff --git a/packages/aivs-server/src/aivs_server/services/offboarding.py b/packages/aivs-server/src/aivs_server/services/offboarding.py
+index 758d853..219b5dd 100644
+--- a/packages/aivs-server/src/aivs_server/services/offboarding.py
++++ b/packages/aivs-server/src/aivs_server/services/offboarding.py
+@@ -121,7 +121,6 @@ async def _close_memberships(
+ async def _delete_operational(session: AsyncSession, organisation: Organization) -> str:
+     """Delete the member's own operational data. Returns what happened to its postures."""
+     for table in (
+-        OrgMailDomain,
+         Webhook,
+         PortalSession,
+         TaxiiStatus,

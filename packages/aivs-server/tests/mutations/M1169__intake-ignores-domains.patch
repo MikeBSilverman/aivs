@@ -1,0 +1,22 @@
+Mutation M1169: the intake files mail from any address its person is registered at
+Re-applies: no earlier commit; Q41's domain-to-organisation mapping is new in this commit
+
+Expect red: packages/aivs-server/tests/unit/test_email_intake.py::test_a_person_registered_in_another_firms_domain_files_nothing
+Expect red: packages/aivs-server/tests/unit/test_email_intake.py::test_an_organisation_with_no_recorded_domain_takes_no_mail
+Expect red: packages/aivs-server/tests/unit/test_email_intake.py::test_a_subdomain_is_not_its_parents
+
+diff --git a/packages/aivs-server/src/aivs_server/services/email_intake.py b/packages/aivs-server/src/aivs_server/services/email_intake.py
+index 801e3cf..de43a3d 100644
+--- a/packages/aivs-server/src/aivs_server/services/email_intake.py
++++ b/packages/aivs-server/src/aivs_server/services/email_intake.py
+@@ -321,10 +321,6 @@ async def _sender(
+     context = await _context(session, operator, organisation)
+     if not operator.is_active or not can_draft_by_email(context, now):
+         return _Sender(Refusal.NOT_PERMITTED, None, operator.org_id, operator.id)
+-    if not await address_in_organisation_domains(
+-        session, address=message.sender, org_id=operator.org_id
+-    ):
+-        return _Sender(Refusal.OUTSIDE_ORGANISATION_DOMAINS, None, operator.org_id, operator.id)
+     return _Sender(None, context, operator.org_id, operator.id)
+ 
+ 

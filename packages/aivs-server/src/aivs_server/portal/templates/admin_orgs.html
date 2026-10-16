@@ -6,6 +6,10 @@
   <h1>Organisations</h1>
   <p>Member firms enrolled on this instance. Enrolment and activation are
      separate steps, so a half-finished onboarding cannot authenticate.</p>
+  <p>Mail domains are the domains a firm's people may be registered in. Email
+     to the intake and a first SSO sign-in count an address for a firm only in
+     one of its domains, so record each domain the firm really holds; a firm
+     with none takes no email and links no new SSO person.</p>
 </div>
 
 <div class="card">
@@ -14,7 +18,7 @@
       <table>
         <thead>
           <tr><th>Slug</th><th>Name</th><th>Type</th><th>Status</th>
-              <th>Certificates</th><th>Action</th></tr>
+              <th>Certificates</th><th>Mail domains</th><th>Action</th></tr>
         </thead>
         <tbody>
           {% for org in orgs %}
@@ -24,6 +28,24 @@
               <td class="muted nowrap">{{ org.org_type }}</td>
               <td><span class="badge state-{{ org.status }}">{{ org.status }}</span></td>
               <td class="muted">{{ org.certificates }}</td>
+              <td>
+                {% for domain in org.mail_domains %}
+                  <form method="post" action="/portal/admin/orgs/{{ org.id }}/mail-domains/remove" class="domain-form">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <input type="hidden" name="domain" value="{{ domain }}">
+                    <span class="mono">{{ domain }}</span>
+                    <button type="submit" class="linklike" aria-label="Remove {{ domain }}">remove</button>
+                  </form>
+                {% endfor %}
+                {% if org.status != 'offboarded' %}
+                  <form method="post" action="/portal/admin/orgs/{{ org.id }}/mail-domains" class="domain-form">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <input name="domain" required minlength="3" maxlength="253"
+                           placeholder="example.com" aria-label="Mail domain for {{ org.slug }}">
+                    <button type="submit" class="linklike">Add</button>
+                  </form>
+                {% endif %}
+              </td>
               <td>
                 <form method="post" action="/portal/admin/orgs/{{ org.id }}/{% if org.status == 'active' %}suspend{% else %}activate{% endif %}">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">

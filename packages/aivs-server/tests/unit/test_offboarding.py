@@ -66,7 +66,9 @@ async def world(
 
 
 @pytest.fixture
-async def holdings(client, session, secret_box, world, make_operator) -> SharingWorld:
+async def holdings(
+    client, session, secret_box, world, make_operator, record_mail_domain
+) -> SharingWorld:
     """The member, holding one of everything: a posture, a webhook with a queued
     delivery, an inbox status, a contribution."""
     member = world.member
@@ -138,6 +140,8 @@ async def holdings(client, session, secret_box, world, make_operator) -> Sharing
         ),
         now=now,
     )
+    # Its mail domain, recorded by membership staff (Q41).
+    await record_mail_domain(member.org, "meridian.example")
     return world
 
 

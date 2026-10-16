@@ -1,0 +1,21 @@
+Mutation M1176: an offboarded firm is given a domain
+Re-applies: no earlier commit; Q41's domain-to-organisation mapping is new in this commit
+
+Expect red: packages/aivs-server/tests/unit/test_mail_domains.py::test_an_offboarded_firm_is_given_no_domain
+
+diff --git a/packages/aivs-server/src/aivs_server/services/mail_domains.py b/packages/aivs-server/src/aivs_server/services/mail_domains.py
+index 09df2aa..1c4e0d9 100644
+--- a/packages/aivs-server/src/aivs_server/services/mail_domains.py
++++ b/packages/aivs-server/src/aivs_server/services/mail_domains.py
+@@ -149,11 +149,6 @@ async def add_mail_domain(
+     staff adding one domain at once both reach the INSERT; the primary key
+     refuses the second, and the caller reports that as the same conflict.
+     """
+-    if organisation.status is OrgStatus.OFFBOARDED:
+-        # Offboarding deleted its domains so another member can be given them;
+-        # the caller holds the organisation's row lock, so this cannot race it.
+-        reason = f"{organisation.slug} has been offboarded"
+-        raise MailDomainError(reason)
+     stored = parse_mail_domain(domain)
+     holder = await session.get(OrgMailDomain, stored)
+     if holder is not None:

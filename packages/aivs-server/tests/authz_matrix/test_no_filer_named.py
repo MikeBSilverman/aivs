@@ -62,6 +62,7 @@ from tests.authz_matrix.world import (
     _session_credentials,
     build_world,
     inbox_note,
+    record_mail_domains,
 )
 from tests.conftest import ISAC_STAFF_ROLES, proxy_headers
 from tests.unit.test_email_intake import ALICE, receive
@@ -144,6 +145,8 @@ async def _anonymous_filer(f: Factories, world: World, make_operator: Any) -> Fi
     await f.join_circle(org, circle, role=CircleRole.CONTRIBUTOR)
     person = await _session_credentials(f, org, pem, (OperatorRole.ANALYST,))
     await make_operator(org, email=ALICE)
+    isac = await f.session.get(Organization, world.orgs["isac"])
+    await record_mail_domains(f, isac, org, ALICE.rpartition("@")[2])
     people = (await f.session.scalars(select(Operator.id).where(Operator.org_id == org.id))).all()
     known_by = {
         str(org.id): "organisation id",
@@ -152,6 +155,7 @@ async def _anonymous_filer(f: Factories, world: World, make_operator: Any) -> Fi
         org.name: "name",
         org.stix_identity_id: "STIX identity",
         ALICE: "a person's address",
+        ALICE.rpartition("@")[2]: "its mail domain",
         **{str(person_id): "a person's id" for person_id in people},
     }
     return Filer(org_id=org.id, pem=pem, person=person, filings={}, known_by=known_by)

@@ -1,0 +1,18 @@
+Mutation M1179: removing a domain from one firm removes it from whichever firm holds it
+Re-applies: no earlier commit; Q41's domain-to-organisation mapping is new in this commit
+
+Expect red: packages/aivs-server/tests/unit/test_mail_domains.py::test_removing_a_domain_another_firm_holds_removes_nothing
+
+diff --git a/packages/aivs-server/src/aivs_server/services/mail_domains.py b/packages/aivs-server/src/aivs_server/services/mail_domains.py
+index 09df2aa..d884579 100644
+--- a/packages/aivs-server/src/aivs_server/services/mail_domains.py
++++ b/packages/aivs-server/src/aivs_server/services/mail_domains.py
+@@ -194,7 +194,7 @@ async def remove_mail_domain(
+     stored = parse_mail_domain(domain)
+     removed = await session.execute(
+         delete(OrgMailDomain)
+-        .where(OrgMailDomain.domain == stored, OrgMailDomain.org_id == organisation.id)
++        .where(OrgMailDomain.domain == stored)
+         .returning(OrgMailDomain.domain)
+     )
+     if removed.scalar_one_or_none() is None:

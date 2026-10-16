@@ -1,0 +1,20 @@
+Mutation M1129: a model's reply is taken without its schema check
+Re-applies: no earlier commit; the model read is new in Phase O slice 4, and this is the rule it would most easily lose
+
+Expect red: packages/aivs-server/tests/unit/test_model_triage.py::test_an_injected_instruction_yields_a_no_op_or_a_finding_never_an_action
+
+diff --git a/packages/aivs-server/src/aivs_server/services/model_triage.py b/packages/aivs-server/src/aivs_server/services/model_triage.py
+--- a/packages/aivs-server/src/aivs_server/services/model_triage.py
++++ b/packages/aivs-server/src/aivs_server/services/model_triage.py
+@@ -192,8 +192,9 @@
+         reply = json.loads(text)
+     except ValueError:
+         return None
+-    if not _REPLY_VALIDATOR.is_valid(reply):
+-        return None
++    if not isinstance(reply, dict):
++        return None
++    reply.setdefault("findings", [])
+     by_id = {str(obj.get("id")): obj for obj in objects}
+     findings = [_checked(finding, by_id) for finding in reply["findings"]]
+     if any(finding is None for finding in findings):

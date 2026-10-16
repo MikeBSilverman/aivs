@@ -1,0 +1,17 @@
+Mutation M1135: the model-read audit row names the filer's organisation
+Re-applies: no earlier commit; the model read is new in Phase O slice 4, and this is the rule it would most easily lose
+
+Expect red: packages/aivs-server/tests/unit/test_model_triage.py::test_the_audit_row_says_the_outcome_and_a_total_and_names_no_organisation
+
+diff --git a/packages/aivs-server/src/aivs_server/services/model_triage.py b/packages/aivs-server/src/aivs_server/services/model_triage.py
+--- a/packages/aivs-server/src/aivs_server/services/model_triage.py
++++ b/packages/aivs-server/src/aivs_server/services/model_triage.py
+@@ -382,7 +382,7 @@
+     await record(
+         session,
+         action=AuditAction.SUBMISSION_MODEL_READ,
+-        org_id=None,
++        org_id=await submitter_of(session, submission),
+         resource_type="submission",
+         resource_id=str(submission.id),
+         details={

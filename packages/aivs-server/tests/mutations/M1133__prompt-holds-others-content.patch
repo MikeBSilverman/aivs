@@ -1,0 +1,16 @@
+Mutation M1133: the prompt holds objects beyond the submission's own
+Re-applies: no earlier commit; the model read is new in Phase O slice 4, and this is the rule it would most easily lose
+
+Expect red: packages/aivs-server/tests/unit/test_model_triage.py::test_the_prompt_holds_the_submissions_own_content_and_nothing_else
+
+diff --git a/packages/aivs-server/src/aivs_server/services/model_triage.py b/packages/aivs-server/src/aivs_server/services/model_triage.py
+--- a/packages/aivs-server/src/aivs_server/services/model_triage.py
++++ b/packages/aivs-server/src/aivs_server/services/model_triage.py
+@@ -347,7 +347,6 @@
+     """The submission's own objects: the oracle rule's whole input."""
+     rows = await session.scalars(
+         select(StixObject.raw)
+-        .where(StixObject.submission_id == submission.id)
+         .order_by(StixObject.id)
+     )
+     return list(rows)

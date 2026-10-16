@@ -1,0 +1,17 @@
+Mutation M1131: with no provider, the job still opens a session and queries before asking
+Re-applies: no earlier commit; the model read is new in Phase O slice 4, and this is the rule it would most easily lose
+
+Expect red: packages/aivs-server/tests/unit/test_model_triage.py::test_with_no_provider_nothing_is_sent_and_nothing_is_written
+
+diff --git a/packages/aivs-server/src/aivs_server/main.py b/packages/aivs-server/src/aivs_server/main.py
+--- a/packages/aivs-server/src/aivs_server/main.py
++++ b/packages/aivs-server/src/aivs_server/main.py
+@@ -277,8 +277,6 @@
+ async def _model_triage(settings: Settings) -> None:
+     """Let a model read what the first pass read, in shadow; nothing at all with no provider."""
+     provider = provider_from_settings(settings)
+-    if provider is None:
+-        return
+     async with session_scope() as session:
+         await model_triage_pending(
+             session,

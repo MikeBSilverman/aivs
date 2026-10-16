@@ -193,6 +193,7 @@ _PROJECTIONS: Final[Mapping[str, Projection]] = MappingProxyType(
         AuditAction.SUBMISSION_FILED_ON_BEHALF: _CONTENT,
         AuditAction.SUBMISSION_PROXY_CONFIRMED: _CONTENT,
         AuditAction.SUBMISSION_TRIAGED: _CONTENT,
+        AuditAction.SUBMISSION_MODEL_READ: _CONTENT,
         AuditAction.CONTRIBUTION_PUBLISHED: _CONTENT,
         # A refused contribution: nothing was filed, so nothing to attribute.
         AuditAction.CONTRIBUTION_RATE_LIMITED: _WHOLE,

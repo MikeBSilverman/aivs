@@ -1,0 +1,17 @@
+Mutation M1132: the model reads while distribution is paused
+Re-applies: no earlier commit; the model read is new in Phase O slice 4, and this is the rule it would most easily lose
+
+Expect red: packages/aivs-server/tests/unit/test_model_triage.py::test_nothing_is_sent_while_the_instance_is_paused
+
+diff --git a/packages/aivs-server/src/aivs_server/services/model_triage.py b/packages/aivs-server/src/aivs_server/services/model_triage.py
+--- a/packages/aivs-server/src/aivs_server/services/model_triage.py
++++ b/packages/aivs-server/src/aivs_server/services/model_triage.py
+@@ -249,8 +249,6 @@
+     """Read each first-pass read the model has not; how many were read. Commits each."""
+     if provider is None:
+         return 0
+-    if await distribution_is_paused(session):
+-        return 0
+     read = 0
+     for _ in range(_BATCH):
+         row = await _next_pending(session)

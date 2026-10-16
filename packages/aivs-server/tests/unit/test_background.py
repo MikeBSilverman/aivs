@@ -29,6 +29,7 @@ def test_the_process_runs_its_unattended_jobs_at_their_configured_intervals(sett
         "audit_read_summary": dt.timedelta(seconds=settings.audit_read_summary_interval_seconds),
         "triage": dt.timedelta(seconds=settings.triage_interval_seconds),
         "email_intake": dt.timedelta(seconds=settings.email_intake_interval_seconds),
+        "model_triage": dt.timedelta(seconds=settings.model_triage_interval_seconds),
     }
 
 

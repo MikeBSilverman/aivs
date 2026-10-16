@@ -83,6 +83,7 @@ __all__ = [
     "Embargo",
     "InboundEmail",
     "InstanceControl",
+    "ModelRead",
     "Operator",
     "OrgPosture",
     "Organization",
@@ -690,6 +691,50 @@ class SubmissionTriage(Base):
     findings: Mapped[list[dict[str, str]]] = mapped_column(JSONB, nullable=False)
     #: Which rules ran: stored output says how it was made (CLAUDE.md section 5).
     rules_version: Mapped[str] = mapped_column(String(40), nullable=False)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class ModelRead(Base):
+    """What a model said about a submission, in shadow (Phase O slice 4, SF-96).
+
+    One row per first-pass read, whatever came of it: findings, nothing, a
+    reply that failed its schema, an error, or content skipped as above the
+    provider's ceiling or over the organisation's allowance. Shown to ISAC
+    reviewers only, never read by anything that decides; it is how a model's
+    work is evaluated and, when a release proves bad, found and set aside --
+    so it says how it was made, and it is append-only (the deny triggers,
+    given by the migration).
+    """
+
+    __tablename__ = "model_reads"
+    __table_args__ = (
+        CheckConstraint(
+            "outcome IN ('findings', 'no_findings', 'invalid_response', 'error', "
+            "'skipped_above_ceiling', 'skipped_rate_limited')",
+            name="outcome_known",
+        ),
+        CheckConstraint("provider IN ('local', 'private_endpoint')", name="provider_known"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    triage_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("submission_triage.id", ondelete="RESTRICT"), nullable=False, unique=True
+    )
+    submission_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("submissions.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    provider: Mapped[str] = mapped_column(String(30), nullable=False)
+    #: The model asked for, and the one the endpoint said answered.
+    model_id: Mapped[str] = mapped_column(String(200), nullable=False)
+    model_reported: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    prompt_template: Mapped[str] = mapped_column(String(40), nullable=False)
+    #: The content's most restrictive marking (``model_egress.egress_tlp``).
+    content_tlp: Mapped[str] = mapped_column(String(20), nullable=False)
+    outcome: Mapped[str] = mapped_column(String(30), nullable=False)
+    #: ``[{"code", "object_id", "field_path", "suggested_value"}]``, typed values only.
+    findings: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
     created_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

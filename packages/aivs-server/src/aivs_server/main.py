@@ -84,6 +84,8 @@ from aivs_server.services.detections import detection_rules, run_detections
 from aivs_server.services.email_intake import MailIntake, read_mailbox
 from aivs_server.services.embargo import sweep_due_embargoes
 from aivs_server.services.imap_mailbox import ImapMailbox
+from aivs_server.services.model_provider import provider_from_settings
+from aivs_server.services.model_triage import model_triage_pending
 from aivs_server.services.posture import publish_postures
 from aivs_server.services.publication import PublicationPausedError
 from aivs_server.services.telemetry import publish_telemetry
@@ -236,6 +238,11 @@ def background_components(settings: Settings) -> list[BackgroundComponent]:
             _triage_submissions,
         ),
         BackgroundComponent(
+            "model_triage",
+            dt.timedelta(seconds=settings.model_triage_interval_seconds),
+            lambda: _model_triage(settings),
+        ),
+        BackgroundComponent(
             "email_intake",
             dt.timedelta(seconds=settings.email_intake_interval_seconds),
             lambda: _read_intake_mailbox(settings),
@@ -265,6 +272,20 @@ async def _triage_submissions() -> None:
     key = AttributionKey.from_settings(get_settings())
     async with session_scope() as session:
         await triage_pending(session, key, now=await database_now(session))
+
+
+async def _model_triage(settings: Settings) -> None:
+    """Let a model read what the first pass read, in shadow; nothing at all with no provider."""
+    provider = provider_from_settings(settings)
+    if provider is None:
+        return
+    async with session_scope() as session:
+        await model_triage_pending(
+            session,
+            provider,
+            hourly_limit=settings.ai_hourly_calls_per_org,
+            now=await database_now(session),
+        )
 
 
 async def _read_intake_mailbox(settings: Settings) -> None:

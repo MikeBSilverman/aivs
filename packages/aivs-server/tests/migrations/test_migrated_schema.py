@@ -148,6 +148,12 @@ _SEED_STATEMENTS = (
     "INSERT INTO audit_log (actor_type, action, outcome, details) "
     "VALUES ('system', 'seed', 'success', '{}')",
     "INSERT INTO audit_stream_modes (mode, reason) VALUES ('full', 'seed')",
+    "INSERT INTO submission_triage (submission_id, transition_id, content_sha256, disposition, "
+    "findings, rules_version) SELECT :submission, id, repeat('0', 64), 'ready_for_review', "
+    "'[]', 'seed' FROM submission_transitions WHERE submission_id = :submission",
+    "INSERT INTO model_reads (triage_id, submission_id, provider, model_id, prompt_template, "
+    "content_tlp, outcome, findings) SELECT id, :submission, 'local', 'seed', 'seed', 'amber', "
+    "'no_findings', '[]' FROM submission_triage WHERE submission_id = :submission",
 )
 
 
@@ -183,6 +189,8 @@ _APPEND_ONLY = {
     "audit_stream_modes": "id",
     # Who filed what (Phase P): rewriting it would re-attribute a filing.
     "attribution.submitters": "org_id",
+    # What a model said (Phase O slice 4): the record a bad release is found by.
+    "model_reads": "id",
 }
 
 

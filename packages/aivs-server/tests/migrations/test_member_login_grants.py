@@ -63,6 +63,7 @@ CLASSIFICATION: Final[dict[str, frozenset[str]]] = {
     "public.portal_sessions": _NOTHING,
     "public.submission_milestones": _NOTHING,
     "public.submission_triage": _NOTHING,
+    "public.model_reads": _NOTHING,
     # Read, and written only where listed.
     "public.circle_memberships": _READ,
     "public.circles": _READ,

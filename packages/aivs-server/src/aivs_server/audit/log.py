@@ -148,6 +148,8 @@ class AuditAction:
     SUBMISSION_PROXY_CONFIRMED = "submission.proxy_confirmed"
     #: The first pass read a submission: its disposition and finding codes.
     SUBMISSION_TRIAGED = "submission.triaged"
+    #: A model read a submission in shadow: the outcome and a total, never the codes.
+    SUBMISSION_MODEL_READ = "submission.model_read"
     CONTRIBUTION_PUBLISHED = "contribution.published"
     CONTRIBUTION_RATE_LIMITED = "contribution.rate_limited"
     CONTRIBUTION_SENT_TO_REVIEW = "contribution.sent_to_review"

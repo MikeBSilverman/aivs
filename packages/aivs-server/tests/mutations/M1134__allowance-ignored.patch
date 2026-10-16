@@ -1,0 +1,17 @@
+Mutation M1134: a member's filings cause model calls past the hourly allowance
+Re-applies: no earlier commit; the model read is new in Phase O slice 4, and this is the rule it would most easily lose
+
+Expect red: packages/aivs-server/tests/unit/test_model_triage.py::test_a_members_filings_cause_no_more_calls_an_hour_than_the_allowance
+
+diff --git a/packages/aivs-server/src/aivs_server/services/model_triage.py b/packages/aivs-server/src/aivs_server/services/model_triage.py
+--- a/packages/aivs-server/src/aivs_server/services/model_triage.py
++++ b/packages/aivs-server/src/aivs_server/services/model_triage.py
+@@ -330,7 +330,7 @@
+     """Skip, or ask and judge the reply. Nothing is sent unless both gates pass."""
+     if not content_allowed:
+         return ModelReadOutcome.SKIPPED_ABOVE_CEILING, [], None
+-    if await _calls_this_hour(session, submission, now=now) >= hourly_limit:
++    if hourly_limit < 0:
+         return ModelReadOutcome.SKIPPED_RATE_LIMITED, [], None
+     try:
+         reply = await provider.complete(SYSTEM_PROMPT, prompt_for(submission, objects))

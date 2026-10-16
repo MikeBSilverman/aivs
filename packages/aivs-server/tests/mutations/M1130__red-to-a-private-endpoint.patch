@@ -1,0 +1,17 @@
+Mutation M1130: content above the provider's ceiling is sent
+Re-applies: no earlier commit; the model read is new in Phase O slice 4, and this is the rule it would most easily lose
+
+Expect red: packages/aivs-server/tests/unit/test_model_triage.py::test_red_content_is_not_sent_to_a_private_endpoint_and_is_recorded_skipped
+
+diff --git a/packages/aivs-server/src/aivs_server/services/model_triage.py b/packages/aivs-server/src/aivs_server/services/model_triage.py
+--- a/packages/aivs-server/src/aivs_server/services/model_triage.py
++++ b/packages/aivs-server/src/aivs_server/services/model_triage.py
+@@ -328,8 +328,6 @@
+     now: dt.datetime,
+ ) -> tuple[ModelReadOutcome, list[dict[str, str]], str | None]:
+     """Skip, or ask and judge the reply. Nothing is sent unless both gates pass."""
+-    if not content_allowed:
+-        return ModelReadOutcome.SKIPPED_ABOVE_CEILING, [], None
+     if await _calls_this_hour(session, submission, now=now) >= hourly_limit:
+         return ModelReadOutcome.SKIPPED_RATE_LIMITED, [], None
+     try:

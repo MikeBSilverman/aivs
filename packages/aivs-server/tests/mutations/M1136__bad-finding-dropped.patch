@@ -1,0 +1,17 @@
+Mutation M1136: a finding that fails its checks is dropped and the rest of the reply kept
+Re-applies: no earlier commit; the model read is new in Phase O slice 4, and this is the rule it would most easily lose
+
+Expect red: packages/aivs-server/tests/unit/test_model_triage.py::test_one_bad_finding_spoils_the_reply_rather_than_being_dropped
+
+diff --git a/packages/aivs-server/src/aivs_server/services/model_triage.py b/packages/aivs-server/src/aivs_server/services/model_triage.py
+--- a/packages/aivs-server/src/aivs_server/services/model_triage.py
++++ b/packages/aivs-server/src/aivs_server/services/model_triage.py
+@@ -196,8 +196,6 @@
+         return None
+     by_id = {str(obj.get("id")): obj for obj in objects}
+     findings = [_checked(finding, by_id) for finding in reply["findings"]]
+-    if any(finding is None for finding in findings):
+-        return None
+     return [finding for finding in findings if finding is not None]
+ 
+ 

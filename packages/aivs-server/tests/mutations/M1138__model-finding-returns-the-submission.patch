@@ -1,0 +1,21 @@
+Mutation M1138: a model's not-actionable finding returns the submission to its member
+Re-applies: no earlier commit; the model read is new in Phase O slice 4, and this is the rule it would most easily lose
+
+Expect red: packages/aivs-server/tests/unit/test_model_triage.py::test_a_reply_is_kept_for_reviewers_and_changes_nothing
+
+diff --git a/packages/aivs-server/src/aivs_server/services/model_triage.py b/packages/aivs-server/src/aivs_server/services/model_triage.py
+--- a/packages/aivs-server/src/aivs_server/services/model_triage.py
++++ b/packages/aivs-server/src/aivs_server/services/model_triage.py
+@@ -315,6 +315,12 @@
+         )
+     )
+     await _audit(session, submission, outcome, len(findings))
++    if findings:
++        from aivs_server.services.submissions import record_transition  # noqa: PLC0415
++
++        await record_transition(
++            session, None, submission, SubmissionState.RETURNED, reason="model"
++        )
+ 
+ 
+ async def _outcome(

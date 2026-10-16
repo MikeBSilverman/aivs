@@ -1,0 +1,17 @@
+Mutation M1137: a suggested value is kept whatever it says
+Re-applies: no earlier commit; the model read is new in Phase O slice 4, and this is the rule it would most easily lose
+
+Expect red: packages/aivs-server/tests/unit/test_model_triage.py::test_a_suggested_value_is_typed_or_the_reply_is_refused
+
+diff --git a/packages/aivs-server/src/aivs_server/services/model_triage.py b/packages/aivs-server/src/aivs_server/services/model_triage.py
+--- a/packages/aivs-server/src/aivs_server/services/model_triage.py
++++ b/packages/aivs-server/src/aivs_server/services/model_triage.py
+@@ -213,7 +213,7 @@
+     value = finding.get("suggested_value")
+     if target is None or path is None or value is None:
+         return None
+-    if not _resolves(target, path) or not _TYPED[code].match(value):
++    if not _resolves(target, path):
+         return None
+     return {
+         "code": code.value,

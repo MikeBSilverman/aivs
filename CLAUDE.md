@@ -272,6 +272,12 @@ green", and the proof looked like a gap in the tests rather than in the
 patch (T1, slice 3c). Move the call, keep the name: a patch re-applies the
 defect, and a fixture failing is not the defect.
 
+**Run the full suite before a commit's mutation proofs.** A proof's baseline
+is its named tests passing on the unmutated tree; 3e's first mutation run
+failed its baseline on a test the targeted run had not included
+(`test_one_clock`'s allow-list), and an hour of shards was spent finding a
+failure the suite would have shown in eight minutes (T1).
+
 **A patch that applies is not a patch in the right place.** Three ways a
 proof stops proving what it names while still applying cleanly:
 
@@ -824,6 +830,23 @@ notification to one member queued behind every other until slice 3c recorded
 `RETURNING id` to every insert, even a Core one, and Postgres refuses
 RETURNING without SELECT. A table the member login may write but not read
 sets it, and the login gets USAGE on the table's sequence (slice 3c).
+
+**`ON CONFLICT` with a named target needs SELECT on the target's columns.**
+The member's retrieval receipt was an INSERT ... ON CONFLICT ON CONSTRAINT
+... DO NOTHING, and once the member login lost SELECT on `acknowledgments`
+the insert itself was refused (slice 3e). An INSERT-only table uses `DO
+NOTHING` with no target, which is safe only while every other unique key is
+one a caller cannot repeat; and SQLAlchemy then reports `rowcount` as -1, so
+nothing may depend on the count.
+
+**A test that records an allow-list as expected cannot judge it.** The member
+login could read every operator's Argon2id password hash, ISAC staff
+included, for two slices, while the grants classification test was green:
+it pinned SELECT on `operators` as intended. T1 found it by reading
+`MEMBER_GRANTS` against the operators model while planning 3e. A
+classification test proves the database matches the list; only reading each
+entry against what the path needs proves the list is right. Do that for
+every grant a slice keeps, not only the ones it adds.
 
 **An empty `ARRAY[]` has no inferable element type.** `Column != []` compiles to
 an untyped `ARRAY[]` that Postgres cannot compare, so the filter matches nothing

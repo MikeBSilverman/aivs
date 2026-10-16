@@ -17,6 +17,7 @@ from typing import Any
 
 import httpx
 import pytest
+import yaml
 from pydantic import ValidationError
 
 from aivs_schemas.enums import TLP
@@ -344,3 +345,32 @@ def test_the_content_is_its_most_restrictive_marking_and_unknown_is_red(
 )
 def test_a_model_receives_nothing_above_its_ceiling(kind, content, allowed):
     assert may_receive(ceiling_for(kind, None), content) is allowed
+
+
+# ---------------------------------------------------------------------------
+# The shipped stack
+# ---------------------------------------------------------------------------
+def _compose(name: str) -> dict[str, Any]:
+    root = Path(__file__).resolve().parents[4]
+    return yaml.safe_load((root / name).read_text(encoding="utf-8"))
+
+
+def test_the_ai_override_mounts_the_key_as_a_file_and_the_base_stack_names_no_model():
+    """The overlay is how an operator turns the feature on; without it, nothing is set."""
+    app = _compose("docker-compose.ai.yml")["services"]["app"]
+    [mount] = app["volumes"]
+    assert mount["target"] == app["environment"]["AIVS_AI_API_KEY_FILE"]
+    assert mount["read_only"] is True
+    assert "AIVS_AI_API_KEY" not in app["environment"]
+    base = _compose("docker-compose.yml")["services"]["app"]["environment"]
+    assert not any(name.startswith("AIVS_AI_") for name in base)
+
+
+@pytest.mark.parametrize(
+    "variable",
+    ["AIVS_AI_PROVIDER", "AIVS_AI_ENDPOINT_URL", "AIVS_AI_MODEL_ID", "AIVS_AI_API_KEY_PATH"],
+)
+def test_the_ai_override_refuses_to_render_without_what_it_needs(variable):
+    """``${VAR:?}``: a half-filled .env stops compose with the variable's name."""
+    text = (Path(__file__).resolve().parents[4] / "docker-compose.ai.yml").read_text("utf-8")
+    assert f"${{{variable}:?set {variable} " in text

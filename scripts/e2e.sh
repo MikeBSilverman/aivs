@@ -8,6 +8,11 @@
 #   scripts/e2e.sh logs    service status and logs, for a failed run
 #
 #   AIVS_E2E_DIR=/path scripts/e2e.sh up    (default: ${TMPDIR:-/tmp}/aivs-e2e)
+#   AIVS_E2E_AI=1 scripts/e2e.sh up        also the shipped docker-compose.ai.yml,
+#                                           pointed at an endpoint that never resolves
+#                                           (.invalid): the stack must start with a
+#                                           model configured, and a read must fail
+#                                           safe. Set it for "down" too.
 #   uv run pytest -m e2e packages/aivs-server/tests/e2e
 #
 # It follows deploy/README.md section 3 in order, with the operator's choices
@@ -51,9 +56,14 @@ FIXED_VOLUMES=(aivs_pgdata aivs_ca_material)
 log() { printf '==> %s\n' "$*" >&2; }
 die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 
+AI="${AIVS_E2E_AI:-0}"
+
 compose() {
-    docker compose -p "${PROJECT}" --env-file "${WORK}/.env" -f "${REPO}/docker-compose.yml" \
-        -f "${REPO}/docker-compose.public.yml" "$@"
+    local files=(-f "${REPO}/docker-compose.yml" -f "${REPO}/docker-compose.public.yml")
+    if [[ "${AI}" == "1" ]]; then
+        files+=(-f "${REPO}/docker-compose.ai.yml")
+    fi
+    docker compose -p "${PROJECT}" --env-file "${WORK}/.env" "${files[@]}" "$@"
 }
 
 # -----------------------------------------------------------------------------
@@ -161,6 +171,22 @@ AIVS_DB_MEMBER_USER=aivs_member
 AIVS_DB_MEMBER_PASSWORD=$(random_secret)
 EOF
     chmod 0600 "${WORK}/.env"
+    if [[ "${AI}" == "1" ]]; then
+        make_ai_env
+    fi
+}
+
+make_ai_env() {
+    # A private endpoint the stack can never reach: .invalid never resolves
+    # (RFC 6761), so each read is recorded as an error and nothing leaves.
+    openssl rand -hex 16 > "${WORK}/secrets/ai-api-key"
+    chmod 0600 "${WORK}/secrets/ai-api-key"
+    cat >> "${WORK}/.env" <<EOF
+AIVS_AI_PROVIDER=private_endpoint
+AIVS_AI_ENDPOINT_URL=https://models.e2e.invalid/v1
+AIVS_AI_MODEL_ID=e2e-model
+AIVS_AI_API_KEY_PATH=${WORK}/secrets/ai-api-key
+EOF
 }
 
 hand_files_to_container_users() {
@@ -168,7 +194,8 @@ hand_files_to_container_users() {
     # already, so a throwaway container does it without asking for a password.
     docker run --rm --user 0:0 --entrypoint sh -v "${WORK}:/w" "${PROXY_IMAGE}" -c '
         chown 101:101 /w/ca/out/nginx/server.key && chmod 0400 /w/ca/out/nginx/server.key &&
-        chown 10001:10001 /w/secrets/secret-encryption-key /w/secrets/attribution-key'
+        chown 10001:10001 /w/secrets/secret-encryption-key /w/secrets/attribution-key &&
+        if [ -f /w/secrets/ai-api-key ]; then chown 10001:10001 /w/secrets/ai-api-key; fi'
 }
 
 start_stack() {

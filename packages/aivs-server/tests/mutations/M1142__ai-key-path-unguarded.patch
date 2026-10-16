@@ -1,0 +1,16 @@
+Mutation M1142: the AI overlay starts without a key path, mounting an empty source
+Re-applies: no earlier commit; the AI overlay is new, and this is the rule it would most easily lose
+
+Expect red: packages/aivs-server/tests/unit/test_model_egress.py::test_the_ai_override_refuses_to_render_without_what_it_needs
+
+diff --git a/docker-compose.ai.yml b/docker-compose.ai.yml
+--- a/docker-compose.ai.yml
++++ b/docker-compose.ai.yml
+@@ -37,6 +37,6 @@
+       AIVS_AI_API_KEY_FILE: /run/aivs/ai-api-key
+     volumes:
+       - type: bind
+-        source: ${AIVS_AI_API_KEY_PATH:?set AIVS_AI_API_KEY_PATH to the ABSOLUTE path of the model endpoint's key file}
++        source: ${AIVS_AI_API_KEY_PATH:-}
+         target: /run/aivs/ai-api-key
+         read_only: true

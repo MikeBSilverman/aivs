@@ -1,0 +1,42 @@
+# =============================================================================
+# Model-assisted checks, in shadow: add this file to let a model read
+# submissions for the ISAC's reviewers (runbook section 9.8).
+#
+#   docker compose --env-file deploy/.env \
+#     -f docker-compose.yml -f docker-compose.ai.yml up -d
+#
+# Without it no model is configured and nothing is sent anywhere. With it, the
+# application sends each submission's own content to the model named here, up
+# to the provider's ceiling: AMBER+STRICT for a private_endpoint (a model in
+# the ISAC's own cloud account, behind an OpenAI-compatible gateway), RED for
+# a local model on the ISAC's own hardware. The provider is a subprocessor:
+# name it to your members.
+#
+# From inside the application's container, loopback is the container itself,
+# so a local model is never reached over plain http here: it is on the ISAC's
+# network or the host, over https with its certificate verified (runbook 9.8
+# says how, and how to add a CA of your own). Nothing here opens the network.
+#
+#   AIVS_AI_PROVIDER        private_endpoint or local
+#   AIVS_AI_ENDPOINT_URL    the endpoint's base URL (https; /chat/completions
+#                           is appended)
+#   AIVS_AI_MODEL_ID        the model to ask for, as the endpoint names it
+#   AIVS_AI_API_KEY_PATH    absolute path of a file holding the endpoint's key
+#                           (mode 0600, owned by uid 10001)
+#   AIVS_AI_TLP_CEILING     optional: lower the provider's ceiling
+# =============================================================================
+
+services:
+  app:
+    environment:
+      AIVS_AI_PROVIDER: ${AIVS_AI_PROVIDER:?set AIVS_AI_PROVIDER to private_endpoint or local}
+      AIVS_AI_ENDPOINT_URL: ${AIVS_AI_ENDPOINT_URL:?set AIVS_AI_ENDPOINT_URL to the model endpoint's https base URL}
+      AIVS_AI_MODEL_ID: ${AIVS_AI_MODEL_ID:?set AIVS_AI_MODEL_ID to the model the endpoint should answer with}
+      AIVS_AI_TLP_CEILING: ${AIVS_AI_TLP_CEILING:-}
+      AIVS_AI_HOURLY_CALLS_PER_ORG: ${AIVS_AI_HOURLY_CALLS_PER_ORG:-20}
+      AIVS_AI_API_KEY_FILE: /run/aivs/ai-api-key
+    volumes:
+      - type: bind
+        source: ${AIVS_AI_API_KEY_PATH:?set AIVS_AI_API_KEY_PATH to the ABSOLUTE path of the model endpoint's key file}
+        target: /run/aivs/ai-api-key
+        read_only: true

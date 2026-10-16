@@ -552,7 +552,7 @@ in every authorization predicate.
 | Backup target | Off-host, encrypted, with tested restores. |
 | Outbound HTTPS | For webhook delivery to member endpoints. |
 | Outbound IMAPS (993) | Only with `docker-compose.email-intake.yml`: reading the email-to-draft mailbox the ISAC runs (runbook §9.7). |
-| Outbound to a model | Only with `AIVS_AI_PROVIDER` set (runbook §9.8): https to the ISAC's own cloud model behind an OpenAI-compatible gateway (`private_endpoint`, up to AMBER+STRICT), or to a model on the ISAC's own hardware (`local`, RED allowed: plain http only at loopback, https with the certificate verified on the ISAC's network, never a public address). Off by default; nothing is sent while it is `none`. |
+| Outbound to a model | Only with `docker-compose.ai.yml` (runbook §9.8): https to the ISAC's own cloud model behind an OpenAI-compatible gateway (`private_endpoint`, up to AMBER+STRICT), or to a model on the ISAC's own hardware (`local`, RED allowed: plain http only at loopback, https with the certificate verified on the ISAC's network, never a public address). Off by default; nothing is sent while it is `none`. |
 | Time sync | NTP. Embargo timing and certificate validity both depend on it; the mTLS validity re-check tolerates ±5 minutes of skew and nothing more. Publication stamps and membership edges come from the database host's clock, which must slew, never step backwards. |
 
 ### PKI and secrets

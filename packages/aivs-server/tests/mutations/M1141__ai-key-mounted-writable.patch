@@ -1,0 +1,14 @@
+Mutation M1141: the AI overlay mounts the model key writable
+Re-applies: no earlier commit; the AI overlay is new, and this is the rule it would most easily lose
+
+Expect red: packages/aivs-server/tests/unit/test_model_egress.py::test_the_ai_override_mounts_the_key_as_a_file_and_the_base_stack_names_no_model
+
+diff --git a/docker-compose.ai.yml b/docker-compose.ai.yml
+--- a/docker-compose.ai.yml
++++ b/docker-compose.ai.yml
+@@ -39,4 +39,4 @@
+       - type: bind
+         source: ${AIVS_AI_API_KEY_PATH:?set AIVS_AI_API_KEY_PATH to the ABSOLUTE path of the model endpoint's key file}
+         target: /run/aivs/ai-api-key
+-        read_only: true
++        read_only: false

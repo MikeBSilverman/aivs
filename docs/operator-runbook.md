@@ -1316,6 +1316,38 @@ row records the model and prompt template, so if a model release proves bad
 you can find every read it made. Nothing is read while distribution is
 paused.
 
+**To turn it on in the shipped stack**, write the endpoint's key to a file
+(mode `0600`, owned by uid 10001, as the other key files are), set
+`AIVS_AI_PROVIDER`, `AIVS_AI_ENDPOINT_URL`, `AIVS_AI_MODEL_ID` and
+`AIVS_AI_API_KEY_PATH` (the file's absolute path) in `deploy/.env`, and add
+the overlay:
+
+```bash
+docker compose --env-file deploy/.env -f docker-compose.yml -f docker-compose.ai.yml up -d
+```
+
+Compose refuses to start with any of the four unset, naming it. The overlay
+mounts the key read-only and opens nothing: the application's container
+already reaches the outside through the `backend` network, as webhook
+delivery does.
+
+**A `local` model, from inside a container.** The application's loopback is
+its own container, so plain http to loopback reaches nothing here: in the
+shipped stack a local model is always reached over https with its
+certificate verified. Two ways, both in an override file of your own:
+
+- A model container on the stack's `backend` network, serving https. Use
+  its service name in `AIVS_AI_ENDPOINT_URL`.
+- A model on the host. Add `extra_hosts: ["model-host:host-gateway"]` to the
+  `app` service and use `https://model-host:<port>/v1`. The host-gateway
+  address is private, so it is accepted for `local`; a name resolving to a
+  public address is refused at each connection.
+
+For a certificate from a CA of your own, mount the CA file read-only into
+the `app` service and set `AIVS_AI_CA_FILE` to its path inside the
+container. Neither is done by default, because each opens a path the stack
+does not otherwise have.
+
 A suggestion is a typed value -- a purl, a `vers:` range, a CWE id or a
 remediation category -- pointing at the field it came from, never prose. Use
 it as a hint while reviewing; it has not been evaluated against your own

@@ -1,0 +1,18 @@
+Mutation M1126: a local model is reached at a public address
+Re-applies: no earlier commit; model egress is new in Phase O slice 4, and this is the rule it would most easily lose
+
+Expect red: packages/aivs-server/tests/unit/test_model_egress.py::test_every_resolved_address_is_judged
+Expect red: packages/aivs-server/tests/unit/test_model_egress.py::test_a_name_resolving_somewhere_refused_is_never_connected_to
+
+diff --git a/packages/aivs-server/src/aivs_server/model_egress.py b/packages/aivs-server/src/aivs_server/model_egress.py
+--- a/packages/aivs-server/src/aivs_server/model_egress.py
++++ b/packages/aivs-server/src/aivs_server/model_egress.py
+@@ -108,8 +108,6 @@
+         return None
+     if address.is_loopback:
+         return None
+-    if not address.is_private:
+-        return f"a local model resolved to the public address {address}"
+     if scheme != "https":
+         return f"a local model at {address} is not loopback, so it is reached over https only"
+     return None

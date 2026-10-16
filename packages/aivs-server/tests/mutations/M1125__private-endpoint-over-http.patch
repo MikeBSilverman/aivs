@@ -1,0 +1,18 @@
+Mutation M1125: a private endpoint is reached over plain http
+Re-applies: no earlier commit; model egress is new in Phase O slice 4, and this is the rule it would most easily lose
+
+Expect red: packages/aivs-server/tests/unit/test_model_egress.py::test_a_url_carries_content_only_as_its_kind_allows
+Expect red: packages/aivs-server/tests/unit/test_model_egress.py::test_a_url_its_kind_may_not_use_refuses_to_start
+
+diff --git a/packages/aivs-server/src/aivs_server/model_egress.py b/packages/aivs-server/src/aivs_server/model_egress.py
+--- a/packages/aivs-server/src/aivs_server/model_egress.py
++++ b/packages/aivs-server/src/aivs_server/model_egress.py
+@@ -78,8 +78,6 @@
+         return "the model endpoint carries credentials in its URL; use ai_api_key_file"
+     if parsed.scheme == "https":
+         return None
+-    if kind is AiProvider.PRIVATE_ENDPOINT:
+-        return "a private endpoint is reached over https only"
+     if not _names_loopback(parsed.hostname):
+         return "a local model is reached over plain http only at a loopback address"
+     return None

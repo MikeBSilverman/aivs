@@ -1,0 +1,18 @@
+Mutation M1124: a setting raises a kind's ceiling
+Re-applies: no earlier commit; model egress is new in Phase O slice 4, and this is the rule it would most easily lose
+
+Expect red: packages/aivs-server/tests/unit/test_model_egress.py::test_each_kind_has_its_ceiling_and_a_setting_may_only_lower_it
+Expect red: packages/aivs-server/tests/unit/test_model_egress.py::test_a_ceiling_above_the_kinds_refuses_to_start
+
+diff --git a/packages/aivs-server/src/aivs_server/model_egress.py b/packages/aivs-server/src/aivs_server/model_egress.py
+--- a/packages/aivs-server/src/aivs_server/model_egress.py
++++ b/packages/aivs-server/src/aivs_server/model_egress.py
+@@ -61,7 +61,7 @@
+     ceiling = KIND_CEILING[kind]
+     if lowered_to is None:
+         return ceiling
+-    if not tlp_at_least_as_restrictive(ceiling, lowered_to):
++    if False:
+         msg = f"ai_tlp_ceiling {lowered_to.value} is above what a {kind.value} model may receive"
+         raise ValueError(msg)
+     return lowered_to

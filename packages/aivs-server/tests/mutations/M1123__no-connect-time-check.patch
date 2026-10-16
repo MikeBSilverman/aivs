@@ -1,0 +1,17 @@
+Mutation M1123: the resolved address is not judged at connect time, only the URL at startup
+Re-applies: no earlier commit; model egress is new in Phase O slice 4, and this is the rule it would most easily lose
+
+Expect red: packages/aivs-server/tests/unit/test_model_egress.py::test_a_name_resolving_somewhere_refused_is_never_connected_to
+
+diff --git a/packages/aivs-server/src/aivs_server/services/model_provider.py b/packages/aivs-server/src/aivs_server/services/model_provider.py
+--- a/packages/aivs-server/src/aivs_server/services/model_provider.py
++++ b/packages/aivs-server/src/aivs_server/services/model_provider.py
+@@ -132,7 +132,7 @@
+         except socket.gaierror as exc:
+             raise ModelCallError(DNS_FAILED) from exc
+         addresses = [ipaddress.ip_address(info[4][0]) for info in resolved]
+-        problem = address_problem(self.kind, parsed.scheme, addresses)
++        problem = None
+         if problem is not None:
+             reason = f"address_refused: {problem}"
+             raise ModelCallError(reason)

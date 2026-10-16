@@ -35,12 +35,14 @@ from pydantic import Field, SecretStr, ValidationError, field_validator, model_v
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import make_url
 
+from aivs_schemas.enums import TLP
 from aivs_server.auth.attribution_key import KEY_BYTES as ATTRIBUTION_KEY_BYTES
 from aivs_server.auth.secretbox import (
     DEFAULT_ALGORITHM_NAME,
     algorithm_by_name,
     supported_key_sizes,
 )
+from aivs_server.model_egress import AiProvider, ceiling_for, url_problem
 
 __all__ = ["ConfigurationError", "Settings", "get_settings"]
 
@@ -431,6 +433,32 @@ class Settings(BaseSettings):
     #: An ISAC whose membership is different sets it.
     ssvc_mission_impact: Literal["low", "medium", "high"] = "high"
 
+    # -- Model-assisted checks (services.model_triage, Phase O) --------------
+    #: ``none`` (the default) sends nothing anywhere and changes nothing. A
+    #: ``private_endpoint`` (a model in the ISAC's own cloud account, behind an
+    #: OpenAI-compatible gateway) may receive up to AMBER+STRICT; a ``local``
+    #: model on the ISAC's own hardware may receive RED (Mike, Q33;
+    #: ``model_egress`` holds the rules). The provider is a subprocessor the
+    #: ISAC names to its members. Findings are shown to ISAC reviewers only.
+    ai_provider: AiProvider = AiProvider.NONE
+    ai_endpoint_url: str | None = None
+    #: The model to ask for, as the endpoint names it; recorded on every read.
+    ai_model_id: str | None = Field(default=None, max_length=200)
+    #: Outside dev, read from ``ai_api_key_file``: a credential in the
+    #: environment is shown by ``docker inspect``.
+    ai_api_key: SecretStr | None = None
+    ai_api_key_file: Path | None = None
+    #: A CA to verify the endpoint's certificate with, for a model on the
+    #: ISAC's own network; unset, the system's trust store is used.
+    ai_ca_file: Path | None = None
+    #: Lower than the provider kind's ceiling, never higher.
+    ai_tlp_ceiling: TLP | None = None
+    ai_timeout_seconds: float = Field(default=30.0, gt=0, le=300)
+    #: Model calls one organisation's submissions may cause in an hour; more is
+    #: recorded as skipped, so a member cannot run up the ISAC's model bill.
+    ai_hourly_calls_per_org: int = Field(default=20, ge=1, le=1000)
+    model_triage_interval_seconds: int = Field(default=60, ge=10, le=3600)
+
     # -- Bind address -------------------------------------------------------
     #: Interface the application listens on. The default binds all interfaces
     #: because the container's network namespace is the security boundary --
@@ -627,6 +655,7 @@ class Settings(BaseSettings):
             "attribution_key",
             "smtp_password",
             "email_intake_imap_password",
+            "ai_api_key",
         ):
             path = resolved.get(f"{field}_file")
             if not path:
@@ -665,6 +694,37 @@ class Settings(BaseSettings):
         empty host must read as "no mailbox"."""
         return None if value == "" else value
 
+    @field_validator(
+        "ai_endpoint_url",
+        "ai_model_id",
+        "ai_api_key_file",
+        "ai_ca_file",
+        "ai_tlp_ceiling",
+        mode="before",
+    )
+    @classmethod
+    def _unset_model_is_empty(cls, value: Any) -> Any:
+        """The relay's rule: all optional, and an empty URL must read as "no endpoint"."""
+        return None if value == "" else value
+
+    @model_validator(mode="after")
+    def _model_endpoint_is_usable(self) -> Self:
+        """A model named without its endpoint, or one the content may not travel to.
+
+        Every environment, not only production: the rules are about where
+        content goes, and a laptop's model is reached by the same URL rules.
+        """
+        if self.ai_provider is AiProvider.NONE:
+            return self
+        if self.ai_endpoint_url is None or self.ai_model_id is None:
+            msg = f"ai_provider={self.ai_provider.value} needs ai_endpoint_url and ai_model_id"
+            raise ValueError(msg)
+        problem = url_problem(self.ai_provider, self.ai_endpoint_url)
+        if problem is not None:
+            raise ValueError(problem)
+        ceiling_for(self.ai_provider, self.ai_tlp_ceiling)
+        return self
+
     @field_validator("issuing_ca_certificate_file")
     @classmethod
     def _issuing_ca_must_load(cls, path: Path | None) -> Path | None:
@@ -699,6 +759,7 @@ class Settings(BaseSettings):
             *self._sso_violations(),
             *self._smtp_violations(),
             *self._email_intake_violations(),
+            *self._model_violations(),
         ]
         if violations:
             msg = (
@@ -786,6 +847,12 @@ class Settings(BaseSettings):
             if value is None
         )
         return violations
+
+    def _model_violations(self) -> list[str]:
+        """The model's key in the environment rather than a file."""
+        if self.ai_api_key is not None and self.ai_api_key_file is None:
+            return ["ai_api_key (read it from ai_api_key_file, not the environment)"]
+        return []
 
     def _output_violations(self) -> list[str]:
         """What the service tells the world: its URL, its logs, its page sizes."""

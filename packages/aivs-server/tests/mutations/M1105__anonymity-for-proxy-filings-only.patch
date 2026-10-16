@@ -1,0 +1,17 @@
+Mutation M1105: distribution keeps an anonymous member's attribution unless the ISAC filed on its behalf
+Re-applies: no earlier commit; the Phase P exit sweep's proof that it reads what distribution writes, with anonymity kept for proxy filings alone
+
+Expect red: packages/aivs-server/tests/authz_matrix/test_no_filer_named.py::test_no_member_route_names_the_filer_of_anonymous_content
+
+diff --git a/packages/aivs-server/src/aivs_server/services/distribution.py b/packages/aivs-server/src/aivs_server/services/distribution.py
+--- a/packages/aivs-server/src/aivs_server/services/distribution.py
++++ b/packages/aivs-server/src/aivs_server/services/distribution.py
+@@ -171,7 +171,7 @@
+     Reassigned rather than deleted: an object with no attribution at all is more
+     suspicious to a consumer than one attributed to whoever vouched for it.
+     """
+-    if submission.distribute_anonymously:
++    if submission.distribute_anonymously and submission.filed_on_behalf:
+         # Checked again here, not only at ingest. Distribution is the last point
+         # at which the anonymity promise can still be kept, and the flag can be
+         # set by a write that carried no bundle to inspect. Rewriting

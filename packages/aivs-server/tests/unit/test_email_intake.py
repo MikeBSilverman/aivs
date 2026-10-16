@@ -167,6 +167,20 @@ async def test_a_registered_persons_message_becomes_their_organisations_draft_an
     assert accepted.details["reason"] is None
 
 
+@pytest.mark.requirement("SF-85")
+async def test_an_emailed_draft_is_anonymous_as_every_members_filing_is(
+    session, attribution_key, alice
+):
+    """The email door has no way to ask for credit, so it takes the member's
+    default: anonymous, as the API with the field left out does (Phase P exit)."""
+    assert await receive(session, attribution_key, raw_message()) == "accepted"
+
+    [draft] = await submissions(session)
+    assert draft.distribute_anonymously is True
+    [made] = await audit_rows(session, AuditAction.SUBMISSION_CREATED)
+    assert made.details["anonymous"] is True
+
+
 @pytest.mark.requirement("SF-93")
 @pytest.mark.parametrize(
     ("stamps", "why"),

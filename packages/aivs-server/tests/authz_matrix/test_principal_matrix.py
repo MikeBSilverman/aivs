@@ -29,7 +29,7 @@ from aivs_server.main import create_app
 from tests.authz_matrix.principals import PLANNED_PRINCIPALS, Principal
 from tests.authz_matrix.routes import ROUTES, SURFACE_FLOORS, RouteCase, RouteClass
 from tests.authz_matrix.test_authz_matrix import walk_routes
-from tests.authz_matrix.world import Factories, build_world
+from tests.authz_matrix.world import build_world
 from tests.sso_support import FakeIdp, sso_settings
 
 pytestmark = [pytest.mark.db, pytest.mark.authz]
@@ -344,39 +344,6 @@ def test_planned_principals_are_not_faked():
 # ---------------------------------------------------------------------------
 # The matrix
 # ---------------------------------------------------------------------------
-@pytest.fixture
-def factories(
-    client,
-    session,
-    settings,
-    secret_box,
-    ca,
-    make_org,
-    make_cert,
-    make_circle,
-    join_circle,
-    make_collection,
-    make_operator,
-    monkeypatch,
-) -> Factories:
-    # Webhook registration resolves the hostname; the matrix is about who may
-    # register one, not about DNS. The resolver itself is tested in test_webhooks.
-    monkeypatch.setattr("aivs_server.api.admin.resolve_delivery_target", lambda *_a, **_k: None)
-    return Factories(
-        client,
-        session,
-        settings,
-        secret_box,
-        ca,
-        make_org,
-        make_cert,
-        make_circle,
-        join_circle,
-        make_collection,
-        make_operator,
-    )
-
-
 def _in_safe_order(routes: tuple[RouteCase, ...]) -> list[RouteCase]:
     """Declaration order, except signing out last: it ends the session.
 

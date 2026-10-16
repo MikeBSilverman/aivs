@@ -13,7 +13,6 @@ material because it never receives any.
 from __future__ import annotations
 
 import datetime as dt
-import secrets
 import uuid
 from typing import Annotated
 
@@ -40,7 +39,6 @@ from aivs_server.audit.log import AuditAction, record
 from aivs_server.auth.context import AuthContext
 from aivs_server.auth.deps import AuthenticatedContext, SessionDep, SettingsDep
 from aivs_server.auth.policy import (
-    PolicyDeniedError,
     can_administer_circle,
     can_manage_org,
     can_manage_own_webhooks,
@@ -57,7 +55,7 @@ from aivs_server.auth.policy import (
     is_isac_staff,
     require,
 )
-from aivs_server.auth.secretbox import SecretBox, SecretPurpose
+from aivs_server.auth.secretbox import SecretBox
 from aivs_server.db.clock import database_now
 from aivs_server.db.models import (
     Circle,
@@ -66,7 +64,6 @@ from aivs_server.db.models import (
     TaxiiCollection,
     Webhook,
 )
-from aivs_server.db.org_lock import org_still_active
 from aivs_server.notify.webhooks import WebhookRejectedError, resolve_delivery_target
 from aivs_server.services.audit_stream_mode import AuditStreamMode, change_audit_stream_mode
 from aivs_server.services.certificates import CertificateRegistrationError
@@ -81,7 +78,13 @@ from aivs_server.services.circles import (
 )
 from aivs_server.services.enrolment import enrolment_problem
 from aivs_server.services.instance import pause_distribution, resume_distribution
-from aivs_server.services.member_staff_writes import quarantine_organisation, revoke_own_certificate
+from aivs_server.services.member_staff_reads import own_webhooks
+from aivs_server.services.member_staff_writes import (
+    delete_own_webhook,
+    quarantine_organisation,
+    register_own_webhook,
+    revoke_own_certificate,
+)
 from aivs_server.services.offboarding import (
     OffboardingError,
     lift_legal_hold,
@@ -528,35 +531,16 @@ async def register_webhook(
             detail=f"That URL cannot be used as a webhook target ({exc.reason}).",
         ) from exc
 
-    if not await org_still_active(session, ctx.org_id):
-        # Authenticated while active; offboarded or cut off since.
-        denial = "webhook_org_not_active"
-        raise PolicyDeniedError(denial)
-    secret = secrets.token_urlsafe(32)
-    # The identifier is generated here rather than left to the column default,
-    # because the seal is bound to it: a column default is applied at INSERT,
-    # so `webhook.id` would still be None at the point the secret is sealed.
-    webhook_id = uuid.uuid4()
-    webhook = Webhook(
-        id=webhook_id,
-        org_id=ctx.org_id,
-        url=payload.url,
-        hmac_secret_encrypted=SecretBox.from_settings(settings).seal(
-            secret, purpose=SecretPurpose.WEBHOOK_HMAC, subject=webhook_id
-        ),
-        events=payload.events,
-        is_active=True,
-    )
-    session.add(webhook)
-    await record(
+    # On the staff login (``member_staff_writes``): the member login holds
+    # nothing on ``webhooks``, so other firms' webhooks are not its to read.
+    webhook, secret = await register_own_webhook(
         session,
-        action=AuditAction.WEBHOOK_CREATED,
-        ctx=ctx,
-        resource_type="webhook",
-        details={"events": payload.events or ["*"]},
+        ctx,
+        url=payload.url,
+        events=payload.events,
+        secret_box=SecretBox.from_settings(settings),
     )
     await session.commit()
-    await session.refresh(webhook)
 
     return WebhookCreated(**WebhookOut.model_validate(webhook).model_dump(), signing_secret=secret)
 
@@ -564,15 +548,7 @@ async def register_webhook(
 @router.get("/webhooks", response_model=list[WebhookOut])
 async def list_webhooks(ctx: AuthenticatedContext, session: SessionDep) -> list[Webhook]:
     """List the caller's own webhooks. Never another organisation's."""
-    return list(
-        (
-            await session.execute(
-                select(Webhook).where(Webhook.org_id == ctx.org_id).order_by(Webhook.created_at)
-            )
-        )
-        .scalars()
-        .all()
-    )
+    return await own_webhooks(session, ctx)
 
 
 @router.delete("/webhooks/{webhook_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -586,18 +562,8 @@ async def delete_webhook(
     comes first and does not depend on the id, so it is no oracle either.
     """
     require(can_manage_own_webhooks(ctx), "webhook_delete")
-    webhook = await session.get(Webhook, webhook_id)
-    if webhook is None or webhook.org_id != ctx.org_id:
+    if not await delete_own_webhook(session, ctx, webhook_id):
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Webhook not found")
-
-    await session.delete(webhook)
-    await record(
-        session,
-        action=AuditAction.WEBHOOK_DELETED,
-        ctx=ctx,
-        resource_type="webhook",
-        resource_id=str(webhook_id),
-    )
     await session.commit()
 
 

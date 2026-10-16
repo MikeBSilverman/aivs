@@ -1,0 +1,16 @@
+Mutation M1098: a member lists every firm's webhooks
+Re-applies: a staff read or write that lost its organisation key (slice 3g)
+
+Expect red: packages/aivs-server/tests/unit/test_webhooks.py::TestWebhookRegistration::test_a_member_sees_only_their_own_webhooks
+
+diff --git a/packages/aivs-server/src/aivs_server/services/member_staff_reads.py b/packages/aivs-server/src/aivs_server/services/member_staff_reads.py
+--- a/packages/aivs-server/src/aivs_server/services/member_staff_reads.py
++++ b/packages/aivs-server/src/aivs_server/services/member_staff_reads.py
+@@ -364,6 +364,6 @@
+ 
+ async def own_webhooks(session: AsyncSession, ctx: AuthContext) -> list[Webhook]:
+     """The caller's organisation's webhooks, oldest first. Never another's (slice 3g)."""
+-    query = select(Webhook).where(Webhook.org_id == ctx.org_id).order_by(Webhook.created_at)
++    query = select(Webhook).order_by(Webhook.created_at)
+     async with _reader(ctx) as staff:
+         return list((await (staff or session).scalars(query)).all())

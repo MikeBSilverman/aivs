@@ -85,6 +85,7 @@ __all__ = [
     "own_posture_on",
     "own_postures_of",
     "own_retrievals",
+    "own_webhooks",
     "receipt_page",
     "submission_history",
     "taxii_status_of",
@@ -359,3 +360,10 @@ async def own_actioned_count(
     """How many of ``stix_ids`` the caller's organisation holds a posture in ``statuses`` on."""
     async with _reader(ctx) as staff:
         return await own_posture_count(staff or session, ctx, stix_ids, statuses)
+
+
+async def own_webhooks(session: AsyncSession, ctx: AuthContext) -> list[Webhook]:
+    """The caller's organisation's webhooks, oldest first. Never another's (slice 3g)."""
+    query = select(Webhook).where(Webhook.org_id == ctx.org_id).order_by(Webhook.created_at)
+    async with _reader(ctx) as staff:
+        return list((await (staff or session).scalars(query)).all())

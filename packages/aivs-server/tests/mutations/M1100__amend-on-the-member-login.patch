@@ -1,0 +1,17 @@
+Mutation M1100: a member's amendment is written on the member login
+Re-applies: the write on the request's session, before Phase P slice 3g
+
+Expect red: packages/aivs-server/tests/unit/test_submission_workflow.py::test_amending_the_flag_and_the_bundle_together_still_checks
+
+diff --git a/packages/aivs-server/src/aivs_server/services/member_staff_writes.py b/packages/aivs-server/src/aivs_server/services/member_staff_writes.py
+--- a/packages/aivs-server/src/aivs_server/services/member_staff_writes.py
++++ b/packages/aivs-server/src/aivs_server/services/member_staff_writes.py
+@@ -318,7 +318,7 @@
+         submission = await _filing_locked(writer, ctx, submission_id, key)
+         if submission is None:
+             return None
+-        await update_submission(writer, ctx, submission, changes=changes, key=key)
++        await update_submission(session, ctx, submission, changes=changes, key=key)
+         await writer.flush()
+         await writer.refresh(submission)
+         return submission

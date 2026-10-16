@@ -1,0 +1,17 @@
+Mutation M1104: creating a submission deletes its objects first, as replacing a draft does
+Re-applies: create_submission calling replace_submission_objects, before Phase P slice 3g
+
+Expect red: packages/aivs-server/tests/unit/test_submission_workflow.py::test_another_member_cannot_see_a_submission
+
+diff --git a/packages/aivs-server/src/aivs_server/services/submissions.py b/packages/aivs-server/src/aivs_server/services/submissions.py
+--- a/packages/aivs-server/src/aivs_server/services/submissions.py
++++ b/packages/aivs-server/src/aivs_server/services/submissions.py
+@@ -774,7 +774,7 @@
+     filing = _filing_record(ctx, filed_for)
+     await record_filing(session, key, submission, filing)
+ 
+-    object_count = await store_new_submission_objects(
++    object_count = await replace_submission_objects(
+         session, submission, bundle, key=key, filer=filing.org_id
+     )
+     # An analyst filing for a member is ISAC staff, who see everything; the

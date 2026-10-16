@@ -52,6 +52,7 @@ from aivs_server.auth.policy import (
     can_view_submission,
     is_isac_editor,
     require,
+    uses_staff_database,
 )
 from aivs_server.db.clock import database_now
 from aivs_server.db.models import (
@@ -72,11 +73,14 @@ from aivs_server.services.attribution import (
     submitter_of,
     submitter_shown_to,
 )
-from aivs_server.services.contributions import submit_submission
 from aivs_server.services.distribution import DistributionError, distribute_submission
 from aivs_server.services.embargo import EmbargoError, extend_embargo, release_embargo_now
 from aivs_server.services.member_staff_reads import first_pass_of, submission_history
-from aivs_server.services.member_staff_writes import publish_own_post_moderated
+from aivs_server.services.member_staff_writes import (
+    submit_own_submission,
+    transition_own_submission,
+    update_own_submission,
+)
 from aivs_server.services.revocation import revoke_contribution
 from aivs_server.services.submissions import (
     STORAGE_ERRORS,
@@ -84,7 +88,6 @@ from aivs_server.services.submissions import (
     apply_transition,
     create_submission,
     load_submission,
-    update_submission,
 )
 from aivs_server.services.triage import shown_findings
 
@@ -125,6 +128,11 @@ async def _require_visible_submission(
 
     ``for_update`` must be set by every route that changes the submission; see
     ``load_submission`` for why an unlocked read-modify-write loses updates.
+    The editor-only routes lock only on the staff login (``uses_staff_database``):
+    the member login updates no submission (slice 3g), so it may take no row
+    lock on one either, and a member there is refused by policy before anything
+    changes. A member's own changes lock on the staff session that writes them
+    (``member_staff_writes``).
     """
     submission = await load_submission(session, submission_id, for_update=for_update)
     if submission is None or not can_view_submission(
@@ -285,12 +293,11 @@ async def amend(
     key: AttributionKeyDep,
 ) -> SubmissionOut:
     """Amend a draft. Refused once the submission has left the submitter."""
-    submission = await _require_visible_submission(
-        session, ctx, submission_id, for_update=True, key=key
-    )
+    # On the staff login for a member (``member_staff_writes``): the member
+    # login updates no submission and deletes no object.
     try:
-        await update_submission(
-            session, ctx, submission, changes=payload.model_dump(exclude_none=True), key=key
+        submission = await update_own_submission(
+            session, ctx, submission_id, changes=payload.model_dump(exclude_none=True), key=key
         )
         await session.commit()
     except _CLIENT_ERRORS as exc:
@@ -300,8 +307,8 @@ async def amend(
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST, detail="Submission content rejected by storage"
         ) from exc
-
-    await session.refresh(submission)
+    if submission is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Submission not found")
     return await present_submission(session, submission, ctx, key)
 
 
@@ -333,15 +340,17 @@ async def _transition(
     reason: str | None,
     key: AttributionKey,
 ) -> Submission:
-    submission = await _require_visible_submission(
-        session, ctx, submission_id, for_update=True, key=key
-    )
+    # On the staff login for a member (``member_staff_writes``), which takes
+    # the row lock itself: the member login updates no submission.
     try:
-        await apply_transition(session, ctx, submission, target, reason=reason, key=key)
+        submission = await transition_own_submission(
+            session, ctx, submission_id, target, reason=reason, key=key
+        )
         await session.commit()
     except _CLIENT_ERRORS as exc:
         raise await _refused(ctx, submission_id, target.value, exc) from exc
-    await session.refresh(submission)
+    if submission is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Submission not found")
     return submission
 
 
@@ -359,25 +368,22 @@ async def submit(
     A short contribution on public content in a circle an editor opened to
     post-moderation is published at once instead (``services.contributions``).
     """
-    submission = await _require_visible_submission(
-        session, ctx, submission_id, for_update=True, key=key
-    )
+    # One transaction on the staff login for a member (``member_staff_writes``):
+    # the submit, and its publication if a post-moderated circle takes it.
     try:
-        await submit_submission(session, ctx, submission, reason=payload.reason, key=key)
+        submission = await submit_own_submission(
+            session,
+            ctx,
+            submission_id,
+            reason=payload.reason,
+            hourly_limit=settings.contribution_hourly_limit,
+            key=key,
+        )
         await session.commit()
     except _CLIENT_ERRORS as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-    # A transaction of its own, after the submit's (``member_staff_writes``):
-    # the submit stands whatever this decides, and the response says where
-    # the submission now is -- published, waiting for review, or returned.
-    try:
-        await publish_own_post_moderated(
-            session, ctx, submission_id, hourly_limit=settings.contribution_hourly_limit, key=key
-        )
-        await session.commit()
-    except _CLIENT_ERRORS:
-        await session.rollback()
-    await session.refresh(submission)
+    if submission is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Submission not found")
     return await present_submission(session, submission, ctx, key)
 
 
@@ -398,7 +404,7 @@ async def validate(
     the AI gate) are checked here and answer 409 with the reason.
     """
     submission = await _require_visible_submission(
-        session, ctx, submission_id, for_update=True, key=key
+        session, ctx, submission_id, for_update=uses_staff_database(ctx), key=key
     )
     try:
         await apply_transition(
@@ -451,7 +457,7 @@ async def distribute(
     the future produces an embargo that holds without any scheduler running.
     """
     submission = await _require_visible_submission(
-        session, ctx, submission_id, for_update=True, key=key
+        session, ctx, submission_id, for_update=uses_staff_database(ctx), key=key
     )
 
     require(is_isac_editor(ctx), "distribute_requires_isac_editor")
@@ -505,7 +511,7 @@ async def release_embargo(
     wild, waiting for a timer set days ago is the wrong answer.
     """
     submission = await _require_visible_submission(
-        session, ctx, submission_id, for_update=True, key=key
+        session, ctx, submission_id, for_update=uses_staff_database(ctx), key=key
     )
     require(can_change_embargo(ctx), "embargo_release_requires_isac_editor")
 
@@ -549,7 +555,7 @@ async def extend_embargo_endpoint(
     list it carries is ignored, since extension does not change who receives.
     """
     submission = await _require_visible_submission(
-        session, ctx, submission_id, for_update=True, key=key
+        session, ctx, submission_id, for_update=uses_staff_database(ctx), key=key
     )
     require(can_change_embargo(ctx), "embargo_extend_requires_isac_editor")
 
@@ -589,7 +595,7 @@ async def revoke(
     (``services.revocation``); nothing they already hold is edited in place.
     """
     submission = await _require_visible_submission(
-        session, ctx, submission_id, for_update=True, key=key
+        session, ctx, submission_id, for_update=uses_staff_database(ctx), key=key
     )
     try:
         result = await revoke_contribution(session, ctx, submission, key=key, reason=payload.reason)

@@ -6,10 +6,10 @@ Expect red: packages/aivs-server/tests/unit/test_post_moderation.py::test_a_note
 diff --git a/packages/aivs-server/src/aivs_server/services/member_staff_writes.py b/packages/aivs-server/src/aivs_server/services/member_staff_writes.py
 --- a/packages/aivs-server/src/aivs_server/services/member_staff_writes.py
 +++ b/packages/aivs-server/src/aivs_server/services/member_staff_writes.py
-@@ -256,7 +256,7 @@
-         ):
-             return False
-         return await publish_if_post_moderated(
+@@ -365,7 +365,7 @@
+             return None
+         await submit_submission(writer, ctx, submission, reason=reason, key=key)
+         await publish_if_post_moderated(
 -            writer,
 +            session,
              ctx,

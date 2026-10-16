@@ -1,0 +1,18 @@
+Mutation M1096: the member login keeps DELETE on stix_objects
+Re-applies: MEMBER_GRANTS before Phase P slice 3g (R34)
+
+Expect red: packages/aivs-server/tests/migrations/test_member_login_grants.py::test_every_table_is_classified_and_granted_as_classified
+Expect red: packages/aivs-server/tests/migrations/test_member_login_grants.py::test_the_member_login_is_refused_what_its_grants_withhold[object-deletion]
+
+diff --git a/packages/aivs-server/src/aivs_server/db/grants.py b/packages/aivs-server/src/aivs_server/db/grants.py
+--- a/packages/aivs-server/src/aivs_server/db/grants.py
++++ b/packages/aivs-server/src/aivs_server/db/grants.py
+@@ -125,7 +125,7 @@
+         # only distribution and validation rewrite it, both staff side since
+         # slice 3f, and with it SQL on the member path could rewrite any
+         # distributed object's content.
+-        "public.stix_objects": TableGrant(("SELECT", "INSERT")),
++        "public.stix_objects": TableGrant(("SELECT", "INSERT", "DELETE")),
+         # Retrievals are recorded on the member path; a member's own receipts
+         # are read, and its assertions made, staff side (slice 3e: R26).
+         "public.acknowledgments": _WRITE_ONLY,

@@ -215,6 +215,24 @@ async def test_another_member_cannot_see_a_submission(client, member):
     assert response.status_code == 404, "reported absent, not forbidden"
 
 
+@pytest.mark.requirement("SF-91")
+async def test_a_peer_cannot_amend_submit_or_withdraw_a_members_draft(client, member):
+    """Each is written staff side, keyed on the caller's own filing (slice 3g): a
+    peer is told there is no such submission, as when it asks to read one."""
+    _org, pem = await member("meridian-global")
+    created = await create_draft(client, pem)
+    _other, other_pem = await member("atlantic-clearing")
+    peer = proxy_headers(other_pem)
+
+    amended = await client.patch(f"{API}/{created['id']}", json={"title": "A peer's"}, headers=peer)
+    submitted = await client.post(f"{API}/{created['id']}/submit", json={}, headers=peer)
+    withdrawn = await client.post(f"{API}/{created['id']}/withdraw", json={}, headers=peer)
+
+    assert (amended.status_code, submitted.status_code, withdrawn.status_code) == (404, 404, 404)
+    own = (await client.get(f"{API}/{created['id']}", headers=proxy_headers(pem))).json()
+    assert (own["state"], own["title"]) == ("draft", created["title"])
+
+
 async def test_the_isac_sees_every_submission(client, member, isac):
     _org, pem = await member()
     await create_draft(client, pem)

@@ -1,0 +1,17 @@
+Mutation M1101: a TAXII inbox envelope is filed on the member login
+Re-applies: the write on the request's session, before Phase P slice 3g
+
+Expect red: packages/aivs-server/tests/unit/test_taxii_inbox.py::test_a_post_lands_as_a_submitted_system_submission_not_a_distributed_one
+
+diff --git a/packages/aivs-server/src/aivs_server/services/member_staff_writes.py b/packages/aivs-server/src/aivs_server/services/member_staff_writes.py
+--- a/packages/aivs-server/src/aivs_server/services/member_staff_writes.py
++++ b/packages/aivs-server/src/aivs_server/services/member_staff_writes.py
+@@ -408,7 +408,7 @@
+     """
+     async with _writer(session, ctx) as writer:
+         status = await receive_envelope(
+-            writer,
++            session,
+             ctx,
+             collection=collection,
+             circle=circle,

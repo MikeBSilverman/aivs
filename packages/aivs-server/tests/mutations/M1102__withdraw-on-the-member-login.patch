@@ -1,0 +1,21 @@
+Mutation M1102: a member's withdrawal is written on the member login
+Re-applies: the filing loaded, locked and changed on the request's session, before Phase P slice 3g
+
+Expect red: packages/aivs-server/tests/unit/test_proxy_filing.py::test_the_member_withdraws_a_filing_with_its_ordinary_stop_button
+
+diff --git a/packages/aivs-server/src/aivs_server/services/member_staff_writes.py b/packages/aivs-server/src/aivs_server/services/member_staff_writes.py
+--- a/packages/aivs-server/src/aivs_server/services/member_staff_writes.py
++++ b/packages/aivs-server/src/aivs_server/services/member_staff_writes.py
+@@ -335,10 +335,10 @@
+ ) -> Submission | None:
+     """Move a submission to ``target`` (``submissions.apply_transition``, which holds the rules)."""
+     async with _writer(session, ctx) as writer:
+-        submission = await _filing_locked(writer, ctx, submission_id, key)
++        submission = await _filing_locked(session, ctx, submission_id, key)
+         if submission is None:
+             return None
+-        await apply_transition(writer, ctx, submission, target, reason=reason, key=key)
++        await apply_transition(session, ctx, submission, target, reason=reason, key=key)
+         await writer.flush()
+         await writer.refresh(submission)
+         return submission

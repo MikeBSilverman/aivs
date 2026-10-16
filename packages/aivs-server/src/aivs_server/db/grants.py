@@ -113,46 +113,25 @@ MEMBER_GRANTS: Final[Mapping[str, TableGrant]] = MappingProxyType(
         "public.submission_transitions": _WRITE_ONLY,
         "public.taxii_status": _WRITE_ONLY,
         "public.webhook_deliveries": _WRITE_ONLY,
-        # The keyed owner columns (SF-90) carry no deny trigger: without UPDATE
-        # withheld from them, SQL on the member path could copy one row's tag or
-        # token onto another and take over its ownership. The editor's columns
-        # are withheld too: a member login able to clear ``proxy_confirm_by``
-        # or ``filed_on_behalf`` would make a filing in its name distributable
-        # with no one at the firm having confirmed it, and assignment and
-        # priority are the ISAC's to set.
-        "public.submissions": TableGrant(
-            ("SELECT", "INSERT"),
-            update_columns=(
-                "state",
-                "tlp",
-                "discovery_scope",
-                "lane",
-                "source",
-                "proxy_confirmed_at",
-                "distribute_anonymously",
-                "title",
-                "summary",
-                "distributed_at",
-                "updated_at",
-            ),
-        ),
-        # Replacing a draft's bundle deletes and inserts. No UPDATE of ``raw``:
+        # Filed on the member path, and changed only staff side, keyed on the
+        # caller's own filing (member_staff_writes, slice 3g). With UPDATE on
+        # any column, SQL on the member path could withdraw a peer's filing,
+        # lower its TLP before review (R34), or copy one row's owner tag onto
+        # another (SF-90: the keyed columns carry no deny trigger).
+        "public.submissions": TableGrant(("SELECT", "INSERT")),
+        # A new filing's objects are inserted; replacing a draft's bundle
+        # deletes them, staff side (slice 3g: with DELETE, SQL on the member
+        # path could delete any firm's undistributed objects). No UPDATE of ``raw``:
         # only distribution and validation rewrite it, both staff side since
         # slice 3f, and with it SQL on the member path could rewrite any
         # distributed object's content.
-        "public.stix_objects": TableGrant(("SELECT", "INSERT", "DELETE")),
+        "public.stix_objects": TableGrant(("SELECT", "INSERT")),
         # Retrievals are recorded on the member path; a member's own receipts
         # are read, and its assertions made, staff side (slice 3e: R26).
         "public.acknowledgments": _WRITE_ONLY,
         # Read for visibility; written only staff side (slice 3f: R33), or SQL
         # on the member path could publish any object into any circle.
         "public.distributions": _READ,
-        # Queuing a notification row-locks the webhooks it reads
-        # (``db.webhook_lock``), and Postgres allows a row lock only with UPDATE
-        # on some column: ``updated_at``, which changes nothing anyone relies on.
-        "public.webhooks": TableGrant(
-            ("SELECT", "INSERT", "DELETE"), update_columns=("updated_at",)
-        ),
         "public.circle_memberships": _READ,
         "public.circles": _READ,
         "public.embargoes": _READ,

@@ -57,6 +57,9 @@ CLASSIFICATION: Final[dict[str, frozenset[str]]] = {
     "public.operators": _NOTHING,
     "public.org_postures": _NOTHING,
     "public.pending_notices": _NOTHING,
+    # A member's own webhooks are read and written staff side (slice 3g); the
+    # member login read every firm's delivery URLs.
+    "public.webhooks": _NOTHING,
     "public.portal_sessions": _NOTHING,
     "public.submission_milestones": _NOTHING,
     "public.submission_triage": _NOTHING,
@@ -69,34 +72,16 @@ CLASSIFICATION: Final[dict[str, frozenset[str]]] = {
     "public.instance_controls": _READ,
     "public.organizations": _READ,
     "public.sector_events": _READ,
-    "public.stix_objects": frozenset({"SELECT", "INSERT", "DELETE"}),
+    "public.stix_objects": frozenset({"SELECT", "INSERT"}),
     "public.submissions": frozenset({"SELECT", "INSERT"}),
     "public.taxii_collections": _READ,
-    "public.webhooks": frozenset({"SELECT", "INSERT", "DELETE"}),
 }
 
 #: The columns the member login may UPDATE; every other column of every table
 #: it may not. No table is updatable as a whole.
 UPDATABLE: Final[dict[str, frozenset[str]]] = {
-    "public.submissions": frozenset(
-        {
-            "state",
-            "tlp",
-            "discovery_scope",
-            "lane",
-            "source",
-            "proxy_confirmed_at",
-            "distribute_anonymously",
-            "title",
-            "summary",
-            "distributed_at",
-            "updated_at",
-        }
-    ),
     # Status and settings are written staff side (member_staff_writes).
     "public.organizations": frozenset({"updated_at"}),
-    # A row lock needs UPDATE on some column; this one changes nothing.
-    "public.webhooks": frozenset({"updated_at"}),
 }
 
 _TABLE_PRIVILEGES: Final = ("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES")
@@ -228,7 +213,7 @@ def _as_member(logins: Logins, statement: str) -> None:
         ),
         pytest.param(
             "UPDATE submissions SET owner_tag = owner_tag",
-            "UPDATE submissions SET title = title",
+            "SELECT title FROM submissions",
             id="owner-tag",
         ),
         pytest.param(
@@ -249,7 +234,7 @@ def _as_member(logins: Logins, statement: str) -> None:
         ),
         pytest.param(
             "UPDATE submissions SET proxy_confirm_by = NULL",
-            "UPDATE submissions SET proxy_confirmed_at = proxy_confirmed_at",
+            "SELECT proxy_confirm_by FROM submissions",
             id="proxy-window",
         ),
         pytest.param(
@@ -281,6 +266,21 @@ def _as_member(logins: Logins, statement: str) -> None:
             "UPDATE client_certificates SET status = 'active' WHERE status = 'revoked'",
             "SELECT status FROM client_certificates",
             id="certificate-revival",
+        ),
+        pytest.param(
+            "UPDATE submissions SET tlp = 'clear'",
+            "SELECT tlp FROM submissions",
+            id="filing-rewrite",
+        ),
+        pytest.param(
+            "DELETE FROM stix_objects WHERE false",
+            "SELECT id FROM stix_objects",
+            id="object-deletion",
+        ),
+        pytest.param(
+            "SELECT url FROM webhooks",
+            "SELECT id FROM organizations",
+            id="webhook-urls",
         ),
         pytest.param(
             "SELECT password_hash FROM operators",

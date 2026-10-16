@@ -24,7 +24,6 @@ from fastapi import APIRouter, Form, HTTPException, Request, Response, status
 from fastapi.responses import HTMLResponse
 from pydantic import ValidationError
 from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from aivs_schemas.enums import TLP, CertStatus, OrgStatus, ReadingDepth, SubmissionState
 from aivs_schemas.models import SubmissionCreate
@@ -52,6 +51,7 @@ from aivs_server.auth.policy import (
     require,
     tlp_ceiling,
     tlp_ceiling_clause,
+    uses_staff_database,
 )
 from aivs_server.auth.secretbox import SecretBox
 from aivs_server.auth.sessions import SessionRejectedError
@@ -86,7 +86,6 @@ from aivs_server.portal.shared import (
 from aivs_server.portal.submitter_view import lint_hits, telemetry_rows
 from aivs_server.services.attribution import is_submitted_by, submissions_filed_by
 from aivs_server.services.bulk_validation import GroupMemberNotFoundError, validate_group
-from aivs_server.services.contributions import NEEDS_AN_EDITOR, submit_submission
 from aivs_server.services.distribution import DistributionError, distribute_submission
 from aivs_server.services.isac_drafts import WaitingDraft, waiting_isac_drafts
 from aivs_server.services.member_staff_reads import (
@@ -94,9 +93,13 @@ from aivs_server.services.member_staff_reads import (
     own_default_depth,
     submission_history,
 )
-from aivs_server.services.member_staff_writes import publish_own_post_moderated
+from aivs_server.services.member_staff_writes import (
+    confirm_own_proxy_filing,
+    submit_own_submission,
+    transition_own_submission,
+)
 from aivs_server.services.provenance import consequential_changes
-from aivs_server.services.proxy_filing import awaiting_confirmation, confirm_proxy_filing
+from aivs_server.services.proxy_filing import awaiting_confirmation
 from aivs_server.services.publication import PublicationPausedError
 from aivs_server.services.review_queue import ReviewGroup, queued_for_review
 from aivs_server.services.revocation import revocable, revoke_contribution
@@ -872,7 +875,10 @@ async def perform_action(
     ctx, csrf_hash = await current_session(request, settings)
     require_csrf(csrf_token, csrf_hash)
 
-    submission = await load_submission(session, submission_id, for_update=True)
+    # Locked here only on the staff login. A member's verbs take the lock on
+    # the staff session that writes them (``member_staff_writes``): locking
+    # the row here too would leave that transaction waiting on this one.
+    submission = await load_submission(session, submission_id, for_update=uses_staff_database(ctx))
     if submission is None or not can_view_submission(
         ctx, submission, owner_is_caller=is_submitted_by(key, submission, ctx.org_id)
     ):
@@ -912,10 +918,8 @@ async def perform_action(
         # circle", "the hold-until time could not be read") are ordinary operator
         # mistakes raised as SubmissionError, and outside the block they reached
         # the catch-all handler and became a 500.
-        await _perform_verb(verb, targets, request, session, ctx, submission, key=key)
+        await _perform_verb(verb, targets, request, settings, session, ctx, submission, key=key)
         await session.commit()
-        if verb == "submit":
-            await _publish_if_post_moderated(response, settings, session, ctx, submission_id, key)
     except (SubmissionError, DistributionError, PublicationPausedError, ValueError) as exc:
         await session.rollback()
         # The same refusal the API records (api.submissions._refused), through
@@ -934,54 +938,38 @@ async def perform_action(
     return response
 
 
-async def _publish_if_post_moderated(
-    response: Response,
-    settings: Settings,
-    session: AsyncSession,
-    ctx: AuthContext,
-    submission_id: uuid.UUID,
-    key: AttributionKey,
-) -> None:
-    """After a submit has committed, publish it if a post-moderated circle takes it.
-
-    A transaction of its own (``member_staff_writes``). The submit happened
-    whatever this decides, so a refusal here is not the submit refused: the
-    person is told it waits for an editor, and the page shows where it is.
-    """
-    try:
-        await publish_own_post_moderated(
-            session, ctx, submission_id, hourly_limit=settings.contribution_hourly_limit, key=key
-        )
-        await session.commit()
-    except (SubmissionError, DistributionError, PublicationPausedError):
-        await session.rollback()
-        set_notice(response, settings, "info", NEEDS_AN_EDITOR)
-
-
 async def _perform_verb(
     verb: str,
     targets: dict[str, SubmissionState],
     request: Request,
+    settings: Settings,
     session: SessionDep,
     ctx: AuthContext,
     submission: Submission,
     key: AttributionKey,
 ) -> None:
-    """Run one workflow verb on a submission the caller holds under a row lock.
+    """Run one workflow verb: ISAC staff on a submission they hold under a row lock,
+    a member's verbs on the staff session that locks and writes them.
 
     Raises the service's own error on refusal; the caller commits once, or
     rolls back and tells the operator why.
     """
-    now = await database_now(session)
     if verb == "distribute":
         await _distribute_from_portal(request, session, ctx, submission, key=key)
     elif verb == "confirm":
-        await confirm_proxy_filing(session, ctx, submission, now=now, key=key)
+        await confirm_own_proxy_filing(session, ctx, submission.id, key=key)
     elif verb == "revoke":
         reason = str((await request.form()).get("reason", "")).strip()
         await revoke_contribution(session, ctx, submission, key=key, reason=reason)
     elif verb == "submit":
-        await submit_submission(session, ctx, submission, reason=None, key=key)
+        await submit_own_submission(
+            session,
+            ctx,
+            submission.id,
+            reason=None,
+            hourly_limit=settings.contribution_hourly_limit,
+            key=key,
+        )
     elif verb == "validate":
         acknowledged = frozenset(
             str(value) for value in (await request.form()).getlist("acknowledge")
@@ -990,7 +978,9 @@ async def _perform_verb(
             session, ctx, submission, targets[verb], acknowledged_changes=acknowledged, key=key
         )
     else:
-        await apply_transition(session, ctx, submission, targets[verb], key=key)
+        await transition_own_submission(
+            session, ctx, submission.id, targets[verb], reason=None, key=key
+        )
 
 
 async def _distribute_from_portal(

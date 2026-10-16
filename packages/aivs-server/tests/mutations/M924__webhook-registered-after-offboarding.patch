@@ -1,17 +1,17 @@
 Mutation M924: a webhook in flight is registered after its organisation is offboarded
-Re-applies: registration trusting the request's context
+Re-applies: registration trusting the request's context; registered in member_staff_writes since Phase P slice 3g
 
 Expect red: packages/aivs-server/tests/unit/test_offboarding_races.py::test_a_webhook_in_flight_is_refused_after_offboarding
 
-diff --git a/packages/aivs-server/src/aivs_server/api/admin.py b/packages/aivs-server/src/aivs_server/api/admin.py
---- a/packages/aivs-server/src/aivs_server/api/admin.py
-+++ b/packages/aivs-server/src/aivs_server/api/admin.py
-@@ -539,7 +539,7 @@ async def register_webhook(
-             detail=f"That URL cannot be used as a webhook target ({exc.reason}).",
-         ) from exc
- 
--    if not await org_still_active(session, ctx.org_id):
-+    if False:
-         # Authenticated while active; offboarded or cut off since.
-         denial = "webhook_org_not_active"
-         raise PolicyDeniedError(denial)
+diff --git a/packages/aivs-server/src/aivs_server/services/member_staff_writes.py b/packages/aivs-server/src/aivs_server/services/member_staff_writes.py
+--- a/packages/aivs-server/src/aivs_server/services/member_staff_writes.py
++++ b/packages/aivs-server/src/aivs_server/services/member_staff_writes.py
+@@ -439,7 +439,7 @@
+     if the organisation has left since the request authenticated.
+     """
+     async with _writer(session, ctx) as writer:
+-        if not await org_still_active(writer, ctx.org_id):
++        if False:
+             denial = "webhook_org_not_active"
+             raise PolicyDeniedError(denial)
+         secret = secrets.token_urlsafe(32)

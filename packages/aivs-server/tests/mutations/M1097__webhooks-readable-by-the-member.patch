@@ -1,0 +1,17 @@
+Mutation M1097: the member login reads, writes and deletes every firm's webhooks
+Re-applies: MEMBER_GRANTS before Phase P slice 3g
+
+Expect red: packages/aivs-server/tests/migrations/test_member_login_grants.py::test_every_table_is_classified_and_granted_as_classified
+Expect red: packages/aivs-server/tests/migrations/test_member_login_grants.py::test_the_member_login_is_refused_what_its_grants_withhold[webhook-urls]
+
+diff --git a/packages/aivs-server/src/aivs_server/db/grants.py b/packages/aivs-server/src/aivs_server/db/grants.py
+--- a/packages/aivs-server/src/aivs_server/db/grants.py
++++ b/packages/aivs-server/src/aivs_server/db/grants.py
+@@ -132,6 +132,7 @@
+         # Read for visibility; written only staff side (slice 3f: R33), or SQL
+         # on the member path could publish any object into any circle.
+         "public.distributions": _READ,
++        "public.webhooks": TableGrant(("SELECT", "INSERT", "DELETE")),
+         "public.circle_memberships": _READ,
+         "public.circles": _READ,
+         "public.embargoes": _READ,

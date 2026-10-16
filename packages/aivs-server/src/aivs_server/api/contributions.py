@@ -40,14 +40,12 @@ from aivs_server.auth.deps import (
 )
 from aivs_server.auth.policy import (
     can_review_submissions,
-    can_view_submission,
     is_isac_editor,
     require,
 )
 from aivs_server.config import Settings
 from aivs_server.db.clock import database_now
 from aivs_server.db.models import Circle
-from aivs_server.services.attribution import is_submitted_by
 from aivs_server.services.circles import set_taxii_inbox
 from aivs_server.services.contributions import (
     ISAC_CLICK_NEEDS_AN_EDITOR,
@@ -57,14 +55,18 @@ from aivs_server.services.contributions import (
     TargetNotFoundError,
 )
 from aivs_server.services.member_staff_reads import own_posture_of, own_postures_of
-from aivs_server.services.member_staff_writes import contribute_own, record_own_posture
+from aivs_server.services.member_staff_writes import (
+    confirm_own_proxy_filing,
+    contribute_own,
+    record_own_posture,
+)
 from aivs_server.services.posture import (
     PostureError,
     VexStatement,
     posture_summary,
 )
-from aivs_server.services.proxy_filing import confirm_proxy_filing, file_on_behalf
-from aivs_server.services.submissions import STORAGE_ERRORS, SubmissionError, load_submission
+from aivs_server.services.proxy_filing import file_on_behalf
+from aivs_server.services.submissions import STORAGE_ERRORS, SubmissionError
 from aivs_server.services.vex_export import openvex_document
 
 __all__ = ["router"]
@@ -412,16 +414,16 @@ async def confirm(
     session: SessionDep,
     key: AttributionKeyDep,
 ) -> SubmissionOut:
-    """The member confirms a filing made in its name."""
-    submission = await load_submission(session, submission_id, for_update=True)
-    if submission is None or not can_view_submission(
-        ctx, submission, owner_is_caller=is_submitted_by(key, submission, ctx.org_id)
-    ):
-        raise _NOT_FOUND
+    """The member confirms a filing made in its name.
+
+    On the staff login (``member_staff_writes``): the member login updates no
+    submission.
+    """
     try:
-        await confirm_proxy_filing(session, ctx, submission, now=dt.datetime.now(dt.UTC), key=key)
+        submission = await confirm_own_proxy_filing(session, ctx, submission_id, key=key)
     except SubmissionError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    if submission is None:
+        raise _NOT_FOUND
     await session.commit()
-    await session.refresh(submission)
     return await present_submission(session, submission, ctx, key)

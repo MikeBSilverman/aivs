@@ -510,14 +510,30 @@ async def replace_submission_objects(
     if submission.state not in EDITABLE_SUBMISSION_STATES:
         msg = "objects may only be replaced while a submission is a draft or returned"
         raise SubmissionError(msg)
+    await session.execute(delete(StixObject).where(StixObject.submission_id == submission.id))
+    return await store_new_submission_objects(session, submission, bundle, key=key, filer=filer)
 
+
+async def store_new_submission_objects(
+    session: AsyncSession,
+    submission: Submission,
+    bundle: dict[str, Any],
+    *,
+    key: AttributionKey,
+    filer: uuid.UUID,
+) -> int:
+    """Validate a bundle and store its objects against a submission that holds none.
+
+    Insert only: creation calls this, on the member login, which holds no
+    DELETE on ``stix_objects`` (Phase P slice 3g). Postgres checks a DELETE's
+    privilege when it plans the statement, so even deleting from a submission
+    that has no objects yet would be refused.
+    """
     # Validates every object in the bundle, including ones AIVS does not read,
     # and enforces the extension allowlist.
     validate_bundle(bundle)
     objects = bundle.get("objects") or []
     await _reject_identity_problems(session, submission, objects, filer)
-
-    await session.execute(delete(StixObject).where(StixObject.submission_id == submission.id))
 
     seen: set[tuple[str, dt.datetime]] = set()
     parsed_objects: list[tuple[_ParsedObject, dict[str, Any]]] = []
@@ -758,7 +774,7 @@ async def create_submission(
     filing = _filing_record(ctx, filed_for)
     await record_filing(session, key, submission, filing)
 
-    object_count = await replace_submission_objects(
+    object_count = await store_new_submission_objects(
         session, submission, bundle, key=key, filer=filing.org_id
     )
     # An analyst filing for a member is ISAC staff, who see everything; the

@@ -25,6 +25,7 @@ from aivs_server.auth.policy import (
     can_set_priority,
     can_view_submission,
     require,
+    uses_staff_database,
 )
 from aivs_server.db.clock import database_now
 from aivs_server.db.models import Operator, Organization, StixObject, Submission
@@ -217,8 +218,12 @@ async def validate_review_group(
 async def _locked_visible(
     session: AsyncSession, ctx: AuthContext, submission_id: uuid.UUID, key: AttributionKey
 ) -> Submission:
-    """The submission, row-locked; 404 unless the caller may see it (SF-47)."""
-    submission = await load_submission(session, submission_id, for_update=True)
+    """The submission, row-locked; 404 unless the caller may see it (SF-47).
+
+    Locked only on the staff login: the member login may take no row lock on a
+    submission (slice 3g), and a member here is refused by policy next.
+    """
+    submission = await load_submission(session, submission_id, for_update=uses_staff_database(ctx))
     if submission is None or not can_view_submission(
         ctx, submission, owner_is_caller=is_submitted_by(key, submission, ctx.org_id)
     ):

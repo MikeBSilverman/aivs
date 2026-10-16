@@ -1,16 +1,20 @@
-Mutation M1088: a submitted contribution is published for whoever asks
-Re-applies: a staff write that lost its owner check (slice 3f)
+Mutation M1088: a filing is locked, changed and published for whoever asks
+Re-applies: a staff write that lost its visibility check (slice 3f, publish_own_post_moderated; slice 3g, the shared lookup of every own-filing write)
 
-Expect red: packages/aivs-server/tests/unit/test_post_moderation.py::test_only_its_filer_has_a_submitted_contribution_published
+Expect red: packages/aivs-server/tests/unit/test_post_moderation.py::test_only_its_filer_submits_a_draft_and_has_it_published
+Expect red: packages/aivs-server/tests/unit/test_submission_workflow.py::test_a_peer_cannot_amend_submit_or_withdraw_a_members_draft
 
 diff --git a/packages/aivs-server/src/aivs_server/services/member_staff_writes.py b/packages/aivs-server/src/aivs_server/services/member_staff_writes.py
 --- a/packages/aivs-server/src/aivs_server/services/member_staff_writes.py
 +++ b/packages/aivs-server/src/aivs_server/services/member_staff_writes.py
-@@ -252,7 +252,6 @@
-         if (
-             submission is None
-             or submission.state is not SubmissionState.SUBMITTED
--            or not is_submitted_by(key, submission, ctx.org_id)
-         ):
-             return False
-         return await publish_if_post_moderated(
+@@ -298,9 +298,7 @@
+     give.
+     """
+     submission = await load_submission(writer, submission_id, for_update=True)
+-    if submission is None or not can_view_submission(
+-        ctx, submission, owner_is_caller=is_submitted_by(key, submission, ctx.org_id)
+-    ):
++    if submission is None:
+         return None
+     return submission
+ 

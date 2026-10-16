@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import datetime as dt
 import uuid
-from typing import Any
 
 import pytest
 from sqlalchemy import func, select, update
@@ -26,15 +25,12 @@ from aivs_schemas.enums import (
     SubmissionState,
 )
 from aivs_schemas.extension.builders import AIVS_INTEL_EXTENSION_ID
-from aivs_server.api import submissions as submissions_api
 from aivs_server.audit.log import AuditAction
 from aivs_server.auth.context import AuthContext, AuthMethod
 from aivs_server.auth.memberships import load_circle_grants
-from aivs_server.db.engine import get_sessionmaker
 from aivs_server.db.models import AuditLog, Circle, Distribution, Submission, SubmissionTransition
 from aivs_server.services.contributions import within_hourly_allowance
-from aivs_server.services.member_staff_writes import publish_own_post_moderated
-from aivs_server.services.submissions import load_submission, record_transition
+from aivs_server.services.member_staff_writes import submit_own_submission
 from tests.conftest import TEST_ATTRIBUTION_KEY
 from tests.unit.contribution_world import (
     LATER,
@@ -681,38 +677,6 @@ async def _published_rows(session, submission_id: uuid.UUID) -> int:
     )
 
 
-@pytest.mark.requirement("SF-66")
-async def test_a_submission_returned_between_its_submit_and_its_publication_is_not_published(
-    client, session, world, monkeypatch
-):
-    """The submit commits on the member login and the publication follows on the
-    staff login (``member_staff_writes``); the triage job may return the
-    submission in between. The publication re-reads it under its own lock and
-    leaves it returned, and the member is told where it is."""
-    await post_moderation(client, world, enabled=True)
-    filed = await draft(client, world.member.person, [note_about(world.published)])
-    submission_id = uuid.UUID(filed.json()["id"])
-    publish = submissions_api.publish_own_post_moderated
-
-    async def returned_first(member_session, ctx, returned_id, **options: Any):
-        async with get_sessionmaker()() as triage:
-            row = await load_submission(triage, returned_id, for_update=True)
-            await record_transition(
-                triage, None, row, SubmissionState.RETURNED, reason="first pass: needs changes"
-            )
-            await triage.commit()
-        return await publish(member_session, ctx, returned_id, **options)
-
-    monkeypatch.setattr(submissions_api, "publish_own_post_moderated", returned_first)
-    submitted = await client.post(
-        f"{API}/submissions/{submission_id}/submit", json={}, headers=world.member.person
-    )
-
-    assert submitted.status_code == 200, submitted.text
-    assert submitted.json()["state"] == SubmissionState.RETURNED.value
-    assert await _published_rows(session, submission_id) == 0
-
-
 async def _signed_in(session, party) -> AuthContext:
     return AuthContext(
         org_id=party.org.id,
@@ -727,31 +691,34 @@ async def _signed_in(session, party) -> AuthContext:
 
 
 @pytest.mark.requirement("SF-66")
-async def test_only_its_filer_has_a_submitted_contribution_published(client, session, world):
-    """Waiting for review, then a circle opened to post-moderation: a peer asking
-    for it to be published is refused, its filer is not."""
-    filed = await draft(client, world.member.person, [note_about(world.published)])
-    await submit(client, session, world.member.person, filed)
+async def test_only_its_filer_submits_a_draft_and_has_it_published(client, session, world):
+    """The submit and its publication are one staff transaction (slice 3g), keyed on
+    the caller's own filing: a peer asking for a member's draft is told there is
+    none, and nothing moves."""
     await post_moderation(client, world, enabled=True)
+    filed = await draft(client, world.member.person, [note_about(world.published)])
     submission_id = uuid.UUID(filed.json()["id"])
 
     # The vendor contributes to the circle, so only the owner check stops it.
-    by_peer = await publish_own_post_moderated(
+    by_peer = await submit_own_submission(
         session,
         await _signed_in(session, world.vendor),
         submission_id,
+        reason=None,
         hourly_limit=10,
         key=TEST_ATTRIBUTION_KEY,
     )
-    assert not by_peer
+    assert by_peer is None
     assert await _published_rows(session, submission_id) == 0
 
-    by_filer = await publish_own_post_moderated(
+    by_filer = await submit_own_submission(
         session,
         await _signed_in(session, world.member),
         submission_id,
+        reason=None,
         hourly_limit=10,
         key=TEST_ATTRIBUTION_KEY,
     )
-    assert by_filer
+    assert by_filer is not None
+    assert by_filer.state is SubmissionState.DISTRIBUTED
     assert await _published_rows(session, submission_id) > 0

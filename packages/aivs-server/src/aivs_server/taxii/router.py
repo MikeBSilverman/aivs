@@ -39,11 +39,10 @@ from aivs_server.auth.policy import (
     tlp_ceiling_clause,
 )
 from aivs_server.config import Settings
-from aivs_server.db.clock import database_now
 from aivs_server.db.models import Circle, TaxiiCollection
 from aivs_server.services.contributions import ContributionRateLimitedError
-from aivs_server.services.inbox import receive_envelope
 from aivs_server.services.member_staff_reads import taxii_status_of
+from aivs_server.services.member_staff_writes import receive_own_envelope
 from aivs_server.services.publication import wait_for_publications
 from aivs_server.services.receipts import record_retrievals
 from aivs_server.services.submissions import STORAGE_ERRORS, SubmissionError
@@ -664,14 +663,15 @@ async def add_objects(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="not JSON") from exc
     try:
-        received = await receive_envelope(
+        # On the staff login (``member_staff_writes``): filing an envelope
+        # sets the new submission's source and lane and submits it.
+        received = await receive_own_envelope(
             session,
             ctx,
             collection=collection,
             circle=circle,
             envelope=envelope,
             hourly_limit=settings.contribution_hourly_limit,
-            now=await database_now(session),
             key=key,
         )
         await session.commit()

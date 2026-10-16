@@ -7,8 +7,8 @@ Expect red: packages/aivs-server/tests/migrations/test_member_login_grants.py::t
 diff --git a/packages/aivs-server/src/aivs_server/db/grants.py b/packages/aivs-server/src/aivs_server/db/grants.py
 --- a/packages/aivs-server/src/aivs_server/db/grants.py
 +++ b/packages/aivs-server/src/aivs_server/db/grants.py
-@@ -143,7 +143,7 @@
-         "public.stix_objects": TableGrant(("SELECT", "INSERT", "DELETE")),
+@@ -128,7 +128,7 @@
+         "public.stix_objects": TableGrant(("SELECT", "INSERT")),
          # Retrievals are recorded on the member path; a member's own receipts
          # are read, and its assertions made, staff side (slice 3e: R26).
 -        "public.acknowledgments": _WRITE_ONLY,

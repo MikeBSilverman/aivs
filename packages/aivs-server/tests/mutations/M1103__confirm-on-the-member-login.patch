@@ -1,0 +1,21 @@
+Mutation M1103: a member's confirmation of a filing in its name is written on the member login
+Re-applies: the filing loaded, locked and changed on the request's session, before Phase P slice 3g
+
+Expect red: packages/aivs-server/tests/unit/test_proxy_filing.py::test_once_the_member_confirms_the_filing_is_distributed
+
+diff --git a/packages/aivs-server/src/aivs_server/services/member_staff_writes.py b/packages/aivs-server/src/aivs_server/services/member_staff_writes.py
+--- a/packages/aivs-server/src/aivs_server/services/member_staff_writes.py
++++ b/packages/aivs-server/src/aivs_server/services/member_staff_writes.py
+@@ -382,10 +382,10 @@
+ ) -> Submission | None:
+     """A person at the member confirms a filing made in its name (``proxy_filing``)."""
+     async with _writer(session, ctx) as writer:
+-        submission = await _filing_locked(writer, ctx, submission_id, key)
++        submission = await _filing_locked(session, ctx, submission_id, key)
+         if submission is None:
+             return None
+-        await confirm_proxy_filing(writer, ctx, submission, now=await database_now(writer), key=key)
++        await confirm_proxy_filing(session, ctx, submission, now=await database_now(session), key=key)
+         await writer.flush()
+         await writer.refresh(submission)
+         return submission

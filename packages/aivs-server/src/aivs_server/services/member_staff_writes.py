@@ -53,9 +53,11 @@ Each goes through the service that knows the state it changes
 from __future__ import annotations
 
 import datetime as dt
+import secrets
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -63,38 +65,57 @@ from aivs_schemas.enums import AckType, AckVia, NotificationCadence, ReadingDept
 from aivs_server.audit.log import AuditAction, record
 from aivs_server.auth.attribution_key import AttributionKey
 from aivs_server.auth.context import AuthContext
-from aivs_server.auth.policy import uses_staff_database
+from aivs_server.auth.policy import PolicyDeniedError, can_view_submission, uses_staff_database
+from aivs_server.auth.secretbox import SecretBox, SecretPurpose
 from aivs_server.db.clock import database_now
 from aivs_server.db.engine import get_sessionmaker
 from aivs_server.db.models import (
     Acknowledgment,
+    Circle,
     ClientCertificate,
     Organization,
     OrgPosture,
     Submission,
+    TaxiiCollection,
+    TaxiiStatus,
+    Webhook,
 )
+from aivs_server.db.org_lock import org_still_active
 from aivs_server.services.acknowledgments import assert_receipt
 from aivs_server.services.attribution import is_submitted_by
 from aivs_server.services.certificates import revoke_certificate
-from aivs_server.services.contributions import OneClick, contribute, publish_if_post_moderated
+from aivs_server.services.contributions import (
+    OneClick,
+    contribute,
+    publish_if_post_moderated,
+    submit_submission,
+)
+from aivs_server.services.inbox import receive_envelope
 from aivs_server.services.member_settings import (
     change_notification_settings,
     store_default_depth,
 )
 from aivs_server.services.org_status import load_org_for_update
 from aivs_server.services.posture import VexStatement, record_posture
+from aivs_server.services.proxy_filing import confirm_proxy_filing
 from aivs_server.services.quarantine import quarantine_org
-from aivs_server.services.submissions import load_submission
+from aivs_server.services.submissions import apply_transition, load_submission, update_submission
 
 __all__ = [
     "assert_own_receipt",
+    "confirm_own_proxy_filing",
     "contribute_own",
-    "publish_own_post_moderated",
+    "delete_own_webhook",
     "quarantine_organisation",
+    "receive_own_envelope",
     "record_own_posture",
+    "register_own_webhook",
     "revoke_own_certificate",
     "set_notification_settings",
     "set_own_default_depth",
+    "submit_own_submission",
+    "transition_own_submission",
+    "update_own_submission",
 ]
 
 
@@ -245,38 +266,6 @@ async def contribute_own(
         )
 
 
-async def publish_own_post_moderated(
-    session: AsyncSession,
-    ctx: AuthContext,
-    submission_id: uuid.UUID,
-    *,
-    hourly_limit: int,
-    key: AttributionKey,
-) -> bool:
-    """Publish the caller's just-submitted contribution if a post-moderated circle takes it.
-
-    Run after the submit has committed. Re-reads the submission under its own
-    lock: one no longer submitted (the triage job returned it meanwhile), or
-    not the caller's, is not published. Whether it was published.
-    """
-    async with _writer(session, ctx) as writer:
-        submission = await load_submission(writer, submission_id, for_update=True)
-        if (
-            submission is None
-            or submission.state is not SubmissionState.SUBMITTED
-            or not is_submitted_by(key, submission, ctx.org_id)
-        ):
-            return False
-        return await publish_if_post_moderated(
-            writer,
-            ctx,
-            submission,
-            hourly_limit=hourly_limit,
-            now=await database_now(writer),
-            key=key,
-        )
-
-
 async def revoke_own_certificate(
     session: AsyncSession, ctx: AuthContext, certificate_id: uuid.UUID
 ) -> ClientCertificate | None:
@@ -292,3 +281,208 @@ async def revoke_own_certificate(
             await writer.flush()
             await writer.refresh(row)
         return row
+
+
+# ---------------------------------------------------------------------------
+# A member's own filing (slice 3g: the member login updates no submission)
+# ---------------------------------------------------------------------------
+async def _filing_locked(
+    writer: AsyncSession, ctx: AuthContext, submission_id: uuid.UUID, key: AttributionKey
+) -> Submission | None:
+    """The submission under its row lock on ``writer``, or ``None`` if the caller may not see it.
+
+    The lock is taken here, on the session that writes, never on the member's:
+    a staff transaction locking a row a member transaction already holds would
+    wait on a transaction waiting for it, across two connections Postgres
+    cannot see together. Absent and not visible are one answer, as the routes
+    give.
+    """
+    submission = await load_submission(writer, submission_id, for_update=True)
+    if submission is None or not can_view_submission(
+        ctx, submission, owner_is_caller=is_submitted_by(key, submission, ctx.org_id)
+    ):
+        return None
+    return submission
+
+
+async def update_own_submission(
+    session: AsyncSession,
+    ctx: AuthContext,
+    submission_id: uuid.UUID,
+    *,
+    changes: dict[str, Any],
+    key: AttributionKey,
+) -> Submission | None:
+    """Amend a draft (``submissions.update_submission``): its fields and its bundle."""
+    async with _writer(session, ctx) as writer:
+        submission = await _filing_locked(writer, ctx, submission_id, key)
+        if submission is None:
+            return None
+        await update_submission(writer, ctx, submission, changes=changes, key=key)
+        await writer.flush()
+        await writer.refresh(submission)
+        return submission
+
+
+async def transition_own_submission(
+    session: AsyncSession,
+    ctx: AuthContext,
+    submission_id: uuid.UUID,
+    target: SubmissionState,
+    *,
+    reason: str | None,
+    key: AttributionKey,
+) -> Submission | None:
+    """Move a submission to ``target`` (``submissions.apply_transition``, which holds the rules)."""
+    async with _writer(session, ctx) as writer:
+        submission = await _filing_locked(writer, ctx, submission_id, key)
+        if submission is None:
+            return None
+        await apply_transition(writer, ctx, submission, target, reason=reason, key=key)
+        await writer.flush()
+        await writer.refresh(submission)
+        return submission
+
+
+async def submit_own_submission(
+    session: AsyncSession,
+    ctx: AuthContext,
+    submission_id: uuid.UUID,
+    *,
+    reason: str | None,
+    hourly_limit: int,
+    key: AttributionKey,
+) -> Submission | None:
+    """Hand a draft to the ISAC, and publish it if a post-moderated circle takes it.
+
+    One transaction, under one lock: the transition, the allowance's lock and
+    count, and the publication (CLAUDE.md section 5). A publication refused
+    leaves it submitted, waiting for an editor.
+    """
+    async with _writer(session, ctx) as writer:
+        submission = await _filing_locked(writer, ctx, submission_id, key)
+        if submission is None:
+            return None
+        await submit_submission(writer, ctx, submission, reason=reason, key=key)
+        await publish_if_post_moderated(
+            writer,
+            ctx,
+            submission,
+            hourly_limit=hourly_limit,
+            now=await database_now(writer),
+            key=key,
+        )
+        await writer.flush()
+        await writer.refresh(submission)
+        return submission
+
+
+async def confirm_own_proxy_filing(
+    session: AsyncSession, ctx: AuthContext, submission_id: uuid.UUID, *, key: AttributionKey
+) -> Submission | None:
+    """A person at the member confirms a filing made in its name (``proxy_filing``)."""
+    async with _writer(session, ctx) as writer:
+        submission = await _filing_locked(writer, ctx, submission_id, key)
+        if submission is None:
+            return None
+        await confirm_proxy_filing(writer, ctx, submission, now=await database_now(writer), key=key)
+        await writer.flush()
+        await writer.refresh(submission)
+        return submission
+
+
+async def receive_own_envelope(
+    session: AsyncSession,
+    ctx: AuthContext,
+    *,
+    collection: TaxiiCollection,
+    circle: Circle,
+    envelope: Any,
+    hourly_limit: int,
+    key: AttributionKey,
+) -> TaxiiStatus:
+    """File a TAXII inbox envelope in the caller's name (``inbox.receive_envelope``).
+
+    Whole, as a one-click is: it creates the submission and then sets its
+    source and lane and submits it, which the member login may not update.
+    """
+    async with _writer(session, ctx) as writer:
+        status = await receive_envelope(
+            writer,
+            ctx,
+            collection=collection,
+            circle=circle,
+            envelope=envelope,
+            hourly_limit=hourly_limit,
+            now=await database_now(writer),
+            key=key,
+        )
+        await writer.flush()
+        await writer.refresh(status)
+        return status
+
+
+# ---------------------------------------------------------------------------
+# A member's own webhooks (slice 3g: the member login holds nothing on them)
+# ---------------------------------------------------------------------------
+async def register_own_webhook(
+    session: AsyncSession,
+    ctx: AuthContext,
+    *,
+    url: str,
+    events: list[str],
+    secret_box: SecretBox,
+) -> tuple[Webhook, str]:
+    """Register a webhook for the caller's organisation; it and its signing secret.
+
+    The caller has checked who may register and the URL. ``PolicyDeniedError``
+    if the organisation has left since the request authenticated.
+    """
+    async with _writer(session, ctx) as writer:
+        if not await org_still_active(writer, ctx.org_id):
+            denial = "webhook_org_not_active"
+            raise PolicyDeniedError(denial)
+        secret = secrets.token_urlsafe(32)
+        # Generated here rather than left to the column default, because the
+        # seal is bound to it and a default is applied only at INSERT.
+        webhook_id = uuid.uuid4()
+        webhook = Webhook(
+            id=webhook_id,
+            org_id=ctx.org_id,
+            url=url,
+            hmac_secret_encrypted=secret_box.seal(
+                secret, purpose=SecretPurpose.WEBHOOK_HMAC, subject=webhook_id
+            ),
+            events=events,
+            is_active=True,
+        )
+        writer.add(webhook)
+        await record(
+            writer,
+            action=AuditAction.WEBHOOK_CREATED,
+            ctx=ctx,
+            resource_type="webhook",
+            details={"events": events or ["*"]},
+        )
+        await writer.flush()
+        await writer.refresh(webhook)
+        return webhook, secret
+
+
+async def delete_own_webhook(
+    session: AsyncSession, ctx: AuthContext, webhook_id: uuid.UUID
+) -> bool:
+    """Remove one of the caller's organisation's webhooks; ``False`` if it has none by that id."""
+    async with _writer(session, ctx) as writer:
+        webhook = await writer.get(Webhook, webhook_id)
+        if webhook is None or webhook.org_id != ctx.org_id:
+            return False
+        await writer.delete(webhook)
+        await record(
+            writer,
+            action=AuditAction.WEBHOOK_DELETED,
+            ctx=ctx,
+            resource_type="webhook",
+            resource_id=str(webhook_id),
+        )
+        return True

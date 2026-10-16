@@ -16,7 +16,7 @@ from aivs_server.auth.context import AuthContext
 from aivs_server.db.models import Operator, Organization
 from aivs_server.db.org_lock import org_still_active
 
-__all__ = ["change_notification_settings", "store_default_depth", "stored_default_depth"]
+__all__ = ["change_notification_settings", "store_default_depth"]
 
 
 async def change_notification_settings(
@@ -51,17 +51,7 @@ async def store_default_depth(
     if ctx.operator_id is None or not await org_still_active(session, ctx.org_id):
         return False
     operator = await session.get(Operator, ctx.operator_id)
-    if operator is None:
+    if operator is None or operator.org_id != ctx.org_id:
         return False
     operator.default_depth = depth
     return True
-
-
-async def stored_default_depth(session: AsyncSession, ctx: AuthContext) -> ReadingDepth | None:
-    """The signed-in person's reading depth, if they chose one; a machine has none."""
-    if ctx.operator_id is None:
-        return None
-    depth: ReadingDepth | None = await session.scalar(
-        select(Operator.default_depth).where(Operator.id == ctx.operator_id)
-    )
-    return depth

@@ -1,0 +1,19 @@
+Mutation M1073: the reading depth is read without its operator key
+Re-applies: a staff read that lost its key (slice 3e pattern)
+
+Expect red: packages/aivs-server/tests/unit/test_own_person_records.py::test_a_persons_reading_depth_is_their_own_to_read_and_set
+
+diff --git a/packages/aivs-server/src/aivs_server/services/member_staff_reads.py b/packages/aivs-server/src/aivs_server/services/member_staff_reads.py
+--- a/packages/aivs-server/src/aivs_server/services/member_staff_reads.py
++++ b/packages/aivs-server/src/aivs_server/services/member_staff_reads.py
+@@ -260,9 +260,7 @@
+     """
+     if ctx.operator_id is None:
+         return None
+-    query = select(Operator.default_depth).where(
+-        Operator.id == ctx.operator_id, Operator.org_id == ctx.org_id
+-    )
++    query = select(Operator.default_depth)
+     async with _reader(ctx) as staff:
+         depth: ReadingDepth | None = await (staff or session).scalar(query)
+         return depth

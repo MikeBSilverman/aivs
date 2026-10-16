@@ -18,12 +18,12 @@ from fastapi import APIRouter, HTTPException, Query, Request, status
 from fastapi.responses import HTMLResponse, Response
 
 from aivs_server.audit.log import AuditAction, record_independently
-from aivs_server.auth.deps import SessionDep, SettingsDep, request_source_ip
+from aivs_server.auth.deps import SettingsDep, request_source_ip
 from aivs_server.auth.oidc import PENDING_COOKIE, SsoRejectedError, begin_login, complete_login
-from aivs_server.auth.sessions import SessionRejectedError, establish_sso_session
+from aivs_server.auth.sessions import SessionRejectedError
+from aivs_server.auth.staff_auth import sign_in_federated
 from aivs_server.config import Settings
 from aivs_server.portal.shared import redirect_to_identity_provider
-from aivs_server.services.sso import resolve_member_sign_in
 
 __all__ = ["router"]
 
@@ -92,7 +92,6 @@ async def sso_login(request: Request, settings: SettingsDep) -> Response:
 async def sso_callback(
     request: Request,
     settings: SettingsDep,
-    session: SessionDep,
     state: Annotated[str, Query(max_length=200)] = "",
     code: Annotated[str, Query(max_length=2000)] = "",
 ) -> Response:
@@ -106,32 +105,23 @@ async def sso_callback(
             code=code,
             pending_cookie=request.cookies.get(PENDING_COOKIE),
         )
-        sign_in = await resolve_member_sign_in(
-            session, identity, jit_provisioning=settings.oidc_member_jit_provisioning
-        )
     except SsoRejectedError as exc:
-        await session.rollback()
         return await _refused(request, settings, exc.reason)
 
     device = request.cookies.get(settings.sso_device_cookie_name) or secrets.token_urlsafe(32)
+    # On the staff login (``auth.staff_auth``): the member login cannot insert
+    # an operator (R27). An organisation that left between sign-in and the
+    # session keeps nothing the sign-in wrote (a provisioned operator).
     try:
-        established = await establish_sso_session(
-            session,
+        sign_in, established = await sign_in_federated(
             settings,
-            operator=sign_in.operator,
-            issuer=identity.issuer,
-            subject=identity.subject,
+            identity,
             device_cookie=device,
-            amr=identity.amr,
             source_ip=request_source_ip(request, settings),
             user_agent=request.headers.get("user-agent"),
             now=dt.datetime.now(dt.UTC),
         )
-        await session.commit()
-    except SessionRejectedError as exc:
-        # The organisation left between sign-in and the session: nothing the
-        # sign-in wrote (a provisioned operator) survives.
-        await session.rollback()
+    except (SsoRejectedError, SessionRejectedError) as exc:
         return await _refused(request, settings, exc.reason)
     await record_independently(
         action=AuditAction.SSO_LOGIN_SUCCESS,

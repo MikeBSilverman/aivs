@@ -1,0 +1,19 @@
+Mutation M1074: a reading depth is stored on whichever operator comes first
+Re-applies: a staff write that lost its key (slice 3e pattern)
+
+Expect red: packages/aivs-server/tests/unit/test_own_person_records.py::test_a_persons_reading_depth_is_their_own_to_read_and_set
+
+diff --git a/packages/aivs-server/src/aivs_server/services/member_settings.py b/packages/aivs-server/src/aivs_server/services/member_settings.py
+--- a/packages/aivs-server/src/aivs_server/services/member_settings.py
++++ b/packages/aivs-server/src/aivs_server/services/member_settings.py
+@@ -50,8 +50,8 @@
+     """Store the signed-in person's reading depth; ``False`` if their organisation has gone."""
+     if ctx.operator_id is None or not await org_still_active(session, ctx.org_id):
+         return False
+-    operator = await session.get(Operator, ctx.operator_id)
+-    if operator is None or operator.org_id != ctx.org_id:
++    operator = await session.scalar(select(Operator).limit(1))
++    if operator is None:
+         return False
+     operator.default_depth = depth
+     return True

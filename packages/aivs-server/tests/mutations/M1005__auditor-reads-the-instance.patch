@@ -6,9 +6,12 @@ Expect red: packages/aivs-server/tests/unit/test_auditor.py::test_a_members_audi
 diff --git a/packages/aivs-server/src/aivs_server/services/member_staff_reads.py b/packages/aivs-server/src/aivs_server/services/member_staff_reads.py
 --- a/packages/aivs-server/src/aivs_server/services/member_staff_reads.py
 +++ b/packages/aivs-server/src/aivs_server/services/member_staff_reads.py
-@@ -230,4 +230,4 @@
+@@ -235,7 +235,7 @@
      async with _reader(ctx) as staff:
          if staff is None:
              return await audit_events(session, scope=audit_scope(ctx), after=after, limit=limit)
 -        return await audit_events(staff, scope=audit_scope(ctx), after=after, limit=limit)
 +        return await audit_events(staff, scope=None, after=after, limit=limit)
+ 
+ 
+ async def own_display_name(session: AsyncSession, ctx: AuthContext) -> str | None:

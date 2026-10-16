@@ -58,7 +58,7 @@ from aivs_server.auth.policy import (
     require,
 )
 from aivs_server.auth.secretbox import SecretBox, SecretPurpose
-from aivs_server.auth.sessions import revoke_sessions_for_certificate
+from aivs_server.auth.staff_auth import close_sessions_for_certificate
 from aivs_server.db.clock import database_now
 from aivs_server.db.models import (
     Circle,
@@ -317,7 +317,9 @@ async def revoke_certificate(
     # machines. resolve_session would refuse them on their next request anyway;
     # ending them now means the audit trail shows the sessions closing at
     # revocation time rather than whenever each browser next happened to poll.
-    closed = await revoke_sessions_for_certificate(session, fingerprint=row.fingerprint_sha256)
+    # On the staff login: a member revoking its own certificate holds nothing on
+    # ``portal_sessions`` (Phase P slice 3e).
+    closed = await close_sessions_for_certificate(row.fingerprint_sha256)
     await record(
         session,
         action=AuditAction.CERT_REVOKED,

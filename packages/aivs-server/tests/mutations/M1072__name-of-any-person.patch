@@ -1,0 +1,19 @@
+Mutation M1072: the signed-in person's name is read without its operator key
+Re-applies: a staff read that lost its key (slice 3e pattern)
+
+Expect red: packages/aivs-server/tests/unit/test_own_person_records.py::test_the_portal_names_the_signed_in_person_and_no_one_else
+
+diff --git a/packages/aivs-server/src/aivs_server/services/member_staff_reads.py b/packages/aivs-server/src/aivs_server/services/member_staff_reads.py
+--- a/packages/aivs-server/src/aivs_server/services/member_staff_reads.py
++++ b/packages/aivs-server/src/aivs_server/services/member_staff_reads.py
+@@ -245,9 +245,7 @@
+     """
+     if ctx.operator_id is None:
+         return None
+-    query = select(Operator.display_name).where(
+-        Operator.id == ctx.operator_id, Operator.org_id == ctx.org_id
+-    )
++    query = select(Operator.display_name)
+     async with _reader(ctx) as staff:
+         name: str | None = await (staff or session).scalar(query)
+         return name

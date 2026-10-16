@@ -6,9 +6,10 @@ what: ``attribution`` and the tables that would say it by another route
 a read it could make for one member, SQL injected on the member path could
 make for all of them. Yet a member is entitled to its own rows in those
 tables: its submission's history, its TAXII status resources, its connection's
-last retrieval, its telemetry, its first-pass findings, its auditor's trail.
-Each function here answers one of those questions on a staff session of its
-own.
+last retrieval, its telemetry, its first-pass findings, its auditor's trail;
+and since slice 3e, which holds the member login to nothing on ``operators``,
+its own signed-in person's name and reading depth. Each function here
+answers one of those questions on a staff session of its own.
 
 Every function holds one invariant, and nothing else here makes it true:
 
@@ -39,6 +40,7 @@ from contextlib import asynccontextmanager
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from aivs_schemas.enums import ReadingDepth
 from aivs_server.audit.log import AuditAction
 from aivs_server.auth.context import AuthContext
 from aivs_server.auth.policy import audit_scope, uses_staff_database
@@ -47,6 +49,7 @@ from aivs_server.db.models import (
     AuditLog,
     CountSnapshot,
     CountSubject,
+    Operator,
     SubmissionTransition,
     SubmissionTriage,
     TaxiiStatus,
@@ -61,6 +64,8 @@ __all__ = [
     "first_pass_of",
     "inbox_posts_since",
     "last_retrieval",
+    "own_default_depth",
+    "own_display_name",
     "submission_history",
     "taxii_status_of",
     "telemetry_snapshot",
@@ -231,3 +236,33 @@ async def audit_page(
         if staff is None:
             return await audit_events(session, scope=audit_scope(ctx), after=after, limit=limit)
         return await audit_events(staff, scope=audit_scope(ctx), after=after, limit=limit)
+
+
+async def own_display_name(session: AsyncSession, ctx: AuthContext) -> str | None:
+    """The signed-in person's name; ``None`` for a machine, or a person who has gone.
+
+    Keyed on the operator authentication resolved, and on its organisation.
+    """
+    if ctx.operator_id is None:
+        return None
+    query = select(Operator.display_name).where(
+        Operator.id == ctx.operator_id, Operator.org_id == ctx.org_id
+    )
+    async with _reader(ctx) as staff:
+        name: str | None = await (staff or session).scalar(query)
+        return name
+
+
+async def own_default_depth(session: AsyncSession, ctx: AuthContext) -> ReadingDepth | None:
+    """The signed-in person's chosen reading depth, if any; a machine has none.
+
+    Keyed on the operator authentication resolved, and on its organisation.
+    """
+    if ctx.operator_id is None:
+        return None
+    query = select(Operator.default_depth).where(
+        Operator.id == ctx.operator_id, Operator.org_id == ctx.org_id
+    )
+    async with _reader(ctx) as staff:
+        depth: ReadingDepth | None = await (staff or session).scalar(query)
+        return depth

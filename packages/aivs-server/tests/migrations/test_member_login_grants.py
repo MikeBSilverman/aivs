@@ -49,7 +49,11 @@ CLASSIFICATION: Final[dict[str, frozenset[str]]] = {
     "public.detection_state": _NOTHING,
     "public.email_deliveries": _NOTHING,
     "public.inbound_emails": _NOTHING,
+    # Authentication runs on the staff login (auth.staff_auth, slice 3e): every
+    # operator's password hash, a peer's lockout and its sessions.
+    "public.operators": _NOTHING,
     "public.pending_notices": _NOTHING,
+    "public.portal_sessions": _NOTHING,
     "public.submission_milestones": _NOTHING,
     "public.submission_triage": _NOTHING,
     # Read, and written only where listed.
@@ -60,10 +64,8 @@ CLASSIFICATION: Final[dict[str, frozenset[str]]] = {
     "public.distributions": frozenset({"SELECT", "INSERT"}),
     "public.embargoes": _READ,
     "public.instance_controls": _READ,
-    "public.operators": frozenset({"SELECT", "INSERT"}),
     "public.org_postures": frozenset({"SELECT", "INSERT"}),
     "public.organizations": _READ,
-    "public.portal_sessions": frozenset({"SELECT", "INSERT"}),
     "public.sector_events": _READ,
     "public.stix_objects": frozenset({"SELECT", "INSERT", "DELETE"}),
     "public.submissions": frozenset({"SELECT", "INSERT"}),
@@ -93,9 +95,6 @@ UPDATABLE: Final[dict[str, frozenset[str]]] = {
     "public.client_certificates": frozenset(
         {"status", "revoked_at", "revoked_reason", "updated_at"}
     ),
-    "public.operators": frozenset(
-        {"failed_login_count", "last_login_at", "last_totp_step", "default_depth", "updated_at"}
-    ),
     # Status and settings are written staff side (member_staff_writes).
     "public.organizations": frozenset({"updated_at"}),
     "public.org_postures": frozenset(
@@ -110,7 +109,6 @@ UPDATABLE: Final[dict[str, frozenset[str]]] = {
             "updated_at",
         }
     ),
-    "public.portal_sessions": frozenset({"last_seen_at", "revoked_at"}),
     # A row lock needs UPDATE on some column; this one changes nothing.
     "public.webhooks": frozenset({"updated_at"}),
 }
@@ -273,34 +271,30 @@ def _as_member(logins: Logins, statement: str) -> None:
             id="org-type",
         ),
         pytest.param(
-            "UPDATE operators SET org_id = org_id",
-            "UPDATE operators SET last_login_at = last_login_at",
-            id="operator-org",
-        ),
-        pytest.param(
             "UPDATE organizations SET directory_object_id = directory_object_id",
             "UPDATE organizations SET updated_at = updated_at",
             id="org-sso-group",
         ),
         pytest.param(
-            "UPDATE operators SET federated_issuer = federated_issuer",
-            "UPDATE operators SET last_login_at = last_login_at",
-            id="operator-federated-issuer",
+            "SELECT password_hash FROM operators",
+            "SELECT id FROM organizations",
+            id="operator-password-hashes",
         ),
         pytest.param(
-            "UPDATE operators SET federated_subject = federated_subject",
-            "UPDATE operators SET last_login_at = last_login_at",
-            id="operator-federated-subject",
+            "INSERT INTO operators (org_id, email) SELECT id, 'x@example.org' FROM organizations"
+            " WHERE false",
+            "SELECT id FROM organizations",
+            id="operator-insert",
         ),
         pytest.param(
-            "UPDATE operators SET is_active = is_active",
-            "UPDATE operators SET last_login_at = last_login_at",
-            id="operator-is-active",
+            "UPDATE operators SET failed_login_count = 0",
+            "SELECT id FROM organizations",
+            id="operator-lockout",
         ),
         pytest.param(
-            "UPDATE operators SET roles = roles",
-            "UPDATE operators SET last_login_at = last_login_at",
-            id="operator-roles",
+            "SELECT token_hash FROM portal_sessions",
+            "SELECT id FROM organizations",
+            id="portal-sessions",
         ),
     ],
 )

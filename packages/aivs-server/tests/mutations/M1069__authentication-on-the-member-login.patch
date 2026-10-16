@@ -1,0 +1,27 @@
+Mutation M1069: authentication runs on the member login, which then reads every operator's password hash
+Re-applies: auth.deps.get_auth_session and the portal's sign-in before Phase P slice 3e
+
+Expect red: packages/aivs-server/tests/unit/test_database_logins.py::test_a_members_sign_in_is_authenticated_on_authentications_own_login
+Expect red: packages/aivs-server/tests/unit/test_portal.py::test_an_analyst_can_sign_in_and_see_their_dashboard
+
+diff --git a/packages/aivs-server/src/aivs_server/auth/staff_auth.py b/packages/aivs-server/src/aivs_server/auth/staff_auth.py
+--- a/packages/aivs-server/src/aivs_server/auth/staff_auth.py
++++ b/packages/aivs-server/src/aivs_server/auth/staff_auth.py
+@@ -42,7 +42,7 @@
+     revoke_sessions_for_certificate,
+ )
+ from aivs_server.config import Settings
+-from aivs_server.db.engine import get_sessionmaker
++from aivs_server.db.engine import get_member_sessionmaker, get_sessionmaker
+ from aivs_server.services.sso import SignIn, resolve_member_sign_in
+ 
+ __all__ = [
+@@ -61,7 +61,7 @@
+     For ``auth.deps`` and the portal's session resolution, which read the
+     certificate or token presented and commit their own bookkeeping.
+     """
+-    async with get_sessionmaker()() as session:
++    async with get_member_sessionmaker()() as session:
+         try:
+             yield session
+         finally:

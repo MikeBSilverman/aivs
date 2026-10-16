@@ -595,8 +595,9 @@ in every authorization predicate.
   role.
 - A third, the **member login** (`AIVS_DB_MEMBER_USER`, default
   `aivs_member`; Phase P). Every request from a member organisation, and
-  anything not yet authenticated, runs on it; the ISAC's staff and every
-  background job run on the application role above, the **staff** login. It is
+  any handler whose caller is not yet known, runs on it; the ISAC's staff,
+  every background job and authentication itself run on the application role
+  above, the **staff** login. It is
   created by the same init script and granted by the same migrate step
   (`AIVS_MEMBER_DB_ROLE`), which refuses a member login that is, or can act
   as, the staff role: one `SET ROLE` would undo the split. Outside `dev` the

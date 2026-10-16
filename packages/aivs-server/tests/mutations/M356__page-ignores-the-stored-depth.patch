@@ -6,11 +6,11 @@ Expect red: packages/aivs-server/tests/unit/test_reading_depth.py::test_the_stor
 diff --git a/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py b/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py
 --- a/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py
 +++ b/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py
-@@ -142,7 +142,7 @@
+@@ -154,7 +154,7 @@
      page = await vulnerability_page(session, ctx, found[0], now=now)
      if page is None:
          raise _NOT_FOUND
--    chosen = resolve_depth(depth, await stored_default_depth(session, ctx))
+-    chosen = resolve_depth(depth, await own_default_depth(session, ctx))
 +    chosen = resolve_depth(depth, None)
      # Before the read is recorded: "new since you last read" compares with the
      # firm's last portal read, and this one would otherwise be it.

@@ -6,7 +6,9 @@ so a column it could update on its own row, SQL injected on the member path
 could update on every member's: lift the quarantine or suspension the ISAC
 put on a firm, quarantine a peer, or point a peer's digest at another mailbox.
 Yet a member does change its own row: it quarantines itself ("we are
-compromised, cut us off") and sets its notification settings. Each function
+compromised, cut us off") and sets its notification settings. And since slice
+3e, which holds the member login to nothing on ``operators``, a person sets
+their own reading depth here too. Each function
 here makes one such change on a staff session of its own.
 
 Every function holds one invariant, and nothing else here makes it true:
@@ -30,18 +32,21 @@ from contextlib import asynccontextmanager
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from aivs_schemas.enums import NotificationCadence
+from aivs_schemas.enums import NotificationCadence, ReadingDepth
 from aivs_server.audit.log import AuditAction, record
 from aivs_server.auth.context import AuthContext
 from aivs_server.auth.policy import uses_staff_database
 from aivs_server.db.clock import database_now
 from aivs_server.db.engine import get_sessionmaker
 from aivs_server.db.models import Organization
-from aivs_server.services.member_settings import change_notification_settings
+from aivs_server.services.member_settings import (
+    change_notification_settings,
+    store_default_depth,
+)
 from aivs_server.services.org_status import load_org_for_update
 from aivs_server.services.quarantine import quarantine_org
 
-__all__ = ["quarantine_organisation", "set_notification_settings"]
+__all__ = ["quarantine_organisation", "set_notification_settings", "set_own_default_depth"]
 
 
 @asynccontextmanager
@@ -112,3 +117,11 @@ async def set_notification_settings(
             details={"cadence": cadence.value, "digest_email": digest_email is not None},
         )
         return organisation
+
+
+async def set_own_default_depth(
+    session: AsyncSession, ctx: AuthContext, depth: ReadingDepth | None
+) -> bool:
+    """Store the signed-in person's reading depth; ``False`` if they or their org have gone."""
+    async with _writer(session, ctx) as writer:
+        return await store_default_depth(writer, ctx, depth)

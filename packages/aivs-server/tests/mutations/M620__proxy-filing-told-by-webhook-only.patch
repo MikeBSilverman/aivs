@@ -6,12 +6,12 @@ Expect red: packages/aivs-server/tests/unit/test_proxy_filing.py::test_a_member_
 diff --git a/packages/aivs-server/src/aivs_server/portal/routes.py b/packages/aivs-server/src/aivs_server/portal/routes.py
 --- a/packages/aivs-server/src/aivs_server/portal/routes.py
 +++ b/packages/aivs-server/src/aivs_server/portal/routes.py
-@@ -376,7 +376,7 @@
+@@ -397,7 +397,7 @@
      context = base_context(request, settings, ctx, await operator_name(session, ctx), "dashboard")
      context.update(
          {
 -            "to_confirm": await _filed_for_you(session, ctx, now),
 +            "to_confirm": [],
              "org_name": organization.name if organization else ctx.org_slug,
-             "default_depth": operator.default_depth if operator else None,
+             "default_depth": await own_default_depth(session, ctx),
              # Through the visibility gatherer: an event on a record this

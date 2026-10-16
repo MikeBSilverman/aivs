@@ -6,9 +6,11 @@ path's inability to open the other login: a staff session opened anywhere a
 member's request runs reads all of it, whatever the grants say. So the names
 that open a staff session -- the staff engine, its sessionmaker, the
 background session scope -- are imported only where this file says, each with
-the reason it is safe. ``services.member_staff_reads`` and
-``services.attribution`` are the two a member's request goes through, and each
-of their functions is keyed on the caller's organisation.
+the reason it is safe. ``services.member_staff_reads``,
+``services.member_staff_writes`` and ``services.attribution`` are the ones a
+member's request goes through, each function keyed on the caller's
+organisation; ``auth.staff_auth`` is where every request is authenticated,
+keyed on what it presented.
 
 Parsed, not grepped: a docstring that names ``get_sessionmaker`` is not an
 import of it.
@@ -35,6 +37,10 @@ ALLOWED: Final[dict[str, str]] = {
     "bootstrap_operator.py": "a command-line tool",
     "rewrap_secrets.py": "a command-line tool",
     "rekey_attribution.py": "a command-line tool",
+    "auth/staff_auth.py": (
+        "authentication, keyed only on what the request presented: a token, an email with"
+        " its certificate's organisation, a signed identity, a certificate the caller manages"
+    ),
     "auth/deps.py": (
         "binds each request to the login its caller is entitled to (policy.uses_staff_database)"
     ),

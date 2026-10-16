@@ -447,7 +447,7 @@ _APP_CLOCK_ALLOWED: dict[tuple[str, str], str] = {
     ("api/meta.py", "report"): "component heartbeats for /readyz",
     ("main.py", "run_detections"): "detection windows over the audit log",
     ("portal/admin_routes.py", "gather_status"): "the status page's own timestamps",
-    ("portal/sso_routes.py", "establish_sso_session"): "session lifetime, not content",
+    ("portal/sso_routes.py", "sign_in_federated"): "session lifetime, not content",
 }
 
 

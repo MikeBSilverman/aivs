@@ -66,7 +66,8 @@ __all__ = [
 #: ``c185fd428721`` reads.
 APP_ROLE_ENV_VAR: Final[str] = "AIVS_APP_DB_ROLE"
 #: Names the member path's login (Phase P): every member organisation's
-#: request, and anything not yet authenticated, connects as it.
+#: request, and any handler whose caller is not yet known, connects as it.
+#: Finding out who the caller is runs on the staff login (``auth.staff_auth``).
 MEMBER_ROLE_ENV_VAR: Final[str] = "AIVS_MEMBER_DB_ROLE"
 
 _DENY_FUNCTION: Final[str] = "aivs_deny_mutation"
@@ -155,16 +156,6 @@ MEMBER_GRANTS: Final[Mapping[str, TableGrant]] = MappingProxyType(
         "public.client_certificates": TableGrant(
             ("SELECT",), update_columns=("status", "revoked_at", "revoked_reason", "updated_at")
         ),
-        "public.operators": TableGrant(
-            ("SELECT", "INSERT"),
-            update_columns=(
-                "failed_login_count",
-                "last_login_at",
-                "last_totp_step",
-                "default_depth",
-                "updated_at",
-            ),
-        ),
         # Its own status and settings a member changes on the staff login
         # (``member_staff_writes``): with them here, SQL on the member path could
         # lift a peer's quarantine or redirect its digest. ``updated_at`` only,
@@ -182,9 +173,6 @@ MEMBER_GRANTS: Final[Mapping[str, TableGrant]] = MappingProxyType(
                 "updated_by_operator_id",
                 "updated_at",
             ),
-        ),
-        "public.portal_sessions": TableGrant(
-            ("SELECT", "INSERT"), update_columns=("last_seen_at", "revoked_at")
         ),
     }
 )

@@ -14,4 +14,4 @@ diff --git a/packages/aivs-server/src/aivs_server/services/member_settings.py b/
 +    if ctx.operator_id is None:
          return False
      operator = await session.get(Operator, ctx.operator_id)
-     if operator is None:
+     if operator is None or operator.org_id != ctx.org_id:

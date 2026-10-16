@@ -37,9 +37,9 @@ from aivs_server.auth.deps import (
 from aivs_server.auth.passwords import constant_time_equals
 from aivs_server.auth.policy import can_view_instance_status, is_auditor, is_isac_staff, require
 from aivs_server.auth.sessions import SessionRejectedError
+from aivs_server.auth.staff_auth import authentication_session
 from aivs_server.config import Settings
-from aivs_server.db.engine import get_member_sessionmaker
-from aivs_server.db.models import Operator
+from aivs_server.services.member_staff_reads import own_display_name
 
 __all__ = [
     "LOGIN_FAILED",
@@ -81,7 +81,7 @@ async def current_session(request: Request, settings: Settings) -> tuple[AuthCon
 async def any_session(request: Request, settings: Settings) -> tuple[AuthContext, str]:
     """Resolve the signed-in person, whatever they may do, or send them to sign in.
 
-    On authentication's own session (the member login, ``AuthSessionDep``'s),
+    On authentication's own session (the staff login, ``auth.staff_auth``),
     never the handler's: the handler's is bound to its caller's login on its
     first statement, and the caller is what this decides.
 
@@ -101,7 +101,7 @@ async def any_session(request: Request, settings: Settings) -> tuple[AuthContext
         # Identity is resolved in auth.deps, as the API's is; this function
         # decides only which kind of session the request may resume, and what
         # a refusal looks like here.
-        async with get_member_sessionmaker()() as session:
+        async with authentication_session() as session:
             if is_sso:
                 resolved = await resolve_request_sso_session(
                     request, settings, session, token=token
@@ -254,10 +254,7 @@ def render(request: Request, template: str, context: dict[str, Any]) -> Response
 
 
 async def operator_name(session: SessionDep, ctx: AuthContext) -> str:
-    if ctx.operator_id is None:
-        return ctx.org_slug
-    operator = await session.get(Operator, ctx.operator_id)
-    return operator.display_name if operator else ctx.org_slug
+    return await own_display_name(session, ctx) or ctx.org_slug
 
 
 def tlp_label(value: Any) -> str:

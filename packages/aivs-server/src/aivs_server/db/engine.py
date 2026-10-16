@@ -7,7 +7,8 @@ Sessions are per-request and always closed, including on error, by the
 Two logins, two engines (Phase P). The **staff** engine connects as
 ``database_url``: ISAC staff, the ISAC's own organisations and every background
 job. The **member** engine connects as ``member_database_url``: every request
-from a member organisation, and anything not yet authenticated. Two logins
+from a member organisation, and any handler whose caller is not yet known
+(authentication itself runs on the staff engine, ``auth.staff_auth``). Two logins
 rather than one that switches role, because a role switch is SQL, and SQL
 injected on the member path could switch back. A request's session is bound to
 one of them on its first statement, by its caller (``routed_session``), and
@@ -170,7 +171,7 @@ def get_sessionmaker() -> async_sessionmaker[AsyncSession]:
 
 
 def get_member_sessionmaker() -> async_sessionmaker[AsyncSession]:
-    """Return the member path's session factory: authentication's, before a caller is known."""
+    """Return the member path's session factory."""
     global _member_sessionmaker  # noqa: PLW0603 - paired with the member engine
     if _member_sessionmaker is None:
         _member_sessionmaker = async_sessionmaker(

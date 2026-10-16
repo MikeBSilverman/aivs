@@ -193,8 +193,9 @@ class Settings(BaseSettings):
     #: SQLAlchemy async URL, e.g. postgresql+psycopg://user:pw@host:5432/aivs
     database_url: SecretStr
     #: The member path's own login (Phase P): every request from a member
-    #: organisation, and anything not yet authenticated, runs on it, and the
-    #: ISAC's staff and background jobs on ``database_url``. Two logins rather
+    #: organisation, and any handler whose caller is not yet known, runs on it,
+    #: and the ISAC's staff, background jobs and authentication itself on
+    #: ``database_url``. Two logins rather
     #: than one that switches role, because a role switch is SQL that injected
     #: SQL can undo; the member login is simply not a member of the staff one.
     #: May be absent in ``dev`` only, where the member path then shares

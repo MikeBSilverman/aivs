@@ -28,7 +28,7 @@ from aivs_server.portal.shared import (
 )
 from aivs_server.services.connection_health import member_health, readable_collections
 from aivs_server.services.ioc_pack import export_ioc_pack
-from aivs_server.services.member_settings import store_default_depth
+from aivs_server.services.member_staff_writes import set_own_default_depth
 from aivs_server.services.tip_config import CollectionRef, Tip, tip_config
 from aivs_server.services.vulnerability_objects import VulnerabilityHiddenError
 
@@ -61,7 +61,7 @@ async def set_default_depth(
     if depth != _NO_PREFERENCE and depth not in known:
         set_notice(response, settings, "error", "That reading depth is not one the portal offers.")
         return response
-    if not await store_default_depth(session, ctx, known.get(depth)):
+    if not await set_own_default_depth(session, ctx, known.get(depth)):
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Not found")
     await session.commit()
     set_notice(response, settings, "info", "Your reading depth is saved.")

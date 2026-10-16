@@ -1,8 +1,9 @@
 """Each request runs on the database login its caller is entitled to (Phase P, slice 3a).
 
 The ISAC's organisations run on the staff login, every member organisation
-and every request not yet authenticated on the member login; authentication
-itself, before the caller is known, on the member login. Two engines over the
+and every handler whose caller is not yet known on the member login;
+authentication itself on the staff login, in ``auth.staff_auth`` (slice 3e),
+keyed on what the request presented. Two engines over the
 one test database stand in for the two logins, each labelling the statements
 it runs, so a test can say which login served which request. The member one
 connects as the suite's real member login: a read the grants refuse it fails
@@ -12,10 +13,11 @@ What the logins may read is slice 3c's to narrow. This proves the routing that
 narrowing will rely on: a member request that reached the staff engine would
 reach whatever the staff login can, whatever the grants say. The staff reads
 a member's request makes are of its own records, on sessions of their own,
-through two modules (``services.attribution`` and
-``services.member_staff_reads``): here their sessionmakers are given a third
-engine, labelled ``own``, so a staff statement on a member's request that
-neither made shows up on the routed ``staff`` engine and fails.
+through ``services.attribution``, ``services.member_staff_reads`` and
+``services.member_staff_writes``: here their sessionmakers are given a third
+engine, labelled ``own``, and authentication's a fourth, labelled ``auth``, so
+a staff statement on a member's request that none of them made shows up on the
+routed ``staff`` engine and fails.
 """
 
 from __future__ import annotations
@@ -41,8 +43,8 @@ API = "/api/v1/submissions"
 
 
 class Seen(list[str]):
-    """Which engine ran each statement: ``staff``, ``member``, or ``own`` (the two
-    modules' staff reads of a member's own records)."""
+    """Which engine ran each statement: ``staff``, ``member``, ``own`` (the staff
+    reads and writes of a member's own records) or ``auth`` (authentication)."""
 
 
 def _labelled(url: str, label: str, seen: Seen) -> AsyncEngine:
@@ -66,8 +68,11 @@ async def logins(app, settings, monkeypatch) -> Iterator[Seen]:
     member = _labelled(TEST_MEMBER_DATABASE_URL, "member", seen)
     own = _labelled(url, "own", seen)
     own_records = async_sessionmaker(bind=own, expire_on_commit=False, autoflush=False)
-    for module in ("attribution", "member_staff_reads"):
+    for module in ("attribution", "member_staff_reads", "member_staff_writes"):
         monkeypatch.setattr(f"aivs_server.services.{module}.get_sessionmaker", lambda: own_records)
+    auth = _labelled(url, "auth", seen)
+    authentication = async_sessionmaker(bind=auth, expire_on_commit=False, autoflush=False)
+    monkeypatch.setattr("aivs_server.auth.staff_auth.get_sessionmaker", lambda: authentication)
     engine_module._engine = staff
     engine_module._sessionmaker = async_sessionmaker(
         bind=staff, expire_on_commit=False, autoflush=False
@@ -77,7 +82,7 @@ async def logins(app, settings, monkeypatch) -> Iterator[Seen]:
         bind=member, expire_on_commit=False, autoflush=False
     )
     yield seen
-    for engine in (staff, member, own):
+    for engine in (staff, member, own, auth):
         await engine.dispose()
 
 
@@ -142,6 +147,25 @@ async def test_a_members_own_submission_reads_staff_side_only_through_the_two_mo
 
     assert (detail.status_code, telemetry.status_code) == (200, 200), detail.text
     assert "own" in logins, "its own records were read staff side"
+    assert "staff" not in logins
+
+
+@pytest.mark.requirement("SF-89")
+async def test_a_members_sign_in_is_authenticated_on_authentications_own_login(
+    client, logins, session, secret_box, make_org, make_cert
+):
+    """Slice 3e: the member login holds nothing on ``operators`` or
+    ``portal_sessions``, so a sign-in that reached it would be refused."""
+    member = await make_org("routed-sign-in")
+    pem, _ = await make_cert(member)
+    operator, secret = await portal_make_operator(session, secret_box, member)
+    logins.clear()
+
+    await sign_in(client, operator, secret, pem)
+    page = await client.get("/portal/", headers=proxy_headers(pem))
+
+    assert page.status_code == 200, page.text
+    assert "auth" in logins, "the sign-in and the session were resolved staff side"
     assert "staff" not in logins
 
 

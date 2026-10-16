@@ -53,12 +53,8 @@ from aivs_server.auth.policy import (
     tlp_ceiling_clause,
 )
 from aivs_server.auth.secretbox import SecretBox
-from aivs_server.auth.sessions import (
-    SessionRejectedError,
-    authenticate_operator,
-    establish_session,
-    revoke_session,
-)
+from aivs_server.auth.sessions import SessionRejectedError
+from aivs_server.auth.staff_auth import sign_in_with_password, sign_out
 from aivs_server.config import Settings
 from aivs_server.db.clock import database_now
 from aivs_server.db.models import (
@@ -66,7 +62,6 @@ from aivs_server.db.models import (
     Circle,
     ClientCertificate,
     Distribution,
-    Operator,
     Organization,
     StixObject,
     Submission,
@@ -93,7 +88,11 @@ from aivs_server.services.bulk_validation import GroupMemberNotFoundError, valid
 from aivs_server.services.contributions import submit_submission
 from aivs_server.services.distribution import DistributionError, distribute_submission
 from aivs_server.services.isac_drafts import WaitingDraft, waiting_isac_drafts
-from aivs_server.services.member_staff_reads import first_pass_of, submission_history
+from aivs_server.services.member_staff_reads import (
+    first_pass_of,
+    own_default_depth,
+    submission_history,
+)
 from aivs_server.services.provenance import consequential_changes
 from aivs_server.services.proxy_filing import awaiting_confirmation, confirm_proxy_filing
 from aivs_server.services.publication import PublicationPausedError
@@ -196,30 +195,27 @@ async def login(
     if org is None:
         return await _login_failure(request, settings, email, "no_client_certificate")
 
+    # On the staff login (``auth.staff_auth``): the member login cannot read a
+    # password hash, or write anyone's lockout counter.
     try:
-        operator = await authenticate_operator(
-            session,
+        established = await sign_in_with_password(
+            settings,
             email=email,
             password=password,
             totp_code=totp_code,
             org_id=org.id,
+            cert_fingerprint=fingerprint,
             secret_box=SecretBox.from_settings(settings),
+            source_ip=request_source_ip(request, settings),
+            user_agent=request.headers.get("user-agent"),
         )
     except SessionRejectedError as exc:
         return await _login_failure(request, settings, email, exc.reason)
 
-    established = await establish_session(
-        session,
-        settings,
-        operator=operator,
-        cert_fingerprint=fingerprint,
-        source_ip=request_source_ip(request, settings),
-        user_agent=request.headers.get("user-agent"),
-    )
     await record_independently(
         action=AuditAction.LOGIN_SUCCESS,
         actor_type="operator",
-        actor_id=str(operator.id),
+        actor_id=str(established.operator_id),
         org_id=org.id,
         outcome="success",
         request_id=request.scope.get("aivs_request_id"),
@@ -289,7 +285,6 @@ async def _login_failure(request: Request, settings: Settings, email: str, reaso
 async def logout(
     request: Request,
     settings: SettingsDep,
-    session: SessionDep,
     csrf_token: Annotated[str, Form()],
 ) -> Response:
     """End the session and clear its cookies.
@@ -307,7 +302,7 @@ async def logout(
 
     token = request.cookies.get(settings.session_cookie_name)
     if token:
-        await revoke_session(session, token=token)
+        await sign_out(token)
         # The context names who signed out. Without it the row was anonymous,
         # and a sign-out could not be tied to the operator or the firm.
         await record_independently(
@@ -399,13 +394,12 @@ async def dashboard(request: Request, settings: SettingsDep, session: SessionDep
         ) or 0
 
     organization = await session.get(Organization, ctx.org_id)
-    operator = await session.get(Operator, ctx.operator_id) if ctx.operator_id else None
     context = base_context(request, settings, ctx, await operator_name(session, ctx), "dashboard")
     context.update(
         {
             "to_confirm": await _filed_for_you(session, ctx, now),
             "org_name": organization.name if organization else ctx.org_slug,
-            "default_depth": operator.default_depth if operator else None,
+            "default_depth": await own_default_depth(session, ctx),
             # Through the visibility gatherer: an event on a record this
             # firm cannot see is absent, not refused.
             "pinned": await pinned_events(session, ctx, now=now),

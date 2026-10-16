@@ -33,11 +33,11 @@ from aivs_server.auth.mtls import (
 )
 from aivs_server.auth.policy import is_auditor, require, uses_staff_database
 from aivs_server.auth.sessions import SessionRejectedError, resolve_session, resolve_sso_session
+from aivs_server.auth.staff_auth import authentication_session
 from aivs_server.config import Settings, get_settings
 from aivs_server.db.engine import (
     get_engine,
     get_member_engine,
-    get_member_sessionmaker,
     routed_session,
 )
 from aivs_server.db.models import ClientCertificate, Organization
@@ -112,20 +112,17 @@ async def get_request_session(request: Request) -> AsyncIterator[AsyncSession]:
 
 
 async def get_auth_session() -> AsyncIterator[AsyncSession]:
-    """Authentication's own session, on the member login: who the caller is is not yet known.
+    """Authentication's own session, on the staff login (``auth.staff_auth``).
 
     Kept apart from the handler's session so the handler's can be bound to the
-    caller's login afterwards. Every write authentication makes it commits
-    itself (``auth.sessions``).
+    caller's login afterwards. On the staff login because the member login
+    holds nothing on ``operators`` or ``portal_sessions`` (Phase P slice 3e),
+    and authentication reads only by what the request presented: a
+    certificate's fingerprint, a session token. Every write it makes it
+    commits itself (``auth.sessions``).
     """
-    async with get_member_sessionmaker()() as session:
-        try:
-            yield session
-        except Exception:
-            await session.rollback()
-            raise
-        finally:
-            await session.close()
+    async with authentication_session() as session:
+        yield session
 
 
 SessionDep = Annotated[AsyncSession, Depends(get_request_session)]

@@ -98,6 +98,29 @@ async def holdings(client, session, secret_box, world) -> SharingWorld:
         headers={**member.machine, "content-type": TAXII_TYPE},
     )
     assert posted.status_code == 202, posted.text
+    # A notice held for its digest, and a digest email queued: rows the
+    # deletion names, which nothing above had created, so their deletion was
+    # asserted of empty tables.
+    now = dt.datetime.now(dt.UTC)
+    session.add(
+        models.PendingNotice(
+            org_id=member.org.id,
+            subject="held for the digest",
+            submission_id=await session.scalar(select(models.Submission.id).limit(1)),
+            collection_id=world.collection.id,
+            visible_at=now,
+            created_at=now,
+        )
+    )
+    session.add(
+        models.EmailDelivery(
+            org_id=member.org.id,
+            recipient="digest@meridian.example",
+            subject="AIVS digest",
+            body="contentless",
+        )
+    )
+    await session.commit()
     return world
 
 
@@ -152,14 +175,17 @@ async def test_every_operational_row_of_the_member_is_deleted(client, session, h
         name: await _count(session, name, col, org_id) for name, col in _org_scoped("operational")
     }
 
+    # Every operational table holds the member's rows first, so a table the
+    # deletion misses fails here rather than passing on zero rows. It did:
+    # inbound_emails, email_deliveries and pending_notices were empty, so the
+    # assertion below held of them whatever offboarding did.
+    empty = sorted(name for name, count in before.items() if count == 0)
+    assert empty == [], f"holdings creates no rows in {empty}"
+
     response = await offboard(client, holdings)
 
     assert response.status_code == 200, response.text
     assert response.json()["status"] == "offboarded"
-    assert before["org_postures"] > 0
-    assert before["webhooks"] > 0
-    assert before["portal_sessions"] > 0
-    assert before["taxii_status"] > 0
     deliveries = await session.scalar(select(func.count()).select_from(models.WebhookDelivery))
     assert deliveries == 0, "a webhook's queued deliveries go with it"
     after = {

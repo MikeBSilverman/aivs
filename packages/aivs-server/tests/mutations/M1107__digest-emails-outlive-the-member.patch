@@ -1,0 +1,18 @@
+Mutation M1107: an offboarded member's queued digest emails are kept
+Re-applies: (main) "Offboarding's deletion is proved of every operational table" (SF-72)
+
+Expect red: packages/aivs-server/tests/unit/test_offboarding.py::test_every_operational_row_of_the_member_is_deleted
+
+diff --git a/packages/aivs-server/src/aivs_server/services/offboarding.py b/packages/aivs-server/src/aivs_server/services/offboarding.py
+index afb9aab..16e18d8 100644
+--- a/packages/aivs-server/src/aivs_server/services/offboarding.py
++++ b/packages/aivs-server/src/aivs_server/services/offboarding.py
+@@ -116,7 +116,7 @@ async def _close_memberships(
+ 
+ async def _delete_operational(session: AsyncSession, organisation: Organization) -> str:
+     """Delete the member's own operational data. Returns what happened to its postures."""
+-    for table in (Webhook, PortalSession, TaxiiStatus, PendingNotice, EmailDelivery):
++    for table in (Webhook, PortalSession, TaxiiStatus, PendingNotice):
+         await session.execute(delete(table).where(table.org_id == organisation.id))
+     if organisation.legal_hold_since is not None:
+         return "retained under legal hold"

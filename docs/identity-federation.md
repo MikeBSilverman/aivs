@@ -203,7 +203,8 @@ behaviour lives in the bounds instead:
   membership automation: the ID token's group claim
   (`oidc_member_group_claim`) is matched against
   `organizations.directory_object_id`, which membership staff set at
-  enrolment. A group that maps to nothing, groups that map to two members, a
+  enrolment (the Organisations screen, or `PUT /api/v1/orgs/{id}/directory-group`;
+  audited with the previous value). A group that maps to nothing, groups that map to two members, a
   group that maps to the hosting ISAC, or an organisation that is not `ACTIVE`
   refuses the login rather than creating anything — and each refusal is
   audited with its reason. This is what keeps a directory misconfiguration

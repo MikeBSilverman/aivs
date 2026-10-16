@@ -548,7 +548,8 @@ td form {
   margin: 0.15rem 0;
 }
 
-.domain-form input[name="domain"] {
+.domain-form input[name="domain"],
+.domain-form input[name="directory_object_id"] {
   font: inherit;
   width: 12rem;
   max-width: 100%;

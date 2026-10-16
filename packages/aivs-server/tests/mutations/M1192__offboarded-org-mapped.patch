@@ -1,0 +1,19 @@
+Mutation M1192: an offboarded organisation is given a directory group
+Re-applies: no earlier writer; the directory group was set only by editing the database until this commit
+
+Expect red: packages/aivs-server/tests/unit/test_directory_groups.py::test_an_offboarded_organisation_is_mapped_to_nothing
+
+diff --git a/packages/aivs-server/src/aivs_server/services/directory_groups.py b/packages/aivs-server/src/aivs_server/services/directory_groups.py
+index 5997425..7489c35 100644
+--- a/packages/aivs-server/src/aivs_server/services/directory_groups.py
++++ b/packages/aivs-server/src/aivs_server/services/directory_groups.py
+@@ -42,9 +42,6 @@ async def set_directory_group(
+     Does not commit. A group another organisation holds fails at flush on the
+     unique index; the caller reports that as a conflict.
+     """
+-    if organisation.status is OrgStatus.OFFBOARDED:
+-        reason = f"{organisation.slug} has been offboarded"
+-        raise DirectoryGroupError(reason)
+     previous = organisation.directory_object_id
+     organisation.directory_object_id = directory_object_id
+     await session.flush()

@@ -26,6 +26,8 @@ from aivs_schemas.models import (
     CircleCreate,
     CircleMemberAdd,
     CircleOut,
+    DirectoryGroupOut,
+    DirectoryGroupRequest,
     InstanceControlChange,
     InstanceControlOut,
     LegalHoldRequest,
@@ -44,6 +46,7 @@ from aivs_server.auth.policy import (
     can_administer_circle,
     can_manage_org,
     can_manage_own_webhooks,
+    can_map_directory_group,
     can_offboard_org,
     can_pause_distribution,
     can_quarantine_org,
@@ -79,6 +82,7 @@ from aivs_server.services.circles import (
     remove_circle_member,
     resolve_organisations,
 )
+from aivs_server.services.directory_groups import DirectoryGroupError, set_directory_group
 from aivs_server.services.enrolment import enrolment_problem
 from aivs_server.services.instance import pause_distribution, resume_distribution
 from aivs_server.services.mail_domains import (
@@ -782,6 +786,36 @@ async def unrecord_mail_domain(
         await session.rollback()
         raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     return MailDomainList(domains=await mail_domains_of(session, org_id))
+
+
+@router.put("/orgs/{org_id}/directory-group", response_model=DirectoryGroupOut)
+async def map_directory_group(
+    org_id: uuid.UUID,
+    payload: DirectoryGroupRequest,
+    ctx: AuthenticatedContext,
+    session: SessionDep,
+) -> DirectoryGroupOut:
+    """Say which directory group's members sign in by SSO as this organisation; null unmaps."""
+    require(can_map_directory_group(ctx), "directory_group_requires_isac_membership")
+    organisation = await load_org_for_update(session, org_id)
+    if organisation is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Organisation not found")
+    try:
+        await set_directory_group(
+            session,
+            ctx,
+            organisation=organisation,
+            directory_object_id=payload.directory_object_id,
+        )
+        await session.commit()
+    except DirectoryGroupError as exc:
+        await session.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except IntegrityError as exc:
+        await session.rollback()
+        detail = "That directory group is mapped to another organisation"
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=detail) from exc
+    return DirectoryGroupOut(directory_object_id=payload.directory_object_id)
 
 
 @router.post("/orgs/{org_id}/reconnect", response_model=OrganizationOut)

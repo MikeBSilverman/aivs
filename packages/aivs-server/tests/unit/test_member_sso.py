@@ -313,6 +313,33 @@ async def test_a_person_moved_to_another_firm_does_not_carry_the_old_operator(
     assert await refused_reason(session) == "organisation_changed"
 
 
+@pytest.mark.requirement("SF-65")
+async def test_a_group_mapped_through_the_api_signs_its_people_in(
+    sso_app, idp, client, isac, make_org, record_mail_domain, session
+):
+    """The reader against its writer: the mapping membership staff set is the one
+    the sign-in matches, with no database edit in between."""
+    _isac_org, headers = isac
+    org = await make_org("mapped-member", org_type=OrgType.GSIB)
+    await record_mail_domain(org, "mapped.test")
+    mapped = await client.put(
+        f"/api/v1/orgs/{org.id}/directory-group",
+        json={"directory_object_id": "grp-mapped"},
+        headers=headers,
+    )
+    assert mapped.status_code == 200, mapped.text
+
+    _client, finished, subject = await sign_in(
+        sso_app, idp, groups=("grp-mapped",), email="analyst@mapped.test"
+    )
+
+    assert finished.status_code == 200
+    person = (
+        await session.execute(select(Operator).where(Operator.federated_subject == subject))
+    ).scalar_one()
+    assert person.org_id == org.id
+
+
 # ---------------------------------------------------------------------------
 # Whose addresses a member's IdP may link (Q41, R30)
 # ---------------------------------------------------------------------------

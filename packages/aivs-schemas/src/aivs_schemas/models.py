@@ -271,6 +271,22 @@ class MailDomainList(_Out):
     domains: list[str]
 
 
+class DirectoryGroupRequest(_In):
+    """The ISAC directory group whose members are this organisation's people, or none.
+
+    The object id as the member IdP names it in the group claim. ``None``
+    unmaps the organisation, after which no SSO sign-in reaches it.
+    """
+
+    directory_object_id: Annotated[
+        str | None, Field(min_length=1, max_length=200, pattern=r"^[^\s\x00-\x1f\x7f]+$")
+    ]
+
+
+class DirectoryGroupOut(_Out):
+    directory_object_id: str | None
+
+
 class ReconnectRequest(_In):
     reason: Annotated[str, Field(min_length=10, max_length=1000)]
     #: Whether content shared during the quarantine reaches the member.

@@ -4,7 +4,7 @@ Re-applies: no earlier commit; Q41's domain-to-organisation mapping is new in th
 Expect red: packages/aivs-server/tests/unit/test_mail_domains.py::test_a_member_org_admin_cannot_extend_its_own_list
 
 diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs-server/src/aivs_server/auth/policy.py
-index 8fdf01d..517620f 100644
+index a0381d8..5a2c3be 100644
 --- a/packages/aivs-server/src/aivs_server/auth/policy.py
 +++ b/packages/aivs-server/src/aivs_server/auth/policy.py
 @@ -794,7 +794,7 @@ def can_record_mail_domains(ctx: AuthContext) -> bool:
@@ -15,4 +15,4 @@ index 8fdf01d..517620f 100644
 +    return is_isac_membership(ctx) or is_org_admin(ctx)
  
  
- def can_reconnect_org(ctx: AuthContext) -> bool:
+ def can_map_directory_group(ctx: AuthContext) -> bool:

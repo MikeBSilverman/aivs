@@ -37,11 +37,12 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
 from aivs_schemas.enums import CertStatus, CircleRole, OrgStatus, OrgType
-from aivs_schemas.models import CircleCreate, OrganizationCreate
+from aivs_schemas.models import CircleCreate, DirectoryGroupRequest, OrganizationCreate
 from aivs_server.audit.log import AuditAction, record
 from aivs_server.auth.deps import SessionDep, SettingsDep
 from aivs_server.auth.policy import (
     can_administer_circle,
+    can_map_directory_group,
     can_quarantine_org,
     can_record_mail_domains,
     can_view_instance_status,
@@ -76,6 +77,7 @@ from aivs_server.services.circles import (
     resolve_organisations,
     set_taxii_inbox,
 )
+from aivs_server.services.directory_groups import DirectoryGroupError, set_directory_group
 from aivs_server.services.enrolment import enrolment_problem
 from aivs_server.services.instance_status import gather_status
 from aivs_server.services.mail_domains import (
@@ -157,6 +159,7 @@ async def orgs_screen(request: Request, settings: SettingsDep, session: SessionD
                     "status": org.status.value,
                     "certificates": certificate_counts.get(org.id, 0),
                     "mail_domains": domains.get(org.id, []),
+                    "directory_object_id": org.directory_object_id or "",
                 }
                 for org in orgs
             ],
@@ -304,6 +307,55 @@ async def add_mail_domain_screen(
         set_notice(response, settings, "error", "Not recorded: another session just recorded it.")
         return response
     set_notice(response, settings, "info", f"{stored} is now {organisation.slug}'s.")
+    return response
+
+
+@router.post("/orgs/{org_id}/directory-group")
+async def directory_group_screen(
+    org_id: uuid.UUID,
+    request: Request,
+    settings: SettingsDep,
+    session: SessionDep,
+    csrf_token: Annotated[str, Form()],
+    directory_object_id: Annotated[str, Form(max_length=200)] = "",
+) -> Response:
+    """Map or unmap the organisation's SSO directory group, through the API's model.
+
+    Declared before ``/orgs/{org_id}/{action}``, which would otherwise match
+    "directory-group" first and answer 404. An empty field unmaps.
+    """
+    ctx, csrf_hash = await current_session(request, settings)
+    require_csrf(csrf_token, csrf_hash)
+    require(can_map_directory_group(ctx), "portal_directory_group")
+    organisation = await load_org_for_update(session, org_id)
+    if organisation is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Not found")
+
+    response = redirect_within_portal("/portal/admin/orgs")
+    try:
+        mapping = DirectoryGroupRequest(directory_object_id=directory_object_id.strip() or None)
+        await set_directory_group(
+            session, ctx, organisation=organisation, directory_object_id=mapping.directory_object_id
+        )
+        await session.commit()
+    except ValidationError:
+        set_notice(
+            response,
+            settings,
+            "error",
+            "Not mapped: a group id has no spaces or control characters.",
+        )
+        return response
+    except DirectoryGroupError as exc:
+        await session.rollback()
+        set_notice(response, settings, "error", f"Not mapped: {exc}.")
+        return response
+    except IntegrityError:
+        await session.rollback()
+        set_notice(response, settings, "error", "Not mapped: that group is another organisation's.")
+        return response
+    shown = mapping.directory_object_id or "no group"
+    set_notice(response, settings, "info", f"{organisation.slug} now signs in through {shown}.")
     return response
 
 

@@ -747,6 +747,12 @@ ROUTES: tuple[RouteCase, ...] = (
         _org("member", "/mail-domains/remove", {"domain": "matrix-remove.example"}),
     ),
     RouteCase(
+        "PUT",
+        "/api/v1/orgs/{org_id}/directory-group",
+        RouteClass.MEMBERSHIP,
+        _org("peer", "/directory-group", {"directory_object_id": "matrix-peer-group"}),
+    ),
+    RouteCase(
         "POST",
         "/api/v1/orgs/{org_id}/reconnect",
         RouteClass.RECONNECT,
@@ -816,6 +822,16 @@ ROUTES: tuple[RouteCase, ...] = (
         lambda world: (
             f"/portal/admin/orgs/{world.orgs['member']}/mail-domains",
             {"domain": "matrix-added-portal.example"},
+        ),
+        is_portal=True,
+    ),
+    RouteCase(
+        "POST",
+        "/portal/admin/orgs/{org_id}/directory-group",
+        RouteClass.MEMBERSHIP,
+        lambda world: (
+            f"/portal/admin/orgs/{world.orgs['peer']}/directory-group",
+            {"directory_object_id": "matrix-peer-portal-group"},
         ),
         is_portal=True,
     ),

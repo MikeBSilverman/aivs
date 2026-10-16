@@ -797,6 +797,16 @@ def can_record_mail_domains(ctx: AuthContext) -> bool:
     return is_isac_membership(ctx)
 
 
+def can_map_directory_group(ctx: AuthContext) -> bool:
+    """Say which directory group's members are an organisation's people. Membership staff.
+
+    The mapping is what an SSO sign-in's group claim is matched against, so
+    whoever sets it decides which organisation a member-tenant person acts
+    for; never the member itself.
+    """
+    return is_isac_membership(ctx)
+
+
 def can_reconnect_org(ctx: AuthContext) -> bool:
     """Return a quarantined organisation to service. The ISAC's alone: a member
     reconnecting itself would let whoever holds its compromised credentials do

@@ -1,0 +1,16 @@
+Mutation M1191: the audit row loses what the mapping was before
+Re-applies: no earlier writer; the directory group was set only by editing the database until this commit
+
+Expect red: packages/aivs-server/tests/unit/test_directory_groups.py::test_membership_staff_map_change_and_unmap_a_group_each_audited_with_the_previous
+
+diff --git a/packages/aivs-server/src/aivs_server/services/directory_groups.py b/packages/aivs-server/src/aivs_server/services/directory_groups.py
+index 5997425..69f17f1 100644
+--- a/packages/aivs-server/src/aivs_server/services/directory_groups.py
++++ b/packages/aivs-server/src/aivs_server/services/directory_groups.py
+@@ -54,5 +54,5 @@ async def set_directory_group(
+         ctx=ctx,
+         resource_type="organization",
+         resource_id=organisation.slug,
+-        details={"directory_object_id": directory_object_id, "previous": previous},
++        details={"directory_object_id": directory_object_id, "previous": None},
+     )

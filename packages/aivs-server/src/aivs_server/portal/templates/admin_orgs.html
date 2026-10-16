@@ -18,7 +18,7 @@
       <table>
         <thead>
           <tr><th>Slug</th><th>Name</th><th>Type</th><th>Status</th>
-              <th>Certificates</th><th>Mail domains</th><th>Action</th></tr>
+              <th>Certificates</th><th>Mail domains</th><th>SSO group</th><th>Action</th></tr>
         </thead>
         <tbody>
           {% for org in orgs %}
@@ -44,6 +44,18 @@
                            placeholder="example.com" aria-label="Mail domain for {{ org.slug }}">
                     <button type="submit" class="linklike">Add</button>
                   </form>
+                {% endif %}
+              </td>
+              <td>
+                {% if org.status != 'offboarded' %}
+                  <form method="post" action="/portal/admin/orgs/{{ org.id }}/directory-group" class="domain-form">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <input name="directory_object_id" maxlength="200" value="{{ org.directory_object_id }}"
+                           placeholder="directory group id" aria-label="SSO directory group for {{ org.slug }}">
+                    <button type="submit" class="linklike">Save</button>
+                  </form>
+                {% else %}
+                  <span class="muted mono">{{ org.directory_object_id }}</span>
                 {% endif %}
               </td>
               <td>

@@ -128,6 +128,9 @@ class AuditAction:
     #: A mail domain recorded as, or no longer, one organisation's (Q41).
     ORG_MAIL_DOMAIN_ADDED = "org.mail_domain.added"
     ORG_MAIL_DOMAIN_REMOVED = "org.mail_domain.removed"
+    #: The directory group an SSO group claim is matched against was set,
+    #: changed or cleared for one organisation.
+    ORG_DIRECTORY_GROUP_SET = "org.directory_group_set"
     CERT_REGISTERED = "cert.registered"
     CERT_REVOKED = "cert.revoked"
 

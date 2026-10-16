@@ -1,0 +1,18 @@
+Mutation M1190: a member's own org admin maps its directory group
+Re-applies: no earlier writer; the directory group was set only by editing the database until this commit
+
+Expect red: packages/aivs-server/tests/unit/test_directory_groups.py::test_a_member_org_admin_cannot_map_its_own_group
+
+diff --git a/packages/aivs-server/src/aivs_server/auth/policy.py b/packages/aivs-server/src/aivs_server/auth/policy.py
+index a0381d8..d2f982e 100644
+--- a/packages/aivs-server/src/aivs_server/auth/policy.py
++++ b/packages/aivs-server/src/aivs_server/auth/policy.py
+@@ -804,7 +804,7 @@ def can_map_directory_group(ctx: AuthContext) -> bool:
+     whoever sets it decides which organisation a member-tenant person acts
+     for; never the member itself.
+     """
+-    return is_isac_membership(ctx)
++    return is_isac_membership(ctx) or is_org_admin(ctx)
+ 
+ 
+ def can_reconnect_org(ctx: AuthContext) -> bool:

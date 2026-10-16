@@ -42,16 +42,17 @@ async def record_retrievals(
     via: AckVia,
     actor_ref: str | None,
     now: dt.datetime | None = None,
-) -> int:
+) -> None:
     """Record that ``org_id`` retrieved content from the given submissions.
 
-    Returns the number of rows actually written, which is the number of
-    submissions this organisation had not already been recorded as retrieving
-    today. Callers do not need to deduplicate beforehand.
+    A submission this organisation was already recorded retrieving today,
+    through this channel, writes nothing. Callers do not need to deduplicate
+    beforehand. Nothing is returned: the member login records receipts and
+    reads none (slice 3e), so it cannot say which rows were new.
     """
     unique_ids = sorted(set(submission_ids))
     if not unique_ids:
-        return 0
+        return
 
     now = now or dt.datetime.now(dt.UTC)
     today = now.date()
@@ -71,9 +72,11 @@ async def record_retrievals(
     statement = (
         insert(Acknowledgment)
         .values(rows)
-        .on_conflict_do_nothing(constraint="uq_acknowledgments_daily_dedupe")
+        # No conflict target: naming the daily key would need SELECT on its
+        # columns -- who retrieved what -- which the member login is refused
+        # (slice 3e). The only other unique key is a random id, so any
+        # conflict here is the daily key's.
+        .on_conflict_do_nothing()
     )
-    # RETURNING id makes the count exact and dialect-independent, rather than
-    # relying on a driver-specific rowcount after ON CONFLICT DO NOTHING.
-    result = await session.execute(statement.returning(Acknowledgment.id))
-    return len(result.scalars().all())
+    # No RETURNING: Postgres refuses it without SELECT.
+    await session.execute(statement)

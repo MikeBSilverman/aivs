@@ -6,12 +6,12 @@ Expect red: packages/aivs-server/tests/authz_matrix/test_principal_matrix.py::te
 diff --git a/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py b/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py
 --- a/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py
 +++ b/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py
-@@ -616,7 +616,7 @@
+@@ -609,7 +609,7 @@
          submission = await load_submission(session, submission_id, for_update=False)
          # A firm does not act on its own warning; that is the ISAC's record
          # of the submitter, and only ISAC staff assert about their own.
 -        if submission is None or is_submitted_by(key, submission, ctx.org_id):
 +        if submission is None:
              continue
-         await assert_receipt(
+         await assert_own_receipt(
              session,

@@ -34,7 +34,8 @@ from aivs_server.auth.policy import (
     can_view_submission_receipts,
 )
 from aivs_server.db.models import Acknowledgment, Organization
-from aivs_server.services.acknowledgments import AssertionNotFoundError, assert_receipt
+from aivs_server.services.acknowledgments import AssertionNotFoundError
+from aivs_server.services.member_staff_writes import assert_own_receipt
 from aivs_server.services.submissions import load_submission
 
 __all__ = ["router"]
@@ -66,7 +67,7 @@ async def acknowledge(
     if submission is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Submission not found")
     try:
-        return await assert_receipt(
+        return await assert_own_receipt(
             session,
             ctx,
             submission,

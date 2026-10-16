@@ -1,0 +1,18 @@
+Mutation M1075: a member's postures are listed without its organisation key
+Re-applies: a staff read that lost its organisation key (Phase P slice 3e: on the staff login it reads every firm's)
+
+Expect red: packages/aivs-server/tests/unit/test_posture.py::test_a_member_lists_its_own_postures_and_nobody_elses
+Expect red: packages/aivs-server/tests/unit/test_vex.py::test_the_export_is_the_callers_own_and_nobody_elses
+
+diff --git a/packages/aivs-server/src/aivs_server/services/posture_reads.py b/packages/aivs-server/src/aivs_server/services/posture_reads.py
+--- a/packages/aivs-server/src/aivs_server/services/posture_reads.py
++++ b/packages/aivs-server/src/aivs_server/services/posture_reads.py
+@@ -26,7 +26,7 @@
+     """Every posture the caller's organisation holds, newest change first."""
+     rows = await session.execute(
+         select(OrgPosture)
+-        .where(OrgPosture.org_id == ctx.org_id)
++        .where(OrgPosture.org_id.is_not(None))
+         .order_by(OrgPosture.updated_at.desc(), OrgPosture.id)
+     )
+     return list(rows.scalars().all())

@@ -1,0 +1,16 @@
+Mutation M1078: lead time counts every firm's actioned postures as the member's
+Re-applies: a staff read that lost its organisation key (Phase P slice 3e: on the staff login it reads every firm's)
+
+Expect red: packages/aivs-server/tests/unit/test_own_receipts_and_postures.py::test_a_peers_actioned_posture_is_not_counted_as_the_members
+
+diff --git a/packages/aivs-server/src/aivs_server/services/posture_reads.py b/packages/aivs-server/src/aivs_server/services/posture_reads.py
+--- a/packages/aivs-server/src/aivs_server/services/posture_reads.py
++++ b/packages/aivs-server/src/aivs_server/services/posture_reads.py
+@@ -55,7 +55,6 @@
+         select(func.count())
+         .select_from(OrgPosture)
+         .where(
+-            OrgPosture.org_id == ctx.org_id,
+             OrgPosture.vulnerability_stix_id.in_(stix_ids),
+             OrgPosture.status.in_(tuple(statuses)),
+         )

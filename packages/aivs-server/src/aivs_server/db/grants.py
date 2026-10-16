@@ -139,7 +139,9 @@ MEMBER_GRANTS: Final[Mapping[str, TableGrant]] = MappingProxyType(
         # Replacing a draft's bundle deletes and inserts; distribution sets
         # ``created_by_ref`` and the marking in ``raw``.
         "public.stix_objects": TableGrant(("SELECT", "INSERT", "DELETE"), update_columns=("raw",)),
-        "public.acknowledgments": TableGrant(("SELECT", "INSERT")),
+        # Retrievals are recorded on the member path; a member's own receipts
+        # are read, and its assertions made, staff side (slice 3e: R26).
+        "public.acknowledgments": _WRITE_ONLY,
         "public.distributions": TableGrant(("SELECT", "INSERT")),
         # Queuing a notification row-locks the webhooks it reads
         # (``db.webhook_lock``), and Postgres allows a row lock only with UPDATE
@@ -161,19 +163,6 @@ MEMBER_GRANTS: Final[Mapping[str, TableGrant]] = MappingProxyType(
         # lift a peer's quarantine or redirect its digest. ``updated_at`` only,
         # because the member path row-locks its own organisation.
         "public.organizations": TableGrant(("SELECT",), update_columns=("updated_at",)),
-        "public.org_postures": TableGrant(
-            ("SELECT", "INSERT"),
-            update_columns=(
-                "status",
-                "products",
-                "action_statement",
-                "detection_deployed",
-                "evidence_note",
-                "validated_at",
-                "updated_by_operator_id",
-                "updated_at",
-            ),
-        ),
     }
 )
 

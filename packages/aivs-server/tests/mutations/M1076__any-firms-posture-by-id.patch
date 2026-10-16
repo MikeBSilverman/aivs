@@ -1,0 +1,16 @@
+Mutation M1076: a posture is read by id whoever's it is
+Re-applies: a staff read that lost its organisation key (Phase P slice 3e: on the staff login it reads every firm's)
+
+Expect red: packages/aivs-server/tests/unit/test_posture.py::test_the_isac_reading_a_members_posture_gets_the_404_an_absent_row_gets
+
+diff --git a/packages/aivs-server/src/aivs_server/services/posture_reads.py b/packages/aivs-server/src/aivs_server/services/posture_reads.py
+--- a/packages/aivs-server/src/aivs_server/services/posture_reads.py
++++ b/packages/aivs-server/src/aivs_server/services/posture_reads.py
+@@ -68,6 +68,6 @@
+ ) -> OrgPosture | None:
+     """The posture row, if it is the caller's own; otherwise ``None``, as if absent."""
+     row = await session.get(OrgPosture, posture_id)
+-    if row is None or row.org_id != ctx.org_id:
++    if row is None:
+         return None
+     return row

@@ -25,16 +25,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from aivs_server.audit.log import AuditAction, record
 from aivs_server.auth.context import AuthContext
 from aivs_server.auth.deps import AuditorContext, SessionDep
-from aivs_server.auth.policy import audit_scope, can_read_audit, require
+from aivs_server.auth.policy import can_read_audit, require
 from aivs_server.db.clock import database_now
 from aivs_server.services.audit_stream import (
     MAX_PAGE,
     CursorError,
     Page,
     decode_cursor,
-    receipt_events,
 )
-from aivs_server.services.member_staff_reads import audit_page
+from aivs_server.services.member_staff_reads import audit_page, receipt_page
 
 __all__ = ["router"]
 
@@ -90,7 +89,7 @@ async def receipts(
     """Receipts, in commit order, within the caller's scope."""
     await _require_auditor(session, ctx)
     after = _parse(cursor, "receipts")
-    page = await receipt_events(session, scope=audit_scope(ctx), after=after, limit=limit)
+    page = await receipt_page(session, ctx, after=after, limit=limit)
     return await _served(session, ctx, "receipts", page)
 
 

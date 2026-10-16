@@ -1,0 +1,17 @@
+Mutation M1085: the member login keeps SELECT and INSERT on org_postures
+Re-applies: MEMBER_GRANTS before Phase P slice 3e (R26)
+
+Expect red: packages/aivs-server/tests/migrations/test_member_login_grants.py::test_every_table_is_classified_and_granted_as_classified
+Expect red: packages/aivs-server/tests/migrations/test_member_login_grants.py::test_the_member_login_is_refused_what_its_grants_withhold[postures]
+
+diff --git a/packages/aivs-server/src/aivs_server/db/grants.py b/packages/aivs-server/src/aivs_server/db/grants.py
+--- a/packages/aivs-server/src/aivs_server/db/grants.py
++++ b/packages/aivs-server/src/aivs_server/db/grants.py
+@@ -158,6 +158,7 @@
+         "public.client_certificates": TableGrant(
+             ("SELECT",), update_columns=("status", "revoked_at", "revoked_reason", "updated_at")
+         ),
++        "public.org_postures": TableGrant(("SELECT", "INSERT")),
+         # Its own status and settings a member changes on the staff login
+         # (``member_staff_writes``): with them here, SQL on the member path could
+         # lift a peer's quarantine or redirect its digest. ``updated_at`` only,

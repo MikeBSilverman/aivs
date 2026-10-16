@@ -31,7 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from aivs_server.auth.context import AuthContext
 from aivs_server.auth.policy import distribution_visibility_clause
 from aivs_server.db.models import Distribution, Organization, OrgPosture, StixObject, Submission
-from aivs_server.services.posture import own_postures
+from aivs_server.services.member_staff_reads import own_postures_of
 
 __all__ = ["OPENVEX_CONTEXT", "openvex_document"]
 
@@ -97,7 +97,7 @@ async def openvex_document(
     session: AsyncSession, ctx: AuthContext, *, now: dt.datetime
 ) -> dict[str, Any]:
     """The caller's organisation's postures, as one OpenVEX 0.2.0 document."""
-    rows = await own_postures(session, ctx)
+    rows = await own_postures_of(session, ctx)
     organisation = await session.get(Organization, ctx.org_id)
     author = organisation.name if organisation else ctx.org_slug
     cve_ids = await _visible_cve_ids(session, ctx, (row.vulnerability_stix_id for row in rows), now)

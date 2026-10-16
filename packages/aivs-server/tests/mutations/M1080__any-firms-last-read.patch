@@ -1,0 +1,16 @@
+Mutation M1080: new since is measured from any firm's last portal read
+Re-applies: a staff read that lost its organisation key (Phase P slice 3e: on the staff login it reads every firm's)
+
+Expect red: packages/aivs-server/tests/unit/test_own_receipts_and_postures.py::test_a_peers_portal_read_is_not_the_members_last_read
+
+diff --git a/packages/aivs-server/src/aivs_server/services/vulnerability_objects.py b/packages/aivs-server/src/aivs_server/services/vulnerability_objects.py
+--- a/packages/aivs-server/src/aivs_server/services/vulnerability_objects.py
++++ b/packages/aivs-server/src/aivs_server/services/vulnerability_objects.py
+@@ -129,7 +129,6 @@
+     """
+     last: dt.datetime | None = await session.scalar(
+         select(func.max(Acknowledgment.created_at)).where(
+-            Acknowledgment.org_id == org_id,
+             Acknowledgment.ack_type == AckType.RETRIEVED,
+             Acknowledgment.via == AckVia.PORTAL,
+             Acknowledgment.submission_id.in_(sorted(set(submission_ids))),

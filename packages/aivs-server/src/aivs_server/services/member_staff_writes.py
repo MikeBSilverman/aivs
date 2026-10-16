@@ -8,7 +8,10 @@ put on a firm, quarantine a peer, or point a peer's digest at another mailbox.
 Yet a member does change its own row: it quarantines itself ("we are
 compromised, cut us off") and sets its notification settings. And since slice
 3e, which holds the member login to nothing on ``operators``, a person sets
-their own reading depth here too. Each function
+their own reading depth here too; and since the member login holds nothing on
+``org_postures`` and only writes ``acknowledgments``, a member's own posture
+and its asserted receipts ("we've acted") are written here, through the
+services that own them (R26). Each function
 here makes one such change on a staff session of its own.
 
 Every function holds one invariant, and nothing else here makes it true:
@@ -26,27 +29,37 @@ Each goes through the service that knows the state it changes
 
 from __future__ import annotations
 
+import datetime as dt
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from aivs_schemas.enums import NotificationCadence, ReadingDepth
+from aivs_schemas.enums import AckType, AckVia, NotificationCadence, ReadingDepth
 from aivs_server.audit.log import AuditAction, record
+from aivs_server.auth.attribution_key import AttributionKey
 from aivs_server.auth.context import AuthContext
 from aivs_server.auth.policy import uses_staff_database
 from aivs_server.db.clock import database_now
 from aivs_server.db.engine import get_sessionmaker
-from aivs_server.db.models import Organization
+from aivs_server.db.models import Acknowledgment, Organization, OrgPosture, Submission
+from aivs_server.services.acknowledgments import assert_receipt
 from aivs_server.services.member_settings import (
     change_notification_settings,
     store_default_depth,
 )
 from aivs_server.services.org_status import load_org_for_update
+from aivs_server.services.posture import VexStatement, record_posture
 from aivs_server.services.quarantine import quarantine_org
 
-__all__ = ["quarantine_organisation", "set_notification_settings", "set_own_default_depth"]
+__all__ = [
+    "assert_own_receipt",
+    "quarantine_organisation",
+    "record_own_posture",
+    "set_notification_settings",
+    "set_own_default_depth",
+]
 
 
 @asynccontextmanager
@@ -125,3 +138,46 @@ async def set_own_default_depth(
     """Store the signed-in person's reading depth; ``False`` if they or their org have gone."""
     async with _writer(session, ctx) as writer:
         return await store_default_depth(writer, ctx, depth)
+
+
+async def assert_own_receipt(
+    session: AsyncSession,
+    ctx: AuthContext,
+    submission: Submission,
+    *,
+    ack_type: AckType,
+    via: AckVia,
+    note: str | None,
+    now: dt.datetime,
+    key: AttributionKey,
+) -> Acknowledgment:
+    """Record a receipt for the caller's organisation (``acknowledgments.assert_receipt``).
+
+    ``assert_receipt`` reads the organisation's own retrievals and today's
+    receipt, which the member login may not, and records the audit row with it.
+    """
+    async with _writer(session, ctx) as writer:
+        return await assert_receipt(
+            writer, ctx, submission, ack_type=ack_type, via=via, note=note, now=now, key=key
+        )
+
+
+async def record_own_posture(
+    session: AsyncSession,
+    ctx: AuthContext,
+    *,
+    vulnerability_id: str,
+    statement: VexStatement,
+    now: dt.datetime,
+) -> OrgPosture:
+    """Set the caller's organisation's posture (``posture.record_posture``), with its audit row.
+
+    The row is returned loaded, server defaults included: for a member it
+    belongs to a session already closed, and the caller cannot refresh it.
+    """
+    async with _writer(session, ctx) as writer:
+        row = await record_posture(
+            writer, ctx, vulnerability_id=vulnerability_id, statement=statement, now=now
+        )
+        await writer.refresh(row)
+        return row

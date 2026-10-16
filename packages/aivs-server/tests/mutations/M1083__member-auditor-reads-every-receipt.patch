@@ -1,0 +1,17 @@
+Mutation M1083: a member's auditor reads the instance's receipts
+Re-applies: a staff read that lost its organisation key (Phase P slice 3e: on the staff login it reads every firm's)
+
+Expect red: packages/aivs-server/tests/unit/test_auditor.py::test_receipts_are_scoped_like_the_trail
+
+diff --git a/packages/aivs-server/src/aivs_server/services/member_staff_reads.py b/packages/aivs-server/src/aivs_server/services/member_staff_reads.py
+--- a/packages/aivs-server/src/aivs_server/services/member_staff_reads.py
++++ b/packages/aivs-server/src/aivs_server/services/member_staff_reads.py
+@@ -298,7 +298,7 @@
+     """
+     async with _reader(ctx) as staff:
+         return await receipt_events(
+-            staff or session, scope=audit_scope(ctx), after=after, limit=limit
++            staff or session, scope=None, after=after, limit=limit
+         )
+ 
+ 

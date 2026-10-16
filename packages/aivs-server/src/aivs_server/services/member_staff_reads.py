@@ -7,8 +7,10 @@ a read it could make for one member, SQL injected on the member path could
 make for all of them. Yet a member is entitled to its own rows in those
 tables: its submission's history, its TAXII status resources, its connection's
 last retrieval, its telemetry, its first-pass findings, its auditor's trail;
-and since slice 3e, which holds the member login to nothing on ``operators``,
-its own signed-in person's name and reading depth. Each function here
+and since slice 3e, which holds the member login to nothing on ``operators``
+or ``org_postures`` and to writing ``acknowledgments``, its own signed-in
+person's name and reading depth, its own receipts and its own postures (R26).
+Each function here
 answers one of those questions on a staff session of its own.
 
 Every function holds one invariant, and nothing else here makes it true:
@@ -34,13 +36,13 @@ from __future__ import annotations
 
 import datetime as dt
 import uuid
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Iterable, Sequence
 from contextlib import asynccontextmanager
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from aivs_schemas.enums import ReadingDepth
+from aivs_schemas.enums import PostureStatus, ReadingDepth
 from aivs_server.audit.log import AuditAction
 from aivs_server.auth.context import AuthContext
 from aivs_server.auth.policy import audit_scope, uses_staff_database
@@ -50,22 +52,40 @@ from aivs_server.db.models import (
     CountSnapshot,
     CountSubject,
     Operator,
+    OrgPosture,
     SubmissionTransition,
     SubmissionTriage,
     TaxiiStatus,
     Webhook,
     WebhookDelivery,
 )
+from aivs_server.services.acknowledgments import retrieved_submission_ids
 from aivs_server.services.attribution import filed_by
-from aivs_server.services.audit_stream import Cursor, Page, audit_events
+from aivs_server.services.audit_stream import Cursor, Page, audit_events, receipt_events
+from aivs_server.services.evidence_pack import EvidencePack, evidence_pack
+from aivs_server.services.posture_reads import (
+    own_posture,
+    own_posture_count,
+    own_posture_status,
+    own_postures,
+)
+from aivs_server.services.vulnerability_objects import last_read_at
 
 __all__ = [
     "audit_page",
     "first_pass_of",
     "inbox_posts_since",
     "last_retrieval",
+    "own_actioned_count",
     "own_default_depth",
     "own_display_name",
+    "own_evidence_pack",
+    "own_last_portal_read",
+    "own_posture_of",
+    "own_posture_on",
+    "own_postures_of",
+    "own_retrievals",
+    "receipt_page",
     "submission_history",
     "taxii_status_of",
     "telemetry_snapshot",
@@ -266,3 +286,76 @@ async def own_default_depth(session: AsyncSession, ctx: AuthContext) -> ReadingD
     async with _reader(ctx) as staff:
         depth: ReadingDepth | None = await (staff or session).scalar(query)
         return depth
+
+
+async def receipt_page(
+    session: AsyncSession, ctx: AuthContext, *, after: Cursor | None, limit: int
+) -> Page:
+    """A page of receipts within the caller's scope (``policy.audit_scope``).
+
+    A member's auditor reads its own organisation's receipts; the ISAC's reads
+    the instance, on its own session.
+    """
+    async with _reader(ctx) as staff:
+        return await receipt_events(
+            staff or session, scope=audit_scope(ctx), after=after, limit=limit
+        )
+
+
+async def own_retrievals(
+    session: AsyncSession, ctx: AuthContext, submission_ids: frozenset[uuid.UUID]
+) -> frozenset[uuid.UUID]:
+    """Which of ``submission_ids`` the server has recorded reaching the caller's organisation."""
+    async with _reader(ctx) as staff:
+        return await retrieved_submission_ids(staff or session, ctx.org_id, submission_ids)
+
+
+async def own_last_portal_read(
+    session: AsyncSession, ctx: AuthContext, submission_ids: Iterable[uuid.UUID]
+) -> dt.datetime | None:
+    """When a person at the caller's organisation last read these submissions in the portal."""
+    async with _reader(ctx) as staff:
+        return await last_read_at(staff or session, ctx.org_id, submission_ids)
+
+
+async def own_evidence_pack(
+    session: AsyncSession, ctx: AuthContext, vulnerability_stix_id: str, *, now: dt.datetime
+) -> EvidencePack | None:
+    """The caller's own evidence pack (``services.evidence_pack``): its receipts and posture.
+
+    Built for ``ctx``'s organisation from what it could read, as it always was;
+    on the staff login because the pack holds the member's receipts and posture.
+    """
+    async with _reader(ctx) as staff:
+        return await evidence_pack(staff or session, ctx, vulnerability_stix_id, now=now)
+
+
+async def own_postures_of(session: AsyncSession, ctx: AuthContext) -> list[OrgPosture]:
+    """Every posture the caller's organisation holds (``posture.own_postures``)."""
+    async with _reader(ctx) as staff:
+        return await own_postures(staff or session, ctx)
+
+
+async def own_posture_of(
+    session: AsyncSession, ctx: AuthContext, posture_id: uuid.UUID
+) -> OrgPosture | None:
+    """One posture, if it is the caller's organisation's (``posture.own_posture``)."""
+    async with _reader(ctx) as staff:
+        return await own_posture(staff or session, ctx, posture_id)
+
+
+async def own_posture_on(session: AsyncSession, ctx: AuthContext, stix_id: str) -> str | None:
+    """The caller's organisation's posture status on one vulnerability."""
+    async with _reader(ctx) as staff:
+        return await own_posture_status(staff or session, ctx, stix_id)
+
+
+async def own_actioned_count(
+    session: AsyncSession,
+    ctx: AuthContext,
+    stix_ids: Sequence[str],
+    statuses: frozenset[PostureStatus],
+) -> int:
+    """How many of ``stix_ids`` the caller's organisation holds a posture in ``statuses`` on."""
+    async with _reader(ctx) as staff:
+        return await own_posture_count(staff or session, ctx, stix_ids, statuses)

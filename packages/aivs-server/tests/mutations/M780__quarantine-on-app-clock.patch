@@ -6,15 +6,7 @@ Expect red: packages/aivs-server/tests/unit/test_one_clock.py::test_quarantine_a
 diff --git a/packages/aivs-server/src/aivs_server/services/member_staff_writes.py b/packages/aivs-server/src/aivs_server/services/member_staff_writes.py
 --- a/packages/aivs-server/src/aivs_server/services/member_staff_writes.py
 +++ b/packages/aivs-server/src/aivs_server/services/member_staff_writes.py
-@@ -24,6 +24,7 @@
- 
- from __future__ import annotations
- 
-+import datetime as dt
- import uuid
- from collections.abc import AsyncIterator
- from contextlib import asynccontextmanager
-@@ -80,7 +81,7 @@
+@@ -98,7 +98,7 @@
          if organisation is None:
              return None
          await quarantine_org(

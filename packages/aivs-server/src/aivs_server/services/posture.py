@@ -44,7 +44,6 @@ trust, not something this module can withhold (threat model, the posture row).
 from __future__ import annotations
 
 import datetime as dt
-import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Final
@@ -67,6 +66,7 @@ from aivs_server.db.models import (
 from aivs_server.db.org_lock import org_still_active
 from aivs_server.services.contributions import TargetNotFoundError, resolve_target
 from aivs_server.services.count_snapshots import publish_if_changed, published
+from aivs_server.services.posture_reads import own_posture, own_postures
 from aivs_server.services.telemetry import (
     K_ANONYMITY,
     Count,
@@ -238,26 +238,6 @@ async def _own_row_locked(
             .execution_options(populate_existing=True)
         )
     ).scalar_one()
-
-
-async def own_postures(session: AsyncSession, ctx: AuthContext) -> list[OrgPosture]:
-    """Every posture the caller's organisation holds, newest change first."""
-    rows = await session.execute(
-        select(OrgPosture)
-        .where(OrgPosture.org_id == ctx.org_id)
-        .order_by(OrgPosture.updated_at.desc(), OrgPosture.id)
-    )
-    return list(rows.scalars().all())
-
-
-async def own_posture(
-    session: AsyncSession, ctx: AuthContext, posture_id: uuid.UUID
-) -> OrgPosture | None:
-    """The posture row, if it is the caller's own; otherwise ``None``, as if absent."""
-    row = await session.get(OrgPosture, posture_id)
-    if row is None or row.org_id != ctx.org_id:
-        return None
-    return row
 
 
 class PostureSummary:

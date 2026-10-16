@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import datetime as dt
 import statistics
-import uuid
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Final
@@ -39,7 +38,8 @@ from aivs_schemas.enums import VISIBLE_SUBMISSION_STATES, PostureStatus
 from aivs_schemas.extension.builders import AIVS_INTEL_EXTENSION_ID
 from aivs_server.auth.context import AuthContext
 from aivs_server.auth.policy import distribution_visibility_clause
-from aivs_server.db.models import Circle, Distribution, OrgPosture, StixObject, Submission
+from aivs_server.db.models import Circle, Distribution, StixObject, Submission
+from aivs_server.services.member_staff_reads import own_actioned_count
 from aivs_server.services.telemetry import K_ANONYMITY
 
 __all__ = [
@@ -213,7 +213,7 @@ async def org_statement(
         item_lead(stix_id, name, first, versions.get(stix_id, ()))
         for stix_id, (first, name) in sorted(first_seen.items(), key=lambda kv: kv[1][0])
     ]
-    actioned = await _actioned(session, ctx.org_id, list(first_seen))
+    actioned = await own_actioned_count(session, ctx, list(first_seen), _ACTIONED)
     return summarise(quarter, items, actioned)
 
 
@@ -263,21 +263,6 @@ async def _visible_versions(
     for stix_id, raw in rows:
         versions.setdefault(stix_id, []).append(raw)
     return versions
-
-
-async def _actioned(session: AsyncSession, org_id: uuid.UUID, stix_ids: Sequence[str]) -> int:
-    if not stix_ids:
-        return 0
-    count = await session.scalar(
-        select(func.count())
-        .select_from(OrgPosture)
-        .where(
-            OrgPosture.org_id == org_id,
-            OrgPosture.vulnerability_stix_id.in_(stix_ids),
-            OrgPosture.status.in_(tuple(_ACTIONED)),
-        )
-    )
-    return int(count or 0)
 
 
 # ---------------------------------------------------------------------------

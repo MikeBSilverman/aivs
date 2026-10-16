@@ -6,16 +6,18 @@ Expect red: packages/aivs-server/tests/unit/test_reading_depth.py::test_the_tech
 diff --git a/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py b/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py
 --- a/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py
 +++ b/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py
-@@ -41,7 +41,7 @@
- from aivs_server.auth.deps import AttributionKeyDep, SessionDep, SettingsDep, request_source_ip
- from aivs_server.auth.policy import can_hold_evidence_pack, can_review_submissions
- from aivs_server.db.clock import database_now
--from aivs_server.db.models import OrgPosture
-+from aivs_server.db.models import OrgPosture, StixObject
- from aivs_server.portal.shared import (
-     base_context,
-     current_session,
-@@ -203,7 +203,13 @@
+@@ -21,6 +21,10 @@
+ 
+ import datetime as dt
+ import json
++
++from sqlalchemy import select
++
++from aivs_server.db.models import StixObject
+ from collections.abc import Mapping
+ from typing import Annotated, Any, Final
+ from urllib.parse import urlencode
+@@ -206,7 +210,13 @@
      if depth is ReadingDepth.GUIDED:
          rendering["guidance"] = await _guidance(session, ctx, page, now=now)
      elif depth is ReadingDepth.TECHNICAL:

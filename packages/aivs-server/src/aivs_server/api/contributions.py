@@ -57,13 +57,12 @@ from aivs_server.services.contributions import (
     TargetNotFoundError,
     contribute,
 )
+from aivs_server.services.member_staff_reads import own_posture_of, own_postures_of
+from aivs_server.services.member_staff_writes import record_own_posture
 from aivs_server.services.posture import (
     PostureError,
     VexStatement,
-    own_posture,
-    own_postures,
     posture_summary,
-    record_posture,
 )
 from aivs_server.services.proxy_filing import confirm_proxy_filing, file_on_behalf
 from aivs_server.services.submissions import STORAGE_ERRORS, SubmissionError, load_submission
@@ -252,7 +251,7 @@ async def _record_isac_click_refused(
 async def set_posture(payload: PostureIn, ctx: AuthenticatedContext, session: SessionDep) -> Any:
     """Set this organisation's posture on a vulnerability it can see. Private to it."""
     try:
-        row = await record_posture(
+        row = await record_own_posture(
             session,
             ctx,
             vulnerability_id=payload.vulnerability,
@@ -264,14 +263,13 @@ async def set_posture(payload: PostureIn, ctx: AuthenticatedContext, session: Se
         raise _NOT_FOUND from None
     except PostureError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    await session.refresh(row)
     return row
 
 
 @router.get("/postures", response_model=list[PostureOut])
 async def list_postures(ctx: AuthenticatedContext, session: SessionDep) -> Any:
     """This organisation's own postures. Nobody else's, whoever asks."""
-    return await own_postures(session, ctx)
+    return await own_postures_of(session, ctx)
 
 
 @router.get("/postures/openvex")
@@ -299,7 +297,7 @@ async def export_postures(ctx: AuthenticatedContext, session: SessionDep) -> dic
 @router.get("/postures/{posture_id}", response_model=PostureOut)
 async def get_posture(posture_id: uuid.UUID, ctx: AuthenticatedContext, session: SessionDep) -> Any:
     """One posture row: its own organisation only. Everyone else, the ISAC included, 404."""
-    row = await own_posture(session, ctx, posture_id)
+    row = await own_posture_of(session, ctx, posture_id)
     if row is None:
         raise _NOT_FOUND
     return row

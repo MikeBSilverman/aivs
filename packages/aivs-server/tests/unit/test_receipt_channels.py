@@ -38,11 +38,13 @@ async def received(session, make_org):
 
 
 async def _retrieve(session, org, submission, via, now=NOON) -> int:
-    written = await record_retrievals(
+    """How many receipts the retrieval wrote: counted, since the writer cannot say."""
+    before = await _count(session)
+    await record_retrievals(
         session, org_id=org.id, submission_ids=[submission.id], via=via, actor_ref=None, now=now
     )
     await session.commit()
-    return written
+    return await _count(session) - before
 
 
 async def _count(session) -> int:

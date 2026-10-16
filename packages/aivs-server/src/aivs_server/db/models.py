@@ -964,6 +964,8 @@ class Acknowledgment(Base):
         ),
         Index("ix_acknowledgments_submission_org", "submission_id", "org_id"),
         Index("ix_acknowledgments_stream", "xact_id", "id"),
+        # The member login records a retrieval and reads no receipt (slice 3e).
+        _WRITE_WITHOUT_READING,
     )
 
 

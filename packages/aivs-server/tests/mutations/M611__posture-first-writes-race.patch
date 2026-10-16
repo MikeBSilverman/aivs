@@ -6,7 +6,7 @@ Expect red: packages/aivs-server/tests/unit/test_posture.py::test_two_first_writ
 diff --git a/packages/aivs-server/src/aivs_server/services/posture.py b/packages/aivs-server/src/aivs_server/services/posture.py
 --- a/packages/aivs-server/src/aivs_server/services/posture.py
 +++ b/packages/aivs-server/src/aivs_server/services/posture.py
-@@ -171,19 +171,7 @@ async def _own_row_locked(
+@@ -215,19 +215,7 @@
      ``uq_org_postures_org_vuln`` and answer 500. Inserting with ``ON CONFLICT
      DO NOTHING`` lets the loser fall through to the winner's row instead.
      """
@@ -27,7 +27,7 @@ diff --git a/packages/aivs-server/src/aivs_server/services/posture.py b/packages
          await session.execute(
              select(OrgPosture)
              .where(
-@@ -191,9 +179,12 @@ async def _own_row_locked(
+@@ -235,9 +223,12 @@
                  OrgPosture.vulnerability_stix_id == vulnerability_id,
              )
              .with_for_update()
@@ -41,4 +41,4 @@ diff --git a/packages/aivs-server/src/aivs_server/services/posture.py b/packages
 +    return row
  
  
- async def own_postures(session: AsyncSession, ctx: AuthContext) -> list[OrgPosture]:
+ class PostureSummary:

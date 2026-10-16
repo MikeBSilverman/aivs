@@ -439,7 +439,7 @@ async def test_distributed_at_is_stamped_on_the_database_clock(
 _APP_CLOCK_ALLOWED: dict[tuple[str, str], str] = {
     (
         "api/acknowledgments.py",
-        "assert_receipt",
+        "assert_own_receipt",
     ): "sets the receipt's day; delivery is checked without it",
     ("api/admin.py", "pause_distribution"): "stamps when an operator paused",
     ("api/contributions.py", "confirm_proxy_filing"): "the proxy-filing confirmation window",

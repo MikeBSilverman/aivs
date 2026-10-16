@@ -1,0 +1,16 @@
+Mutation M1079: a submission counts as reaching the member when it reached any firm
+Re-applies: a staff read that lost its organisation key (Phase P slice 3e: on the staff login it reads every firm's)
+
+Expect red: packages/aivs-server/tests/unit/test_own_receipts_and_postures.py::test_a_peers_retrieval_is_not_the_members
+
+diff --git a/packages/aivs-server/src/aivs_server/services/acknowledgments.py b/packages/aivs-server/src/aivs_server/services/acknowledgments.py
+--- a/packages/aivs-server/src/aivs_server/services/acknowledgments.py
++++ b/packages/aivs-server/src/aivs_server/services/acknowledgments.py
+@@ -102,7 +102,6 @@
+     rows = await session.scalars(
+         select(Acknowledgment.submission_id)
+         .where(
+-            Acknowledgment.org_id == org_id,
+             Acknowledgment.submission_id.in_(submission_ids),
+             Acknowledgment.ack_type == AckType.RETRIEVED,
+         )

@@ -23,7 +23,7 @@ from aivs_server.audit.log import AuditAction, record
 from aivs_server.auth.deps import AuthenticatedContext, SessionDep
 from aivs_server.auth.policy import can_hold_evidence_pack
 from aivs_server.db.clock import database_now
-from aivs_server.services.evidence_pack import evidence_pack
+from aivs_server.services.member_staff_reads import own_evidence_pack
 
 __all__ = ["router"]
 
@@ -50,7 +50,7 @@ async def draw_evidence_pack(
     """This organisation's evidence for one vulnerability, content-hashed."""
     if not can_hold_evidence_pack(ctx) or _VULNERABILITY_ID.match(vulnerability) is None:
         raise _NOT_FOUND
-    pack = await evidence_pack(session, ctx, vulnerability, now=await database_now(session))
+    pack = await own_evidence_pack(session, ctx, vulnerability, now=await database_now(session))
     if pack is None:
         raise _NOT_FOUND
     await record(

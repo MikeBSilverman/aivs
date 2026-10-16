@@ -1,0 +1,17 @@
+Mutation M1077: the page shows a posture on the vulnerability whoever's it is
+Re-applies: a staff read that lost its organisation key (Phase P slice 3e: on the staff login it reads every firm's)
+
+Expect red: packages/aivs-server/tests/unit/test_own_receipts_and_postures.py::test_a_peers_posture_is_not_shown_as_the_members
+
+diff --git a/packages/aivs-server/src/aivs_server/services/posture_reads.py b/packages/aivs-server/src/aivs_server/services/posture_reads.py
+--- a/packages/aivs-server/src/aivs_server/services/posture_reads.py
++++ b/packages/aivs-server/src/aivs_server/services/posture_reads.py
+@@ -36,7 +36,7 @@
+     """The caller's own posture on one vulnerability, which only it ever sees (SF-70)."""
+     status = await session.scalar(
+         select(OrgPosture.status).where(
+-            OrgPosture.org_id == ctx.org_id, OrgPosture.vulnerability_stix_id == stix_id
++            OrgPosture.vulnerability_stix_id == stix_id
+         )
+     )
+     return None if status is None else PostureStatus(status).value

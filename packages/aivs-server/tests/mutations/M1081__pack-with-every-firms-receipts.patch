@@ -1,0 +1,16 @@
+Mutation M1081: the evidence pack carries every firm's receipts
+Re-applies: a staff read that lost its organisation key (Phase P slice 3e: on the staff login it reads every firm's)
+
+Expect red: packages/aivs-server/tests/unit/test_own_receipts_and_postures.py::test_the_pack_holds_the_members_own_receipts_and_posture
+
+diff --git a/packages/aivs-server/src/aivs_server/services/evidence_pack.py b/packages/aivs-server/src/aivs_server/services/evidence_pack.py
+--- a/packages/aivs-server/src/aivs_server/services/evidence_pack.py
++++ b/packages/aivs-server/src/aivs_server/services/evidence_pack.py
+@@ -167,7 +167,6 @@
+                 Acknowledgment.created_at,
+             )
+             .where(
+-                Acknowledgment.org_id == org_id,
+                 Acknowledgment.submission_id.in_(submission_ids),
+             )
+             .order_by(Acknowledgment.created_at, Acknowledgment.id)

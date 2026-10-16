@@ -38,6 +38,9 @@ _NOTHING: Final = frozenset[str]()
 CLASSIFICATION: Final[dict[str, frozenset[str]]] = {
     # Who filed what, and what says it by another route: written, never read.
     "attribution.submitters": _WRITE_ONLY,
+    # Every firm's receipts (SF-15 reserves them to the ISAC's reviewers):
+    # recorded on the member path, read staff side (slice 3e).
+    "public.acknowledgments": _WRITE_ONLY,
     "public.audit_log": _WRITE_ONLY,
     "public.submission_transitions": _WRITE_ONLY,
     "public.taxii_status": _WRITE_ONLY,
@@ -52,19 +55,18 @@ CLASSIFICATION: Final[dict[str, frozenset[str]]] = {
     # Authentication runs on the staff login (auth.staff_auth, slice 3e): every
     # operator's password hash, a peer's lockout and its sessions.
     "public.operators": _NOTHING,
+    "public.org_postures": _NOTHING,
     "public.pending_notices": _NOTHING,
     "public.portal_sessions": _NOTHING,
     "public.submission_milestones": _NOTHING,
     "public.submission_triage": _NOTHING,
     # Read, and written only where listed.
-    "public.acknowledgments": frozenset({"SELECT", "INSERT"}),
     "public.circle_memberships": _READ,
     "public.circles": _READ,
     "public.client_certificates": _READ,
     "public.distributions": frozenset({"SELECT", "INSERT"}),
     "public.embargoes": _READ,
     "public.instance_controls": _READ,
-    "public.org_postures": frozenset({"SELECT", "INSERT"}),
     "public.organizations": _READ,
     "public.sector_events": _READ,
     "public.stix_objects": frozenset({"SELECT", "INSERT", "DELETE"}),
@@ -97,18 +99,6 @@ UPDATABLE: Final[dict[str, frozenset[str]]] = {
     ),
     # Status and settings are written staff side (member_staff_writes).
     "public.organizations": frozenset({"updated_at"}),
-    "public.org_postures": frozenset(
-        {
-            "status",
-            "products",
-            "action_statement",
-            "detection_deployed",
-            "evidence_note",
-            "validated_at",
-            "updated_by_operator_id",
-            "updated_at",
-        }
-    ),
     # A row lock needs UPDATE on some column; this one changes nothing.
     "public.webhooks": frozenset({"updated_at"}),
 }
@@ -295,6 +285,18 @@ def _as_member(logins: Logins, statement: str) -> None:
             "SELECT token_hash FROM portal_sessions",
             "SELECT id FROM organizations",
             id="portal-sessions",
+        ),
+        pytest.param(
+            "SELECT org_id, submission_id FROM acknowledgments",
+            "INSERT INTO acknowledgments (id, org_id, submission_id, ack_type, via, dedupe_day)"
+            " SELECT gen_random_uuid(), id, id, 'retrieved', 'taxii', current_date"
+            " FROM organizations WHERE false",
+            id="receipts",
+        ),
+        pytest.param(
+            "SELECT org_id, status FROM org_postures",
+            "SELECT id FROM organizations",
+            id="postures",
         ),
     ],
 )

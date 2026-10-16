@@ -1,0 +1,14 @@
+Mutation M1128: a marking that is not a TLP is read as clear
+Re-applies: no earlier commit; the content ceiling is new in Phase O slice 4, and this is the rule it would most easily lose
+
+Expect red: packages/aivs-server/tests/unit/test_model_egress.py::test_the_content_is_its_most_restrictive_marking_and_unknown_is_red
+
+diff --git a/packages/aivs-server/src/aivs_server/model_egress.py b/packages/aivs-server/src/aivs_server/model_egress.py
+--- a/packages/aivs-server/src/aivs_server/model_egress.py
++++ b/packages/aivs-server/src/aivs_server/model_egress.py
+@@ -179,4 +179,4 @@
+ 
+ def _tlp_of(ref: Any) -> TLP:
+     tlp = tlp_for_marking_id(ref) if isinstance(ref, str) else None
+-    return TLP.RED if tlp is None else tlp
++    return TLP.CLEAR if tlp is None else tlp

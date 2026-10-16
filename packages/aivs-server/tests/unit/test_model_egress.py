@@ -20,7 +20,15 @@ import pytest
 from pydantic import ValidationError
 
 from aivs_schemas.enums import TLP
-from aivs_server.model_egress import AiProvider, address_problem, ceiling_for, url_problem
+from aivs_schemas.tlp import marking_id_for
+from aivs_server.model_egress import (
+    AiProvider,
+    address_problem,
+    ceiling_for,
+    egress_tlp,
+    may_receive,
+    url_problem,
+)
 from aivs_server.services import model_provider
 from aivs_server.services.model_provider import (
     ModelCallError,
@@ -275,3 +283,64 @@ async def test_anything_but_a_chat_completion_is_no_reply(monkeypatch, response)
 
     with pytest.raises(ModelCallError):
         await endpoint(LOCAL, "http://127.0.0.1:8080/v1").complete("system", "user")
+
+
+# ---------------------------------------------------------------------------
+# What a submission is, for the ceiling
+# ---------------------------------------------------------------------------
+STATEMENT = "marking-definition--0b3e1c6e-7f4a-4a8e-9a39-5d6f2c4b8e11"
+
+
+def obj(**markings: Any) -> dict[str, Any]:
+    return {"type": "note", "id": "note--1", **markings}
+
+
+def granular(ref: str) -> list[dict[str, Any]]:
+    return [{"marking_ref": ref, "selectors": ["content"]}]
+
+
+@pytest.mark.parametrize(
+    ("submission", "objects", "expected"),
+    [
+        (TLP.AMBER, [obj()], TLP.AMBER),
+        (
+            TLP.GREEN,
+            [obj(object_marking_refs=[marking_id_for(TLP.AMBER_STRICT)])],
+            TLP.AMBER_STRICT,
+        ),
+        (TLP.AMBER, [obj(granular_markings=granular(marking_id_for(TLP.RED)))], TLP.RED),
+        (TLP.CLEAR, [obj(object_marking_refs=[STATEMENT])], TLP.RED),
+        (TLP.CLEAR, [obj(granular_markings=granular(STATEMENT))], TLP.RED),
+        (TLP.CLEAR, [obj(granular_markings=[{"selectors": ["content"]}])], TLP.RED),
+        (TLP.CLEAR, [obj(granular_markings=[{"lang": "fr", "selectors": ["content"]}])], TLP.CLEAR),
+        (TLP.CLEAR, [obj(object_marking_refs="not-a-list")], TLP.RED),
+        (TLP.RED, [obj(object_marking_refs=[marking_id_for(TLP.CLEAR)])], TLP.RED),
+    ],
+    ids=[
+        "submission-only",
+        "object-marking-stricter",
+        "granular-red",
+        "statement-marking",
+        "granular-statement",
+        "granular-without-a-ref",
+        "language-marking",
+        "malformed-refs",
+        "submission-stricter",
+    ],
+)
+def test_the_content_is_its_most_restrictive_marking_and_unknown_is_red(
+    submission, objects, expected
+):
+    assert egress_tlp(submission, objects) is expected
+
+
+@pytest.mark.parametrize(
+    ("kind", "content", "allowed"),
+    [
+        (PRIVATE, TLP.AMBER_STRICT, True),
+        (PRIVATE, TLP.RED, False),
+        (LOCAL, TLP.RED, True),
+    ],
+)
+def test_a_model_receives_nothing_above_its_ceiling(kind, content, allowed):
+    assert may_receive(ceiling_for(kind, None), content) is allowed

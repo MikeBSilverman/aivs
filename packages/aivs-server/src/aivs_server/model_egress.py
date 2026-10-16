@@ -18,23 +18,33 @@ startup (the webhook dispatcher's rule, R11).
 
 The ceiling is the kind's. A setting may lower it, never raise it: an operator
 who wants a private endpoint to receive RED has to run the model locally.
+
+What a submission *is*, for the ceiling, is the most restrictive marking
+anywhere in it: the submission's TLP, each object's ``object_marking_refs``,
+and each ``granular_markings`` entry, which marks only some properties but
+those properties are sent too. A marking that is not a TLP -- a statement, a
+marking this instance does not know, a malformed entry -- counts as RED: the
+check cannot say how it may travel, so it travels nowhere but a local model.
 """
 
 from __future__ import annotations
 
 import enum
 import ipaddress
-from collections.abc import Iterable
-from typing import Final
+from collections.abc import Iterable, Iterator, Mapping
+from typing import Any, Final
 from urllib.parse import urlparse
 
-from aivs_schemas.enums import TLP, tlp_at_least_as_restrictive
+from aivs_schemas.enums import TLP, TLP_RESTRICTIVENESS, tlp_at_least_as_restrictive
+from aivs_schemas.tlp import tlp_for_marking_id
 
 __all__ = [
     "KIND_CEILING",
     "AiProvider",
     "address_problem",
     "ceiling_for",
+    "egress_tlp",
+    "may_receive",
     "url_problem",
 ]
 
@@ -132,3 +142,41 @@ def _names_loopback(hostname: str) -> bool:
         return ipaddress.ip_address(hostname).is_loopback
     except ValueError:
         return False
+
+
+def egress_tlp(submission_tlp: TLP, objects: Iterable[Mapping[str, Any]]) -> TLP:
+    """The most restrictive marking anywhere in the submission; unknown counts as RED."""
+    markings = [submission_tlp, *(tlp for obj in objects for tlp in _markings_of(obj))]
+    return max(markings, key=TLP_RESTRICTIVENESS.__getitem__)
+
+
+def may_receive(ceiling: TLP, content: TLP) -> bool:
+    """Whether a model whose ceiling is ``ceiling`` may be sent ``content``."""
+    return tlp_at_least_as_restrictive(ceiling, content)
+
+
+def _markings_of(obj: Mapping[str, Any]) -> Iterator[TLP]:
+    refs = obj.get("object_marking_refs") or []
+    if not isinstance(refs, list):
+        yield TLP.RED
+        return
+    yield from (_tlp_of(ref) for ref in refs)
+    granular = obj.get("granular_markings") or []
+    if not isinstance(granular, list):
+        yield TLP.RED
+        return
+    yield from (_granular_tlp(entry) for entry in granular)
+
+
+def _granular_tlp(entry: Any) -> TLP:
+    """A language marking restricts nothing; any other entry is its marking's TLP, or RED."""
+    if not isinstance(entry, Mapping):
+        return TLP.RED
+    if "marking_ref" not in entry and isinstance(entry.get("lang"), str):
+        return TLP.CLEAR
+    return _tlp_of(entry.get("marking_ref"))
+
+
+def _tlp_of(ref: Any) -> TLP:
+    tlp = tlp_for_marking_id(ref) if isinstance(ref, str) else None
+    return TLP.RED if tlp is None else tlp

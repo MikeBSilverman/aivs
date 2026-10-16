@@ -1,0 +1,17 @@
+Mutation M1127: a granular marking is not read, so a RED property travels to a private endpoint
+Re-applies: no earlier commit; the content ceiling is new in Phase O slice 4, and this is the rule it would most easily lose
+
+Expect red: packages/aivs-server/tests/unit/test_model_egress.py::test_the_content_is_its_most_restrictive_marking_and_unknown_is_red
+
+diff --git a/packages/aivs-server/src/aivs_server/model_egress.py b/packages/aivs-server/src/aivs_server/model_egress.py
+--- a/packages/aivs-server/src/aivs_server/model_egress.py
++++ b/packages/aivs-server/src/aivs_server/model_egress.py
+@@ -165,7 +165,7 @@
+     if not isinstance(granular, list):
+         yield TLP.RED
+         return
+-    yield from (_granular_tlp(entry) for entry in granular)
++    yield from ()
+ 
+ 
+ def _granular_tlp(entry: Any) -> TLP:

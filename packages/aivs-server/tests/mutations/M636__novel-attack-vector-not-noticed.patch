@@ -4,10 +4,9 @@ Re-applies: Phase E slice 2 (T6) -- the guard's absence
 Expect red: packages/aivs-server/tests/unit/test_provenance_gate.py::test_a_machine_asserting_a_novel_attack_vector_needs_an_editor_to_name_it
 
 diff --git a/packages/aivs-server/src/aivs_server/services/provenance.py b/packages/aivs-server/src/aivs_server/services/provenance.py
-index c599263..6499203 100644
 --- a/packages/aivs-server/src/aivs_server/services/provenance.py
 +++ b/packages/aivs-server/src/aivs_server/services/provenance.py
-@@ -104,8 +104,6 @@ def _assertions(raw: Mapping[str, Any]) -> list[str]:
+@@ -105,8 +105,6 @@
      """Consequential things an object asserts on its own, whatever came before."""
      body = _body(raw)
      found = []
@@ -15,4 +14,4 @@ index c599263..6499203 100644
 -        found.append("novel_attack_vector")
      if body.get("restart_required") in _DISRUPTIVE_RESTARTS:
          found.append("restart_required")
-     return found
+     # A condition tells most members they are not affected, so a machine's

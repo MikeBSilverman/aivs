@@ -1,0 +1,17 @@
+Mutation M1108: a machine's exploitability conditions pass the AI gate unnamed
+Re-applies: provenance._assertions before the Phase N intake slice, which looked at no note
+
+Expect red: packages/aivs-server/tests/unit/test_provenance_gate.py::test_a_machine_stating_exploitability_conditions_needs_an_editor_to_name_them
+
+diff --git a/packages/aivs-server/src/aivs_server/services/provenance.py b/packages/aivs-server/src/aivs_server/services/provenance.py
+--- a/packages/aivs-server/src/aivs_server/services/provenance.py
++++ b/packages/aivs-server/src/aivs_server/services/provenance.py
+@@ -112,8 +112,6 @@
+     # A condition tells most members they are not affected, so a machine's
+     # conditions are named whether new or unchanged: a wrong one is a false
+     # negative at sector scale (Phase N, property 1).
+-    if raw.get("type") == "note" and body.get("conditions"):
+-        found.append("conditions")
+     return found
+ 
+ 

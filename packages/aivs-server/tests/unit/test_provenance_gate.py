@@ -25,11 +25,13 @@ from tests.unit.contribution_world import (
     seed,
     submit_and_validate,
 )
+from tests.unit.test_exploitability import conditions_note
 from tests.unit.test_portal import csrf_of, sign_in
 from tests.unit.test_portal import make_operator as portal_make_operator
 
 pytestmark = pytest.mark.db
 
+PARSE = {"ecosystem": "Go", "package": "pkg:golang/example.com/xml", "symbol": "Parse"}
 VECTOR = "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N"
 
 
@@ -401,3 +403,54 @@ async def test_the_portal_refuses_validation_until_the_change_is_ticked(
     await portal_validate(client, portal_editor, submission_id, [f"{coa['id']}:restart_required"])
     await session.refresh(unticked)
     assert unticked.state.value == "validated"
+
+
+# ---------------------------------------------------------------------------
+# Exploitability conditions from a machine (Phase N intake)
+# ---------------------------------------------------------------------------
+def _conditions_about(vulnerability: dict) -> dict:
+    return conditions_note(
+        vulnerability["id"],
+        {"id": "fn", "kind": "function", "any_of": [PARSE]},
+    )
+
+
+@pytest.mark.requirement("SF-6")
+async def test_a_machine_stating_exploitability_conditions_needs_an_editor_to_name_them(
+    client, world
+):
+    """A condition tells members they are not affected; a machine's is never routine."""
+    finding = assessed(f"vulnerability--{uuid.uuid4()}", modified=STAMP)
+    note = _conditions_about(finding)
+
+    _id, refused = await validate_filing(client, world, world["robot_pem"], [finding, note])
+
+    assert refused.status_code == 409
+    assert f"{note['id']}:conditions" in refused.json()["title"]
+
+
+@pytest.mark.requirement("SF-6")
+async def test_naming_the_conditions_lets_the_editor_validate_them(client, world):
+    finding = assessed(f"vulnerability--{uuid.uuid4()}", modified=STAMP)
+    note = _conditions_about(finding)
+
+    _id, validated = await validate_filing(
+        client,
+        world,
+        world["robot_pem"],
+        [finding, note],
+        acknowledge=[f"{note['id']}:conditions"],
+    )
+
+    assert validated.status_code == 200, validated.text
+
+
+@pytest.mark.requirement("SF-6")
+async def test_the_same_conditions_from_a_member_need_no_acknowledgement(client, world):
+    finding = assessed(f"vulnerability--{uuid.uuid4()}", modified=STAMP)
+
+    _id, validated = await validate_filing(
+        client, world, world["member_pem"], [finding, _conditions_about(finding)]
+    )
+
+    assert validated.status_code == 200, validated.text

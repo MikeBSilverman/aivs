@@ -13,10 +13,11 @@ same reviewer, and opaque, so it names nobody outside the ISAC.
 **The AI gate.** A submission from an automation organisation (source
 ``system``) that changes something a member acts on without reading closely --
 lowers a CVSS score or an SSVC value against the version members already have,
-asserts a novel attack vector, or says a fix needs a system or parent restart
--- is refused at validate unless the editor names each such change as
-acknowledged. Validate is already human-only (SF-42); what this adds is that a
-consequential machine change cannot pass inside a routine click.
+asserts a novel attack vector, says a fix needs a system or parent restart, or
+states exploitability conditions -- is refused at validate unless the editor
+names each such change as acknowledged. Validate is already human-only
+(SF-42); what this adds is that a consequential machine change cannot pass
+inside a routine click.
 """
 
 from __future__ import annotations
@@ -108,6 +109,11 @@ def _assertions(raw: Mapping[str, Any]) -> list[str]:
         found.append("novel_attack_vector")
     if body.get("restart_required") in _DISRUPTIVE_RESTARTS:
         found.append("restart_required")
+    # A condition tells most members they are not affected, so a machine's
+    # conditions are named whether new or unchanged: a wrong one is a false
+    # negative at sector scale (Phase N, property 1).
+    if raw.get("type") == "note" and body.get("conditions"):
+        found.append("conditions")
     return found
 
 

@@ -1,4 +1,4 @@
-Mutation M1074: a reading depth is stored on whichever operator comes first
+Mutation M1074: a reading depth is stored on the oldest operator, whoever it belongs to
 Re-applies: a staff write that lost its key (slice 3e pattern)
 
 Expect red: packages/aivs-server/tests/unit/test_own_person_records.py::test_a_persons_reading_depth_is_their_own_to_read_and_set
@@ -12,7 +12,7 @@ diff --git a/packages/aivs-server/src/aivs_server/services/member_settings.py b/
          return False
 -    operator = await session.get(Operator, ctx.operator_id)
 -    if operator is None or operator.org_id != ctx.org_id:
-+    operator = await session.scalar(select(Operator).limit(1))
++    operator = await session.scalar(select(Operator).order_by(Operator.created_at).limit(1))
 +    if operator is None:
          return False
      operator.default_depth = depth

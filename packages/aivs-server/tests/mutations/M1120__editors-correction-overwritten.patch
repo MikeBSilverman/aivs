@@ -1,0 +1,17 @@
+Mutation M1120: an editor's correction of an imported note is versioned over
+Re-applies: no earlier commit; the condition import is new in the Phase N intake slice, and this is the rule it would most easily lose
+
+Expect red: packages/aivs-server/tests/unit/test_import_conditions.py::test_run_leaves_a_note_an_editor_corrected
+
+diff --git a/scripts/import-conditions.py b/scripts/import-conditions.py
+--- a/scripts/import-conditions.py
++++ b/scripts/import-conditions.py
+@@ -615,8 +615,6 @@
+     if key in known.held_back:
+         return HELD_BACK, None
+     previous = known.notes.get(key)
+-    if previous is not None and not previous["_machine_filed"]:
+-        return CORRECTED, None
+     if not upstream.said.conditions:
+         return NOTHING, None
+     clean = {k: v for k, v in previous.items() if k != "_machine_filed"} if previous else None

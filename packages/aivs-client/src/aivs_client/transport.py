@@ -243,6 +243,11 @@ class NativeClient:
         are held back by a draft of the automation's own: its automation only."""
         return dict(self._request("GET", "/isac-records/vulnerabilities"))
 
+    def isac_condition_notes(self) -> dict[str, Any]:
+        """The condition import's own notes: those it may version, and the ids of
+        those it must not file again (held back). Its automation only."""
+        return dict(self._request("GET", "/isac-records/condition-notes"))
+
     def list_submissions(self, state: str | None = None) -> list[dict[str, Any]]:
         params = {"state": state} if state else None
         return list(self._request("GET", "/submissions", params=params))

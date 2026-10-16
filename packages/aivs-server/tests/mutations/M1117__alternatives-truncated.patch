@@ -1,0 +1,18 @@
+Mutation M1117: a condition with too many alternatives is cut to the limit
+Re-applies: no earlier commit; the condition import is new in the Phase N intake slice, and this is the rule it would most easily lose
+
+Expect red: packages/aivs-server/tests/unit/test_import_conditions.py::test_a_condition_with_more_alternatives_than_a_note_carries_is_left_out
+
+diff --git a/scripts/import-conditions.py b/scripts/import-conditions.py
+--- a/scripts/import-conditions.py
++++ b/scripts/import-conditions.py
+@@ -216,8 +216,7 @@
+     alternatives: list[dict[str, Any]] = []
+     for terms in per_entry:
+         alternatives.extend(term for term in terms or () if term not in alternatives)
+-    if len(alternatives) > MAX_ALTERNATIVES:
+-        return None
++    alternatives = alternatives[:MAX_ALTERNATIVES]
+     return {"id": kind, "kind": kind, "any_of": alternatives}
+ 
+ 

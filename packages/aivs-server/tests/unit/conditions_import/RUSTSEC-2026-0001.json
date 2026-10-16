@@ -1,0 +1,15 @@
+{
+  "schema_version": "1.6.0",
+  "id": "RUSTSEC-2026-0001",
+  "modified": "2026-09-01T00:00:00Z",
+  "aliases": ["CVE-2026-31337"],
+  "affected": [
+    {
+      "package": {"ecosystem": "crates.io", "name": "xml-strict", "purl": "pkg:cargo/xml-strict"},
+      "ranges": [{"type": "SEMVER", "events": [{"introduced": "0.0.0-0"}, {"fixed": "0.9.2"}]}],
+      "ecosystem_specific": {
+        "affects": {"arch": ["x86_64"], "os": ["macos", "linux"], "functions": ["xml_strict::parse"]}
+      }
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "schema_version": "1.6.0",
+  "id": "GO-2026-0001",
+  "modified": "2026-09-01T00:00:00Z",
+  "aliases": ["CVE-2026-31337", "GHSA-xxxx-yyyy-zzzz"],
+  "affected": [
+    {
+      "package": {"ecosystem": "Go", "name": "example.com/xml"},
+      "ranges": [{"type": "SEMVER", "events": [{"introduced": "0"}, {"fixed": "1.4.1"}]}],
+      "ecosystem_specific": {
+        "imports": [
+          {"path": "example.com/xml", "symbols": ["ParseStrict", "Decoder.Token"], "goos": ["linux", "darwin"]},
+          {"path": "example.com/xml/internal/dtd", "symbols": ["Resolve"], "goos": ["linux"]}
+        ]
+      }
+    }
+  ]
+}

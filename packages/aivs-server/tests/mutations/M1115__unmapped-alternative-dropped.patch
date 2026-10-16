@@ -1,0 +1,18 @@
+Mutation M1115: an alternative that does not map is dropped and the rest kept
+Re-applies: no earlier commit; the condition import is new in the Phase N intake slice, and this is the rule it would most easily lose
+
+Expect red: packages/aivs-server/tests/unit/test_import_conditions.py::test_an_alternative_that_does_not_map_leaves_its_whole_condition_out[a-routine-that-is-prose]
+
+diff --git a/scripts/import-conditions.py b/scripts/import-conditions.py
+--- a/scripts/import-conditions.py
++++ b/scripts/import-conditions.py
+@@ -185,7 +185,8 @@
+ def all_typed(kind: str, terms: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]] | None:
+     """Every term typed, or ``None``: one that does not map spoils the set, never shrinks it."""
+     checked = [typed(kind, term) for term in terms]
+-    if not checked or any(term is None for term in checked):
++    checked = [term for term in checked if term is not None]
++    if not checked:
+         return None
+     return [term for term in checked if term is not None]
+ 

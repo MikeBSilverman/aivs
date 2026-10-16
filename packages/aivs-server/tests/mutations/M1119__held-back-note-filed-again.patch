@@ -1,0 +1,17 @@
+Mutation M1119: a note held back is filed again
+Re-applies: no earlier commit; the condition import is new in the Phase N intake slice, and this is the rule it would most easily lose
+
+Expect red: packages/aivs-server/tests/unit/test_import_conditions.py::test_run_files_one_note_an_editor_validates_and_never_files_it_twice
+
+diff --git a/scripts/import-conditions.py b/scripts/import-conditions.py
+--- a/scripts/import-conditions.py
++++ b/scripts/import-conditions.py
+@@ -612,8 +612,6 @@
+     vulnerability: Mapping[str, Any], upstream: Upstream, known: Known, *, now: dt.datetime
+ ) -> tuple[str, dict[str, Any] | None]:
+     key = (str(vulnerability["id"]), upstream.source)
+-    if key in known.held_back:
+-        return HELD_BACK, None
+     previous = known.notes.get(key)
+     if previous is not None and not previous["_machine_filed"]:
+         return CORRECTED, None

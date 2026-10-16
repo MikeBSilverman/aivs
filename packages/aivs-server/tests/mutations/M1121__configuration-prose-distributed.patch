@@ -1,0 +1,17 @@
+Mutation M1121: the record's configuration prose is written into the distributed note
+Re-applies: no earlier commit; the condition import is new in the Phase N intake slice, and this is the rule it would most easily lose
+
+Expect red: packages/aivs-server/tests/unit/test_import_conditions.py::test_configuration_prose_reaches_the_editor_and_not_the_note
+
+diff --git a/scripts/import-conditions.py b/scripts/import-conditions.py
+--- a/scripts/import-conditions.py
++++ b/scripts/import-conditions.py
+@@ -464,7 +464,7 @@
+     body = {
+         "extension_type": "property-extension",
+         "aivs_schema_version": "2.1",
+-        "summary": "Conditions as the upstream vulnerability record states them.",
++        "summary": said.configuration_prose or "Conditions as the upstream vulnerability record states them.",
+         "conditions": list(said.conditions),
+         **({"unknowns": list(said.unknowns)} if said.unknowns else {}),
+     }

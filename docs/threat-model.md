@@ -526,6 +526,7 @@ setting an attacker needs before a patch exists.
 | A scanner reads an OSV record's missing product, range or symbol as "not affected". | The export is complete or refused with 409; one product it cannot carry refuses the whole record; what it drops only widens the record (SF-86). |
 | A pre-patch condition, a roadmap to exploitation, reaches a wider circle than its own. | The view and the export read through the one visibility scope, at each note's latest visible version, so an embargoed or narrower circle's condition counts for, and contests, nothing outside it (SF-84, SF-8). |
 | A source contests a correct set to push every member back to "assume affected". | It fails wide, not narrow; condition notes are reviewed before distribution, and a contested view names each source's note for the editor to resolve (R23). |
+| The condition import narrows a condition by leaving out an alternative it could not read -- a platform with an unfamiliar name, a routine written as prose, an affected entry that names no functions. | A condition is built only when every affected entry in the record states it and every alternative maps to a typed term; otherwise the whole condition is left out, which only widens the note, and `unknowns` says so. Prose is never parsed into a term; the record's configuration text reaches the editor alone. Every imported note is a machine's, so an editor names its conditions to validate it (SF-95, SF-6). |
 
 ## Consolidated residual risk register
 

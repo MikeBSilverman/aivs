@@ -1,0 +1,18 @@
+Mutation M1116: a platform name that does not map is skipped and the others kept
+Re-applies: no earlier commit; the condition import is new in the Phase N intake slice, and this is the rule it would most easily lose
+
+Expect red: packages/aivs-server/tests/unit/test_import_conditions.py::test_an_alternative_that_does_not_map_leaves_its_whole_condition_out[an-unknown-os]
+
+diff --git a/scripts/import-conditions.py b/scripts/import-conditions.py
+--- a/scripts/import-conditions.py
++++ b/scripts/import-conditions.py
+@@ -293,7 +293,8 @@
+     """The entry's operating systems; architecture words set aside, anything else spoils it."""
+     named = [str(name).strip().lower() for name in entry.get("platforms") or []]
+     systems = [name for name in named if name not in ARCHITECTURE_WORDS]
+-    if not systems or any(name not in OPERATING_SYSTEMS for name in systems):
++    systems = [name for name in systems if name in OPERATING_SYSTEMS]
++    if not systems:
+         return None
+     return all_typed(
+         "platform", ({"os": OPERATING_SYSTEMS[name]} for name in dict.fromkeys(systems))

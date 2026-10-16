@@ -1,0 +1,18 @@
+Mutation M1118: an OSV entry of a shape not read here is ignored rather than spoiling the conditions
+Re-applies: no earlier commit; the condition import is new in the Phase N intake slice, and this is the rule it would most easily lose
+
+Expect red: packages/aivs-server/tests/unit/test_import_conditions.py::test_an_osv_entry_of_another_shape_leaves_every_condition_out
+
+diff --git a/scripts/import-conditions.py b/scripts/import-conditions.py
+--- a/scripts/import-conditions.py
++++ b/scripts/import-conditions.py
+@@ -385,8 +385,7 @@
+             yield from (_go_import(item) for item in specific["imports"])
+         elif ecosystem == "crates.io" and isinstance(specific.get("affects"), Mapping):
+             yield _rust_affects(affected, specific["affects"])
+-        else:
+-            yield None, None
++
+ 
+ 
+ def from_osv(record: Mapping[str, Any]) -> Statement:

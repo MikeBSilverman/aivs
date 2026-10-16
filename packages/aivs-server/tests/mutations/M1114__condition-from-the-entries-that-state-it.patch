@@ -1,0 +1,19 @@
+Mutation M1114: a condition is built from the entries that state it, ignoring one that does not
+Re-applies: no earlier commit; the condition import is new in the Phase N intake slice, and this is the rule it would most easily lose
+
+Expect red: packages/aivs-server/tests/unit/test_import_conditions.py::test_one_entry_that_does_not_state_a_condition_leaves_it_out[programRoutines-function]
+Expect red: packages/aivs-server/tests/unit/test_import_conditions.py::test_one_entry_that_does_not_state_a_condition_leaves_it_out[platforms-platform]
+
+diff --git a/scripts/import-conditions.py b/scripts/import-conditions.py
+--- a/scripts/import-conditions.py
++++ b/scripts/import-conditions.py
+@@ -211,7 +211,8 @@
+     through anything, and a condition naming only the others would tell its
+     users they are not.
+     """
+-    if not per_entry or any(terms is None for terms in per_entry):
++    per_entry = [terms for terms in per_entry if terms is not None]
++    if not per_entry:
+         return None
+     alternatives: list[dict[str, Any]] = []
+     for terms in per_entry:

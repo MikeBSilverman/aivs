@@ -1278,6 +1278,49 @@ distribution is paused. A message that cannot be parsed is refused as
 in the inbox, logged by its UID, and is tried again next run without
 holding back the others; if one stays there, read it by hand and move it.
 
+
+### 9.8 Model-assisted checks, in shadow
+
+Off by default (`AIVS_AI_PROVIDER=none`): nothing is sent anywhere and nothing
+changes. Set, a model reads each submission the first pass read and its
+suggestions appear to ISAC reviewers on the submission's page and API detail,
+under "Model check (shadow)". It decides nothing: it never returns,
+validates or distributes a submission, and a member never sees it. The
+`model_triage` component on the status page shows it running.
+
+**The provider is a subprocessor.** Tell your members which one, as you do
+for the mail relay: it sees the content of every submission it reads, up to
+its ceiling (threat model R39).
+
+| `AIVS_AI_PROVIDER` | What it is | May receive | Reached |
+| --- | --- | --- | --- |
+| `private_endpoint` | A model in your own cloud account, behind an OpenAI-compatible gateway (Bedrock through a gateway, for example) | up to AMBER+STRICT | https only |
+| `local` | A model on your own hardware (vLLM, llama.cpp, Ollama) | everything, RED included | plain http only at a loopback address; https with the certificate verified anywhere else on your network; never a public address |
+
+Settings: `AIVS_AI_ENDPOINT_URL` (the base URL; `/chat/completions` is
+appended), `AIVS_AI_MODEL_ID`, `AIVS_AI_API_KEY_FILE` (a `0600` file, never the
+environment outside dev), `AIVS_AI_CA_FILE` for a CA of your own,
+`AIVS_AI_TLP_CEILING` to lower the ceiling (it cannot be raised),
+`AIVS_AI_TIMEOUT_SECONDS`, and `AIVS_AI_HOURLY_CALLS_PER_ORG` (20): past it, a
+member's further submissions that hour are recorded as skipped, not sent.
+The URL is checked at startup and every address its name resolves to is
+checked again at each connection, so a name re-pointed later is refused then.
+
+What a read can be, in `model_reads` and the `submission.model_read` audit
+row (which carries the outcome and a total, never the findings):
+`findings`, `no_findings`, `invalid_response` (the reply was not the one
+fixed shape; nothing was kept), `error` (no reply), `skipped_above_ceiling`
+(the content's most restrictive marking -- a statement or unknown marking
+counts as RED -- is above the provider's), and `skipped_rate_limited`. Each
+row records the model and prompt template, so if a model release proves bad
+you can find every read it made. Nothing is read while distribution is
+paused.
+
+A suggestion is a typed value -- a purl, a `vers:` range, a CWE id or a
+remediation category -- pointing at the field it came from, never prose. Use
+it as a hint while reviewing; it has not been evaluated against your own
+decisions yet, which is why it is shown to you alone.
+
 ## 10. Things that will bite you
 
 - **`AIVS_ENVIRONMENT=dev`** is the one value that relaxes

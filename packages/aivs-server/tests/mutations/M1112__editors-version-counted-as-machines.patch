@@ -1,0 +1,17 @@
+Mutation M1112: an editor's correction is served as the machine's, for the import to overwrite
+Re-applies: no earlier commit; the read is new in the Phase N intake slice, and this is the rule it would most easily lose
+
+Expect red: packages/aivs-server/tests/unit/test_isac_condition_notes.py::test_an_editors_version_is_served_as_not_the_machines
+
+diff --git a/packages/aivs-server/src/aivs_server/services/isac_records.py b/packages/aivs-server/src/aivs_server/services/isac_records.py
+--- a/packages/aivs-server/src/aivs_server/services/isac_records.py
++++ b/packages/aivs-server/src/aivs_server/services/isac_records.py
+@@ -262,7 +262,7 @@
+         )
+     ).all()
+     notes = [
+-        ImportedNote(raw=dict(raw), machine_filed=source is SubmissionSource.SYSTEM)
++        ImportedNote(raw=dict(raw), machine_filed=True)
+         for raw, source in served_rows
+     ]
+     served = {note.raw["id"] for note in notes}

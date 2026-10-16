@@ -71,6 +71,7 @@ __all__ = [
     "AIVS_PROJECT_IDENTITY_ID",
     "AIVS_PROVENANCE_EXTENSION_ID",
     "ALLOWED_EXTENSION_IDS",
+    "CONDITION_IMPORT_REFERENCE",
     "EXPLOIT_CHAIN_GROUPING_CONTEXT",
     "INTEL_EXTENSION_TYPES",
     "MAX_BUNDLE_OBJECTS",
@@ -126,6 +127,13 @@ SERVER_WRITTEN_PROVENANCE: Final[frozenset[str]] = frozenset(
 #: Distinct from any hosting ISAC's identity -- the extension is shared across
 #: deployments, the ISAC identity is per-instance.
 AIVS_PROJECT_IDENTITY_ID: Final[str] = "identity--e50b8964-5a9a-4d4b-a016-16ea043c2c56"
+
+#: The ``source_name`` of the external reference the condition import puts on
+#: every note it files, with the upstream record's kind (``cve.org``, ``osv``)
+#: as its ``external_id``. It marks the notes the import may version: an
+#: analyst's own note citing the same CVE carries no such reference, so the
+#: import never mistakes it for one of its own.
+CONDITION_IMPORT_REFERENCE: Final[str] = "aivs-condition-import"
 
 #: Extensions AIVS will accept on inbound content. Anything else is rejected
 #: rather than stored: we redistribute what we accept, so accepting content we

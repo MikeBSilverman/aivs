@@ -30,6 +30,10 @@ reading the ISAC's own vulnerability records at
 `/api/v1/isac-records/vulnerabilities` (`can_read_isac_records`), which the KEV
 enrichment script builds its versions from: the newest released version of
 each, never RED, nothing while distribution is paused, and no member's content.
+It also reads `/api/v1/isac-records/condition-notes`, the notes the condition
+import filed (an ISAC-owned note carrying the import's reference): those it may
+version under the same rules, and the ids of those it must not file again. No
+member's note is in either list.
 
 **Circle** — the unit of trust tiering. Named, slugged, with an `is_active` flag
 and a `minimum_tlp` floor. Membership is a set of `circle_memberships` intervals
@@ -438,7 +442,8 @@ statement; a "posture summary" is a sector figure withheld below k (posture
 counts, the lead-time median). The
 "automation cert" is the ISAC's one automation organisation, presenting its
 certificate; "isac records" is its read of the ISAC's own canonical records,
-which it versions (KEV status) and cannot reach through a circle.
+which it versions (KEV status, imported exploitability conditions) and cannot
+reach through a circle.
 
 | Class | member cert | member analyst | member org_admin | peer cert | admin-org cert | automation cert | ISAC analyst | ISAC editor | ISAC membership | system_admin |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |

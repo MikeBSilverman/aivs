@@ -1,0 +1,19 @@
+Mutation M1110: the automation's waiting draft is not held back, so the next run files it again
+Re-applies: no earlier commit; the read is new in the Phase N intake slice, and this is the rule it would most easily lose
+
+Expect red: packages/aivs-server/tests/unit/test_isac_condition_notes.py::test_the_automations_waiting_draft_is_held_back
+
+diff --git a/packages/aivs-server/src/aivs_server/services/isac_records.py b/packages/aivs-server/src/aivs_server/services/isac_records.py
+--- a/packages/aivs-server/src/aivs_server/services/isac_records.py
++++ b/packages/aivs-server/src/aivs_server/services/isac_records.py
+@@ -210,10 +210,6 @@
+     distributed = exists().where(Distribution.stix_object_id == StixObject.id)
+     return or_(
+         Submission.state.in_(_IN_REVIEW_STATES),
+-        and_(
+-            Submission.state == SubmissionState.DRAFT,
+-            Submission.source == SubmissionSource.SYSTEM,
+-        ),
+         and_(Submission.state.in_(tuple(VISIBLE_SUBMISSION_STATES)), distributed),
+     )
+ 

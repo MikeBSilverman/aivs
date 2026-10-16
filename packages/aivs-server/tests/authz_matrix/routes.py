@@ -614,6 +614,12 @@ ROUTES: tuple[RouteCase, ...] = (
         lambda _world: (f"{API}/isac-records/vulnerabilities", None),
     ),
     RouteCase(
+        "GET",
+        "/api/v1/isac-records/condition-notes",
+        RouteClass.ISAC_RECORDS,
+        lambda _world: (f"{API}/isac-records/condition-notes", None),
+    ),
+    RouteCase(
         "PUT",
         "/api/v1/circles/{circle_id}/post-moderation",
         RouteClass.POST_MODERATION,

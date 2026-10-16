@@ -44,6 +44,7 @@ from aivs_server.db.models import (
     Operator,
     Organization,
     OrgPosture,
+    OrgSharingCode,
     PendingNotice,
     PortalSession,
     TaxiiStatus,
@@ -117,7 +118,14 @@ async def _close_memberships(
 
 async def _delete_operational(session: AsyncSession, organisation: Organization) -> str:
     """Delete the member's own operational data. Returns what happened to its postures."""
-    for table in (Webhook, PortalSession, TaxiiStatus, PendingNotice, EmailDelivery):
+    for table in (
+        Webhook,
+        PortalSession,
+        TaxiiStatus,
+        PendingNotice,
+        EmailDelivery,
+        OrgSharingCode,
+    ):
         await session.execute(delete(table).where(table.org_id == organisation.id))
     if organisation.legal_hold_since is not None:
         return "retained under legal hold"

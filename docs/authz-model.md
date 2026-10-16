@@ -443,7 +443,12 @@ counts, the lead-time median). The
 "automation cert" is the ISAC's one automation organisation, presenting its
 certificate; "isac records" is its read of the ISAC's own canonical records,
 which it versions (KEV status, imported exploitability conditions) and cannot
-reach through a circle.
+reach through a circle. The "document" rows are a text document by a person at "member", shared
+with "member" (edit) and with "peer" (view, by the sharing code peer's org
+admin handed over); writing anything to a document needs a signed-in person,
+so a certificate alone is 403 before the document is looked up. A "sharing
+code" is a firm's own code for being named by another firm's documents, which
+only its org admins see or rotate.
 
 | Class | member cert | member analyst | member org_admin | peer cert | admin-org cert | automation cert | ISAC analyst | ISAC editor | ISAC membership | system_admin |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -491,6 +496,12 @@ reach through a circle.
 | proxy confirm | 403 | ✓ | ✓ | 404 | 404 | 404 | 403 | 403 | 404 | 404 |
 | webhook register | ✓ | 403 | ✓ | ✓ | 403 | 403 | 403 | 403 | 403 | ✓ |
 | webhook delete | ✓ | 403 | ✓ | 404 | 403 | 404 | 403 | 403 | 403 | 404 |
+| document create | 403 | ✓ | ✓ | 403 | 403 | 403 | ✓ | ✓ | ✓ | ✓ |
+| document read | ✓ | ✓ | ✓ | ✓ | 404 | 404 | 404 | 404 | 404 | 404 |
+| document comment | 403 | ✓ | ✓ | 403 | 403 | 403 | 404 | 404 | 404 | 404 |
+| document edit | 403 | ✓ | ✓ | 403 | 403 | 403 | 404 | 404 | 404 | 404 |
+| document share | 403 | ✓ | ✓ | 403 | 403 | 403 | 404 | 404 | 404 | 404 |
+| sharing code | 403 | 403 | ✓ | 403 | 403 | 403 | 403 | 403 | 403 | 403 |
 
 How to read the deny cells:
 

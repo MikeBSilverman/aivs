@@ -1,0 +1,17 @@
+Mutation M1167: a certificate's comment reaches the document before the person check
+Re-applies: no earlier commit; the document surface is new in Phase I slice I2, and this is the rule it would most easily lose
+
+Expect red: packages/aivs-server/tests/authz_matrix/test_principal_matrix.py::test_each_principal_gets_exactly_its_row[member_machine]
+Expect red: packages/aivs-server/tests/authz_matrix/test_principal_matrix.py::test_each_principal_gets_exactly_its_row[peer_machine]
+
+diff --git a/packages/aivs-server/src/aivs_server/api/documents.py b/packages/aivs-server/src/aivs_server/api/documents.py
+--- a/packages/aivs-server/src/aivs_server/api/documents.py
++++ b/packages/aivs-server/src/aivs_server/api/documents.py
+@@ -262,7 +262,6 @@
+     settings: SettingsDep,
+ ) -> CreatedOut:
+     """A comment from anyone the document is shared with."""
+-    _person(ctx)
+     try:
+         comment_id = await documents.add_comment(
+             session,

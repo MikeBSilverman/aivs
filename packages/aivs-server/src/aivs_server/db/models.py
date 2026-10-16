@@ -94,6 +94,7 @@ __all__ = [
     "ModelRead",
     "Operator",
     "OrgPosture",
+    "OrgSharingCode",
     "Organization",
     "PendingNotice",
     "PortalSession",
@@ -1735,4 +1736,28 @@ class DocumentRead(Base):
     )
     read_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class OrgSharingCode(Base):
+    """The code a firm gives another so that firm can share documents with it (Phase I).
+
+    Being findable is the recipient's choice: a document's owner names another
+    firm only by the code that firm handed over, never by guessing a slug or
+    learning an id. Only the code's SHA-256 is kept; the code itself is shown
+    once, to the org admin who rotated it. Rotating replaces it, so a firm can
+    stop being findable by whoever held the old one; grants already made stand.
+    A table of its own, not a column: the member login reads ``organizations``
+    and is granted nothing here.
+    """
+
+    __tablename__ = "org_sharing_codes"
+
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="RESTRICT"), primary_key=True
+    )
+    code_sha256: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    rotated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    rotated_by_operator_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("operators.id", ondelete="RESTRICT"), nullable=False
     )

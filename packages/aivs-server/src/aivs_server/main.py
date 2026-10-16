@@ -36,6 +36,7 @@ from aivs_server.api import (
     audit,
     connection_health,
     contributions,
+    documents,
     evidence,
     exports,
     isac_records,
@@ -74,6 +75,7 @@ from aivs_server.notify.dispatcher import dispatch_pending
 from aivs_server.notify.email import dispatch_pending_email
 from aivs_server.observability import run_periodically
 from aivs_server.portal import admin_routes as portal_admin_routes
+from aivs_server.portal import document_routes as portal_document_routes
 from aivs_server.portal import reading_routes as portal_reading_routes
 from aivs_server.portal import routes as portal_routes
 from aivs_server.portal import sso_routes as portal_sso_routes
@@ -410,11 +412,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(notification_settings.router)
     app.include_router(sector_events.router)
     app.include_router(lead_time.router)
+    app.include_router(documents.router)
     app.include_router(portal_routes.router)
     app.include_router(portal_admin_routes.router)
     app.include_router(portal_sso_routes.router)
     app.include_router(portal_vulnerability_routes.router)
     app.include_router(portal_reading_routes.router)
+    app.include_router(portal_document_routes.router)
     app.include_router(taxii_router.router)
 
     # Served from the package so a deployment needs no separate asset step.

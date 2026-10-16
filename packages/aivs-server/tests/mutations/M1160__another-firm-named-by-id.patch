@@ -1,0 +1,18 @@
+Mutation M1160: another firm is named by its id, without its consent
+Re-applies: no earlier commit; the document surface is new in Phase I slice I2, and this is the rule it would most easily lose
+
+Expect red: packages/aivs-server/tests/unit/test_documents.py::test_another_firm_is_not_named_by_its_id
+Expect red: packages/aivs-server/tests/unit/test_documents_api.py::test_another_firm_named_by_its_id_is_the_same_404
+
+diff --git a/packages/aivs-server/src/aivs_server/services/documents.py b/packages/aivs-server/src/aivs_server/services/documents.py
+--- a/packages/aivs-server/src/aivs_server/services/documents.py
++++ b/packages/aivs-server/src/aivs_server/services/documents.py
+@@ -595,8 +595,6 @@
+         if principal is not GrantPrincipal.ORGANIZATION or principal_id is not None:
+             return None
+         return await _resolve_sharing_code(db, sharing_code)
+-    if principal is GrantPrincipal.ORGANIZATION and principal_id != owner_org_id:
+-        return None
+     return principal_id
+ 
+ 

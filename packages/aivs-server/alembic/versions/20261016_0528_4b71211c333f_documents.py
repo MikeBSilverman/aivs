@@ -1,6 +1,6 @@
 """Text documents with document-only grants (Phase I, slice I1).
 
-Five tables. ``documents`` holds each document's metadata and its own key,
+Six tables. ``documents`` holds each document's metadata and its own key,
 sealed under the instance key; ``document_versions`` and ``document_comments``
 hold bodies sealed under that key, each bound to its row; ``document_grants``
 names who may read or edit a document, until revoked or expired;
@@ -17,6 +17,11 @@ comment stays after its author's grant ends, and a receipt that could be
 deleted proves nothing. Documents and grants change state (a grant is closed,
 never deleted) and do not. Nothing deletes any of the five; their foreign keys
 are RESTRICT.
+
+``org_sharing_codes`` holds the SHA-256 of each firm's document sharing code:
+a firm is named by another's document only through the code it handed over,
+its consent to be found (main, I2). A table rather than a column, because the
+member login reads ``organizations`` and is granted nothing here.
 
 ``tlp`` reuses the existing type; ``document_state``, ``document_permission``
 and ``grant_principal`` are new.
@@ -141,9 +146,7 @@ def upgrade() -> None:
         ),
         sa.Column("principal_org_id", sa.Uuid(), nullable=True),
         sa.Column("principal_operator_id", sa.Uuid(), nullable=True),
-        sa.Column(
-            "permission", _PERMISSION, nullable=False
-        ),
+        sa.Column("permission", _PERMISSION, nullable=False),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("granted_by_operator_id", sa.Uuid(), nullable=False),
         sa.Column(
@@ -268,6 +271,27 @@ def upgrade() -> None:
     op.create_index(
         op.f("ix_document_versions_document_id"), "document_versions", ["document_id"], unique=False
     )
+    op.create_table(
+        "org_sharing_codes",
+        sa.Column("org_id", sa.Uuid(), nullable=False),
+        sa.Column("code_sha256", sa.String(length=64), nullable=False),
+        sa.Column("rotated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("rotated_by_operator_id", sa.Uuid(), nullable=False),
+        sa.ForeignKeyConstraint(
+            ["org_id"],
+            ["organizations.id"],
+            name=op.f("fk_org_sharing_codes_org_id"),
+            ondelete="RESTRICT",
+        ),
+        sa.ForeignKeyConstraint(
+            ["rotated_by_operator_id"],
+            ["operators.id"],
+            name=op.f("fk_org_sharing_codes_rotated_by_operator_id"),
+            ondelete="RESTRICT",
+        ),
+        sa.PrimaryKeyConstraint("org_id", name=op.f("pk_org_sharing_codes")),
+        sa.UniqueConstraint("code_sha256", name=op.f("uq_org_sharing_codes_code_sha256")),
+    )
     for table in _APPEND_ONLY:
         for operation in ("update", "delete", "truncate"):
             op.execute(
@@ -279,6 +303,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    op.drop_table("org_sharing_codes")
     op.drop_index(op.f("ix_document_versions_document_id"), table_name="document_versions")
     op.drop_table("document_versions")
     op.drop_index(op.f("ix_document_reads_document_id"), table_name="document_reads")

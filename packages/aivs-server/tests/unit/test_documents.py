@@ -26,14 +26,18 @@ from aivs_schemas.enums import (
     OrgStatus,
     OrgType,
 )
+from aivs_server.audit.log import AuditAction
 from aivs_server.auth.context import AuthContext, AuthMethod
+from aivs_server.auth.policy import PolicyDeniedError
 from aivs_server.auth.secretbox import SecretBox
 from aivs_server.db.models import (
+    AuditLog,
     Document,
     DocumentGrant,
     DocumentRead,
     DocumentVersion,
     Operator,
+    OrgSharingCode,
 )
 from aivs_server.rewrap_secrets import rewrap
 from aivs_server.services import documents
@@ -63,7 +67,7 @@ def person(org, operator: Operator | None, *, method: AuthMethod = AuthMethod.PO
 
 
 @pytest.fixture
-async def world(app, make_org, make_operator, make_circle, join_circle):
+async def world(app, session, make_org, make_operator, make_circle, join_circle):
     """An owner, a peer it shares an active circle with, and an outsider it does not."""
     owner = await make_org("owner-bank", org_type=OrgType.GSIB)
     peer = await make_org("peer-bank", org_type=OrgType.GSIB)
@@ -82,7 +86,26 @@ async def world(app, make_org, make_operator, make_circle, join_circle):
     ):
         operator, _seed = await make_operator(org)
         people[name] = operator
-    return {"owner": owner, "peer": peer, "outsider": outsider, "circle": circle, **people}
+    world = {"owner": owner, "peer": peer, "outsider": outsider, "circle": circle, **people}
+    # Each other firm's sharing code, made by its own org admin: how the owner names it.
+    codes = {}
+    for org in (owner, peer, outsider):
+        admin, _seed = await make_operator(org, roles=(OperatorRole.ORG_ADMIN,))
+        codes[org.id] = await documents.rotate_sharing_code(session, admin_of(org, admin), now=NOW)
+    world["codes"] = codes
+    return world
+
+
+def admin_of(org, admin: Operator) -> AuthContext:
+    return AuthContext(
+        org_id=org.id,
+        org_slug=org.slug,
+        org_type=org.org_type,
+        org_status=OrgStatus.ACTIVE,
+        auth_method=AuthMethod.PORTAL_SESSION,
+        operator_id=admin.id,
+        operator_roles=frozenset({OperatorRole.ORG_ADMIN}),
+    )
 
 
 def ctx_of(world, name: str, **kwargs: Any) -> AuthContext:
@@ -117,12 +140,16 @@ async def read(session, secret_box, ctx, document_id, *, now=NOW, version_number
 
 
 async def share(session, world, document_id, principal, principal_id, **kwargs: Any):
+    """Share as the author: another firm by its sharing code, the owner's own by id."""
+    is_other_firm = principal is GrantPrincipal.ORGANIZATION and principal_id != world["owner"].id
+    code = world["codes"].get(principal_id) if is_other_firm else None
     return await documents.grant_access(
         session,
         ctx_of(world, "author"),
         document_id,
         principal=principal,
-        principal_id=principal_id,
+        principal_id=None if code is not None else principal_id,
+        sharing_code=code,
         permission=kwargs.pop("permission", DocumentPermission.VIEW),
         expires_at=kwargs.pop("expires_at", None),
         now=kwargs.pop("now", NOW),
@@ -419,16 +446,28 @@ async def test_a_firm_sharing_only_an_inactive_circle_cannot_be_named(session, s
 
 
 async def test_a_firm_of_a_type_not_on_the_allow_list_cannot_be_named(
-    session, secret_box, world, make_org, join_circle
+    session, secret_box, world, make_org, make_operator, join_circle
 ):
     """The allow-list, not the circle, decides: the ISAC's own organisation shares the
-    circle here and is still refused, as a service provider will be until K."""
-    isac = await make_org("hosting-isac-doc", org_type=OrgType.ADMIN)
+    circle here and holds a code, and is still refused, as a service provider will
+    be until K. The same firm as a bank is named, so the type is what refused."""
+    # Its code is made while it is a bank: an ISAC-type org has no org admins.
+    isac = await make_org("hosting-isac-doc", org_type=OrgType.GSIB)
     await join_circle(isac, world["circle"])
+    admin, _seed = await make_operator(isac, roles=(OperatorRole.ORG_ADMIN,))
+    world["codes"][isac.id] = await documents.rotate_sharing_code(
+        session, admin_of(isac, admin), now=NOW
+    )
+    # Committed: the service reads through its own staff connection.
+    isac.org_type = OrgType.ADMIN
+    await session.commit()
     document_id = await create(session, secret_box, world)
 
     await _refused_as_absent(session, world, document_id, GrantPrincipal.ORGANIZATION, isac.id)
     assert OrgType.ADMIN not in documents.DOCUMENT_GRANTEE_ORG_TYPES
+    isac.org_type = OrgType.GSIB
+    await session.commit()
+    await share(session, world, document_id, GrantPrincipal.ORGANIZATION, isac.id)
 
 
 async def test_a_grantee_cannot_pass_the_document_on(session, secret_box, world):
@@ -442,13 +481,16 @@ async def test_a_grantee_cannot_pass_the_document_on(session, secret_box, world)
         permission=DocumentPermission.EDIT,
     )
 
+    # A valid code for a firm in the owner's bound: only "the owner's firm alone
+    # grants" stands between the grantee and a new grant.
     with pytest.raises(DocumentNotFoundError):
         await documents.grant_access(
             session,
             ctx_of(world, "peer_one"),
             document_id,
             principal=GrantPrincipal.ORGANIZATION,
-            principal_id=world["peer"].id,
+            principal_id=None,
+            sharing_code=world["codes"][world["peer"].id],
             permission=DocumentPermission.EDIT,
             expires_at=None,
             now=NOW,
@@ -604,7 +646,8 @@ async def test_offboarding_archives_the_firms_documents_and_ends_every_grant_tou
         ctx_of(world, "peer_one"),
         peers,
         principal=GrantPrincipal.ORGANIZATION,
-        principal_id=world["owner"].id,
+        principal_id=None,
+        sharing_code=world["codes"][world["owner"].id],
         permission=DocumentPermission.VIEW,
         expires_at=None,
         now=NOW,
@@ -674,3 +717,77 @@ async def test_offboarding_a_firm_through_the_isac_closes_its_document_grants(
     grant = await session.scalar(select(DocumentGrant))
     await session.refresh(grant)
     assert grant.revoked_by == "offboarded"
+
+
+# ---------------------------------------------------------------------------
+# Sharing codes: another firm is named only by the code it handed over
+# ---------------------------------------------------------------------------
+async def test_another_firm_is_not_named_by_its_id(session, secret_box, world):
+    """By id, a firm sharing a circle is refused; by its code, it is named."""
+    document_id = await create(session, secret_box, world)
+
+    with pytest.raises(DocumentNotFoundError):
+        await documents.grant_access(
+            session,
+            ctx_of(world, "author"),
+            document_id,
+            principal=GrantPrincipal.ORGANIZATION,
+            principal_id=world["peer"].id,
+            sharing_code=None,
+            permission=DocumentPermission.VIEW,
+            expires_at=None,
+            now=NOW,
+        )
+    await share(session, world, document_id, GrantPrincipal.ORGANIZATION, world["peer"].id)
+
+
+async def _by_code(session, world, document_id, code: str):
+    return await documents.grant_access(
+        session,
+        ctx_of(world, "author"),
+        document_id,
+        principal=GrantPrincipal.ORGANIZATION,
+        principal_id=None,
+        sharing_code=code,
+        permission=DocumentPermission.VIEW,
+        expires_at=None,
+        now=NOW,
+    )
+
+
+async def test_a_rotated_code_stops_naming_its_firm_and_grants_made_stand(
+    session, secret_box, world, make_operator
+):
+    document_id = await create(session, secret_box, world)
+    old = world["codes"][world["peer"].id]
+    await _by_code(session, world, document_id, old)
+    admin, _seed = await make_operator(world["peer"], roles=(OperatorRole.ORG_ADMIN,))
+
+    new = await documents.rotate_sharing_code(session, admin_of(world["peer"], admin), now=NOW)
+
+    assert new != old
+    with pytest.raises(DocumentNotFoundError):
+        await _by_code(session, world, document_id, old)
+    await read(session, secret_box, ctx_of(world, "peer_one"), document_id)
+    await _by_code(session, world, document_id, new.lower())
+
+
+async def test_only_the_firms_own_org_admin_rotates_its_code(session, world):
+    with pytest.raises(PolicyDeniedError):
+        await documents.rotate_sharing_code(session, ctx_of(world, "peer_one"), now=NOW)
+
+
+async def test_the_code_is_stored_only_as_its_hash_and_its_rotation_audited(session, world):
+    code = world["codes"][world["peer"].id]
+
+    rows = (await session.scalars(select(OrgSharingCode))).all()
+    assert code not in str([vars(row) for row in rows])
+    [audited] = (
+        await session.scalars(
+            select(AuditLog).where(
+                AuditLog.action == AuditAction.ORG_SHARING_CODE_ROTATED,
+                AuditLog.org_id == world["peer"].id,
+            )
+        )
+    ).all()
+    assert code not in str(audited.details)

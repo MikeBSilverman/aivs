@@ -1,0 +1,17 @@
+Mutation M1166: a document's body is rendered as markup
+Re-applies: no earlier commit; the document surface is new in Phase I slice I2, and this is the rule it would most easily lose
+
+Expect red: packages/aivs-server/tests/unit/test_documents_api.py::test_the_portal_writes_a_draft_and_shows_its_text_escaped
+
+diff --git a/packages/aivs-server/src/aivs_server/portal/templates/document.html b/packages/aivs-server/src/aivs_server/portal/templates/document.html
+--- a/packages/aivs-server/src/aivs_server/portal/templates/document.html
++++ b/packages/aivs-server/src/aivs_server/portal/templates/document.html
+@@ -10,7 +10,7 @@
+ {% if document.abstract %}<div class="card"><p>{{ document.abstract }}</p></div>{% endif %}
+ 
+ <div class="card" data-document-body>
+-  <pre class="document-body">{{ document.body }}</pre>
++  <pre class="document-body">{{ document.body | safe }}</pre>
+   <p class="muted mono">SHA-256 {{ document.content_sha256 }}</p>
+ </div>
+ 

@@ -535,3 +535,6 @@ td form {
 /* Reading depth switch and the technical record (templates/vulnerability.html). */
 .depths { display: flex; gap: 0.8rem; font-size: 0.9rem; }
 .record { overflow-x: auto; white-space: pre; font-size: 0.85rem; max-height: 40rem; }
+
+/* A document's plain text: kept as written, wrapped to the page. */
+.document-body { white-space: pre-wrap; overflow-wrap: anywhere; font-family: inherit; margin: 0; }

@@ -184,6 +184,35 @@ EXPECTED: Mapping[RouteClass, Mapping[Principal, Outcome]] = {
     # detection alerts) are an option an instance switches on, off by default;
     # this matrix runs with it off. On, it registers like any machine
     # certificate (unit/test_webhooks.py).
+    # Text documents (Phase I). Writing needs a person, checked before the
+    # document is looked up, so a certificate alone is 403 whichever it names.
+    RouteClass.DOCUMENT_CREATE: {
+        **_allow(
+            P.MEMBER_ANALYST,
+            P.MEMBER_ORG_ADMIN,
+            P.ISAC_ANALYST,
+            P.ISAC_EDITOR,
+            P.ISAC_MEMBERSHIP,
+            P.SYSTEM_ADMIN,
+            otherwise=F,
+        ),
+    },
+    # The member firm holds edit and the peer view; the ISAC holds nothing.
+    RouteClass.DOCUMENT_READ: _allow(*_MEMBER, P.PEER_MACHINE, otherwise=N),
+    RouteClass.DOCUMENT_COMMENT: {
+        **_allow(P.MEMBER_ANALYST, P.MEMBER_ORG_ADMIN, otherwise=N),
+        **dict.fromkeys(CERTIFICATE_ONLY, F),
+    },
+    RouteClass.DOCUMENT_EDIT: {
+        **_allow(P.MEMBER_ANALYST, P.MEMBER_ORG_ADMIN, otherwise=N),
+        **dict.fromkeys(CERTIFICATE_ONLY, F),
+    },
+    RouteClass.DOCUMENT_SHARE: {
+        **_allow(P.MEMBER_ANALYST, P.MEMBER_ORG_ADMIN, otherwise=N),
+        **dict.fromkeys(CERTIFICATE_ONLY, F),
+    },
+    # A member firm's own org admin; at the ISAC the role grants nothing.
+    RouteClass.SHARING_CODE: _allow(P.MEMBER_ORG_ADMIN, otherwise=F),
     RouteClass.WEBHOOK_REGISTER: _allow(
         P.MEMBER_MACHINE,
         P.MEMBER_ORG_ADMIN,

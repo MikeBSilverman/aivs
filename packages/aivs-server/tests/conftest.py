@@ -508,6 +508,7 @@ _ALL_TABLES = (
     "distributions",
     "taxii_status",
     "stix_objects",
+    "org_sharing_codes",
     "document_reads",
     "document_comments",
     "document_versions",

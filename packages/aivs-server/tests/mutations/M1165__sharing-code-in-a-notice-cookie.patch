@@ -1,0 +1,19 @@
+Mutation M1165: a new sharing code is carried in the notice cookie
+Re-applies: no earlier commit; the document surface is new in Phase I slice I2, and this is the rule it would most easily lose
+
+Expect red: packages/aivs-server/tests/unit/test_documents_api.py::test_the_portal_shows_a_new_sharing_code_once_and_never_in_a_cookie
+
+diff --git a/packages/aivs-server/src/aivs_server/portal/document_routes.py b/packages/aivs-server/src/aivs_server/portal/document_routes.py
+--- a/packages/aivs-server/src/aivs_server/portal/document_routes.py
++++ b/packages/aivs-server/src/aivs_server/portal/document_routes.py
+@@ -140,7 +140,9 @@
+     await session.commit()
+     context = await _list_context(request, settings, session, ctx)
+     context["new_code"] = code
+-    return render(request, "documents.html", context)
++    response = render(request, "documents.html", context)
++    set_notice(response, settings, "success", code)
++    return response
+ 
+ 
+ @router.get("/documents/{document_id}")

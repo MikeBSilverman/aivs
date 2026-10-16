@@ -155,6 +155,8 @@ class AuditAction:
     DOCUMENT_GRANTED = "document.granted"
     DOCUMENT_GRANT_REVOKED = "document.grant_revoked"
     DOCUMENT_TRANSITIONED = "document.transitioned"
+    #: A firm's document sharing code was replaced; never the code itself.
+    ORG_SHARING_CODE_ROTATED = "org.sharing_code_rotated"
     #: A model read a submission in shadow: the outcome and a total, never the codes.
     SUBMISSION_MODEL_READ = "submission.model_read"
     CONTRIBUTION_PUBLISHED = "contribution.published"

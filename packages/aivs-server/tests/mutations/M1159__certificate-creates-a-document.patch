@@ -1,0 +1,16 @@
+Mutation M1159: a certificate alone creates a document
+Re-applies: no earlier commit; the document surface is new in Phase I slice I2, and this is the rule it would most easily lose
+
+Expect red: packages/aivs-server/tests/unit/test_documents_api.py::test_a_certificate_alone_writes_nothing
+
+diff --git a/packages/aivs-server/src/aivs_server/api/documents.py b/packages/aivs-server/src/aivs_server/api/documents.py
+--- a/packages/aivs-server/src/aivs_server/api/documents.py
++++ b/packages/aivs-server/src/aivs_server/api/documents.py
+@@ -181,7 +181,6 @@
+     payload: DocumentIn, ctx: AuthenticatedContext, session: SessionDep, settings: SettingsDep
+ ) -> CreatedOut:
+     """A new draft, the author's alone until it is shared."""
+-    _person(ctx)
+     try:
+         document_id = await documents.create_document(
+             session,

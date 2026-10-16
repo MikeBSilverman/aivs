@@ -45,6 +45,7 @@ from __future__ import annotations
 import base64
 import datetime as dt
 import hashlib
+import hmac
 import os
 import uuid
 from collections.abc import AsyncIterator, Mapping
@@ -68,7 +69,14 @@ from aivs_schemas.enums import (
 )
 from aivs_server.audit.log import AuditAction, record
 from aivs_server.auth.context import AuthContext
-from aivs_server.auth.policy import is_active, uses_staff_database, within_tlp_ceiling
+from aivs_server.auth.policy import (
+    can_write_documents,
+    is_active,
+    is_org_admin,
+    require,
+    uses_staff_database,
+    within_tlp_ceiling,
+)
 from aivs_server.auth.secretbox import SecretBox, SecretPurpose
 from aivs_server.db.engine import get_sessionmaker
 from aivs_server.db.models import (
@@ -81,6 +89,7 @@ from aivs_server.db.models import (
     DocumentVersion,
     Operator,
     Organization,
+    OrgSharingCode,
 )
 
 __all__ = [
@@ -94,9 +103,14 @@ __all__ = [
     "close_for_offboarded",
     "create_document",
     "grant_access",
+    "list_documents",
+    "list_grants",
+    "own_firm_principals",
     "read_document",
     "revoke_grant",
+    "rotate_sharing_code",
     "save_version",
+    "sharing_code_rotated_at",
     "transition_document",
 ]
 
@@ -524,7 +538,8 @@ async def grant_access(
     document_id: uuid.UUID,
     *,
     principal: GrantPrincipal,
-    principal_id: uuid.UUID,
+    principal_id: uuid.UUID | None,
+    sharing_code: str | None,
     permission: DocumentPermission,
     expires_at: dt.datetime | None,
     now: dt.datetime,
@@ -533,6 +548,9 @@ async def grant_access(
 
     Only the owner organisation's editors grant: a grantee elsewhere cannot
     pass the document on, so no grant ever reaches past the owner's choice.
+    Inside its own firm the owner names by id. Another firm it names only by
+    the sharing code that firm handed over: the code is its consent to be
+    found, and SF-2's bound still applies once it resolves.
     """
     granter = _person(ctx)
     async with _staff(session, ctx) as db:
@@ -542,7 +560,8 @@ async def grant_access(
         if ctx.org_id != document.owner_org_id:
             raise DocumentNotFoundError
         _require_open(document)
-        if not await _may_name(db, document.owner_org_id, principal, principal_id):
+        named = await _named(db, document.owner_org_id, principal, principal_id, sharing_code)
+        if named is None or not await _may_name(db, document.owner_org_id, principal, named):
             raise DocumentNotFoundError
         if expires_at is not None and expires_at <= now:
             msg = "a grant cannot expire in the past"
@@ -551,8 +570,8 @@ async def grant_access(
             id=uuid.uuid4(),
             document_id=document_id,
             principal_type=principal,
-            principal_org_id=principal_id if principal is GrantPrincipal.ORGANIZATION else None,
-            principal_operator_id=principal_id if principal is GrantPrincipal.OPERATOR else None,
+            principal_org_id=named if principal is GrantPrincipal.ORGANIZATION else None,
+            principal_operator_id=named if principal is GrantPrincipal.OPERATOR else None,
             permission=permission,
             expires_at=expires_at,
             granted_by_operator_id=granter,
@@ -562,6 +581,85 @@ async def grant_access(
         details = {"principal_type": principal.value, "permission": permission.value}
         await _audit(db, ctx, AuditAction.DOCUMENT_GRANTED, document_id, details)
     return grant.id
+
+
+async def _named(
+    db: AsyncSession,
+    owner_org_id: uuid.UUID,
+    principal: GrantPrincipal,
+    principal_id: uuid.UUID | None,
+    sharing_code: str | None,
+) -> uuid.UUID | None:
+    """The principal a grant names: by id within the owner's firm, by code beyond it."""
+    if sharing_code is not None:
+        if principal is not GrantPrincipal.ORGANIZATION or principal_id is not None:
+            return None
+        return await _resolve_sharing_code(db, sharing_code)
+    if principal is GrantPrincipal.ORGANIZATION and principal_id != owner_org_id:
+        return None
+    return principal_id
+
+
+# ---------------------------------------------------------------------------
+# Sharing codes
+# ---------------------------------------------------------------------------
+SHARING_CODE_PREFIX: Final[str] = "AIVS-SHARE-"
+_SHARING_CODE_BYTES: Final[int] = 20
+
+
+def _code_digest(code: str) -> str:
+    return hashlib.sha256(code.strip().upper().encode("utf-8")).hexdigest()
+
+
+async def _resolve_sharing_code(db: AsyncSession, code: str) -> uuid.UUID | None:
+    """The firm a sharing code belongs to, or ``None``: a wrong code says nothing more."""
+    digest = _code_digest(code)
+    row = await db.scalar(select(OrgSharingCode).where(OrgSharingCode.code_sha256 == digest))
+    if row is None or not hmac.compare_digest(row.code_sha256, digest):
+        return None
+    return row.org_id
+
+
+async def rotate_sharing_code(session: AsyncSession, ctx: AuthContext, *, now: dt.datetime) -> str:
+    """A new sharing code for the caller's firm, shown this once; the old one stops working.
+
+    The firm's own org admins only. Grants already made with the old code stand:
+    the owner has already shared.
+    """
+    require(is_org_admin(ctx) and ctx.operator_id is not None, "sharing_code_requires_org_admin")
+    rotator = _person(ctx)
+    code = SHARING_CODE_PREFIX + base64.b32encode(os.urandom(_SHARING_CODE_BYTES)).decode(
+        "ascii"
+    ).rstrip("=")
+    async with _staff(session, ctx) as db:
+        row = await db.get(OrgSharingCode, ctx.org_id, with_for_update=True, populate_existing=True)
+        if row is None:
+            row = OrgSharingCode(org_id=ctx.org_id)
+            db.add(row)
+        row.code_sha256 = _code_digest(code)
+        row.rotated_at = now
+        row.rotated_by_operator_id = rotator
+        await record(
+            db,
+            action=AuditAction.ORG_SHARING_CODE_ROTATED,
+            ctx=ctx,
+            org_id=ctx.org_id,
+            resource_type="organization",
+            resource_id=str(ctx.org_id),
+            details={},
+        )
+    return code
+
+
+async def sharing_code_rotated_at(session: AsyncSession, ctx: AuthContext) -> dt.datetime | None:
+    """When the caller's firm last rotated its code, to its org admins.
+
+    The code itself is never shown again: only its hash is kept.
+    """
+    require(is_org_admin(ctx), "sharing_code_requires_org_admin")
+    async with _staff(session, ctx) as db:
+        row = await db.get(OrgSharingCode, ctx.org_id)
+        return row.rotated_at if row is not None else None
 
 
 async def revoke_grant(
@@ -713,6 +811,140 @@ async def _comments(
             CommentView(row.id, row.version_number, row.author_operator_id, body, row.created_at)
         )
     return tuple(views)
+
+
+# ---------------------------------------------------------------------------
+# Listings
+# ---------------------------------------------------------------------------
+@dataclass(frozen=True)
+class DocumentSummary:
+    id: uuid.UUID
+    title: str
+    state: DocumentState
+    tlp: TLP
+    owner_name: str
+    permission: DocumentPermission
+    updated_at: dt.datetime
+
+
+@dataclass(frozen=True)
+class GrantView:
+    id: uuid.UUID
+    principal_type: GrantPrincipal
+    principal_id: uuid.UUID
+    principal_name: str
+    permission: DocumentPermission
+    expires_at: dt.datetime | None
+    revoked_at: dt.datetime | None
+
+
+async def list_documents(
+    session: AsyncSession, ctx: AuthContext, *, now: dt.datetime
+) -> list[DocumentSummary]:
+    """The documents the caller may read: its own drafts and those shared with it, newest first."""
+    if not is_active(ctx):
+        return []
+    own = and_(Document.owner_org_id == ctx.org_id, Document.author_operator_id == ctx.operator_id)
+    shared = exists().where(DocumentGrant.document_id == Document.id, _open_grant(ctx, now))
+    async with _staff(session, ctx) as db:
+        candidates = (
+            await db.scalars(
+                select(Document)
+                .where(or_(own, shared) if ctx.operator_id is not None else shared)
+                .order_by(Document.updated_at.desc(), Document.id)
+            )
+        ).all()
+        summaries = []
+        for document in candidates:
+            permission = await _permission(db, ctx, document, now=now)
+            if permission is None:
+                continue
+            owner = await db.get(Organization, document.owner_org_id)
+            summaries.append(
+                DocumentSummary(
+                    document.id,
+                    document.title,
+                    document.state,
+                    document.tlp,
+                    owner.name if owner is not None else "",
+                    permission,
+                    document.updated_at,
+                )
+            )
+        return summaries
+
+
+async def list_grants(
+    session: AsyncSession, ctx: AuthContext, document_id: uuid.UUID, *, now: dt.datetime
+) -> list[GrantView]:
+    """A document's grants, open and closed, to the owner firm's editors alone."""
+    async with _staff(session, ctx) as db:
+        document, _held = await _visible(
+            db, ctx, document_id, at_least=DocumentPermission.EDIT, now=now, for_update=False
+        )
+        if ctx.org_id != document.owner_org_id:
+            raise DocumentNotFoundError
+        grants = (
+            await db.scalars(
+                select(DocumentGrant)
+                .where(DocumentGrant.document_id == document_id)
+                .order_by(DocumentGrant.created_at, DocumentGrant.id)
+            )
+        ).all()
+        return [await _grant_view(db, grant) for grant in grants]
+
+
+async def _grant_view(db: AsyncSession, grant: DocumentGrant) -> GrantView:
+    if grant.principal_type is GrantPrincipal.OPERATOR:
+        principal_id = grant.principal_operator_id
+        person = await db.get(Operator, principal_id)
+        name = person.display_name if person is not None else ""
+    else:
+        principal_id = grant.principal_org_id
+        organisation = await db.get(Organization, principal_id)
+        name = organisation.name if organisation is not None else ""
+    if principal_id is None:  # pragma: no cover - the one_principal constraint forbids it
+        raise DocumentNotFoundError
+    return GrantView(
+        grant.id,
+        grant.principal_type,
+        principal_id,
+        name,
+        grant.permission,
+        grant.expires_at,
+        grant.revoked_at,
+    )
+
+
+async def own_firm_principals(
+    session: AsyncSession, ctx: AuthContext
+) -> list[tuple[GrantPrincipal, uuid.UUID, str]]:
+    """Whom the caller may name inside its own firm: the firm, and its active people.
+
+    Read staff side because the member login holds nothing on ``operators``.
+    Its own firm only: listing other firms would show the circle membership
+    graph, a protected asset.
+    """
+    if not can_write_documents(ctx):
+        return []
+    async with _staff(session, ctx) as db:
+        firm = await db.get(Organization, ctx.org_id)
+        people = (
+            await db.scalars(
+                select(Operator)
+                .where(Operator.org_id == ctx.org_id, Operator.is_active.is_(True))
+                .order_by(Operator.display_name, Operator.id)
+            )
+        ).all()
+        named: list[tuple[GrantPrincipal, uuid.UUID, str]] = []
+        if firm is not None:
+            named.append((GrantPrincipal.ORGANIZATION, firm.id, f"{firm.name} (everyone)"))
+        named.extend(
+            (GrantPrincipal.OPERATOR, person.id, person.display_name)
+            for person in people
+            if person.id != ctx.operator_id
+        )
+        return named
 
 
 # ---------------------------------------------------------------------------

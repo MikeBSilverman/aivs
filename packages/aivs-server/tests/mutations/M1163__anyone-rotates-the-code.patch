@@ -1,0 +1,18 @@
+Mutation M1163: any person at a firm rotates its sharing code
+Re-applies: no earlier commit; the document surface is new in Phase I slice I2, and this is the rule it would most easily lose
+
+Expect red: packages/aivs-server/tests/unit/test_documents.py::test_only_the_firms_own_org_admin_rotates_its_code
+Expect red: packages/aivs-server/tests/unit/test_documents_api.py::test_only_an_org_admin_rotates_and_the_status_never_shows_the_code
+
+diff --git a/packages/aivs-server/src/aivs_server/services/documents.py b/packages/aivs-server/src/aivs_server/services/documents.py
+--- a/packages/aivs-server/src/aivs_server/services/documents.py
++++ b/packages/aivs-server/src/aivs_server/services/documents.py
+@@ -626,7 +626,7 @@
+     The firm's own org admins only. Grants already made with the old code stand:
+     the owner has already shared.
+     """
+-    require(is_org_admin(ctx) and ctx.operator_id is not None, "sharing_code_requires_org_admin")
++    require(ctx.operator_id is not None, "sharing_code_requires_org_admin")
+     rotator = _person(ctx)
+     code = SHARING_CODE_PREFIX + base64.b32encode(os.urandom(_SHARING_CODE_BYTES)).decode(
+         "ascii"

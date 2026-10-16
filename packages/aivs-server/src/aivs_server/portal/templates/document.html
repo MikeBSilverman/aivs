@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{# One document. The body is plain text, autoescaped, whitespace kept. #}
+{% block title %}{{ document.title }} &middot; {{ instance_name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>{{ document.title }}</h1>
+  <p>From {{ document.owner_name }} &middot; {{ document.state.value.replace('_', ' ') }} &middot; TLP:{{ document.tlp.value | upper }} &middot; version {{ document.version_number }}</p>
+</div>
+
+{% if document.abstract %}<div class="card"><p>{{ document.abstract }}</p></div>{% endif %}
+
+<div class="card" data-document-body>
+  <pre class="document-body">{{ document.body }}</pre>
+  <p class="muted mono">SHA-256 {{ document.content_sha256 }}</p>
+</div>
+
+{% if can_edit %}
+<div class="card">
+  <h2>Edit</h2>
+  <form method="post" action="/portal/documents/{{ document.id }}/body">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="expected_version" value="{{ document.version }}">
+    <div class="field">
+      <textarea name="body" required>{{ document.body }}</textarea>
+    </div>
+    <button type="submit">Save a new version</button>
+  </form>
+  {% if next_states %}
+    <form method="post" action="/portal/documents/{{ document.id }}/transition">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <select name="to">{% for s in next_states %}<option value="{{ s }}">{{ s.replace('_', ' ') }}</option>{% endfor %}</select>
+      <button type="submit">Change state</button>
+    </form>
+  {% endif %}
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>Comments</h2>
+  {% for c in document.comments %}
+    <div class="comment"><p class="muted mono">version {{ c.version_number }} &middot; {{ stamp(c.created_at) }}</p><pre class="document-body">{{ c.body }}</pre></div>
+  {% else %}
+    <p class="muted">No comments.</p>
+  {% endfor %}
+  {% if can_comment %}
+    <form method="post" action="/portal/documents/{{ document.id }}/comments">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="version_number" value="{{ document.version_number }}">
+      <div class="field"><textarea name="body" required maxlength="4000"></textarea></div>
+      <button type="submit">Comment</button>
+    </form>
+  {% endif %}
+</div>
+
+{% if owner_editor %}
+<div class="card" data-grants>
+  <h2>Shared with</h2>
+  {% if grants %}
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Who</th><th>May</th><th>Until</th><th></th></tr></thead>
+        <tbody>
+          {% for g in grants %}
+            <tr>
+              <td>{{ g.principal_name }}</td>
+              <td>{{ g.permission.value }}</td>
+              <td class="mono">{% if g.revoked_at %}ended {{ stamp(g.revoked_at) }}{% elif g.expires_at %}{{ stamp(g.expires_at) }}{% else %}until ended{% endif %}</td>
+              <td>{% if not g.revoked_at %}
+                <form method="post" action="/portal/documents/{{ document.id }}/grants/{{ g.id }}/revoke">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                  <button type="submit">End</button>
+                </form>{% endif %}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p class="muted">Nobody else yet.</p>
+  {% endif %}
+  <form method="post" action="/portal/documents/{{ document.id }}/grants">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="field">
+      <label for="target">In your firm</label>
+      <select id="target" name="target">
+        <option value="">(nobody)</option>
+        {% for kind, pid, name in principals %}<option value="{{ kind.value }}:{{ pid }}">{{ name }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label for="sharing_code">Or another firm, by its sharing code</label>
+      <input type="text" id="sharing_code" name="sharing_code" maxlength="100" autocomplete="off">
+    </div>
+    <div class="field">
+      <label for="permission">May</label>
+      <select id="permission" name="permission"><option value="view">view</option><option value="edit">edit</option></select>
+    </div>
+    <div class="field">
+      <label for="expires_on">Until (optional)</label>
+      <input type="date" id="expires_on" name="expires_on">
+    </div>
+    <button type="submit">Share</button>
+  </form>
+</div>
+{% endif %}
+{% endblock %}

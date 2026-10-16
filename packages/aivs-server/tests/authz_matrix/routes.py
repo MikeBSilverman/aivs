@@ -149,6 +149,23 @@ class RouteClass(enum.StrEnum):
     #: Confirming a filing made in one's name: a person at that member; its
     #: machine certificate, and a reviewer who can see it, 403.
     PROXY_CONFIRM = "proxy confirm"
+    #: Writing a new text document (Phase I): a signed-in person; a certificate
+    #: alone 403, before anything is written.
+    DOCUMENT_CREATE = "document create"
+    #: Reading one document: its author and its grantees (here the member firm
+    #: and the peer); everyone else 404, the ISAC included.
+    DOCUMENT_READ = "document read"
+    #: Commenting on one: a signed-in person among its grantees; a certificate
+    #: alone 403; everyone else 404.
+    DOCUMENT_COMMENT = "document comment"
+    #: Saving a version or moving its state: a person holding edit (the member
+    #: firm); a certificate alone 403; everyone else 404.
+    DOCUMENT_EDIT = "document edit"
+    #: Seeing and changing who it is shared with: the owner firm's editors; a
+    #: certificate alone 403; everyone else 404.
+    DOCUMENT_SHARE = "document share"
+    #: A firm's document sharing code: its own org admins; everyone else 403.
+    SHARING_CODE = "sharing code"
     #: Signing in through the ISAC's IdP: absent (404) unless member SSO is on.
     SSO_SIGN_IN = "sso sign in"
     #: Signing in and out: the same for every caller.
@@ -969,6 +986,156 @@ ROUTES: tuple[RouteCase, ...] = (
         _fixed("/portal/sso/callback"),
         is_portal=True,
     ),
+    # ----- text documents (Phase I) ----------------------------------------
+    RouteCase("GET", "/api/v1/documents", RouteClass.LISTING, _fixed(f"{API}/documents")),
+    RouteCase(
+        "GET", "/portal/documents", RouteClass.LISTING, _fixed("/portal/documents"), is_portal=True
+    ),
+    RouteCase(
+        "POST",
+        "/api/v1/documents",
+        RouteClass.DOCUMENT_CREATE,
+        _fixed(f"{API}/documents", {"title": "Matrix", "tlp": "amber", "body": "Text."}),
+    ),
+    RouteCase(
+        "POST",
+        "/portal/documents",
+        RouteClass.DOCUMENT_CREATE,
+        _fixed("/portal/documents", {"title": "Matrix", "tlp": "amber", "body": "Text."}),
+        is_portal=True,
+    ),
+    RouteCase(
+        "GET",
+        "/api/v1/documents/{document_id}",
+        RouteClass.DOCUMENT_READ,
+        lambda world: (f"{API}/documents/{world.document_id}", None),
+    ),
+    RouteCase(
+        "GET",
+        "/portal/documents/{document_id}",
+        RouteClass.DOCUMENT_READ,
+        lambda world: (f"/portal/documents/{world.document_id}", None),
+        is_portal=True,
+    ),
+    RouteCase(
+        "POST",
+        "/api/v1/documents/{document_id}/comments",
+        RouteClass.DOCUMENT_COMMENT,
+        lambda world: (
+            f"{API}/documents/{world.document_id}/comments",
+            {"version_number": 1, "body": "A comment."},
+        ),
+    ),
+    RouteCase(
+        "POST",
+        "/portal/documents/{document_id}/comments",
+        RouteClass.DOCUMENT_COMMENT,
+        lambda world: (
+            f"/portal/documents/{world.document_id}/comments",
+            {"version_number": "1", "body": "A comment."},
+        ),
+        is_portal=True,
+    ),
+    # Saves before moves: a save names the version it read.
+    RouteCase(
+        "PUT",
+        "/api/v1/documents/{document_id}/body",
+        RouteClass.DOCUMENT_EDIT,
+        lambda world: (
+            f"{API}/documents/{world.document_id}/body",
+            {"body": "Version two.", "expected_version": 1},
+        ),
+    ),
+    RouteCase(
+        "POST",
+        "/portal/documents/{document_id}/body",
+        RouteClass.DOCUMENT_EDIT,
+        lambda world: (
+            f"/portal/documents/{world.document_id}/body",
+            {"body": "Version three.", "expected_version": "2"},
+        ),
+        is_portal=True,
+    ),
+    RouteCase(
+        "POST",
+        "/api/v1/documents/{document_id}/transition",
+        RouteClass.DOCUMENT_EDIT,
+        lambda world: (f"{API}/documents/{world.document_id}/transition", {"to": "in_review"}),
+    ),
+    RouteCase(
+        "POST",
+        "/portal/documents/{document_id}/transition",
+        RouteClass.DOCUMENT_EDIT,
+        lambda world: (f"/portal/documents/{world.document_id}/transition", {"to": "draft"}),
+        is_portal=True,
+    ),
+    RouteCase(
+        "GET",
+        "/api/v1/documents/{document_id}/grants",
+        RouteClass.DOCUMENT_SHARE,
+        lambda world: (f"{API}/documents/{world.document_id}/grants", None),
+    ),
+    RouteCase(
+        "POST",
+        "/api/v1/documents/{document_id}/grants",
+        RouteClass.DOCUMENT_SHARE,
+        lambda world: (
+            f"{API}/documents/{world.document_id}/grants",
+            {
+                "principal_type": "organization",
+                "sharing_code": world.peer_sharing_code,
+                "permission": "view",
+            },
+        ),
+    ),
+    RouteCase(
+        "POST",
+        "/portal/documents/{document_id}/grants",
+        RouteClass.DOCUMENT_SHARE,
+        lambda world: (
+            f"/portal/documents/{world.document_id}/grants",
+            {"sharing_code": world.peer_sharing_code, "permission": "view"},
+        ),
+        is_portal=True,
+    ),
+    RouteCase(
+        "DELETE",
+        "/api/v1/documents/{document_id}/grants/{grant_id}",
+        RouteClass.DOCUMENT_SHARE,
+        lambda world: (
+            f"{API}/documents/{world.document_id}/grants/{world.document_grant_ids[0]}",
+            None,
+        ),
+    ),
+    RouteCase(
+        "POST",
+        "/portal/documents/{document_id}/grants/{grant_id}/revoke",
+        RouteClass.DOCUMENT_SHARE,
+        lambda world: (
+            f"/portal/documents/{world.document_id}/grants/{world.document_grant_ids[1]}/revoke",
+            {},
+        ),
+        is_portal=True,
+    ),
+    RouteCase(
+        "GET",
+        "/api/v1/documents/sharing-code",
+        RouteClass.SHARING_CODE,
+        _fixed(f"{API}/documents/sharing-code"),
+    ),
+    RouteCase(
+        "POST",
+        "/api/v1/documents/sharing-code",
+        RouteClass.SHARING_CODE,
+        _fixed(f"{API}/documents/sharing-code"),
+    ),
+    RouteCase(
+        "POST",
+        "/portal/documents/sharing-code",
+        RouteClass.SHARING_CODE,
+        _fixed("/portal/documents/sharing-code", {}),
+        is_portal=True,
+    ),
     # ----- health ---------------------------------------------------------
     RouteCase("GET", "/healthz", RouteClass.HEALTH, _fixed("/healthz")),
     RouteCase("GET", "/readyz", RouteClass.HEALTH, _fixed("/readyz")),
@@ -979,10 +1146,10 @@ ROUTES: tuple[RouteCase, ...] = (
 #: not a total, so one surface vanishing from the walk cannot hide behind another
 #: growing. Raise a floor when a surface grows; lowering one is a decision.
 SURFACE_FLOORS: dict[str, int] = {
-    "/api/v1": 46,
+    "/api/v1": 83,
     "/taxii2": 10,
     "/portal/admin": 10,
-    "/portal": 22,
+    "/portal": 41,
     "/healthz": 1,
     "/readyz": 1,
     "/metrics": 1,

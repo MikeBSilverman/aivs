@@ -72,6 +72,9 @@ CLASSIFICATION: Final[dict[str, frozenset[str]]] = {
     "public.document_comments": _NOTHING,
     "public.document_grants": _NOTHING,
     "public.document_reads": _NOTHING,
+    # Which code finds which firm: with SELECT, SQL on the member path could
+    # read every firm's code hash, and name any firm it held a code for.
+    "public.org_sharing_codes": _NOTHING,
     # Read, and written only where listed.
     "public.circle_memberships": _READ,
     "public.circles": _READ,

@@ -1,0 +1,16 @@
+Mutation M1168: offboarding leaves the departed member's sharing code
+Re-applies: no earlier commit; the sharing code is new in Phase I slice I2, and is one more table the deletion tuple must name
+
+Expect red: packages/aivs-server/tests/unit/test_offboarding.py::test_every_operational_row_of_the_member_is_deleted
+
+diff --git a/packages/aivs-server/src/aivs_server/services/offboarding.py b/packages/aivs-server/src/aivs_server/services/offboarding.py
+--- a/packages/aivs-server/src/aivs_server/services/offboarding.py
++++ b/packages/aivs-server/src/aivs_server/services/offboarding.py
+@@ -124,7 +124,6 @@
+         TaxiiStatus,
+         PendingNotice,
+         EmailDelivery,
+-        OrgSharingCode,
+     ):
+         await session.execute(delete(table).where(table.org_id == organisation.id))
+     if organisation.legal_hold_since is not None:

@@ -4,12 +4,11 @@ Re-applies: the hold's absence
 Expect red: packages/aivs-server/tests/unit/test_offboarding.py::test_a_legal_hold_keeps_the_postures_until_it_is_lifted
 
 diff --git a/packages/aivs-server/src/aivs_server/services/offboarding.py b/packages/aivs-server/src/aivs_server/services/offboarding.py
-index afb9aab..d7ab5a9 100644
 --- a/packages/aivs-server/src/aivs_server/services/offboarding.py
 +++ b/packages/aivs-server/src/aivs_server/services/offboarding.py
-@@ -118,8 +118,6 @@ async def _delete_operational(session: AsyncSession, organisation: Organization)
-     """Delete the member's own operational data. Returns what happened to its postures."""
-     for table in (Webhook, PortalSession, TaxiiStatus, PendingNotice, EmailDelivery):
+@@ -127,8 +127,6 @@
+         OrgSharingCode,
+     ):
          await session.execute(delete(table).where(table.org_id == organisation.id))
 -    if organisation.legal_hold_since is not None:
 -        return "retained under legal hold"

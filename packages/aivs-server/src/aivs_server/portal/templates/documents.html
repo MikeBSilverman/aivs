@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{# Documents: plain text, shared one principal at a time. Never stored markup. #}
+{% block title %}Documents &middot; {{ instance_name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Documents</h1>
+  <p>Your drafts, and documents shared with your firm or with you. A draft is yours alone until you share it.</p>
+</div>
+
+{% if new_code %}
+<div class="card" data-sharing-code>
+  <h2>Your firm's new sharing code</h2>
+  <p class="mono">{{ new_code }}</p>
+  <p class="muted">Shown this once. Give it to a firm that should be able to share documents with yours. The previous code no longer works; documents already shared stay shared.</p>
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>Your documents</h2>
+  {% if documents %}
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Title</th><th>From</th><th>State</th><th>TLP</th><th>You may</th><th>Updated</th></tr></thead>
+        <tbody>
+          {% for d in documents %}
+            <tr>
+              <td><a href="/portal/documents/{{ d.id }}">{{ d.title }}</a></td>
+              <td>{{ d.owner_name }}</td>
+              <td>{{ d.state.value.replace('_', ' ') }}</td>
+              <td>{{ d.tlp.value }}</td>
+              <td>{{ d.permission.value }}</td>
+              <td class="nowrap mono">{{ stamp(d.updated_at) }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p class="muted">No documents yet.</p>
+  {% endif %}
+</div>
+
+{% if can_write %}
+<div class="card">
+  <h2>New document</h2>
+  <form method="post" action="/portal/documents">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <div class="field">
+      <label for="title">Title</label>
+      <input type="text" id="title" name="title" required maxlength="300">
+    </div>
+    <div class="field">
+      <label for="abstract">Abstract</label>
+      <textarea id="abstract" name="abstract" maxlength="2000"></textarea>
+    </div>
+    <div class="field">
+      <label for="tlp">TLP</label>
+      <select id="tlp" name="tlp" required>
+        {% for tlp in tlps %}<option value="{{ tlp }}" {% if tlp == 'amber' %}selected{% endif %}>{{ tlp }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="field">
+      <label for="body">Text</label>
+      <textarea id="body" name="body" required></textarea>
+      <div class="hint">Plain text. Paste from your editor; formatting is not kept.</div>
+    </div>
+    <button type="submit">Create draft</button>
+  </form>
+</div>
+{% endif %}
+
+{% if is_org_admin %}
+<div class="card">
+  <h2>Your firm's sharing code</h2>
+  <p>Another firm can share documents with yours only by entering this code. Give it to the firms you want to receive documents from.</p>
+  <p class="muted">{% if code_rotated_at %}Last rotated {{ code_rotated_at }}.{% else %}No code yet.{% endif %}</p>
+  <form method="post" action="/portal/documents/sharing-code">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button type="submit">{% if code_rotated_at %}Rotate the code{% else %}Make a code{% endif %}</button>
+  </form>
+</div>
+{% endif %}
+{% endblock %}

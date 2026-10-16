@@ -19,12 +19,23 @@ from cryptography.hazmat.primitives import hashes
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from aivs_schemas.enums import CircleRole, OperatorRole, OrgStatus, OrgType, ReadingDepth
+from aivs_schemas.enums import (
+    TLP,
+    CircleRole,
+    DocumentPermission,
+    GrantPrincipal,
+    OperatorRole,
+    OrgStatus,
+    OrgType,
+    ReadingDepth,
+)
 from aivs_schemas.extension.builders import AIVS_INTEL_EXTENSION_ID
+from aivs_server.auth.context import AuthContext, AuthMethod
 from aivs_server.auth.secretbox import SecretBox, SecretPurpose
 from aivs_server.auth.sessions import establish_session, establish_sso_session
 from aivs_server.config import Settings
 from aivs_server.db.models import Organization, SectorEvent, Webhook
+from aivs_server.services import documents
 from tests.authz_matrix.principals import (
     CERTIFICATE_ORGS,
     SESSION_ROLES,
@@ -63,6 +74,12 @@ class World:
     sector_event_id: uuid.UUID | None = None
     posture_id: uuid.UUID | None = None
     taxii_status_id: uuid.UUID | None = None
+    #: A text document by a member-firm author, shared with the member firm
+    #: (edit) and the peer (view, by its sharing code); two more peer grants are
+    #: there to be revoked, one per surface.
+    document_id: uuid.UUID | None = None
+    document_grant_ids: list[uuid.UUID] = field(default_factory=list)
+    peer_sharing_code: str = ""
 
 
 @dataclass
@@ -432,8 +449,67 @@ async def build_world(f: Factories) -> tuple[World, dict[Principal, Credentials]
         member_person.api_headers, world.public_stix_id
     )
 
+    await _seed_document(f, world, orgs)
     principals = await _credentials(f, world, orgs)
     return world, principals
+
+
+def _person_of(org: Organization, operator: Any, role: OperatorRole) -> AuthContext:
+    return AuthContext(
+        org_id=org.id,
+        org_slug=org.slug,
+        org_type=org.org_type,
+        org_status=OrgStatus.ACTIVE,
+        auth_method=AuthMethod.PORTAL_SESSION,
+        operator_id=operator.id,
+        operator_roles=frozenset({role}),
+    )
+
+
+async def _seed_document(f: Factories, world: World, orgs: dict[str, Organization]) -> None:
+    """Through the writers: the author files it, the peer's admin makes its code."""
+    now = dt.datetime.now(dt.UTC)
+    author, _seed = await f.make_operator(orgs["member"], roles=(OperatorRole.ANALYST,))
+    owner = _person_of(orgs["member"], author, OperatorRole.ANALYST)
+    world.document_id = await documents.create_document(
+        f.session,
+        owner,
+        box=f.secret_box,
+        title="Matrix document",
+        abstract=None,
+        tlp=TLP.AMBER,
+        body="Version one.",
+        now=now,
+    )
+    peer_admin, _seed = await f.make_operator(orgs["peer"], roles=(OperatorRole.ORG_ADMIN,))
+    world.peer_sharing_code = await documents.rotate_sharing_code(
+        f.session, _person_of(orgs["peer"], peer_admin, OperatorRole.ORG_ADMIN), now=now
+    )
+    await documents.grant_access(
+        f.session,
+        owner,
+        world.document_id,
+        principal=GrantPrincipal.ORGANIZATION,
+        principal_id=orgs["member"].id,
+        sharing_code=None,
+        permission=DocumentPermission.EDIT,
+        expires_at=None,
+        now=now,
+    )
+    for _ in range(3):
+        grant_id = await documents.grant_access(
+            f.session,
+            owner,
+            world.document_id,
+            principal=GrantPrincipal.ORGANIZATION,
+            principal_id=None,
+            sharing_code=world.peer_sharing_code,
+            permission=DocumentPermission.VIEW,
+            expires_at=None,
+            now=now,
+        )
+        world.document_grant_ids.append(grant_id)
+    world.document_grant_ids = world.document_grant_ids[1:]
 
 
 async def _seed_submissions(world: World, seed: _Seeder) -> None:

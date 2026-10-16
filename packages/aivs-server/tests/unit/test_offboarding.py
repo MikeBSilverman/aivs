@@ -20,11 +20,13 @@ from sqlalchemy import func, select, text
 
 from aivs_schemas.enums import CertStatus, OperatorRole, OrgStatus
 from aivs_server.audit.log import AuditAction
+from aivs_server.auth.context import AuthContext, AuthMethod
 from aivs_server.auth.secretbox import SecretPurpose
 from aivs_server.db import models
 from aivs_server.db.base import Base
 from aivs_server.services.attribution import filing_record, submissions_filed_by
 from aivs_server.services.detections import RULES, run_detections
+from aivs_server.services.documents import rotate_sharing_code
 from tests.authz_matrix.world import inbox_note
 from tests.conftest import proxy_headers
 from tests.unit.sharing_world import API, SharingWorld, build_sharing_world, one_click
@@ -64,7 +66,7 @@ async def world(
 
 
 @pytest.fixture
-async def holdings(client, session, secret_box, world) -> SharingWorld:
+async def holdings(client, session, secret_box, world, make_operator) -> SharingWorld:
     """The member, holding one of everything: a posture, a webhook with a queued
     delivery, an inbox status, a contribution."""
     member = world.member
@@ -121,6 +123,21 @@ async def holdings(client, session, secret_box, world) -> SharingWorld:
         )
     )
     await session.commit()
+    # Its document sharing code, made by its own org admin through the writer.
+    admin, _seed = await make_operator(member.org, roles=(OperatorRole.ORG_ADMIN,))
+    await rotate_sharing_code(
+        session,
+        AuthContext(
+            org_id=member.org.id,
+            org_slug=member.org.slug,
+            org_type=member.org.org_type,
+            org_status=OrgStatus.ACTIVE,
+            auth_method=AuthMethod.PORTAL_SESSION,
+            operator_id=admin.id,
+            operator_roles=frozenset({OperatorRole.ORG_ADMIN}),
+        ),
+        now=now,
+    )
     return world
 
 

@@ -1,0 +1,17 @@
+Mutation M1162: a sharing code is stored as itself
+Re-applies: no earlier commit; the document surface is new in Phase I slice I2, and this is the rule it would most easily lose
+
+Expect red: packages/aivs-server/tests/unit/test_documents.py::test_the_code_is_stored_only_as_its_hash_and_its_rotation_audited
+
+diff --git a/packages/aivs-server/src/aivs_server/services/documents.py b/packages/aivs-server/src/aivs_server/services/documents.py
+--- a/packages/aivs-server/src/aivs_server/services/documents.py
++++ b/packages/aivs-server/src/aivs_server/services/documents.py
+@@ -608,7 +608,7 @@
+ 
+ 
+ def _code_digest(code: str) -> str:
+-    return hashlib.sha256(code.strip().upper().encode("utf-8")).hexdigest()
++    return code.strip().upper()
+ 
+ 
+ async def _resolve_sharing_code(db: AsyncSession, code: str) -> uuid.UUID | None:

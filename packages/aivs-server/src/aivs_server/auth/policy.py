@@ -89,6 +89,7 @@ __all__ = [
     "can_view_instance_status",
     "can_view_submission",
     "can_view_submission_receipts",
+    "can_write_documents",
     "distribution_visibility_clause",
     "files_through_an_editor",
     "holds_submitter_rights",
@@ -133,6 +134,17 @@ class PolicyDeniedError(Exception):
 _WRITING_CIRCLE_ROLES: Final[frozenset[CircleRole]] = frozenset(
     {CircleRole.CONTRIBUTOR, CircleRole.CIRCLE_ADMIN}
 )
+
+
+def can_write_documents(ctx: AuthContext) -> bool:
+    """Write a text document, its versions, comments and grants (Phase I): a signed-in person.
+
+    A certificate alone reads what is shared with its organisation and writes
+    nothing: a document is someone's words, and a grant someone's choice.
+    Which document a person may write is the document's own grant's to say
+    (``services.documents``).
+    """
+    return is_active(ctx) and ctx.operator_id is not None
 
 
 def require(allowed: bool, reason: str) -> None:

@@ -1,0 +1,20 @@
+Mutation M1161: a wrong sharing code is refused with a reason of its own
+Re-applies: no earlier commit; the document surface is new in Phase I slice I2, and this is the rule it would most easily lose
+
+Expect red: packages/aivs-server/tests/unit/test_documents_api.py::test_a_wrong_an_unknown_and_an_out_of_bound_code_are_one_404_byte_for_byte
+
+diff --git a/packages/aivs-server/src/aivs_server/services/documents.py b/packages/aivs-server/src/aivs_server/services/documents.py
+--- a/packages/aivs-server/src/aivs_server/services/documents.py
++++ b/packages/aivs-server/src/aivs_server/services/documents.py
+@@ -594,7 +594,10 @@
+     if sharing_code is not None:
+         if principal is not GrantPrincipal.ORGANIZATION or principal_id is not None:
+             return None
+-        return await _resolve_sharing_code(db, sharing_code)
++        found = await _resolve_sharing_code(db, sharing_code)
++        if found is None:
++            raise DocumentRefusedError("no firm has that sharing code")
++        return found
+     if principal is GrantPrincipal.ORGANIZATION and principal_id != owner_org_id:
+         return None
+     return principal_id

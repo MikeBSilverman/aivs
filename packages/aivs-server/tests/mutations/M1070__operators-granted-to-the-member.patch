@@ -9,10 +9,10 @@ Expect red: packages/aivs-server/tests/migrations/test_member_login_grants.py::t
 diff --git a/packages/aivs-server/src/aivs_server/db/grants.py b/packages/aivs-server/src/aivs_server/db/grants.py
 --- a/packages/aivs-server/src/aivs_server/db/grants.py
 +++ b/packages/aivs-server/src/aivs_server/db/grants.py
-@@ -156,6 +156,10 @@
-         "public.client_certificates": TableGrant(
-             ("SELECT",), update_columns=("status", "revoked_at", "revoked_reason", "updated_at")
-         ),
+@@ -164,6 +164,10 @@
+         # here, SQL on the member path could revoke every firm's certificate or
+         # bring a revoked one back (R35).
+         "public.client_certificates": _READ,
 +        "public.operators": TableGrant(
 +            ("SELECT", "INSERT"),
 +            update_columns=("failed_login_count", "last_login_at", "last_totp_step", "updated_at"),

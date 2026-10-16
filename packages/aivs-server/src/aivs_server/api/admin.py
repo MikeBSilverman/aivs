@@ -58,7 +58,6 @@ from aivs_server.auth.policy import (
     require,
 )
 from aivs_server.auth.secretbox import SecretBox, SecretPurpose
-from aivs_server.auth.staff_auth import close_sessions_for_certificate
 from aivs_server.db.clock import database_now
 from aivs_server.db.models import (
     Circle,
@@ -82,7 +81,7 @@ from aivs_server.services.circles import (
 )
 from aivs_server.services.enrolment import enrolment_problem
 from aivs_server.services.instance import pause_distribution, resume_distribution
-from aivs_server.services.member_staff_writes import quarantine_organisation
+from aivs_server.services.member_staff_writes import quarantine_organisation, revoke_own_certificate
 from aivs_server.services.offboarding import (
     OffboardingError,
     lift_legal_hold,
@@ -289,51 +288,20 @@ async def revoke_certificate(
 ) -> ClientCertificate:
     """Revoke a certificate. Effective on the holder's very next request.
 
-    Revocation is authoritative in this table rather than in a CRL, which is why
-    the MVP needs no OCSP responder: the check is one indexed lookup on the
-    authentication path.
+    On the staff login for an organisation administrator revoking its own
+    (``member_staff_writes``): the member login holds no UPDATE on
+    ``client_certificates``, which would let SQL on the member path revoke any
+    firm's certificate or bring a revoked one back.
     """
-    # Locked: two concurrent revocations otherwise both read active and both
-    # write a revocation audit row.
-    row = await session.get(
-        ClientCertificate, certificate_id, with_for_update=True, populate_existing=True
-    )
+    row = await revoke_own_certificate(session, ctx, certificate_id)
     # Absent and forbidden collapse to the same answer, as everywhere else that
     # is addressable by id. Answering 404 for an unknown certificate and 403 for
     # another organisation's turned this endpoint into an existence oracle over
     # the certificate namespace -- the one exception that would undo the pattern
     # the rest of the API keeps.
-    if row is None or not can_manage_org(ctx, row.org_id):
+    if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Certificate not found")
-
-    if row.status is CertStatus.REVOKED:
-        return row
-
-    row.status = CertStatus.REVOKED
-    row.revoked_at = dt.datetime.now(dt.UTC)
-    row.revoked_reason = "revoked via API"
-
-    # Revocation must lock out the humans using this certificate, not only the
-    # machines. resolve_session would refuse them on their next request anyway;
-    # ending them now means the audit trail shows the sessions closing at
-    # revocation time rather than whenever each browser next happened to poll.
-    # On the staff login: a member revoking its own certificate holds nothing on
-    # ``portal_sessions`` (Phase P slice 3e).
-    closed = await close_sessions_for_certificate(row.fingerprint_sha256)
-    await record(
-        session,
-        action=AuditAction.CERT_REVOKED,
-        ctx=ctx,
-        resource_type="certificate",
-        resource_id=str(certificate_id),
-        details={
-            "fingerprint": row.fingerprint_sha256,
-            "org_id": str(row.org_id),
-            "portal_sessions_closed": closed,
-        },
-    )
     await session.commit()
-    await session.refresh(row)
     return row
 
 

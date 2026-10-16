@@ -1,0 +1,21 @@
+Mutation M1092: the member login keeps UPDATE on certificates' status and revocation
+Re-applies: MEMBER_GRANTS before the R35 fix
+
+Expect red: packages/aivs-server/tests/migrations/test_member_login_grants.py::test_only_the_classified_columns_are_updatable
+Expect red: packages/aivs-server/tests/migrations/test_member_login_grants.py::test_the_member_login_is_refused_what_its_grants_withhold[certificate-revocation]
+Expect red: packages/aivs-server/tests/migrations/test_member_login_grants.py::test_the_member_login_is_refused_what_its_grants_withhold[certificate-revival]
+
+diff --git a/packages/aivs-server/src/aivs_server/db/grants.py b/packages/aivs-server/src/aivs_server/db/grants.py
+--- a/packages/aivs-server/src/aivs_server/db/grants.py
++++ b/packages/aivs-server/src/aivs_server/db/grants.py
+@@ -163,7 +163,9 @@
+         # revocation is written staff side (member_staff_writes). With UPDATE
+         # here, SQL on the member path could revoke every firm's certificate or
+         # bring a revoked one back (R35).
+-        "public.client_certificates": _READ,
++        "public.client_certificates": TableGrant(
++            ("SELECT",), update_columns=("status", "revoked_at", "revoked_reason", "updated_at")
++        ),
+         # Its own status and settings a member changes on the staff login
+         # (``member_staff_writes``): with them here, SQL on the member path could
+         # lift a peer's quarantine or redirect its digest. ``updated_at`` only,

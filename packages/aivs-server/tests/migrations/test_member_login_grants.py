@@ -93,9 +93,6 @@ UPDATABLE: Final[dict[str, frozenset[str]]] = {
             "updated_at",
         }
     ),
-    "public.client_certificates": frozenset(
-        {"status", "revoked_at", "revoked_reason", "updated_at"}
-    ),
     # Status and settings are written staff side (member_staff_writes).
     "public.organizations": frozenset({"updated_at"}),
     # A row lock needs UPDATE on some column; this one changes nothing.
@@ -274,6 +271,16 @@ def _as_member(logins: Logins, statement: str) -> None:
             "UPDATE organizations SET directory_object_id = directory_object_id",
             "UPDATE organizations SET updated_at = updated_at",
             id="org-sso-group",
+        ),
+        pytest.param(
+            "UPDATE client_certificates SET status = 'revoked'",
+            "SELECT status FROM client_certificates",
+            id="certificate-revocation",
+        ),
+        pytest.param(
+            "UPDATE client_certificates SET status = 'active' WHERE status = 'revoked'",
+            "SELECT status FROM client_certificates",
+            id="certificate-revival",
         ),
         pytest.param(
             "SELECT password_hash FROM operators",

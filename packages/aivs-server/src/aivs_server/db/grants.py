@@ -159,9 +159,11 @@ MEMBER_GRANTS: Final[Mapping[str, TableGrant]] = MappingProxyType(
         "public.instance_controls": _READ,
         "public.sector_events": _READ,
         "public.taxii_collections": _READ,
-        "public.client_certificates": TableGrant(
-            ("SELECT",), update_columns=("status", "revoked_at", "revoked_reason", "updated_at")
-        ),
+        # Read on the authentication path; an organisation administrator's own
+        # revocation is written staff side (member_staff_writes). With UPDATE
+        # here, SQL on the member path could revoke every firm's certificate or
+        # bring a revoked one back (R35).
+        "public.client_certificates": _READ,
         # Its own status and settings a member changes on the staff login
         # (``member_staff_writes``): with them here, SQL on the member path could
         # lift a peer's quarantine or redirect its digest. ``updated_at`` only,

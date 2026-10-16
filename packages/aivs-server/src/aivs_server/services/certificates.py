@@ -7,6 +7,7 @@ what a registrable certificate is.
 from __future__ import annotations
 
 import datetime as dt
+import uuid
 
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes
@@ -16,10 +17,11 @@ from aivs_schemas.enums import CertStatus, OrgStatus
 from aivs_server.audit.log import AuditAction, record
 from aivs_server.auth.context import AuthContext
 from aivs_server.auth.mtls import CertificateRejectedError, verify_issued_by
-from aivs_server.auth.policy import can_register_certificate, require
+from aivs_server.auth.policy import can_manage_org, can_register_certificate, require
+from aivs_server.auth.staff_auth import close_sessions_for_certificate
 from aivs_server.db.models import ClientCertificate, Organization
 
-__all__ = ["CertificateRegistrationError", "register_certificate"]
+__all__ = ["CertificateRegistrationError", "register_certificate", "revoke_certificate"]
 
 
 class CertificateRegistrationError(ValueError):
@@ -121,5 +123,48 @@ async def register_certificate(
         resource_type="organization",
         resource_id=str(organisation.id),
         details={"fingerprint": row.fingerprint_sha256, "subject": row.subject_dn},
+    )
+    return row
+
+
+async def revoke_certificate(
+    session: AsyncSession, ctx: AuthContext, certificate_id: uuid.UUID, *, now: dt.datetime
+) -> ClientCertificate | None:
+    """Revoke a certificate the caller may manage. Effective on the holder's next request.
+
+    ``None`` when it is absent or not the caller's to manage: one answer, so
+    the certificate namespace is no existence oracle. Revocation is
+    authoritative in this table rather than in a CRL, which is why there is no
+    OCSP responder: the check is one indexed lookup on the authentication path.
+    Does not commit.
+    """
+    # Locked: two concurrent revocations otherwise both read active and both
+    # write a revocation audit row.
+    row = await session.get(
+        ClientCertificate, certificate_id, with_for_update=True, populate_existing=True
+    )
+    if row is None or not can_manage_org(ctx, row.org_id):
+        return None
+    if row.status is CertStatus.REVOKED:
+        return row
+    row.status = CertStatus.REVOKED
+    row.revoked_at = now
+    row.revoked_reason = "revoked via API"
+    # Revocation must lock out the humans using this certificate, not only the
+    # machines. resolve_session would refuse them on their next request anyway;
+    # ending them now means the audit trail shows the sessions closing at
+    # revocation time rather than whenever each browser next happened to poll.
+    closed = await close_sessions_for_certificate(row.fingerprint_sha256)
+    await record(
+        session,
+        action=AuditAction.CERT_REVOKED,
+        ctx=ctx,
+        resource_type="certificate",
+        resource_id=str(certificate_id),
+        details={
+            "fingerprint": row.fingerprint_sha256,
+            "org_id": str(row.org_id),
+            "portal_sessions_closed": closed,
+        },
     )
     return row

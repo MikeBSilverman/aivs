@@ -16,8 +16,12 @@ to reading ``distributions`` and to no UPDATE of ``stix_objects.raw``, a
 member's unreviewed publication -- a one-click, a post-moderated note -- is
 made here too (R33): with INSERT on ``distributions`` and UPDATE on ``raw``,
 SQL on the member path could publish any object into any circle, or rewrite
-the content of one already distributed. Each function here makes one such
-change on a staff session of its own.
+the content of one already distributed. And the member login holds no
+UPDATE on ``client_certificates``: with it, SQL on the member path could
+revoke every firm's certificate, or bring a revoked, compromised one back onto
+the authenticated path (R35). An organisation administrator revoking its
+own certificate does it here. Each function here makes one such change on a
+staff session of its own.
 
 **Publication stays one transaction** (CLAUDE.md section 5): the hourly
 allowance's lock and count, the visibility rows, the state changes and the
@@ -62,9 +66,16 @@ from aivs_server.auth.context import AuthContext
 from aivs_server.auth.policy import uses_staff_database
 from aivs_server.db.clock import database_now
 from aivs_server.db.engine import get_sessionmaker
-from aivs_server.db.models import Acknowledgment, Organization, OrgPosture, Submission
+from aivs_server.db.models import (
+    Acknowledgment,
+    ClientCertificate,
+    Organization,
+    OrgPosture,
+    Submission,
+)
 from aivs_server.services.acknowledgments import assert_receipt
 from aivs_server.services.attribution import is_submitted_by
+from aivs_server.services.certificates import revoke_certificate
 from aivs_server.services.contributions import OneClick, contribute, publish_if_post_moderated
 from aivs_server.services.member_settings import (
     change_notification_settings,
@@ -81,6 +92,7 @@ __all__ = [
     "publish_own_post_moderated",
     "quarantine_organisation",
     "record_own_posture",
+    "revoke_own_certificate",
     "set_notification_settings",
     "set_own_default_depth",
 ]
@@ -263,3 +275,20 @@ async def publish_own_post_moderated(
             now=await database_now(writer),
             key=key,
         )
+
+
+async def revoke_own_certificate(
+    session: AsyncSession, ctx: AuthContext, certificate_id: uuid.UUID
+) -> ClientCertificate | None:
+    """Revoke a certificate of an organisation the caller manages (``certificates``).
+
+    ``None`` when it is absent or another's: for a member, any certificate but
+    its own organisation's (``policy.can_manage_org``). Returned loaded, since
+    for a member its session is closed by the time the caller reads it.
+    """
+    async with _writer(session, ctx) as writer:
+        row = await revoke_certificate(writer, ctx, certificate_id, now=await database_now(writer))
+        if row is not None:
+            await writer.flush()
+            await writer.refresh(row)
+        return row

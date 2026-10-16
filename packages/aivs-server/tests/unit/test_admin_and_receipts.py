@@ -15,7 +15,7 @@ import uuid
 import pytest
 from sqlalchemy import select
 
-from aivs_schemas.enums import AckType, OrgType
+from aivs_schemas.enums import AckType, CertStatus, OperatorRole, OrgType
 from aivs_server.db.models import ClientCertificate, TaxiiCollection
 from tests.conftest import proxy_headers
 
@@ -198,6 +198,35 @@ async def test_a_member_cannot_revoke_another_firms_certificate(client, isac, me
     )
     assert unknown.status_code == response.status_code, "the two must be indistinguishable"
     assert unknown.text == response.text
+
+
+@pytest.mark.requirement("SF-91")
+async def test_an_org_admin_revokes_its_own_certificate_and_no_peers(
+    client, session, member, make_operator, human_headers
+):
+    """On the staff login (Phase P): the member login may not update certificates.
+    The peer's first, since revoking its own certificate ends the admin's session."""
+    own, own_pem = await member("revoking-firm")
+    peer, _peer_pem = await member("revoked-peer-firm")
+    admin, _ = await make_operator(own, roles=(OperatorRole.ORG_ADMIN,))
+    headers = await human_headers(admin, own_pem)
+    rows = await session.execute(
+        select(ClientCertificate.org_id, ClientCertificate.id).where(
+            ClientCertificate.org_id.in_([own.id, peer.id])
+        )
+    )
+    certificates = dict(rows.tuples().all())
+
+    peers = await client.post(f"{API}/certificates/{certificates[peer.id]}/revoke", headers=headers)
+    assert peers.status_code == 404, peers.text
+    peer_status = await session.scalar(
+        select(ClientCertificate.status).where(ClientCertificate.id == certificates[peer.id])
+    )
+    assert peer_status is CertStatus.ACTIVE
+
+    owns = await client.post(f"{API}/certificates/{certificates[own.id]}/revoke", headers=headers)
+    assert owns.status_code == 200, owns.text
+    assert owns.json()["status"] == "revoked"
 
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,17 @@
+Mutation M1094: an organisation administrator's revocation runs on the member login
+Re-applies: api/admin.py revoking on the request's session, before the R35 fix
+
+Expect red: packages/aivs-server/tests/unit/test_admin_and_receipts.py::test_an_org_admin_revokes_its_own_certificate_and_no_peers
+
+diff --git a/packages/aivs-server/src/aivs_server/services/member_staff_writes.py b/packages/aivs-server/src/aivs_server/services/member_staff_writes.py
+--- a/packages/aivs-server/src/aivs_server/services/member_staff_writes.py
++++ b/packages/aivs-server/src/aivs_server/services/member_staff_writes.py
+@@ -287,7 +287,7 @@
+     for a member its session is closed by the time the caller reads it.
+     """
+     async with _writer(session, ctx) as writer:
+-        row = await revoke_certificate(writer, ctx, certificate_id, now=await database_now(writer))
++        row = await revoke_certificate(session, ctx, certificate_id, now=await database_now(writer))
+         if row is not None:
+             await writer.flush()
+             await writer.refresh(row)

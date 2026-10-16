@@ -1,0 +1,18 @@
+Mutation M1093: any firm's certificate is revoked for whoever asks
+Re-applies: a revocation that lost its owner check
+
+Expect red: packages/aivs-server/tests/unit/test_admin_and_receipts.py::test_an_org_admin_revokes_its_own_certificate_and_no_peers
+Expect red: packages/aivs-server/tests/unit/test_admin_and_receipts.py::test_a_member_cannot_revoke_another_firms_certificate
+
+diff --git a/packages/aivs-server/src/aivs_server/services/certificates.py b/packages/aivs-server/src/aivs_server/services/certificates.py
+--- a/packages/aivs-server/src/aivs_server/services/certificates.py
++++ b/packages/aivs-server/src/aivs_server/services/certificates.py
+@@ -143,7 +143,7 @@
+     row = await session.get(
+         ClientCertificate, certificate_id, with_for_update=True, populate_existing=True
+     )
+-    if row is None or not can_manage_org(ctx, row.org_id):
++    if row is None:
+         return None
+     if row.status is CertStatus.REVOKED:
+         return row

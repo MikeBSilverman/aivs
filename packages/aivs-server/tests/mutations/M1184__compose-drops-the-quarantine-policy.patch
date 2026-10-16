@@ -1,0 +1,17 @@
+Mutation M1184: compose drops a setting env.example documents
+Re-applies: the shipped stack as it was before this fix, which never passed AIVS_DETECTION_QUARANTINE_POLICY to the app
+
+Expect red: packages/aivs-server/tests/unit/test_deployment_contract.py::test_every_setting_in_the_example_reaches_the_service_it_configures
+Expect red: packages/aivs-server/tests/unit/test_deployment_contract.py::test_the_shipped_stack_passes_the_quarantine_policy_and_defaults_to_propose
+
+diff --git a/docker-compose.yml b/docker-compose.yml
+--- a/docker-compose.yml
++++ b/docker-compose.yml
+@@ -302,7 +302,6 @@
+       # What a detection that recommends quarantine does: `propose` (the
+       # default) lists it for a person to confirm; `enforce` quarantines at once
+       # (runbook 9.1). Any other value stops the app at startup.
+-      AIVS_DETECTION_QUARANTINE_POLICY: ${AIVS_DETECTION_QUARANTINE_POLICY:-propose}
+ 
+       # -- Documents ----------------------------------------------------------
+       # How an owner names another firm to share a document with: `code` (the

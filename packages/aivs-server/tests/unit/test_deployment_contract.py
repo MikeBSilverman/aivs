@@ -11,6 +11,7 @@ from __future__ import annotations
 import http.server
 import importlib.util
 import ipaddress
+import json
 import re
 import shlex
 import socket
@@ -21,6 +22,7 @@ import pytest
 import yaml
 
 from aivs_server.healthcheck import is_ready
+from tests.unit.test_log_forwarding import _load as _load_compose
 
 ROOT = Path(__file__).resolve().parents[4]
 
@@ -238,6 +240,65 @@ def test_the_app_has_a_member_login_of_its_own():
     assert re.search(r"^AIVS_DB_MEMBER_PASSWORD=$", example, re.M), "empty, as the others"
     assert 'create_login "${AIVS_DB_MEMBER_USER}"' in script
     assert "AIVS_DB_MEMBER_USER must differ from AIVS_DB_APP_USER" in script
+
+
+#: Names in env.example that configure another service, not the app, and the
+#: service each must reach instead. Checked as well, so an entry here cannot
+#: hide a dropped setting.
+_FOR_ANOTHER_SERVICE = {
+    "AIVS_BIND_ADDRESS": "proxy",  # the published address, a ports mapping
+    "AIVS_BIND_PORT": "proxy",
+    "AIVS_NGINX_ALLOWLIST": "proxy",  # a file mounted into nginx
+    "AIVS_PROXY_IMAGE": "proxy",
+    "AIVS_DB_IMAGE": "db",
+    "AIVS_DB_USER": "db",  # the owner; the app connects as the application role
+    "AIVS_DB_PASSWORD": "db",  # the owner's password, never in the app container
+}
+
+#: Overlays that are not the shipped stack: the dev overlay is for a laptop,
+#: and replaces lists with compose's ``!override`` on sequences.
+_NOT_SHIPPED = {"docker-compose.dev.yml"}
+
+
+def _example_names() -> set[str]:
+    example = (ROOT / "deploy/env.example").read_text(encoding="utf-8")
+    return set(re.findall(r"^#?(AIVS_[A-Z0-9_]+)=", example, re.M))
+
+
+def _substituted_into(service: str) -> set[str]:
+    """Every AIVS_ name compose substitutes into ``service``, base file or overlay."""
+    found: set[str] = set()
+    for path in sorted(ROOT.glob("docker-compose*.yml")):
+        if path.name in _NOT_SHIPPED:
+            continue
+        body = (_load_compose(path).get("services") or {}).get(service)
+        found |= set(re.findall(r"\$\{(AIVS_[A-Z0-9_]+)", json.dumps(body)))
+    return found
+
+
+def test_every_setting_in_the_example_reaches_the_service_it_configures():
+    """The app service's environment is an explicit list, so a setting
+    env.example documents and compose never passes is silently ignored:
+    AIVS_DETECTION_QUARANTINE_POLICY was, and an ISAC that chose ``enforce``
+    ran on ``propose`` without being told."""
+    names = _example_names()
+    app = _substituted_into("app")
+    unplaced = {name for name in names - app if name not in _FOR_ANOTHER_SERVICE}
+    misplaced = {
+        name
+        for name, service in _FOR_ANOTHER_SERVICE.items()
+        if name not in _substituted_into(service)
+    }
+
+    assert len(names) > 20, "the example was read"
+    assert unplaced == set(), "documented in env.example, passed to no container"
+    assert misplaced == set(), "allow-listed for a service that does not receive it"
+
+
+def test_the_shipped_stack_passes_the_quarantine_policy_and_defaults_to_propose():
+    app_env = _compose("docker-compose.yml")["services"]["app"]["environment"]
+    policy = app_env["AIVS_DETECTION_QUARANTINE_POLICY"]
+    assert policy == "${AIVS_DETECTION_QUARANTINE_POLICY:-propose}"
 
 
 @pytest.mark.requirement("SF-100")

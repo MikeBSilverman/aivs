@@ -472,7 +472,7 @@ domain to an organisation (R30). A member's mail account, once
 compromised, files drafts as that person, as a stolen session would; they
 are drafts, and the member sees them.
 
-## Cross-cutting: connection health, sandboxes, and government recipients## Cross-cutting: connection health, sandboxes, and government recipients
+## Cross-cutting: connection health, sandboxes, and government recipients
 
 | What they try | What stops it |
 | --- | --- |

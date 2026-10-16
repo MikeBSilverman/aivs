@@ -20,7 +20,9 @@ from typing import Final
 __all__ = [
     "ACCEPTED_DISCOVERY_SCOPES",
     "CONTRIBUTING_BY_DEFAULT_ORG_TYPES",
+    "DOCUMENT_TRANSITIONS",
     "EDITABLE_SUBMISSION_STATES",
+    "OPEN_DOCUMENT_STATES",
     "SUBMISSION_TRANSITIONS",
     "TERMINAL_SUBMISSION_STATES",
     "THIRD_PARTY_DISCOVERY_SCOPES",
@@ -34,8 +36,11 @@ __all__ = [
     "CertStatus",
     "CircleRole",
     "DiscoveryScope",
+    "DocumentPermission",
+    "DocumentState",
     "EmbargoPolicy",
     "EmbargoStatus",
+    "GrantPrincipal",
     "NotificationCadence",
     "OperatorRole",
     "OrgStatus",
@@ -235,6 +240,35 @@ class TriageDisposition(StrEnum):
     READY_FOR_REVIEW = "ready_for_review"
     #: Back to the submitter, with what to change.
     NEEDS_CHANGES = "needs_changes"
+
+
+class DocumentState(StrEnum):
+    """Where a text document is in its life (Phase I).
+
+    A document is a directed share: its owner names who may read or edit it
+    while it is a ``draft`` or ``in_review``. ``finished`` ends the document
+    surface -- the body is then published through the ordinary pipeline as a
+    report, and non-owner grants close. ``archived`` keeps it, read-only.
+    """
+
+    DRAFT = "draft"
+    IN_REVIEW = "in_review"
+    FINISHED = "finished"
+    ARCHIVED = "archived"
+
+
+class DocumentPermission(StrEnum):
+    """What a grant lets its principal do with a document."""
+
+    VIEW = "view"
+    EDIT = "edit"
+
+
+class GrantPrincipal(StrEnum):
+    """Who a document grant names: an organisation, or one person in one."""
+
+    ORGANIZATION = "organization"
+    OPERATOR = "operator"
 
 
 class TLP(StrEnum):
@@ -480,6 +514,27 @@ SUBMISSION_TRANSITIONS: Final[Mapping[SubmissionState, frozenset[SubmissionState
             SubmissionState.WITHDRAWN: frozenset(),
         }
     )
+)
+
+# ---------------------------------------------------------------------------
+# Document state machine (Phase I)
+# ---------------------------------------------------------------------------
+DOCUMENT_TRANSITIONS: Final[Mapping[DocumentState, frozenset[DocumentState]]] = MappingProxyType(
+    {
+        DocumentState.DRAFT: frozenset({DocumentState.IN_REVIEW, DocumentState.ARCHIVED}),
+        DocumentState.IN_REVIEW: frozenset(
+            {DocumentState.DRAFT, DocumentState.FINISHED, DocumentState.ARCHIVED}
+        ),
+        # Finished is published; it can be archived, never reopened, since
+        # members may hold the report it became.
+        DocumentState.FINISHED: frozenset({DocumentState.ARCHIVED}),
+        DocumentState.ARCHIVED: frozenset(),
+    }
+)
+
+#: States in which a document's grants and body may still change.
+OPEN_DOCUMENT_STATES: Final[frozenset[DocumentState]] = frozenset(
+    {DocumentState.DRAFT, DocumentState.IN_REVIEW}
 )
 
 #: States in which the submitter may change the content: before the ISAC has

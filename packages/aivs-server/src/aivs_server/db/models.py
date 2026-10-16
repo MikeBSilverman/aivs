@@ -50,8 +50,11 @@ from aivs_schemas.enums import (
     CertStatus,
     CircleRole,
     DiscoveryScope,
+    DocumentPermission,
+    DocumentState,
     EmbargoPolicy,
     EmbargoStatus,
+    GrantPrincipal,
     NotificationCadence,
     OperatorRole,
     OrgStatus,
@@ -79,6 +82,11 @@ __all__ = [
     "ClientCertificate",
     "DetectionState",
     "Distribution",
+    "Document",
+    "DocumentComment",
+    "DocumentGrant",
+    "DocumentRead",
+    "DocumentVersion",
     "EmailDelivery",
     "Embargo",
     "InboundEmail",
@@ -1567,4 +1575,164 @@ class OrgPosture(Base):
             "status <> 'affected' OR action_statement IS NOT NULL",
             name="affected_says_what_is_done",
         ),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Text documents (Phase I)
+# ---------------------------------------------------------------------------
+class Document(Base):
+    """A text document an organisation shares with the principals it names.
+
+    Its body lives in ``document_versions``, sealed under the document's own
+    key (``dek_sealed``, itself sealed under the instance key with the
+    document's id). The member login is granted nothing on this table or its
+    siblings: every read and write goes through ``services.documents`` on the
+    staff login, keyed on the caller's grant. ``owner_org_id`` is shown to the
+    document's grantees, who were named by that owner; to nobody else.
+    """
+
+    __tablename__ = "documents"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    owner_org_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    author_operator_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("operators.id", ondelete="RESTRICT"), nullable=False
+    )
+    state: Mapped[DocumentState] = mapped_column(
+        pg_enum(DocumentState, "document_state"), nullable=False
+    )
+    tlp: Mapped[TLP] = mapped_column(pg_enum(TLP, "tlp"), nullable=False)
+    title: Mapped[str] = mapped_column(String(300), nullable=False)
+    abstract: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: The document's key, sealed under the instance key (``SecretPurpose.DOCUMENT_KEY``).
+    dek_sealed: Mapped[bytes] = mapped_column(nullable=False)
+    #: Bumped by every change, and compared on save: a stale save is a 409.
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class DocumentVersion(Base):
+    """One saved body of a document: immutable, hashed, sealed under its key.
+
+    Append-only (the deny triggers). The hash is over the plaintext, so it is
+    what the evidence pack and the finished report's ``artifact.hashes`` cite.
+    """
+
+    __tablename__ = "document_versions"
+    __table_args__ = (UniqueConstraint("document_id", "number", name="one_number_per_document"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    document_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("documents.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    number: Mapped[int] = mapped_column(Integer, nullable=False)
+    content_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    #: Sealed under the DEK as ``document-version:<document>:<number>``.
+    body_sealed: Mapped[bytes] = mapped_column(nullable=False)
+    author_operator_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("operators.id", ondelete="RESTRICT"), nullable=False
+    )
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class DocumentComment(Base):
+    """A comment on a version, readable with ``view``; kept after its author's grant ends.
+
+    Append-only: a comment is never edited or deleted. If the portal ever needs
+    "retract", that is a new row saying so, not a change to this one. Not part
+    of the version's hash, which the evidence pack cites for the body alone.
+    """
+
+    __tablename__ = "document_comments"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    document_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("documents.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    version_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    #: Sealed under the DEK as ``document-comment:<document>:<comment>``.
+    body_sealed: Mapped[bytes] = mapped_column(nullable=False)
+    author_operator_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("operators.id", ondelete="RESTRICT"), nullable=False
+    )
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class DocumentGrant(Base):
+    """A named principal's access to one document. Documents only (SF-2).
+
+    Ends when revoked, when it expires (judged at read time, never by a
+    sweeper), when its organisation is not active, or -- for a grant to a
+    person -- when that person is no longer active.
+    """
+
+    __tablename__ = "document_grants"
+    __table_args__ = (
+        CheckConstraint(
+            "(principal_type = 'organization' AND principal_org_id IS NOT NULL "
+            "AND principal_operator_id IS NULL) OR (principal_type = 'operator' "
+            "AND principal_operator_id IS NOT NULL AND principal_org_id IS NULL)",
+            name="one_principal",
+        ),
+        CheckConstraint("(revoked_at IS NULL) = (revoked_by IS NULL)", name="revocation_says_why"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    document_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("documents.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    principal_type: Mapped[GrantPrincipal] = mapped_column(
+        pg_enum(GrantPrincipal, "grant_principal"), nullable=False
+    )
+    principal_org_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
+    principal_operator_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("operators.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
+    permission: Mapped[DocumentPermission] = mapped_column(
+        pg_enum(DocumentPermission, "document_permission"), nullable=False
+    )
+    expires_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    granted_by_operator_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("operators.id", ondelete="RESTRICT"), nullable=False
+    )
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    revoked_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    #: Who or what ended it: an operator's id, ``finished``, or ``offboarded``.
+    revoked_by: Mapped[str | None] = mapped_column(String(80), nullable=True)
+
+
+class DocumentRead(Base):
+    """A receipt: an organisation's person or machine read a version. Append-only."""
+
+    __tablename__ = "document_reads"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    document_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("documents.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    version_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="RESTRICT"), nullable=False
+    )
+    operator_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("operators.id", ondelete="RESTRICT"), nullable=True
+    )
+    read_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
     )

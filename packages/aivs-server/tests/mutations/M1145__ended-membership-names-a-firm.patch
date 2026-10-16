@@ -1,0 +1,16 @@
+Mutation M1145: a firm whose circle membership has ended may still be named
+Re-applies: no earlier commit; documents are new in Phase I slice I1, and this is the rule it would most easily lose
+
+Expect red: packages/aivs-server/tests/unit/test_documents.py::test_a_firm_whose_circle_membership_has_ended_cannot_be_named
+
+diff --git a/packages/aivs-server/src/aivs_server/services/documents.py b/packages/aivs-server/src/aivs_server/services/documents.py
+--- a/packages/aivs-server/src/aivs_server/services/documents.py
++++ b/packages/aivs-server/src/aivs_server/services/documents.py
+@@ -269,7 +269,6 @@
+             CircleMembership.org_id == first,
+             CircleMembership.left_at.is_(None),
+             theirs.org_id == second,
+-            theirs.left_at.is_(None),
+             Circle.is_active.is_(True),
+         )
+         .limit(1)

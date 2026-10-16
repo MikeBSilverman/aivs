@@ -1,0 +1,17 @@
+Mutation M1153: a grantee elsewhere with edit shares the document onward
+Re-applies: no earlier commit; documents are new in Phase I slice I1, and this is the rule it would most easily lose
+
+Expect red: packages/aivs-server/tests/unit/test_documents.py::test_a_grantee_cannot_pass_the_document_on
+
+diff --git a/packages/aivs-server/src/aivs_server/services/documents.py b/packages/aivs-server/src/aivs_server/services/documents.py
+--- a/packages/aivs-server/src/aivs_server/services/documents.py
++++ b/packages/aivs-server/src/aivs_server/services/documents.py
+@@ -539,8 +539,6 @@
+         document, _held = await _visible(
+             db, ctx, document_id, at_least=DocumentPermission.EDIT, now=now, for_update=True
+         )
+-        if ctx.org_id != document.owner_org_id:
+-            raise DocumentNotFoundError
+         _require_open(document)
+         if not await _may_name(db, document.owner_org_id, principal, principal_id):
+             raise DocumentNotFoundError

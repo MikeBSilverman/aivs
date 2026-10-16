@@ -151,6 +151,17 @@ _SEED_STATEMENTS = (
     "INSERT INTO submission_triage (submission_id, transition_id, content_sha256, disposition, "
     "findings, rules_version) SELECT :submission, id, repeat('0', 64), 'ready_for_review', "
     "'[]', 'seed' FROM submission_transitions WHERE submission_id = :submission",
+    "INSERT INTO operators (id, org_id, email, display_name, roles, is_active, "
+    "failed_login_count) VALUES "
+    "(:org, :org, 'seed@seed.test', 'Seed', ARRAY['analyst']::operator_role[], true, 0)",
+    "INSERT INTO documents (id, owner_org_id, author_operator_id, state, tlp, title, "
+    "dek_sealed, version) VALUES (:submission, :org, :org, 'draft', 'amber', 's', 'x', 1)",
+    "INSERT INTO document_versions (document_id, number, content_sha256, body_sealed, "
+    "author_operator_id) VALUES (:submission, 1, repeat('0', 64), 'x', :org)",
+    "INSERT INTO document_comments (id, document_id, version_number, body_sealed, "
+    "author_operator_id) VALUES (:submission, :submission, 1, 'x', :org)",
+    "INSERT INTO document_reads (document_id, version_number, org_id) "
+    "VALUES (:submission, 1, :org)",
     "INSERT INTO model_reads (triage_id, submission_id, provider, model_id, prompt_template, "
     "content_tlp, outcome, findings) SELECT id, :submission, 'local', 'seed', 'seed', 'amber', "
     "'no_findings', '[]' FROM submission_triage WHERE submission_id = :submission",
@@ -191,6 +202,10 @@ _APPEND_ONLY = {
     "attribution.submitters": "org_id",
     # What a model said (Phase O slice 4): the record a bad release is found by.
     "model_reads": "id",
+    # A document's saved bodies, its comments and the receipts of its reads (Phase I).
+    "document_versions": "id",
+    "document_comments": "id",
+    "document_reads": "id",
 }
 
 

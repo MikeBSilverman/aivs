@@ -10,7 +10,7 @@ Then drop the previous key from the environment once a report run says nothing
 is stale.
 
 This exists because rotation that requires a flag day does not happen. Both
-keys open, only the active key seals, and this walks the two tables that hold
+keys open, only the active key seals, and this walks the tables that hold
 sealed values and moves them forward. It is idempotent and safe to run against a
 live instance: each row is re-sealed from its own plaintext, so a row written
 concurrently under the active key is simply already current.
@@ -33,7 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from aivs_server.auth.secretbox import SecretBox, SecretPurpose
 from aivs_server.config import get_settings
 from aivs_server.db.engine import session_scope
-from aivs_server.db.models import Operator, Webhook
+from aivs_server.db.models import Document, Operator, Webhook
 
 logger = logging.getLogger(__name__)
 
@@ -98,8 +98,39 @@ async def _rewrap_webhooks(
             counts.rewrapped += 1
 
 
+async def _rewrap_document_keys(
+    session: AsyncSession, box: SecretBox, counts: _Counts, *, apply: bool
+) -> None:
+    """Each document's own key, re-sealed; what it seals is untouched, since it does not change.
+
+    A document key that does not open is a document whose whole history is
+    lost -- every version and comment is sealed under it -- and says so.
+    """
+    documents = (await session.execute(select(Document))).scalars()
+
+    for document in documents:
+        blob = document.dek_sealed
+        if not box.needs_rewrap(blob):
+            counts.current += 1
+            continue
+        counts.stale += 1
+        plaintext = box.unseal(blob, purpose=SecretPurpose.DOCUMENT_KEY, subject=document.id)
+        if plaintext is None:
+            counts.unopenable += 1
+            logger.error(
+                "document %s: its key could not be opened; its whole history is lost; left alone",
+                document.id,
+            )
+            continue
+        if apply:
+            document.dek_sealed = box.seal(
+                plaintext, purpose=SecretPurpose.DOCUMENT_KEY, subject=document.id
+            )
+            counts.rewrapped += 1
+
+
 async def rewrap(session: AsyncSession, box: SecretBox, *, apply: bool) -> _Counts:
-    """Walk both tables, re-sealing under the active key when ``apply``.
+    """Walk every table that holds sealed values, re-sealing under the active key when ``apply``.
 
     Takes its session and sealer rather than reaching for the process-wide ones,
     so the rotation path can be exercised by tests against a real database. A
@@ -109,6 +140,7 @@ async def rewrap(session: AsyncSession, box: SecretBox, *, apply: bool) -> _Coun
     counts = _Counts()
     await _rewrap_operators(session, box, counts, apply=apply)
     await _rewrap_webhooks(session, box, counts, apply=apply)
+    await _rewrap_document_keys(session, box, counts, apply=apply)
     return counts
 
 

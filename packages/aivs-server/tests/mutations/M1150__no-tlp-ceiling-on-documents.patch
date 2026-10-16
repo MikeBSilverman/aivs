@@ -1,0 +1,17 @@
+Mutation M1150: a document is read above the caller's TLP ceiling
+Re-applies: no earlier commit; documents are new in Phase I slice I1, and this is the rule it would most easily lose
+
+Expect red: packages/aivs-server/tests/unit/test_documents.py::test_a_red_document_is_not_found_over_sso_and_read_with_a_certificate
+
+diff --git a/packages/aivs-server/src/aivs_server/services/documents.py b/packages/aivs-server/src/aivs_server/services/documents.py
+--- a/packages/aivs-server/src/aivs_server/services/documents.py
++++ b/packages/aivs-server/src/aivs_server/services/documents.py
+@@ -227,7 +227,7 @@
+     db: AsyncSession, ctx: AuthContext, document: Document, *, now: dt.datetime
+ ) -> DocumentPermission | None:
+     """What ``ctx`` may do with ``document`` now, or ``None``: then it does not exist for it."""
+-    if not is_active(ctx) or not within_tlp_ceiling(ctx, document.tlp):
++    if not is_active(ctx):
+         return None
+     if ctx.org_id == document.owner_org_id and ctx.operator_id == document.author_operator_id:
+         return DocumentPermission.EDIT

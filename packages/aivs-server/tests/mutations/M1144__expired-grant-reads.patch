@@ -1,0 +1,16 @@
+Mutation M1144: a grant past its expiry still reads
+Re-applies: no earlier commit; documents are new in Phase I slice I1, and this is the rule it would most easily lose
+
+Expect red: packages/aivs-server/tests/unit/test_documents.py::test_a_grant_reads_until_it_expires_judged_at_the_read
+
+diff --git a/packages/aivs-server/src/aivs_server/services/documents.py b/packages/aivs-server/src/aivs_server/services/documents.py
+--- a/packages/aivs-server/src/aivs_server/services/documents.py
++++ b/packages/aivs-server/src/aivs_server/services/documents.py
+@@ -218,7 +218,6 @@
+     )
+     return and_(
+         DocumentGrant.revoked_at.is_(None),
+-        or_(DocumentGrant.expires_at.is_(None), DocumentGrant.expires_at > now),
+         or_(to_organisation, to_person) if ctx.operator_id is not None else to_organisation,
+     )
+ 

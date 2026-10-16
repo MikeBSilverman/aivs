@@ -187,19 +187,27 @@ class SecretPurpose:
     """The AAD purpose labels, spelled once.
 
     A typo in a purpose string would seal a value that never opens again, and
-    would do it silently at write time. There are two of these; there is no
-    reason for them to be loose literals.
+    would do it silently at write time; there is no reason for them to be
+    loose literals. Never change one: each is in the AAD of values on disk.
     """
 
     TOTP: Final[str] = "operator-totp"
     WEBHOOK_HMAC: Final[str] = "webhook-hmac"
+    #: A document's own key (its DEK), sealed under the instance key with the
+    #: document's id as the subject (Phase I).
+    DOCUMENT_KEY: Final[str] = "document-key"
+    #: What is sealed under a document's DEK, each bound to its row:
+    #: ``<document>:<version>`` and ``<document>:<comment>``, so a ciphertext
+    #: cannot be moved to another version, re-inserted, or re-threaded.
+    DOCUMENT_VERSION: Final[str] = "document-version"
+    DOCUMENT_COMMENT: Final[str] = "document-comment"
 
 
 def _fingerprint(key: bytes) -> bytes:
     return hashlib.sha256(_FINGERPRINT_DOMAIN + key).digest()[:_FINGERPRINT_BYTES]
 
 
-def _aad(purpose: str, subject: uuid.UUID) -> bytes:
+def _aad(purpose: str, subject: uuid.UUID | str) -> bytes:
     return f"{purpose}:{subject}".encode()
 
 
@@ -264,7 +272,7 @@ class SecretBox:
         """Hex fingerprint of the active key, for operator-facing diagnostics."""
         return self._active_fingerprint.hex()
 
-    def seal(self, plaintext: str, *, purpose: str, subject: uuid.UUID) -> bytes:
+    def seal(self, plaintext: str, *, purpose: str, subject: uuid.UUID | str) -> bytes:
         """Seal ``plaintext`` for the row identified by ``subject``."""
         algorithm = self._algorithm
         nonce = os.urandom(algorithm.nonce_bytes)
@@ -274,7 +282,7 @@ class SecretBox:
             _MAGIC + bytes((_VERSION, algorithm.id)) + self._active_fingerprint + nonce + ciphertext
         )
 
-    def unseal(self, blob: bytes | None, *, purpose: str, subject: uuid.UUID) -> str | None:
+    def unseal(self, blob: bytes | None, *, purpose: str, subject: uuid.UUID | str) -> str | None:
         """Open a sealed value, or return ``None`` and say why in the log.
 
         ``None`` for an absent value is not an error: an operator who has not
@@ -366,7 +374,7 @@ class SecretBox:
         return blob[len(_MAGIC) + 2 : _PREFIX_BYTES] != self._active_fingerprint
 
     def _parse(
-        self, blob: bytes, *, purpose: str, subject: uuid.UUID
+        self, blob: bytes, *, purpose: str, subject: uuid.UUID | str
     ) -> tuple[Algorithm, bytes, bytes, bytes] | None:
         """Split a blob into (algorithm, fingerprint, nonce, ciphertext)."""
         if len(blob) < _PREFIX_BYTES or not blob.startswith(_MAGIC):

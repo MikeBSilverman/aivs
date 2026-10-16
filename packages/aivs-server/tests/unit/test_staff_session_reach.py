@@ -52,6 +52,9 @@ ALLOWED: Final[dict[str, str]] = {
     "services/member_staff_writes.py": (
         "a member's own organisation's status and settings, keyed on its org"
     ),
+    "services/documents.py": (
+        "a document's reads and writes, each decided by the caller's own grant on it"
+    ),
     "services/member_staff_reads.py": (
         "a member's own rows in tables its login may only write, keyed on its org"
     ),

@@ -1,0 +1,16 @@
+Mutation M1154: a revoked grant still reads
+Re-applies: no earlier commit; documents are new in Phase I slice I1, and this is the rule it would most easily lose
+
+Expect red: packages/aivs-server/tests/unit/test_documents.py::test_a_revoked_grant_reads_nothing
+
+diff --git a/packages/aivs-server/src/aivs_server/services/documents.py b/packages/aivs-server/src/aivs_server/services/documents.py
+--- a/packages/aivs-server/src/aivs_server/services/documents.py
++++ b/packages/aivs-server/src/aivs_server/services/documents.py
+@@ -217,7 +217,6 @@
+         DocumentGrant.principal_org_id == ctx.org_id,
+     )
+     return and_(
+-        DocumentGrant.revoked_at.is_(None),
+         or_(DocumentGrant.expires_at.is_(None), DocumentGrant.expires_at > now),
+         or_(to_organisation, to_person) if ctx.operator_id is not None else to_organisation,
+     )

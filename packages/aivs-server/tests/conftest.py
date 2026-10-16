@@ -488,6 +488,9 @@ _APPEND_ONLY_TABLES: Final[tuple[str, ...]] = (
     "submission_transitions",
     "audit_stream_modes",
     "model_reads",
+    "document_versions",
+    "document_comments",
+    "document_reads",
     "attribution.submitters",
 )
 
@@ -505,6 +508,11 @@ _ALL_TABLES = (
     "distributions",
     "taxii_status",
     "stix_objects",
+    "document_reads",
+    "document_comments",
+    "document_versions",
+    "document_grants",
+    "documents",
     "model_reads",
     "submission_triage",
     "submission_transitions",

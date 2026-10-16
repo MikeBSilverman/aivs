@@ -1,0 +1,17 @@
+Mutation M1155: offboarding leaves the firm's document grants open
+Re-applies: no earlier commit; documents are new in Phase I slice I1, and this is the rule it would most easily lose
+
+Expect red: packages/aivs-server/tests/unit/test_documents.py::test_offboarding_a_firm_through_the_isac_closes_its_document_grants
+
+diff --git a/packages/aivs-server/src/aivs_server/services/offboarding.py b/packages/aivs-server/src/aivs_server/services/offboarding.py
+--- a/packages/aivs-server/src/aivs_server/services/offboarding.py
++++ b/packages/aivs-server/src/aivs_server/services/offboarding.py
+@@ -155,7 +155,7 @@
+     postures = await _delete_operational(session, organisation)
+     # Its documents are archived, kept as content, and every grant touching it
+     # ends: one it held reads nothing more, one on its documents shares nothing more.
+-    document_grants = await close_for_offboarded(session, organisation.id, now=now)
++    document_grants = 0
+     await record(
+         session,
+         action=AuditAction.ORG_OFFBOARDED,

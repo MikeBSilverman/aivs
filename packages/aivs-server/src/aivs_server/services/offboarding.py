@@ -51,6 +51,7 @@ from aivs_server.db.models import (
 )
 from aivs_server.services.circles import remove_circle_member
 from aivs_server.services.count_snapshots import forget_organisation
+from aivs_server.services.documents import close_for_offboarded
 from aivs_server.services.quarantine import revoke_credentials
 
 __all__ = ["OffboardingError", "lift_legal_hold", "offboard_org", "set_legal_hold"]
@@ -152,6 +153,9 @@ async def offboard_org(
     operators = await _pseudonymise_operators(session, organisation.id)
     memberships = await _close_memberships(session, ctx, organisation.id, now)
     postures = await _delete_operational(session, organisation)
+    # Its documents are archived, kept as content, and every grant touching it
+    # ends: one it held reads nothing more, one on its documents shares nothing more.
+    document_grants = await close_for_offboarded(session, organisation.id, now=now)
     await record(
         session,
         action=AuditAction.ORG_OFFBOARDED,
@@ -165,6 +169,7 @@ async def offboard_org(
             "certificates_revoked": certificates,
             "operators_pseudonymised": operators,
             "memberships_closed": memberships,
+            "document_grants_closed": document_grants,
             "postures": postures,
         },
     )

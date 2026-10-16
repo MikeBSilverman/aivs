@@ -1,0 +1,17 @@
+Mutation M1158: a person writes comments without bound
+Re-applies: no earlier commit; documents are new in Phase I slice I1, and this is the rule it would most easily lose
+
+Expect red: packages/aivs-server/tests/unit/test_documents.py::test_comments_are_bounded_in_size_and_rate
+
+diff --git a/packages/aivs-server/src/aivs_server/services/documents.py b/packages/aivs-server/src/aivs_server/services/documents.py
+--- a/packages/aivs-server/src/aivs_server/services/documents.py
++++ b/packages/aivs-server/src/aivs_server/services/documents.py
+@@ -486,7 +486,7 @@
+         if not 1 <= version_number <= await _latest_number(db, document_id):
+             msg = "there is no such version to comment on"
+             raise DocumentRefusedError(msg)
+-        if await _comments_this_hour(db, author, now=now) >= COMMENTS_PER_HOUR:
++        if False:
+             msg = "too many comments in the last hour; try again later"
+             raise DocumentRefusedError(msg)
+         db.add(

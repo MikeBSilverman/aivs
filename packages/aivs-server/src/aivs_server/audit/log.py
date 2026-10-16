@@ -148,6 +148,13 @@ class AuditAction:
     SUBMISSION_PROXY_CONFIRMED = "submission.proxy_confirmed"
     #: The first pass read a submission: its disposition and finding codes.
     SUBMISSION_TRIAGED = "submission.triaged"
+    #: Text documents (Phase I): who did what to which document, never its content.
+    DOCUMENT_CREATED = "document.created"
+    DOCUMENT_VERSION_SAVED = "document.version_saved"
+    DOCUMENT_COMMENTED = "document.commented"
+    DOCUMENT_GRANTED = "document.granted"
+    DOCUMENT_GRANT_REVOKED = "document.grant_revoked"
+    DOCUMENT_TRANSITIONED = "document.transitioned"
     #: A model read a submission in shadow: the outcome and a total, never the codes.
     SUBMISSION_MODEL_READ = "submission.model_read"
     CONTRIBUTION_PUBLISHED = "contribution.published"

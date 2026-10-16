@@ -1,0 +1,17 @@
+Mutation M1148: a person at another firm may be named
+Re-applies: no earlier commit; documents are new in Phase I slice I1, and this is the rule it would most easily lose
+
+Expect red: packages/aivs-server/tests/unit/test_documents.py::test_another_firms_person_cannot_be_named
+
+diff --git a/packages/aivs-server/src/aivs_server/services/documents.py b/packages/aivs-server/src/aivs_server/services/documents.py
+--- a/packages/aivs-server/src/aivs_server/services/documents.py
++++ b/packages/aivs-server/src/aivs_server/services/documents.py
+@@ -247,7 +247,7 @@
+     """Whether the owner may grant to this principal (SF-2), as an allow-list."""
+     if principal is GrantPrincipal.OPERATOR:
+         person = await db.get(Operator, principal_id)
+-        return person is not None and person.org_id == owner_org_id and person.is_active
++        return person is not None and person.is_active
+     if principal_id == owner_org_id:
+         return True
+     organisation = await db.get(Organization, principal_id)

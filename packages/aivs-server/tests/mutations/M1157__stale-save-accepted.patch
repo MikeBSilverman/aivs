@@ -1,0 +1,17 @@
+Mutation M1157: a save over a newer version than the one read is accepted
+Re-applies: no earlier commit; documents are new in Phase I slice I1, and this is the rule it would most easily lose
+
+Expect red: packages/aivs-server/tests/unit/test_documents.py::test_a_stale_save_is_refused_and_a_current_one_makes_the_next_version
+
+diff --git a/packages/aivs-server/src/aivs_server/services/documents.py b/packages/aivs-server/src/aivs_server/services/documents.py
+--- a/packages/aivs-server/src/aivs_server/services/documents.py
++++ b/packages/aivs-server/src/aivs_server/services/documents.py
+@@ -435,8 +435,6 @@
+             db, ctx, document_id, at_least=DocumentPermission.EDIT, now=now, for_update=True
+         )
+         _require_open(document)
+-        if document.version != expected_version:
+-            raise DocumentStaleError
+         number = await _latest_number(db, document_id) + 1
+         _add_version(
+             db,

@@ -1,0 +1,26 @@
+Mutation M1151: a version's body is sealed bound to the document alone, not its row
+Re-applies: no earlier commit; documents are new in Phase I slice I1, and this is the rule it would most easily lose
+
+Expect red: packages/aivs-server/tests/unit/test_documents.py::test_a_sealed_body_moved_to_another_version_does_not_open
+
+diff --git a/packages/aivs-server/src/aivs_server/services/documents.py b/packages/aivs-server/src/aivs_server/services/documents.py
+--- a/packages/aivs-server/src/aivs_server/services/documents.py
++++ b/packages/aivs-server/src/aivs_server/services/documents.py
+@@ -411,7 +411,7 @@
+             body_sealed=content.seal(
+                 body,
+                 purpose=SecretPurpose.DOCUMENT_VERSION,
+-                subject=f"{document_id}:{number}",
++                subject=f"{document_id}",
+             ),
+             author_operator_id=author,
+         )
+@@ -644,7 +644,7 @@
+         body = content.unseal(
+             version.body_sealed,
+             purpose=SecretPurpose.DOCUMENT_VERSION,
+-            subject=f"{document_id}:{version.number}",
++            subject=f"{document_id}",
+         )
+         if body is None:
+             msg = f"{document_id}:{version.number}"

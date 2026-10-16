@@ -1,0 +1,17 @@
+Mutation M1149: a person's grant still reads after they leave
+Re-applies: no earlier commit; documents are new in Phase I slice I1, and this is the rule it would most easily lose
+
+Expect red: packages/aivs-server/tests/unit/test_documents.py::test_a_persons_grant_ends_when_they_leave_while_their_organisations_remains
+Expect red: packages/aivs-server/tests/unit/test_documents.py::test_a_person_grant_without_the_firms_ends_entirely_when_they_leave
+
+diff --git a/packages/aivs-server/src/aivs_server/services/documents.py b/packages/aivs-server/src/aivs_server/services/documents.py
+--- a/packages/aivs-server/src/aivs_server/services/documents.py
++++ b/packages/aivs-server/src/aivs_server/services/documents.py
+@@ -208,7 +208,6 @@
+         DocumentGrant.principal_operator_id == ctx.operator_id,
+         exists().where(
+             person.id == DocumentGrant.principal_operator_id,
+-            person.is_active.is_(True),
+             person.org_id == ctx.org_id,
+         ),
+     )

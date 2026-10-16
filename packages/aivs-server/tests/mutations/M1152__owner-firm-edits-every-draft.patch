@@ -1,0 +1,17 @@
+Mutation M1152: every person at the owner firm edits a document unshared
+Re-applies: the first draft of _permission in this slice, before a grant to one of the owner's own people could mean anything
+
+Expect red: packages/aivs-server/tests/unit/test_documents.py::test_a_draft_is_its_authors_until_shared_inside_its_firm_as_outside
+
+diff --git a/packages/aivs-server/src/aivs_server/services/documents.py b/packages/aivs-server/src/aivs_server/services/documents.py
+--- a/packages/aivs-server/src/aivs_server/services/documents.py
++++ b/packages/aivs-server/src/aivs_server/services/documents.py
+@@ -229,7 +229,7 @@
+     """What ``ctx`` may do with ``document`` now, or ``None``: then it does not exist for it."""
+     if not is_active(ctx) or not within_tlp_ceiling(ctx, document.tlp):
+         return None
+-    if ctx.org_id == document.owner_org_id and ctx.operator_id == document.author_operator_id:
++    if ctx.org_id == document.owner_org_id:
+         return DocumentPermission.EDIT
+     held = (
+         await db.scalars(

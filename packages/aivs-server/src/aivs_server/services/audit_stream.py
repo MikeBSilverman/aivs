@@ -194,6 +194,14 @@ _PROJECTIONS: Final[Mapping[str, Projection]] = MappingProxyType(
         AuditAction.SUBMISSION_PROXY_CONFIRMED: _CONTENT,
         AuditAction.SUBMISSION_TRIAGED: _CONTENT,
         AuditAction.SUBMISSION_MODEL_READ: _CONTENT,
+        # A document's actions say which organisation shared what with whom:
+        # the owner is its grantees' to know, not the instance auditor's.
+        AuditAction.DOCUMENT_CREATED: _CONTENT,
+        AuditAction.DOCUMENT_VERSION_SAVED: _CONTENT,
+        AuditAction.DOCUMENT_COMMENTED: _CONTENT,
+        AuditAction.DOCUMENT_GRANTED: _CONTENT,
+        AuditAction.DOCUMENT_GRANT_REVOKED: _CONTENT,
+        AuditAction.DOCUMENT_TRANSITIONED: _CONTENT,
         AuditAction.CONTRIBUTION_PUBLISHED: _CONTENT,
         # A refused contribution: nothing was filed, so nothing to attribute.
         AuditAction.CONTRIBUTION_RATE_LIMITED: _WHOLE,

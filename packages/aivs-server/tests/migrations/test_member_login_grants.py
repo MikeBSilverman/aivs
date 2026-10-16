@@ -64,6 +64,14 @@ CLASSIFICATION: Final[dict[str, frozenset[str]]] = {
     "public.submission_milestones": _NOTHING,
     "public.submission_triage": _NOTHING,
     "public.model_reads": _NOTHING,
+    # Every read and write of a document is staff side, decided by the
+    # caller's own grant (services.documents): with SELECT, SQL on the member
+    # path could list every firm's documents, owners and titles.
+    "public.documents": _NOTHING,
+    "public.document_versions": _NOTHING,
+    "public.document_comments": _NOTHING,
+    "public.document_grants": _NOTHING,
+    "public.document_reads": _NOTHING,
     # Read, and written only where listed.
     "public.circle_memberships": _READ,
     "public.circles": _READ,

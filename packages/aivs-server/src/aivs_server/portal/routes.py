@@ -98,6 +98,7 @@ from aivs_server.services.member_staff_writes import (
     submit_own_submission,
     transition_own_submission,
 )
+from aivs_server.services.model_triage import latest_model_read
 from aivs_server.services.provenance import consequential_changes
 from aivs_server.services.proxy_filing import awaiting_confirmation
 from aivs_server.services.publication import PublicationPausedError
@@ -692,6 +693,7 @@ async def submission_detail(
             "telemetry": await telemetry_rows(session, ctx, submission, key=key),
             "lint_hits": await lint_hits(session, ctx, submission, key=key),
             "first_pass": await _first_pass_view(session, ctx, submission),
+            "model_check": await _model_check_view(session, ctx, submission),
             "csrf_token": request.cookies.get("aivs_csrf", ""),
         }
     )
@@ -709,6 +711,25 @@ async def _first_pass_view(
     return {
         "returned": submission.state is SubmissionState.RETURNED,
         "findings": shown_findings(row, reviewer=can_review_submissions(ctx)),
+        "at": stamp(row.created_at),
+    }
+
+
+async def _model_check_view(
+    session: SessionDep, ctx: AuthContext, submission: Submission
+) -> dict[str, Any] | None:
+    """The model's latest read, to a reviewer alone (shadow, SF-96); ``None`` to
+    anyone else, whose request does not query it at all."""
+    if not can_review_submissions(ctx):
+        return None
+    row = await latest_model_read(session, submission.id)
+    if row is None:
+        return None
+    return {
+        "outcome": row.outcome,
+        "model": row.model_reported or row.model_id,
+        "provider": row.provider,
+        "findings": list(row.findings),
         "at": stamp(row.created_at),
     }
 

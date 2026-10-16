@@ -20,7 +20,7 @@ import httpx
 import pytest
 from sqlalchemy import func, select
 
-from aivs_schemas.enums import TLP, OrgType, SubmissionState
+from aivs_schemas.enums import TLP, OperatorRole, OrgType, SubmissionState
 from aivs_server.audit.log import AuditAction
 from aivs_server.db.models import (
     AuditLog,
@@ -42,6 +42,7 @@ from aivs_server.services.model_triage import (
 from aivs_server.services.triage import triage_pending
 from tests.conftest import TEST_ATTRIBUTION_KEY, proxy_headers
 from tests.unit.test_returns import MATCHABLE, _bundle
+from tests.unit.test_vulnerability_page import _get, _reader
 
 pytestmark = [pytest.mark.db, pytest.mark.requirement("SF-96")]
 
@@ -503,3 +504,56 @@ async def test_the_audit_row_says_the_outcome_and_a_total_and_names_no_organisat
         "finding_count": 1,
         "prompt_template": PROMPT_TEMPLATE,
     }
+
+
+# ---------------------------------------------------------------------------
+# Shadow: the reviewer sees it, the submitter never does
+# ---------------------------------------------------------------------------
+@pytest.fixture
+async def read_by_a_model(client, session, member):
+    """A member's submission a model has read and found something in."""
+    _org, pem = member
+    submission_id, bundle = await submitted(client, pem)
+    await first_pass(session)
+    [vulnerability] = bundle["objects"]
+    reply = {
+        "findings": [finding(vulnerability, code="model.suggests_cwe", suggested_value="CWE-79")]
+    }
+    await run(session, StubModel(reply=replying(reply)))
+    return submission_id
+
+
+async def test_a_reviewer_is_shown_the_model_check_on_the_submission(client, read_by_a_model, isac):
+    _org, editor = isac
+
+    detail = await client.get(f"{API}/{read_by_a_model}", headers=editor)
+
+    assert detail.status_code == 200, detail.text
+    check = detail.json()["model_check"]
+    assert (check["outcome"], check["findings"][0]["suggested_value"]) == ("findings", "CWE-79")
+
+
+async def test_the_submitter_is_never_shown_the_model_check(
+    client, session, settings, make_operator, member, read_by_a_model, isac, isac_org, make_cert
+):
+    """Asserted beside the reviewer's view of the same read, so its absence means something."""
+    org, pem = member
+    _isac, editor = isac
+    assert (await client.get(f"{API}/{read_by_a_model}", headers=editor)).json()["model_check"]
+    machine = await client.get(f"{API}/{read_by_a_model}", headers=proxy_headers(pem))
+    person = await _reader(
+        session, settings, make_operator, org, pem, roles=(OperatorRole.ANALYST,)
+    )
+    page = await _get(client, person, f"/portal/submissions/{read_by_a_model}")
+    isac_pem, _ = await make_cert(isac_org)
+    reviewer = await _reader(
+        session, settings, make_operator, isac_org, isac_pem, roles=(OperatorRole.ISAC_EDITOR,)
+    )
+    reviewer_page = await _get(client, reviewer, f"/portal/submissions/{read_by_a_model}")
+
+    assert machine.status_code == page.status_code == reviewer_page.status_code == 200
+    assert machine.json()["model_check"] is None
+    assert "CWE-79" not in machine.text
+    assert "data-model-check" not in page.text
+    assert "CWE-79" not in page.text
+    assert 'data-model-check="findings"' in reviewer_page.text

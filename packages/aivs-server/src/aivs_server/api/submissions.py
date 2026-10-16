@@ -29,6 +29,8 @@ from aivs_schemas.models import (
     EmbargoOut,
     FindingOut,
     FirstPassOut,
+    ModelCheckOut,
+    ModelFindingOut,
     RevealOut,
     RevealRequest,
     RevokeOut,
@@ -81,6 +83,7 @@ from aivs_server.services.member_staff_writes import (
     transition_own_submission,
     update_own_submission,
 )
+from aivs_server.services.model_triage import latest_model_read
 from aivs_server.services.revocation import revoke_contribution
 from aivs_server.services.submissions import (
     STORAGE_ERRORS,
@@ -266,6 +269,29 @@ async def get_submission(
         transitions=[TransitionOut.model_validate(t) for t in transitions],
         embargo=EmbargoOut.model_validate(embargo) if embargo else None,
         first_pass=_first_pass(ctx, await first_pass_of(session, ctx, submission.id)),
+        model_check=await _model_check(session, ctx, submission.id),
+    )
+
+
+async def _model_check(
+    session: AsyncSession, ctx: AuthContext, submission_id: uuid.UUID
+) -> ModelCheckOut | None:
+    """The model's latest read, to a reviewer alone: shadow (SF-96). Nobody
+    else's request so much as queries it."""
+    if not can_review_submissions(ctx):
+        return None
+    row = await latest_model_read(session, submission_id)
+    if row is None:
+        return None
+    return ModelCheckOut(
+        outcome=row.outcome,
+        provider=row.provider,
+        model_id=row.model_id,
+        model_reported=row.model_reported,
+        prompt_template=row.prompt_template,
+        content_tlp=row.content_tlp,
+        findings=[ModelFindingOut.model_validate(finding) for finding in row.findings],
+        at=row.created_at,
     )
 
 

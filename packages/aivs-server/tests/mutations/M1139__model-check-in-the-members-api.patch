@@ -1,0 +1,17 @@
+Mutation M1139: the API detail shows a member the model's read of its filing
+Re-applies: no earlier commit; the shadow view is new in Phase O slice 4, and this is the rule it would most easily lose
+
+Expect red: packages/aivs-server/tests/unit/test_model_triage.py::test_the_submitter_is_never_shown_the_model_check
+
+diff --git a/packages/aivs-server/src/aivs_server/api/submissions.py b/packages/aivs-server/src/aivs_server/api/submissions.py
+--- a/packages/aivs-server/src/aivs_server/api/submissions.py
++++ b/packages/aivs-server/src/aivs_server/api/submissions.py
+@@ -278,8 +278,6 @@
+ ) -> ModelCheckOut | None:
+     """The model's latest read, to a reviewer alone: shadow (SF-96). Nobody
+     else's request so much as queries it."""
+-    if not can_review_submissions(ctx):
+-        return None
+     row = await latest_model_read(session, submission_id)
+     if row is None:
+         return None

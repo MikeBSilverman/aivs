@@ -58,6 +58,7 @@ __all__ = [
     "PROMPT_TEMPLATE",
     "ModelFindingCode",
     "ModelReadOutcome",
+    "latest_model_read",
     "model_triage_pending",
     "parse_reply",
     "prompt_for",
@@ -391,3 +392,15 @@ async def _audit(
             "prompt_template": PROMPT_TEMPLATE,
         },
     )
+
+
+async def latest_model_read(session: AsyncSession, submission_id: Any) -> ModelRead | None:
+    """The newest model read of a submission. Reviewers' views only: the member
+    login is granted nothing on ``model_reads``, and no member is shown one."""
+    row: ModelRead | None = await session.scalar(
+        select(ModelRead)
+        .where(ModelRead.submission_id == submission_id)
+        .order_by(ModelRead.id.desc())
+        .limit(1)
+    )
+    return row

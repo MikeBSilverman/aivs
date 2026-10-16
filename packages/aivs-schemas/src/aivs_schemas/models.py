@@ -57,6 +57,8 @@ __all__ = [
     "EmbargoUpsert",
     "FindingOut",
     "FirstPassOut",
+    "ModelCheckOut",
+    "ModelFindingOut",
     "OrganizationCreate",
     "OrganizationOut",
     "ReceiptOut",
@@ -334,6 +336,32 @@ class FirstPassOut(_Out):
     at: dt.datetime
 
 
+class ModelFindingOut(_Out):
+    """One thing a model suggested, typed: never prose (Phase O slice 4)."""
+
+    code: str
+    object_id: str | None = None
+    field_path: str | None = None
+    suggested_value: str | None = None
+
+
+class ModelCheckOut(_Out):
+    """A model's latest read of a submission, in shadow: ISAC reviewers only.
+
+    A suggestion for the reviewer to weigh. It decided nothing, and the
+    submitter is never shown it.
+    """
+
+    outcome: str
+    provider: str
+    model_id: str
+    model_reported: str | None
+    prompt_template: str
+    content_tlp: str
+    findings: list[ModelFindingOut]
+    at: dt.datetime
+
+
 class SubmissionDetail(SubmissionOut):
     """Full view, including workflow history and the object inventory."""
 
@@ -344,6 +372,8 @@ class SubmissionDetail(SubmissionOut):
     embargo: EmbargoOut | None
     #: ``None`` until the first pass has read it.
     first_pass: FirstPassOut | None = None
+    #: The model's latest read, to an ISAC reviewer alone; ``None`` to anyone else.
+    model_check: ModelCheckOut | None = None
 
 
 # ---------------------------------------------------------------------------

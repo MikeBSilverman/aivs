@@ -48,6 +48,30 @@
 </div>
 {% endif %}
 
+{% if model_check %}
+<div class="card" data-model-check="{{ model_check.outcome }}">
+  <h2>Model check (shadow)</h2>
+  <p class="muted">
+    For ISAC reviewers only. A suggestion from {{ model_check.model }} ({{ model_check.provider }}):
+    it decided nothing, and the submitter does not see it.
+  </p>
+  {% if model_check.findings %}
+    <ul>
+      {% for finding in model_check.findings %}
+        <li>
+          <span class="mono">{{ finding.code }}</span>
+          {% if finding.object_id %}on <span class="mono">{{ finding.object_id }}{{ finding.field_path }}</span>{% endif %}
+          {% if finding.suggested_value %}: <span class="mono">{{ finding.suggested_value }}</span>{% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p>Outcome: <span class="mono">{{ model_check.outcome }}</span>.</p>
+  {% endif %}
+  <p class="muted">Read <span class="mono">{{ model_check.at }}</span>.</p>
+</div>
+{% endif %}
+
 <div class="card">
   <h2>Summary</h2>
   <p>{{ submission.summary or "No summary supplied." }}</p>

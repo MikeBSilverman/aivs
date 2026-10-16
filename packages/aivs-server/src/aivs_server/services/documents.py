@@ -53,7 +53,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Final
 
-from sqlalchemy import ColumnElement, and_, exists, func, or_, select
+from sqlalchemy import ColumnElement, Select, and_, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -264,31 +264,36 @@ async def _may_name(
         return person is not None and person.org_id == owner_org_id and person.is_active
     if principal_id == owner_org_id:
         return True
-    organisation = await db.get(Organization, principal_id)
-    if organisation is None or organisation.status is not OrgStatus.ACTIVE:
-        return False
-    if organisation.org_type not in DOCUMENT_GRANTEE_ORG_TYPES:
-        return False
-    return await _share_an_open_circle(db, owner_org_id, principal_id)
+    in_bound = await db.scalar(
+        _firms_in_bound(owner_org_id).where(Organization.id == principal_id).limit(1)
+    )
+    return in_bound is not None
 
 
-async def _share_an_open_circle(db: AsyncSession, first: uuid.UUID, second: uuid.UUID) -> bool:
-    """Both organisations hold an open interval in one active circle."""
+def _firms_in_bound(owner_org_id: uuid.UUID) -> Select[tuple[Organization]]:
+    """The other firms SF-2 lets the owner name, as one query.
+
+    Active, of an allowed type, and holding an open interval in an active
+    circle where the owner holds one too. One query, so what a grant is
+    checked against and what a list of firms would offer cannot drift apart.
+    """
+    mine = aliased(CircleMembership)
     theirs = aliased(CircleMembership)
-    shared = await db.scalar(
-        select(CircleMembership.id)
-        .join(theirs, theirs.circle_id == CircleMembership.circle_id)
-        .join(Circle, Circle.id == CircleMembership.circle_id)
+    return (
+        select(Organization)
+        .join(theirs, theirs.org_id == Organization.id)
+        .join(mine, mine.circle_id == theirs.circle_id)
+        .join(Circle, Circle.id == theirs.circle_id)
         .where(
-            CircleMembership.org_id == first,
-            CircleMembership.left_at.is_(None),
-            theirs.org_id == second,
+            mine.org_id == owner_org_id,
+            mine.left_at.is_(None),
             theirs.left_at.is_(None),
             Circle.is_active.is_(True),
+            Organization.id != owner_org_id,
+            Organization.status == OrgStatus.ACTIVE,
+            Organization.org_type.in_(DOCUMENT_GRANTEE_ORG_TYPES),
         )
-        .limit(1)
     )
-    return shared is not None
 
 
 async def _load(db: AsyncSession, document_id: uuid.UUID, *, for_update: bool) -> Document | None:

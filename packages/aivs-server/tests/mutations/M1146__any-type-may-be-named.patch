@@ -6,12 +6,11 @@ Expect red: packages/aivs-server/tests/unit/test_documents.py::test_a_firm_of_a_
 diff --git a/packages/aivs-server/src/aivs_server/services/documents.py b/packages/aivs-server/src/aivs_server/services/documents.py
 --- a/packages/aivs-server/src/aivs_server/services/documents.py
 +++ b/packages/aivs-server/src/aivs_server/services/documents.py
-@@ -252,8 +252,6 @@
-         return True
-     organisation = await db.get(Organization, principal_id)
-     if organisation is None or organisation.status is not OrgStatus.ACTIVE:
--        return False
--    if organisation.org_type not in DOCUMENT_GRANTEE_ORG_TYPES:
-         return False
-     return await _share_an_open_circle(db, owner_org_id, principal_id)
+@@ -291,7 +291,6 @@
+             Circle.is_active.is_(True),
+             Organization.id != owner_org_id,
+             Organization.status == OrgStatus.ACTIVE,
+-            Organization.org_type.in_(DOCUMENT_GRANTEE_ORG_TYPES),
+         )
+     )
  

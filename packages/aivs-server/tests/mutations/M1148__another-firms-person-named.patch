@@ -6,7 +6,7 @@ Expect red: packages/aivs-server/tests/unit/test_documents.py::test_another_firm
 diff --git a/packages/aivs-server/src/aivs_server/services/documents.py b/packages/aivs-server/src/aivs_server/services/documents.py
 --- a/packages/aivs-server/src/aivs_server/services/documents.py
 +++ b/packages/aivs-server/src/aivs_server/services/documents.py
-@@ -247,7 +247,7 @@
+@@ -266,7 +266,7 @@
      """Whether the owner may grant to this principal (SF-2), as an allow-list."""
      if principal is GrantPrincipal.OPERATOR:
          person = await db.get(Operator, principal_id)
@@ -14,4 +14,4 @@ diff --git a/packages/aivs-server/src/aivs_server/services/documents.py b/packag
 +        return person is not None and person.is_active
      if principal_id == owner_org_id:
          return True
-     organisation = await db.get(Organization, principal_id)
+     in_bound = await db.scalar(

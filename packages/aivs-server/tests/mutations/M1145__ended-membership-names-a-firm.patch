@@ -6,11 +6,11 @@ Expect red: packages/aivs-server/tests/unit/test_documents.py::test_a_firm_whose
 diff --git a/packages/aivs-server/src/aivs_server/services/documents.py b/packages/aivs-server/src/aivs_server/services/documents.py
 --- a/packages/aivs-server/src/aivs_server/services/documents.py
 +++ b/packages/aivs-server/src/aivs_server/services/documents.py
-@@ -269,7 +269,6 @@
-             CircleMembership.org_id == first,
-             CircleMembership.left_at.is_(None),
-             theirs.org_id == second,
+@@ -287,7 +287,6 @@
+         .where(
+             mine.org_id == owner_org_id,
+             mine.left_at.is_(None),
 -            theirs.left_at.is_(None),
              Circle.is_active.is_(True),
-         )
-         .limit(1)
+             Organization.id != owner_org_id,
+             Organization.status == OrgStatus.ACTIVE,

@@ -48,6 +48,8 @@ from aivs_server.services.documents import (
     DocumentStaleError,
     DocumentUnreadableError,
 )
+from aivs_server.services.offboarding import offboard_org
+from aivs_server.services.quarantine import quarantine_org
 
 pytestmark = [pytest.mark.db, pytest.mark.requirement("SF-98")]
 
@@ -856,6 +858,47 @@ async def test_under_the_picker_a_listed_firm_is_named_by_id_and_reads(session, 
 
     view = await read(session, secret_box, ctx_of(world, "peer_one"), document_id)
     assert view.body == BODY
+
+
+def isac_staff() -> AuthContext:
+    return AuthContext(
+        org_id=uuid.uuid4(),
+        org_slug="hosting-isac",
+        org_type=OrgType.ADMIN,
+        org_status=OrgStatus.ACTIVE,
+        auth_method=AuthMethod.PORTAL_SESSION,
+        operator_id=uuid.uuid4(),
+        operator_roles=frozenset({OperatorRole.ISAC_MEMBERSHIP}),
+    )
+
+
+@pytest.mark.requirement("SF-100")
+async def test_a_quarantined_or_offboarded_firm_is_neither_named_nor_offered(
+    session, secret_box, world, make_org, join_circle
+):
+    """Status, not membership, refuses the quarantined firm: quarantine leaves its
+    intervals open and its code in place, so the bound's status term is the one
+    check between it and a grant. Offboarding closes the intervals as well."""
+    gone = await make_org("gone-bank", org_type=OrgType.GSIB)
+    await join_circle(gone, world["circle"])
+    document_id = await create(session, secret_box, world)
+    await quarantine_org(session, isac_staff(), organisation=world["peer"], reason="t", now=NOW)
+    await offboard_org(session, isac_staff(), organisation=gone, reason="t", now=NOW)
+    await session.commit()
+
+    await _refused_as_absent(
+        session, world, document_id, GrantPrincipal.ORGANIZATION, world["peer"].id
+    )
+    for firm in (world["peer"], gone):
+        with pytest.raises(DocumentNotFoundError):
+            await pick(session, world, document_id, firm.id, RecipientLookup.PICKER)
+    assert await listed_firms(session, world, RecipientLookup.PICKER) == set()
+    peer_interval = await session.scalar(
+        select(documents.CircleMembership.left_at).where(
+            documents.CircleMembership.org_id == world["peer"].id
+        )
+    )
+    assert peer_interval is None, "quarantine left the interval open"
 
 
 @pytest.mark.requirement("SF-100")

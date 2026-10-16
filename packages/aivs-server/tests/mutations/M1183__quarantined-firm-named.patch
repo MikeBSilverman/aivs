@@ -1,0 +1,16 @@
+Mutation M1183: a quarantined firm may still be named, and is offered by the picker
+Re-applies: the status term's absence; it was in _may_name from I1 with no test that showed it refusing, found while building I2b
+
+Expect red: packages/aivs-server/tests/unit/test_documents.py::test_a_quarantined_or_offboarded_firm_is_neither_named_nor_offered
+
+diff --git a/packages/aivs-server/src/aivs_server/services/documents.py b/packages/aivs-server/src/aivs_server/services/documents.py
+--- a/packages/aivs-server/src/aivs_server/services/documents.py
++++ b/packages/aivs-server/src/aivs_server/services/documents.py
+@@ -295,7 +295,6 @@
+             theirs.left_at.is_(None),
+             Circle.is_active.is_(True),
+             Organization.id != owner_org_id,
+-            Organization.status == OrgStatus.ACTIVE,
+             Organization.org_type.in_(DOCUMENT_GRANTEE_ORG_TYPES),
+         )
+     )

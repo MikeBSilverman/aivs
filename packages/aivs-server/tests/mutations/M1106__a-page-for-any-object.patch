@@ -1,0 +1,17 @@
+Mutation M1106: the vulnerability page is built for any visible object, not only a vulnerability
+Re-applies: vulnerability_page before the Phase P exit sweep, when "we've acted on this" on a fix's id answered 500
+
+Expect red: packages/aivs-server/tests/unit/test_vulnerability_page.py::test_acting_on_an_object_that_is_not_a_vulnerability_is_not_found
+
+diff --git a/packages/aivs-server/src/aivs_server/services/vulnerability_page.py b/packages/aivs-server/src/aivs_server/services/vulnerability_page.py
+--- a/packages/aivs-server/src/aivs_server/services/vulnerability_page.py
++++ b/packages/aivs-server/src/aivs_server/services/vulnerability_page.py
+@@ -156,7 +156,7 @@
+     # the id back unchecked, and a visible sighting's id reached readiness,
+     # which refuses anything else, as a 500.
+     vulnerabilities = await _latest_items(
+-        session, visible.where(StixObject.type == "vulnerability"), [stix_id]
++        session, visible, [stix_id]
+     )
+     if not vulnerabilities:
+         return None

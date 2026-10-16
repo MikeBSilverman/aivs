@@ -30,6 +30,7 @@ from aivs_server.auth.context import AuthContext
 from aivs_server.auth.deps import SessionDep, SettingsDep
 from aivs_server.auth.policy import can_write_documents, is_org_admin, require
 from aivs_server.auth.secretbox import SecretBox
+from aivs_server.config import RecipientLookup
 from aivs_server.db.clock import database_now
 from aivs_server.portal.shared import (
     base_context,
@@ -180,8 +181,13 @@ async def document_page(
                 else []
             ),
             "principals": (
-                await documents.own_firm_principals(session, ctx) if owner_editor else []
+                await documents.nameable_principals(
+                    session, ctx, lookup=settings.document_recipient_lookup
+                )
+                if owner_editor
+                else []
             ),
+            "picker": settings.document_recipient_lookup is RecipientLookup.PICKER,
             "next_states": _next_states(view.state),
             "stamp": stamp,
         }
@@ -290,7 +296,7 @@ async def grant_access(
     sharing_code: Annotated[str, Form(max_length=100)] = "",
     expires_on: Annotated[dt.date | None, Form()] = None,
 ) -> Response:
-    """Share with someone in your firm, picked from the list, or another firm by its code."""
+    """Share with someone picked from the list, or another firm by its code."""
     ctx = await _write(request, settings, csrf_token)
     response = redirect_within_portal(_page(document_id))
     named = _principal(target) if target else None
@@ -299,7 +305,7 @@ async def grant_access(
             response,
             settings,
             "error",
-            "Pick someone in your firm, or enter another firm's sharing code.",
+            "Pick someone from the list, or enter another firm's sharing code.",
         )
         return response
     expires_at = dt.datetime.combine(expires_on, dt.time.min, tzinfo=dt.UTC) if expires_on else None
@@ -311,6 +317,7 @@ async def grant_access(
             principal=named[0] if named else GrantPrincipal.ORGANIZATION,
             principal_id=named[1] if named else None,
             sharing_code=sharing_code or None,
+            lookup=settings.document_recipient_lookup,
             permission=permission,
             expires_at=expires_at,
             now=await database_now(session),

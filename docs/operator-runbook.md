@@ -1362,6 +1362,28 @@ remediation category -- pointing at the field it came from, never prose. Use
 it as a hint while reviewing; it has not been evaluated against your own
 decisions yet, which is why it is shown to you alone.
 
+### 9.9 Sharing documents: codes or a picker
+
+A member shares a document inside its own firm by picking a person or the
+whole firm. How it names *another* firm is your choice, set once in
+`AIVS_DOCUMENT_RECIPIENT_LOOKUP`:
+
+- `code` (the default): only by that firm's sharing code. Its org admins
+  make one on the Documents page, it is shown once, and they hand it
+  to whoever they want to be found by. Nobody is shown which firms share a
+  circle.
+- `picker`: the share form also lists every firm the owner shares an open
+  circle membership with, if that firm is active and of a type allowed to
+  receive documents. Easier for members, and it shows each member firm's
+  document editors who its co-members are (threat model R40). Choose it
+  only if your members accept that.
+
+Any other value stops the app at startup. Changing the setting is a restart
+and loses nothing: grants already made stand, and codes keep working under
+either setting. A firm that has left the circle, or been quarantined,
+suspended or offboarded, is neither listed nor accepted, even if someone
+posts its id directly.
+
 ## 10. Things that will bite you
 
 - **`AIVS_ENVIRONMENT=dev`** is the one value that relaxes

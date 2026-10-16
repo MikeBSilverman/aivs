@@ -298,6 +298,13 @@ services:
       # embargoed pre-CVE advisories.
       AIVS_LOG_LEVEL: ${AIVS_LOG_LEVEL:-INFO}
 
+      # -- Documents ----------------------------------------------------------
+      # How an owner names another firm to share a document with: `code` (the
+      # default) or `picker`, which lists the owner's circle co-members and so
+      # shows that membership to every member firm's document editors
+      # (threat model R40). Any other value stops the app at startup.
+      AIVS_DOCUMENT_RECIPIENT_LOOKUP: ${AIVS_DOCUMENT_RECIPIENT_LOOKUP:-code}
+
     volumes:
       # The key-encryption key, as one read-only file (see the environment
       # block above for why a file). Anchored: the migrate service mounts the

@@ -7,11 +7,11 @@ Expect red: packages/aivs-server/tests/unit/test_documents_api.py::test_another_
 diff --git a/packages/aivs-server/src/aivs_server/services/documents.py b/packages/aivs-server/src/aivs_server/services/documents.py
 --- a/packages/aivs-server/src/aivs_server/services/documents.py
 +++ b/packages/aivs-server/src/aivs_server/services/documents.py
-@@ -595,8 +595,6 @@
-         if principal is not GrantPrincipal.ORGANIZATION or principal_id is not None:
+@@ -611,8 +611,6 @@
              return None
          return await _resolve_sharing_code(db, sharing_code)
--    if principal is GrantPrincipal.ORGANIZATION and principal_id != owner_org_id:
+     is_other_firm = principal is GrantPrincipal.ORGANIZATION and principal_id != owner_org_id
+-    if is_other_firm and lookup is not RecipientLookup.PICKER:
 -        return None
      return principal_id
  

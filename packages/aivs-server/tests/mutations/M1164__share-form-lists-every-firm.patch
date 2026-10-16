@@ -6,19 +6,19 @@ Expect red: packages/aivs-server/tests/unit/test_documents_api.py::test_the_shar
 diff --git a/packages/aivs-server/src/aivs_server/services/documents.py b/packages/aivs-server/src/aivs_server/services/documents.py
 --- a/packages/aivs-server/src/aivs_server/services/documents.py
 +++ b/packages/aivs-server/src/aivs_server/services/documents.py
-@@ -929,6 +929,7 @@
-         return []
-     async with _staff(session, ctx) as db:
-         firm = await db.get(Organization, ctx.org_id)
-+        others = (await db.scalars(select(Organization).where(Organization.id != ctx.org_id))).all()
-         people = (
-             await db.scalars(
-                 select(Operator)
-@@ -939,6 +940,7 @@
-         named: list[tuple[GrantPrincipal, uuid.UUID, str]] = []
-         if firm is not None:
-             named.append((GrantPrincipal.ORGANIZATION, firm.id, f"{firm.name} (everyone)"))
-+        named.extend((GrantPrincipal.ORGANIZATION, other.id, other.name) for other in others)
-         named.extend(
-             (GrantPrincipal.OPERATOR, person.id, person.display_name)
-             for person in people
+@@ -958,6 +958,7 @@
+     db: AsyncSession, ctx: AuthContext
+ ) -> list[tuple[GrantPrincipal, uuid.UUID, str]]:
+     firm = await db.get(Organization, ctx.org_id)
++    others = (await db.scalars(select(Organization).where(Organization.id != ctx.org_id))).all()
+     people = (
+         await db.scalars(
+             select(Operator)
+@@ -968,6 +969,7 @@
+     named: list[tuple[GrantPrincipal, uuid.UUID, str]] = []
+     if firm is not None:
+         named.append((GrantPrincipal.ORGANIZATION, firm.id, f"{firm.name} (everyone)"))
++    named.extend((GrantPrincipal.ORGANIZATION, other.id, other.name) for other in others)
+     named.extend(
+         (GrantPrincipal.OPERATOR, person.id, person.display_name)
+         for person in people

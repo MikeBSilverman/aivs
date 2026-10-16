@@ -81,14 +81,14 @@
   <form method="post" action="/portal/documents/{{ document.id }}/grants">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <div class="field">
-      <label for="target">In your firm</label>
+      <label for="target">{% if picker %}In your firm, or a firm you share a circle with{% else %}In your firm{% endif %}</label>
       <select id="target" name="target">
         <option value="">(nobody)</option>
         {% for kind, pid, name in principals %}<option value="{{ kind.value }}:{{ pid }}">{{ name }}</option>{% endfor %}
       </select>
     </div>
     <div class="field">
-      <label for="sharing_code">Or another firm, by its sharing code</label>
+      <label for="sharing_code">{% if picker %}Or{% else %}Or another firm,{% endif %} by its sharing code</label>
       <input type="text" id="sharing_code" name="sharing_code" maxlength="100" autocomplete="off">
     </div>
     <div class="field">

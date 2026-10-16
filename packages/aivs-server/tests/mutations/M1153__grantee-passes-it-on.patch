@@ -6,12 +6,12 @@ Expect red: packages/aivs-server/tests/unit/test_documents.py::test_a_grantee_ca
 diff --git a/packages/aivs-server/src/aivs_server/services/documents.py b/packages/aivs-server/src/aivs_server/services/documents.py
 --- a/packages/aivs-server/src/aivs_server/services/documents.py
 +++ b/packages/aivs-server/src/aivs_server/services/documents.py
-@@ -557,8 +557,6 @@
+@@ -568,8 +568,6 @@
          document, _held = await _visible(
              db, ctx, document_id, at_least=DocumentPermission.EDIT, now=now, for_update=True
          )
 -        if ctx.org_id != document.owner_org_id:
 -            raise DocumentNotFoundError
          _require_open(document)
-         named = await _named(db, document.owner_org_id, principal, principal_id, sharing_code)
-         if named is None or not await _may_name(db, document.owner_org_id, principal, named):
+         named = await _named(
+             db, document.owner_org_id, principal, principal_id, sharing_code, lookup

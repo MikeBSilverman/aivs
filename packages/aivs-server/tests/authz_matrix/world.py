@@ -33,7 +33,7 @@ from aivs_schemas.extension.builders import AIVS_INTEL_EXTENSION_ID
 from aivs_server.auth.context import AuthContext, AuthMethod
 from aivs_server.auth.secretbox import SecretBox, SecretPurpose
 from aivs_server.auth.sessions import establish_session, establish_sso_session
-from aivs_server.config import Settings
+from aivs_server.config import RecipientLookup, Settings
 from aivs_server.db.models import Organization, SectorEvent, Webhook
 from aivs_server.services import documents
 from aivs_server.services.mail_domains import add_mail_domain
@@ -498,6 +498,7 @@ async def _seed_document(f: Factories, world: World, orgs: dict[str, Organizatio
         principal=GrantPrincipal.ORGANIZATION,
         principal_id=orgs["member"].id,
         sharing_code=None,
+        lookup=RecipientLookup.CODE,
         permission=DocumentPermission.EDIT,
         expires_at=None,
         now=now,
@@ -510,6 +511,7 @@ async def _seed_document(f: Factories, world: World, orgs: dict[str, Organizatio
             principal=GrantPrincipal.ORGANIZATION,
             principal_id=None,
             sharing_code=world.peer_sharing_code,
+            lookup=RecipientLookup.CODE,
             permission=DocumentPermission.VIEW,
             expires_at=None,
             now=now,

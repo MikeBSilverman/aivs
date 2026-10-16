@@ -1,0 +1,19 @@
+Mutation M1180: the picker's firm, named by id, is refused as under code
+Re-applies: no earlier commit; the recipient lookup is new in Phase I slice I2b (Q43), and this is the rule it would most easily lose
+
+Expect red: packages/aivs-server/tests/unit/test_documents.py::test_under_the_picker_a_listed_firm_is_named_by_id_and_reads
+Expect red: packages/aivs-server/tests/unit/test_documents_api.py::test_under_the_picker_the_api_names_a_co_member_by_id
+Expect red: packages/aivs-server/tests/unit/test_documents_api.py::test_under_the_picker_a_firm_posted_past_the_form_is_the_constant_404
+
+diff --git a/packages/aivs-server/src/aivs_server/services/documents.py b/packages/aivs-server/src/aivs_server/services/documents.py
+--- a/packages/aivs-server/src/aivs_server/services/documents.py
++++ b/packages/aivs-server/src/aivs_server/services/documents.py
+@@ -611,7 +611,7 @@
+             return None
+         return await _resolve_sharing_code(db, sharing_code)
+     is_other_firm = principal is GrantPrincipal.ORGANIZATION and principal_id != owner_org_id
+-    if is_other_firm and lookup is not RecipientLookup.PICKER:
++    if is_other_firm:
+         return None
+     return principal_id
+ 

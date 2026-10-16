@@ -1,0 +1,18 @@
+Mutation M1181: the share list offers co-members under the default code lookup too
+Re-applies: no earlier commit; the recipient lookup is new in Phase I slice I2b (Q43), and this is the rule it would most easily lose
+
+Expect red: packages/aivs-server/tests/unit/test_documents.py::test_under_code_the_list_offers_no_other_firm
+Expect red: packages/aivs-server/tests/unit/test_documents_api.py::test_the_share_form_lists_only_the_owners_own_firm
+
+diff --git a/packages/aivs-server/src/aivs_server/services/documents.py b/packages/aivs-server/src/aivs_server/services/documents.py
+--- a/packages/aivs-server/src/aivs_server/services/documents.py
++++ b/packages/aivs-server/src/aivs_server/services/documents.py
+@@ -946,7 +946,7 @@
+         return []
+     async with _staff(session, ctx) as db:
+         named = await _own_firm(db, ctx)
+-        if lookup is RecipientLookup.PICKER:
++        if lookup in RecipientLookup:
+             firms = await db.scalars(
+                 _firms_in_bound(ctx.org_id).distinct().order_by(Organization.name, Organization.id)
+             )

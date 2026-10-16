@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import enum
 import ipaddress
 import sys
 from functools import lru_cache
@@ -56,6 +57,19 @@ MIN_SHARED_SECRET_LEN: Final[int] = 32
 _PLACEHOLDER_MARKER: Final[str] = "REPLACE_ME"
 
 Environment = Literal["dev", "test", "staging", "production"]
+
+
+class RecipientLookup(enum.StrEnum):
+    """How a document's owner names another firm to share it with (Q43).
+
+    ``code``: only by the sharing code that firm handed over, so nobody learns
+    which firms share a circle. ``picker``: from a list of the owner's circle
+    co-members, which shows that membership to everyone who may share a
+    document; an ISAC that accepts that chooses it (threat model R40).
+    """
+
+    CODE = "code"
+    PICKER = "picker"
 
 
 def _check_kek(value: SecretStr | None) -> None:
@@ -432,6 +446,9 @@ class Settings(BaseSettings):
     #: infrastructure, and a triage queue that under-ranks is the costlier error.
     #: An ISAC whose membership is different sets it.
     ssvc_mission_impact: Literal["low", "medium", "high"] = "high"
+    #: How another firm is named when a document is shared (``RecipientLookup``).
+    #: An unknown value is refused at startup: only ``code`` and ``picker`` exist.
+    document_recipient_lookup: RecipientLookup = RecipientLookup.CODE
 
     # -- Model-assisted checks (services.model_triage, Phase O) --------------
     #: ``none`` (the default) sends nothing anywhere and changes nothing. A

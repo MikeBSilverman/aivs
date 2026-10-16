@@ -240,6 +240,19 @@ def test_the_app_has_a_member_login_of_its_own():
     assert "AIVS_DB_MEMBER_USER must differ from AIVS_DB_APP_USER" in script
 
 
+@pytest.mark.requirement("SF-100")
+def test_the_shipped_stack_passes_the_recipient_lookup_and_defaults_to_code():
+    """Q43 is the deployer's choice, so the stack must carry it to the app: a
+    setting documented in env.example and dropped by compose is a choice the
+    ISAC believes it made and did not."""
+    app_env = _compose("docker-compose.yml")["services"]["app"]["environment"]
+    example = (ROOT / "deploy/env.example").read_text(encoding="utf-8")
+
+    lookup = app_env["AIVS_DOCUMENT_RECIPIENT_LOOKUP"]
+    assert lookup == "${AIVS_DOCUMENT_RECIPIENT_LOOKUP:-code}"
+    assert re.search(r"^#AIVS_DOCUMENT_RECIPIENT_LOOKUP=code$", example, re.M)
+
+
 def test_the_e2e_stack_sets_the_member_login():
     script = (ROOT / "scripts/e2e.sh").read_text(encoding="utf-8")
     assert "AIVS_DB_MEMBER_USER=aivs_member" in script

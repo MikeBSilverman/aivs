@@ -30,7 +30,11 @@ a grantee elsewhere cannot pass the document on.
 its own people, and organisations of an allowed type that share an *open*
 membership interval with it in an active circle. Anything else -- including a
 type added later, a service provider among them, until it is allowed on
-purpose -- is refused as the constant not-found.
+purpose -- is refused as the constant not-found. How another firm is *found*
+is the instance's choice (``RecipientLookup``, Q43): by the sharing code it
+handed over, or, where the ISAC accepts showing circle co-membership, picked
+from a list of the firms in that bound. Either way the bound is checked when
+the grant is made, so a firm posted directly, past the list, is the same 404.
 
 **Keys.** Each document has its own key (DEK), sealed under the instance key
 with the document's id. Every version and comment is sealed under the DEK and
@@ -78,6 +82,7 @@ from aivs_server.auth.policy import (
     within_tlp_ceiling,
 )
 from aivs_server.auth.secretbox import SecretBox, SecretPurpose
+from aivs_server.config import RecipientLookup
 from aivs_server.db.engine import get_sessionmaker
 from aivs_server.db.models import (
     Circle,
@@ -105,7 +110,7 @@ __all__ = [
     "grant_access",
     "list_documents",
     "list_grants",
-    "own_firm_principals",
+    "nameable_principals",
     "read_document",
     "revoke_grant",
     "rotate_sharing_code",
@@ -545,6 +550,7 @@ async def grant_access(
     principal: GrantPrincipal,
     principal_id: uuid.UUID | None,
     sharing_code: str | None,
+    lookup: RecipientLookup,
     permission: DocumentPermission,
     expires_at: dt.datetime | None,
     now: dt.datetime,
@@ -553,9 +559,9 @@ async def grant_access(
 
     Only the owner organisation's editors grant: a grantee elsewhere cannot
     pass the document on, so no grant ever reaches past the owner's choice.
-    Inside its own firm the owner names by id. Another firm it names only by
-    the sharing code that firm handed over: the code is its consent to be
-    found, and SF-2's bound still applies once it resolves.
+    Inside its own firm the owner names by id. Another firm it names by the
+    sharing code that firm handed over (its consent to be found), or, where
+    the instance offers the picker, by id; SF-2's bound applies either way.
     """
     granter = _person(ctx)
     async with _staff(session, ctx) as db:
@@ -565,7 +571,9 @@ async def grant_access(
         if ctx.org_id != document.owner_org_id:
             raise DocumentNotFoundError
         _require_open(document)
-        named = await _named(db, document.owner_org_id, principal, principal_id, sharing_code)
+        named = await _named(
+            db, document.owner_org_id, principal, principal_id, sharing_code, lookup
+        )
         if named is None or not await _may_name(db, document.owner_org_id, principal, named):
             raise DocumentNotFoundError
         if expires_at is not None and expires_at <= now:
@@ -594,13 +602,16 @@ async def _named(
     principal: GrantPrincipal,
     principal_id: uuid.UUID | None,
     sharing_code: str | None,
+    lookup: RecipientLookup,
 ) -> uuid.UUID | None:
-    """The principal a grant names: by id within the owner's firm, by code beyond it."""
+    """The principal a grant names: by id within the owner's firm; beyond it by
+    code, or by id where the instance offers the picker."""
     if sharing_code is not None:
         if principal is not GrantPrincipal.ORGANIZATION or principal_id is not None:
             return None
         return await _resolve_sharing_code(db, sharing_code)
-    if principal is GrantPrincipal.ORGANIZATION and principal_id != owner_org_id:
+    is_other_firm = principal is GrantPrincipal.ORGANIZATION and principal_id != owner_org_id
+    if is_other_firm and lookup is not RecipientLookup.PICKER:
         return None
     return principal_id
 
@@ -921,35 +932,48 @@ async def _grant_view(db: AsyncSession, grant: DocumentGrant) -> GrantView:
     )
 
 
-async def own_firm_principals(
-    session: AsyncSession, ctx: AuthContext
+async def nameable_principals(
+    session: AsyncSession, ctx: AuthContext, *, lookup: RecipientLookup
 ) -> list[tuple[GrantPrincipal, uuid.UUID, str]]:
-    """Whom the caller may name inside its own firm: the firm, and its active people.
+    """Whom the caller may pick to share with: its firm, its active people, and,
+    where the instance offers the picker, the other firms in SF-2's bound.
 
     Read staff side because the member login holds nothing on ``operators``.
-    Its own firm only: listing other firms would show the circle membership
-    graph, a protected asset.
+    Other firms only under the picker: listing them shows the circle
+    membership graph, a protected asset, and the ISAC chose to show it (R40).
     """
     if not can_write_documents(ctx):
         return []
     async with _staff(session, ctx) as db:
-        firm = await db.get(Organization, ctx.org_id)
-        people = (
-            await db.scalars(
-                select(Operator)
-                .where(Operator.org_id == ctx.org_id, Operator.is_active.is_(True))
-                .order_by(Operator.display_name, Operator.id)
+        named = await _own_firm(db, ctx)
+        if lookup is RecipientLookup.PICKER:
+            firms = await db.scalars(
+                _firms_in_bound(ctx.org_id).distinct().order_by(Organization.name, Organization.id)
             )
-        ).all()
-        named: list[tuple[GrantPrincipal, uuid.UUID, str]] = []
-        if firm is not None:
-            named.append((GrantPrincipal.ORGANIZATION, firm.id, f"{firm.name} (everyone)"))
-        named.extend(
-            (GrantPrincipal.OPERATOR, person.id, person.display_name)
-            for person in people
-            if person.id != ctx.operator_id
-        )
+            named.extend((GrantPrincipal.ORGANIZATION, firm.id, firm.name) for firm in firms)
         return named
+
+
+async def _own_firm(
+    db: AsyncSession, ctx: AuthContext
+) -> list[tuple[GrantPrincipal, uuid.UUID, str]]:
+    firm = await db.get(Organization, ctx.org_id)
+    people = (
+        await db.scalars(
+            select(Operator)
+            .where(Operator.org_id == ctx.org_id, Operator.is_active.is_(True))
+            .order_by(Operator.display_name, Operator.id)
+        )
+    ).all()
+    named: list[tuple[GrantPrincipal, uuid.UUID, str]] = []
+    if firm is not None:
+        named.append((GrantPrincipal.ORGANIZATION, firm.id, f"{firm.name} (everyone)"))
+    named.extend(
+        (GrantPrincipal.OPERATOR, person.id, person.display_name)
+        for person in people
+        if person.id != ctx.operator_id
+    )
+    return named
 
 
 # ---------------------------------------------------------------------------

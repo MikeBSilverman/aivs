@@ -62,8 +62,9 @@ class CommentIn(_In):
 
 
 class GrantIn(_In):
-    """Within the owner's firm a principal is named by id; another firm only by
-    the sharing code it handed over (its consent to be found)."""
+    """Within the owner's firm a principal is named by id. Another firm by the
+    sharing code it handed over (its consent to be found), or by id where the
+    instance offers the picker (``document_recipient_lookup``)."""
 
     principal_type: GrantPrincipal
     principal_id: uuid.UUID | None = None
@@ -300,7 +301,11 @@ async def list_grants(
     "/{document_id}/grants", status_code=status.HTTP_201_CREATED, response_model=CreatedOut
 )
 async def grant_access(
-    document_id: uuid.UUID, payload: GrantIn, ctx: AuthenticatedContext, session: SessionDep
+    document_id: uuid.UUID,
+    payload: GrantIn,
+    ctx: AuthenticatedContext,
+    session: SessionDep,
+    settings: SettingsDep,
 ) -> CreatedOut:
     """Share the document with one principal the owner may name (SF-2)."""
     _person(ctx)
@@ -312,6 +317,7 @@ async def grant_access(
             principal=payload.principal_type,
             principal_id=payload.principal_id,
             sharing_code=payload.sharing_code,
+            lookup=settings.document_recipient_lookup,
             permission=payload.permission,
             expires_at=payload.expires_at,
             now=await database_now(session),

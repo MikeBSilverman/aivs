@@ -1,0 +1,17 @@
+Mutation M1182: the picker offers every firm with an open interval in any circle
+Re-applies: no earlier commit; the recipient lookup is new in Phase I slice I2b (Q43), and this is the rule it would most easily lose
+
+Expect red: packages/aivs-server/tests/unit/test_documents.py::test_the_picker_offers_only_co_members_with_an_open_interval
+Expect red: packages/aivs-server/tests/unit/test_documents.py::test_under_the_picker_a_firm_posted_past_the_list_is_the_constant_not_found
+
+diff --git a/packages/aivs-server/src/aivs_server/services/documents.py b/packages/aivs-server/src/aivs_server/services/documents.py
+--- a/packages/aivs-server/src/aivs_server/services/documents.py
++++ b/packages/aivs-server/src/aivs_server/services/documents.py
+@@ -290,7 +290,6 @@
+         .join(mine, mine.circle_id == theirs.circle_id)
+         .join(Circle, Circle.id == theirs.circle_id)
+         .where(
+-            mine.org_id == owner_org_id,
+             mine.left_at.is_(None),
+             theirs.left_at.is_(None),
+             Circle.is_active.is_(True),

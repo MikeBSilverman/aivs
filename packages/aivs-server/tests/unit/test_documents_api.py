@@ -10,10 +10,13 @@ from __future__ import annotations
 import uuid
 
 import pytest
+from pydantic import ValidationError
 
 from aivs_schemas.enums import CircleRole, OperatorRole, OrgType
+from aivs_server.config import RecipientLookup
 from aivs_server.portal.shared import NOTICE_COOKIE
 from tests.conftest import proxy_headers
+from tests.unit.test_smtp_settings import _settings
 from tests.unit.test_vulnerability_page import _get, _post, _reader
 
 pytestmark = [pytest.mark.db, pytest.mark.requirement("SF-99")]
@@ -185,12 +188,28 @@ async def test_unshared_documents_are_404_to_another_firm_and_listed_to_nobody_e
 # The portal
 # ---------------------------------------------------------------------------
 @pytest.fixture
-async def portal(session, settings, make_org, make_cert, make_operator):
+def picker(app, monkeypatch):
+    """The instance as an ISAC that chose the picker (Q43)."""
+    chosen = app.state.settings.model_copy(
+        update={"document_recipient_lookup": RecipientLookup.PICKER}
+    )
+    monkeypatch.setattr(app.state, "settings", chosen)
+
+
+@pytest.fixture
+async def portal(session, settings, make_org, make_cert, make_operator, make_circle, join_circle):
+    """A firm, a co-member sharing a circle with it, and another firm sharing none."""
     org = await make_org("portal-firm", org_type=OrgType.GSIB)
     pem, _ = await make_cert(org)
+    co_member = await make_org("portal-peer", org_type=OrgType.GSIB)
+    circle = await make_circle("portal-documents")
+    for member in (org, co_member):
+        await join_circle(member, circle, role=CircleRole.MEMBER)
     other = await make_org("portal-other", org_type=OrgType.GSIB)
     other_pem, _ = await make_cert(other)
     return {
+        "co_member": co_member,
+        "other": other,
         "author": await _reader(
             session, settings, make_operator, org, pem, roles=(OperatorRole.ANALYST,)
         ),
@@ -243,15 +262,96 @@ async def test_the_portal_shows_a_new_sharing_code_once_and_never_in_a_cookie(cl
     assert refused.status_code == 403
 
 
+@pytest.mark.requirement("SF-100")
 async def test_the_share_form_lists_only_the_owners_own_firm(client, session, portal):
-    """Another firm is named by code alone: listing firms would show the membership graph."""
+    """Another firm is named by code alone: listing firms would show the membership
+    graph, a co-member's place in it included."""
+    page = await _get(client, portal["author"], await _drafted(client, portal))
+
+    assert "Portal Firm (everyone)" in page.text
+    assert "Portal Peer" not in page.text
+    assert "Portal Other" not in page.text
+
+
+async def _drafted(client, portal) -> str:
     created_page = await _post(
         client,
         portal["author"],
         "/portal/documents",
         {"title": "Form", "tlp": "amber", "body": "Text."},
     )
-    page = await _get(client, portal["author"], created_page.headers["location"])
+    assert created_page.status_code == 303, created_page.text
+    return str(created_page.headers["location"])
 
-    assert "Portal Firm (everyone)" in page.text
+
+# ---------------------------------------------------------------------------
+# The picker (Q43), where the ISAC chose it
+# ---------------------------------------------------------------------------
+@pytest.mark.requirement("SF-100")
+def test_the_recipient_lookup_is_one_of_its_two_names_or_the_instance_refuses_to_start():
+    assert _settings().document_recipient_lookup is RecipientLookup.CODE
+    chosen = _settings(document_recipient_lookup="picker")
+    assert chosen.document_recipient_lookup is RecipientLookup.PICKER
+    for unknown in ("list", "PICKER", ""):
+        with pytest.raises(ValidationError):
+            _settings(document_recipient_lookup=unknown)
+
+
+@pytest.mark.requirement("SF-100")
+async def test_under_the_picker_the_share_form_lists_co_members_only(client, portal, picker):
+    page = await _get(client, portal["author"], await _drafted(client, portal))
+
+    assert "Portal Peer" in page.text
     assert "Portal Other" not in page.text
+
+
+@pytest.mark.requirement("SF-100")
+async def test_under_the_picker_a_firm_posted_past_the_form_is_the_constant_404(
+    client, portal, picker
+):
+    """Someone can post the form directly: a firm outside the bound, by id, is the
+    same 404 as a document that does not exist."""
+    page_path = await _drafted(client, portal)
+    absent_path = f"/portal/documents/{uuid.uuid4()}"
+
+    async def share(path: str, firm) -> object:
+        return await _post(
+            client,
+            portal["author"],
+            f"{path}/grants",
+            {"target": f"organization:{firm.id}", "permission": "view"},
+        )
+
+    outside = await share(page_path, portal["other"])
+    absent = await share(absent_path, portal["other"])
+    picked = await share(page_path, portal["co_member"])
+
+    assert outside.status_code == absent.status_code == 404
+    assert outside.content == absent.content
+    assert picked.status_code == 303, picked.text
+
+
+@pytest.mark.requirement("SF-100")
+async def test_under_the_picker_the_api_names_a_co_member_by_id(client, firms, picker):
+    document_id = await created(client, firms["owner"]["person"])
+
+    async def grant(org, target: str = document_id):
+        return await client.post(
+            f"{API}/{target}/grants",
+            json={
+                "principal_type": "organization",
+                "principal_id": str(org.id),
+                "permission": "view",
+            },
+            headers=firms["owner"]["person"],
+        )
+
+    outside = await grant(firms["outsider"]["org"])
+    absent = await grant(firms["peer"]["org"], target=str(uuid.uuid4()))
+    picked = await grant(firms["peer"]["org"])
+
+    assert outside.status_code == absent.status_code == 404
+    assert outside.content == absent.content
+    assert picked.status_code == 201, picked.text
+    read = await client.get(f"{API}/{document_id}", headers=firms["peer"]["person"])
+    assert read.status_code == 200

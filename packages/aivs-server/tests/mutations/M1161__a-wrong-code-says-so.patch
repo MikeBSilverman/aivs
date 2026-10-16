@@ -6,7 +6,7 @@ Expect red: packages/aivs-server/tests/unit/test_documents_api.py::test_a_wrong_
 diff --git a/packages/aivs-server/src/aivs_server/services/documents.py b/packages/aivs-server/src/aivs_server/services/documents.py
 --- a/packages/aivs-server/src/aivs_server/services/documents.py
 +++ b/packages/aivs-server/src/aivs_server/services/documents.py
-@@ -594,7 +594,10 @@
+@@ -609,7 +609,10 @@
      if sharing_code is not None:
          if principal is not GrantPrincipal.ORGANIZATION or principal_id is not None:
              return None
@@ -15,6 +15,6 @@ diff --git a/packages/aivs-server/src/aivs_server/services/documents.py b/packag
 +        if found is None:
 +            raise DocumentRefusedError("no firm has that sharing code")
 +        return found
-     if principal is GrantPrincipal.ORGANIZATION and principal_id != owner_org_id:
+     is_other_firm = principal is GrantPrincipal.ORGANIZATION and principal_id != owner_org_id
+     if is_other_firm and lookup is not RecipientLookup.PICKER:
          return None
-     return principal_id

@@ -30,6 +30,7 @@ from aivs_server.audit.log import AuditAction
 from aivs_server.auth.context import AuthContext, AuthMethod
 from aivs_server.auth.policy import PolicyDeniedError
 from aivs_server.auth.secretbox import SecretBox
+from aivs_server.config import RecipientLookup
 from aivs_server.db.models import (
     AuditLog,
     Document,
@@ -150,6 +151,7 @@ async def share(session, world, document_id, principal, principal_id, **kwargs: 
         principal=principal,
         principal_id=None if code is not None else principal_id,
         sharing_code=code,
+        lookup=kwargs.pop("lookup", RecipientLookup.CODE),
         permission=kwargs.pop("permission", DocumentPermission.VIEW),
         expires_at=kwargs.pop("expires_at", None),
         now=kwargs.pop("now", NOW),
@@ -491,6 +493,7 @@ async def test_a_grantee_cannot_pass_the_document_on(session, secret_box, world)
             principal=GrantPrincipal.ORGANIZATION,
             principal_id=None,
             sharing_code=world["codes"][world["peer"].id],
+            lookup=RecipientLookup.CODE,
             permission=DocumentPermission.EDIT,
             expires_at=None,
             now=NOW,
@@ -648,6 +651,7 @@ async def test_offboarding_archives_the_firms_documents_and_ends_every_grant_tou
         principal=GrantPrincipal.ORGANIZATION,
         principal_id=None,
         sharing_code=world["codes"][world["owner"].id],
+        lookup=RecipientLookup.CODE,
         permission=DocumentPermission.VIEW,
         expires_at=None,
         now=NOW,
@@ -734,6 +738,7 @@ async def test_another_firm_is_not_named_by_its_id(session, secret_box, world):
             principal=GrantPrincipal.ORGANIZATION,
             principal_id=world["peer"].id,
             sharing_code=None,
+            lookup=RecipientLookup.CODE,
             permission=DocumentPermission.VIEW,
             expires_at=None,
             now=NOW,
@@ -749,6 +754,7 @@ async def _by_code(session, world, document_id, code: str):
         principal=GrantPrincipal.ORGANIZATION,
         principal_id=None,
         sharing_code=code,
+        lookup=RecipientLookup.CODE,
         permission=DocumentPermission.VIEW,
         expires_at=None,
         now=NOW,
@@ -791,3 +797,77 @@ async def test_the_code_is_stored_only_as_its_hash_and_its_rotation_audited(sess
         )
     ).all()
     assert code not in str(audited.details)
+
+
+# ---------------------------------------------------------------------------
+# The picker (Q43): another firm picked from a list, where the ISAC chose it
+# ---------------------------------------------------------------------------
+@pytest.fixture
+async def beyond(session, world, make_org, make_circle, join_circle):
+    """Firms the picker must not offer: one whose interval in the owner's circle
+    has ended, and the outsider, open in a circle the owner is not in."""
+    ended = await make_org("ended-bank", org_type=OrgType.GSIB)
+    membership = await join_circle(ended, world["circle"])
+    membership.left_at = NOW - dt.timedelta(days=1)
+    membership.ended_by = "operator"
+    await join_circle(world["outsider"], await make_circle("elsewhere"))
+    await session.commit()
+    return {"ended": ended, "outsider": world["outsider"]}
+
+
+async def listed_firms(session, world, lookup: RecipientLookup) -> set[uuid.UUID]:
+    named = await documents.nameable_principals(session, ctx_of(world, "author"), lookup=lookup)
+    others = {pid for kind, pid, _name in named if kind is GrantPrincipal.ORGANIZATION}
+    return others - {world["owner"].id}
+
+
+async def pick(session, world, document_id, org_id, lookup: RecipientLookup):
+    """Name another firm by id, as the share form posts it."""
+    return await documents.grant_access(
+        session,
+        ctx_of(world, "author"),
+        document_id,
+        principal=GrantPrincipal.ORGANIZATION,
+        principal_id=org_id,
+        sharing_code=None,
+        lookup=lookup,
+        permission=DocumentPermission.VIEW,
+        expires_at=None,
+        now=NOW,
+    )
+
+
+@pytest.mark.requirement("SF-100")
+async def test_under_code_the_list_offers_no_other_firm(session, world, beyond):
+    """The default shows nobody which firms share a circle, co-members included."""
+    assert await listed_firms(session, world, RecipientLookup.CODE) == set()
+
+
+@pytest.mark.requirement("SF-100")
+async def test_the_picker_offers_only_co_members_with_an_open_interval(session, world, beyond):
+    assert await listed_firms(session, world, RecipientLookup.PICKER) == {world["peer"].id}
+
+
+@pytest.mark.requirement("SF-100")
+async def test_under_the_picker_a_listed_firm_is_named_by_id_and_reads(session, secret_box, world):
+    document_id = await create(session, secret_box, world)
+
+    await pick(session, world, document_id, world["peer"].id, RecipientLookup.PICKER)
+
+    view = await read(session, secret_box, ctx_of(world, "peer_one"), document_id)
+    assert view.body == BODY
+
+
+@pytest.mark.requirement("SF-100")
+async def test_under_the_picker_a_firm_posted_past_the_list_is_the_constant_not_found(
+    session, secret_box, world, beyond
+):
+    """Someone can post the form directly: the bound is checked at the grant."""
+    document_id = await create(session, secret_box, world)
+
+    for firm in beyond.values():
+        with pytest.raises(DocumentNotFoundError) as posted:
+            await pick(session, world, document_id, firm.id, RecipientLookup.PICKER)
+        with pytest.raises(DocumentNotFoundError) as absent:
+            await pick(session, world, uuid.uuid4(), firm.id, RecipientLookup.PICKER)
+        assert str(posted.value) == str(absent.value), firm.name

@@ -302,7 +302,7 @@ failed its baseline on a test the targeted run had not included
 (`test_one_clock`'s allow-list), and an hour of shards was spent finding a
 failure the suite would have shown in eight minutes (T1).
 
-**A patch that applies is not a patch in the right place.** Three ways a
+**A patch that applies is not a patch in the right place.** Four ways a
 proof stops proving what it names while still applying cleanly:
 
 - **A moved patch can land on a lookalike line.** M944 was regenerated onto a
@@ -310,6 +310,14 @@ proof stops proving what it names while still applying cleanly:
   cleanly, and showed up only as PARTLY KILLED. After moving or regenerating
   a patch, diff its new hunk against the old one, and read PARTLY KILLED as a
   placement problem before a test problem.
+- **Anchor a patch on a line its own function owns.** Several membership
+  predicates in `policy.py` end in the same `return is_isac_membership(ctx)`;
+  a patch generated from "that return, then the next `def`" mutated
+  `can_set_legal_hold` instead of the predicate it was named for (M1190, first
+  draft), and inserting a function between two predicates moved what such a
+  patch hit (M1174). Include the function's own name or docstring in the
+  hunk's context, and read the generated hunk's `@@` line, which names the
+  enclosing function.
 - **A removed function lives on in the patches.** When you rename or delete
   a function, grep `tests/mutations/` for it as well as the source. A patch
   that *adds* a call has no context line to break: M606 still imported a

@@ -211,6 +211,14 @@ call shape, with the argument written beside it. A top-level `[[allowlists]]`
 with `targetRules` parsed cleanly in gitleaks 8.28 and was silently not
 applied, which is the same shape as the semgrep and pip-audit defaults above.
 
+**A test that asserts "gone" must first assert "there".** The offboarding
+test read the data inventory's operational tables and asserted the member
+held none of their rows afterwards, never that it held any before. Three
+tables its fixture left empty passed whatever offboarding did, and one of
+them (`inbound_emails`, misclassified as operational) was not deleted at all.
+An assertion of absence over a list is vacuous for every entry that started
+empty; assert the list was populated, so a new entry nobody fills fails.
+
 **A refusal test must show which check refused.** The end-to-end test for a
 certificate signed by the root CA passed while the CA pin it is named for was
 disabled: the certificate was not registered, so it was refused anyway. Assert

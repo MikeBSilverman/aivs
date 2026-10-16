@@ -272,6 +272,22 @@ green", and the proof looked like a gap in the tests rather than in the
 patch (T1, slice 3c). Move the call, keep the name: a patch re-applies the
 defect, and a fixture failing is not the defect.
 
+**A proof is retired only with the code it guards, and never for being
+covered.** When a commit removes a code path by design, its proof goes in
+that commit, the message says why and names the proof that still covers the
+property, and the id stays unused (M1089, slice 3g). A proof that survives
+because another guard covers for it is the other case, and it is not
+retired: it is a test gap, closed by a test that shows which check refused
+(M600 and M1089 in slice 3f, where the first draft called the proof invalid).
+
+**A mutation's defect must not depend on row order, or on where an object
+was loaded.** M1074 took `select(Operator).limit(1)` with no ORDER BY and was
+killed in one run and survived the next; it now takes the oldest by a stated
+order. M1102 and M1103 moved a service call onto the member session while
+the row stayed loaded on the staff one, and an ORM object flushes on the
+session that loaded it, so the defect never reached the login it was meant
+to test. Move the load with the write (T1, slices 3e-3g).
+
 **Run the full suite before a commit's mutation proofs.** A proof's baseline
 is its named tests passing on the unmutated tree; 3e's first mutation run
 failed its baseline on a test the targeted run had not included

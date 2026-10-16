@@ -10,9 +10,10 @@ from __future__ import annotations
 
 import datetime as dt
 import uuid
+from typing import Any
 
 import pytest
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy import text as sqlalchemy_text
 from sqlalchemy.exc import DBAPIError
 
@@ -25,9 +26,16 @@ from aivs_schemas.enums import (
     SubmissionState,
 )
 from aivs_schemas.extension.builders import AIVS_INTEL_EXTENSION_ID
+from aivs_server.api import submissions as submissions_api
 from aivs_server.audit.log import AuditAction
-from aivs_server.db.models import AuditLog, Circle, Submission, SubmissionTransition
+from aivs_server.auth.context import AuthContext, AuthMethod
+from aivs_server.auth.memberships import load_circle_grants
+from aivs_server.db.engine import get_sessionmaker
+from aivs_server.db.models import AuditLog, Circle, Distribution, Submission, SubmissionTransition
 from aivs_server.services.contributions import within_hourly_allowance
+from aivs_server.services.member_staff_writes import publish_own_post_moderated
+from aivs_server.services.submissions import load_submission, record_transition
+from tests.conftest import TEST_ATTRIBUTION_KEY
 from tests.unit.contribution_world import (
     LATER,
     STAMP,
@@ -506,6 +514,18 @@ async def test_a_note_reusing_another_firms_id_waits_without_being_told_whose(
         (SubmissionState.DRAFT, "created"),
         (SubmissionState.SUBMITTED, None),
     ], "the member's own submit, and nothing the refused publication wrote"
+    # Which check refused: the lane's own fallback, which keeps the reason for
+    # the ISAC where the member cannot read it. The route's catch of a failed
+    # publication would hide the reason too, so the outcome alone cannot say.
+    kept = await session.scalar(
+        select(func.count())
+        .select_from(AuditLog)
+        .where(
+            AuditLog.action == AuditAction.CONTRIBUTION_SENT_TO_REVIEW,
+            AuditLog.resource_id == filed.json()["id"],
+        )
+    )
+    assert kept == 1, "the refusal's reason is kept for the ISAC"
 
 
 @pytest.mark.requirement("SF-66")
@@ -648,3 +668,90 @@ async def draft_response(client, headers, objects: list[dict], *, tlp: str):
         },
         headers=headers,
     )
+
+
+# ---------------------------------------------------------------------------
+# Publication on the staff login (Phase P slice 3f)
+# ---------------------------------------------------------------------------
+async def _published_rows(session, submission_id: uuid.UUID) -> int:
+    return await session.scalar(
+        select(func.count())
+        .select_from(Distribution)
+        .where(Distribution.submission_id == submission_id)
+    )
+
+
+@pytest.mark.requirement("SF-66")
+async def test_a_submission_returned_between_its_submit_and_its_publication_is_not_published(
+    client, session, world, monkeypatch
+):
+    """The submit commits on the member login and the publication follows on the
+    staff login (``member_staff_writes``); the triage job may return the
+    submission in between. The publication re-reads it under its own lock and
+    leaves it returned, and the member is told where it is."""
+    await post_moderation(client, world, enabled=True)
+    filed = await draft(client, world.member.person, [note_about(world.published)])
+    submission_id = uuid.UUID(filed.json()["id"])
+    publish = submissions_api.publish_own_post_moderated
+
+    async def returned_first(member_session, ctx, returned_id, **options: Any):
+        async with get_sessionmaker()() as triage:
+            row = await load_submission(triage, returned_id, for_update=True)
+            await record_transition(
+                triage, None, row, SubmissionState.RETURNED, reason="first pass: needs changes"
+            )
+            await triage.commit()
+        return await publish(member_session, ctx, returned_id, **options)
+
+    monkeypatch.setattr(submissions_api, "publish_own_post_moderated", returned_first)
+    submitted = await client.post(
+        f"{API}/submissions/{submission_id}/submit", json={}, headers=world.member.person
+    )
+
+    assert submitted.status_code == 200, submitted.text
+    assert submitted.json()["state"] == SubmissionState.RETURNED.value
+    assert await _published_rows(session, submission_id) == 0
+
+
+async def _signed_in(session, party) -> AuthContext:
+    return AuthContext(
+        org_id=party.org.id,
+        org_slug=party.org.slug,
+        org_type=party.org.org_type,
+        org_status=party.org.status,
+        auth_method=AuthMethod.PORTAL_SESSION,
+        circles=await load_circle_grants(session, party.org.id),
+        operator_id=party.operator.id,
+        operator_roles=frozenset(party.operator.roles),
+    )
+
+
+@pytest.mark.requirement("SF-66")
+async def test_only_its_filer_has_a_submitted_contribution_published(client, session, world):
+    """Waiting for review, then a circle opened to post-moderation: a peer asking
+    for it to be published is refused, its filer is not."""
+    filed = await draft(client, world.member.person, [note_about(world.published)])
+    await submit(client, session, world.member.person, filed)
+    await post_moderation(client, world, enabled=True)
+    submission_id = uuid.UUID(filed.json()["id"])
+
+    # The vendor contributes to the circle, so only the owner check stops it.
+    by_peer = await publish_own_post_moderated(
+        session,
+        await _signed_in(session, world.vendor),
+        submission_id,
+        hourly_limit=10,
+        key=TEST_ATTRIBUTION_KEY,
+    )
+    assert not by_peer
+    assert await _published_rows(session, submission_id) == 0
+
+    by_filer = await publish_own_post_moderated(
+        session,
+        await _signed_in(session, world.member),
+        submission_id,
+        hourly_limit=10,
+        key=TEST_ATTRIBUTION_KEY,
+    )
+    assert by_filer
+    assert await _published_rows(session, submission_id) > 0

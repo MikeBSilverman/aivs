@@ -55,10 +55,9 @@ from aivs_server.services.contributions import (
     FilingNeedsAnEditorError,
     OneClick,
     TargetNotFoundError,
-    contribute,
 )
 from aivs_server.services.member_staff_reads import own_posture_of, own_postures_of
-from aivs_server.services.member_staff_writes import record_own_posture
+from aivs_server.services.member_staff_writes import contribute_own, record_own_posture
 from aivs_server.services.posture import (
     PostureError,
     VexStatement,
@@ -206,13 +205,12 @@ async def one_click(
     Published at once when the lane rule allows; otherwise filed for review.
     """
     try:
-        submission = await contribute(
+        submission = await contribute_own(
             session,
             ctx,
             target_id=payload.target,
             kind=payload.kind,
             hourly_limit=settings.contribution_hourly_limit,
-            now=await database_now(session),
             key=key,
         )
         await session.commit()

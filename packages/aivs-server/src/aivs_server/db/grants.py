@@ -136,13 +136,17 @@ MEMBER_GRANTS: Final[Mapping[str, TableGrant]] = MappingProxyType(
                 "updated_at",
             ),
         ),
-        # Replacing a draft's bundle deletes and inserts; distribution sets
-        # ``created_by_ref`` and the marking in ``raw``.
-        "public.stix_objects": TableGrant(("SELECT", "INSERT", "DELETE"), update_columns=("raw",)),
+        # Replacing a draft's bundle deletes and inserts. No UPDATE of ``raw``:
+        # only distribution and validation rewrite it, both staff side since
+        # slice 3f, and with it SQL on the member path could rewrite any
+        # distributed object's content.
+        "public.stix_objects": TableGrant(("SELECT", "INSERT", "DELETE")),
         # Retrievals are recorded on the member path; a member's own receipts
         # are read, and its assertions made, staff side (slice 3e: R26).
         "public.acknowledgments": _WRITE_ONLY,
-        "public.distributions": TableGrant(("SELECT", "INSERT")),
+        # Read for visibility; written only staff side (slice 3f: R33), or SQL
+        # on the member path could publish any object into any circle.
+        "public.distributions": _READ,
         # Queuing a notification row-locks the webhooks it reads
         # (``db.webhook_lock``), and Postgres allows a row lock only with UPDATE
         # on some column: ``updated_at``, which changes nothing anyone relies on.

@@ -24,6 +24,7 @@ from fastapi import APIRouter, Form, HTTPException, Request, Response, status
 from fastapi.responses import HTMLResponse
 from pydantic import ValidationError
 from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from aivs_schemas.enums import TLP, CertStatus, OrgStatus, ReadingDepth, SubmissionState
 from aivs_schemas.models import SubmissionCreate
@@ -85,7 +86,7 @@ from aivs_server.portal.shared import (
 from aivs_server.portal.submitter_view import lint_hits, telemetry_rows
 from aivs_server.services.attribution import is_submitted_by, submissions_filed_by
 from aivs_server.services.bulk_validation import GroupMemberNotFoundError, validate_group
-from aivs_server.services.contributions import submit_submission
+from aivs_server.services.contributions import NEEDS_AN_EDITOR, submit_submission
 from aivs_server.services.distribution import DistributionError, distribute_submission
 from aivs_server.services.isac_drafts import WaitingDraft, waiting_isac_drafts
 from aivs_server.services.member_staff_reads import (
@@ -93,6 +94,7 @@ from aivs_server.services.member_staff_reads import (
     own_default_depth,
     submission_history,
 )
+from aivs_server.services.member_staff_writes import publish_own_post_moderated
 from aivs_server.services.provenance import consequential_changes
 from aivs_server.services.proxy_filing import awaiting_confirmation, confirm_proxy_filing
 from aivs_server.services.publication import PublicationPausedError
@@ -910,8 +912,10 @@ async def perform_action(
         # circle", "the hold-until time could not be read") are ordinary operator
         # mistakes raised as SubmissionError, and outside the block they reached
         # the catch-all handler and became a 500.
-        await _perform_verb(verb, targets, request, settings, session, ctx, submission, key=key)
+        await _perform_verb(verb, targets, request, session, ctx, submission, key=key)
         await session.commit()
+        if verb == "submit":
+            await _publish_if_post_moderated(response, settings, session, ctx, submission_id, key)
     except (SubmissionError, DistributionError, PublicationPausedError, ValueError) as exc:
         await session.rollback()
         # The same refusal the API records (api.submissions._refused), through
@@ -930,11 +934,34 @@ async def perform_action(
     return response
 
 
+async def _publish_if_post_moderated(
+    response: Response,
+    settings: Settings,
+    session: AsyncSession,
+    ctx: AuthContext,
+    submission_id: uuid.UUID,
+    key: AttributionKey,
+) -> None:
+    """After a submit has committed, publish it if a post-moderated circle takes it.
+
+    A transaction of its own (``member_staff_writes``). The submit happened
+    whatever this decides, so a refusal here is not the submit refused: the
+    person is told it waits for an editor, and the page shows where it is.
+    """
+    try:
+        await publish_own_post_moderated(
+            session, ctx, submission_id, hourly_limit=settings.contribution_hourly_limit, key=key
+        )
+        await session.commit()
+    except (SubmissionError, DistributionError, PublicationPausedError):
+        await session.rollback()
+        set_notice(response, settings, "info", NEEDS_AN_EDITOR)
+
+
 async def _perform_verb(
     verb: str,
     targets: dict[str, SubmissionState],
     request: Request,
-    settings: Settings,
     session: SessionDep,
     ctx: AuthContext,
     submission: Submission,
@@ -954,15 +981,7 @@ async def _perform_verb(
         reason = str((await request.form()).get("reason", "")).strip()
         await revoke_contribution(session, ctx, submission, key=key, reason=reason)
     elif verb == "submit":
-        await submit_submission(
-            session,
-            ctx,
-            submission,
-            reason=None,
-            hourly_limit=settings.contribution_hourly_limit,
-            now=now,
-            key=key,
-        )
+        await submit_submission(session, ctx, submission, reason=None, key=key)
     elif verb == "validate":
         acknowledged = frozenset(
             str(value) for value in (await request.form()).getlist("acknowledge")

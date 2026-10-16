@@ -1,0 +1,18 @@
+Mutation M1086: the member login keeps INSERT on distributions
+Re-applies: MEMBER_GRANTS before Phase P slice 3f (R33)
+
+Expect red: packages/aivs-server/tests/migrations/test_member_login_grants.py::test_every_table_is_classified_and_granted_as_classified
+Expect red: packages/aivs-server/tests/migrations/test_member_login_grants.py::test_the_member_login_is_refused_what_its_grants_withhold[publication]
+
+diff --git a/packages/aivs-server/src/aivs_server/db/grants.py b/packages/aivs-server/src/aivs_server/db/grants.py
+--- a/packages/aivs-server/src/aivs_server/db/grants.py
++++ b/packages/aivs-server/src/aivs_server/db/grants.py
+@@ -146,7 +146,7 @@
+         "public.acknowledgments": _WRITE_ONLY,
+         # Read for visibility; written only staff side (slice 3f: R33), or SQL
+         # on the member path could publish any object into any circle.
+-        "public.distributions": _READ,
++        "public.distributions": TableGrant(("SELECT", "INSERT")),
+         # Queuing a notification row-locks the webhooks it reads
+         # (``db.webhook_lock``), and Postgres allows a row lock only with UPDATE
+         # on some column: ``updated_at``, which changes nothing anyone relies on.

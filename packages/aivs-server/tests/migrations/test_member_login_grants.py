@@ -64,7 +64,7 @@ CLASSIFICATION: Final[dict[str, frozenset[str]]] = {
     "public.circle_memberships": _READ,
     "public.circles": _READ,
     "public.client_certificates": _READ,
-    "public.distributions": frozenset({"SELECT", "INSERT"}),
+    "public.distributions": _READ,
     "public.embargoes": _READ,
     "public.instance_controls": _READ,
     "public.organizations": _READ,
@@ -93,7 +93,6 @@ UPDATABLE: Final[dict[str, frozenset[str]]] = {
             "updated_at",
         }
     ),
-    "public.stix_objects": frozenset({"raw"}),
     "public.client_certificates": frozenset(
         {"status", "revoked_at", "revoked_reason", "updated_at"}
     ),
@@ -237,8 +236,19 @@ def _as_member(logins: Logins, statement: str) -> None:
         ),
         pytest.param(
             "UPDATE stix_objects SET owner_token = owner_token",
-            "UPDATE stix_objects SET raw = raw",
+            "SELECT id FROM stix_objects",
             id="owner-token",
+        ),
+        pytest.param(
+            "UPDATE stix_objects SET raw = raw",
+            "SELECT raw FROM stix_objects",
+            id="object-content",
+        ),
+        pytest.param(
+            "INSERT INTO distributions (stix_object_id, circle_id, submission_id, date_added)"
+            " SELECT id, id, id, now() FROM stix_objects WHERE false",
+            "SELECT circle_id FROM distributions",
+            id="publication",
         ),
         pytest.param(
             "UPDATE submissions SET proxy_confirm_by = NULL",

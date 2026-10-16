@@ -1,18 +1,18 @@
 Mutation M944: the portal's one-click decides visibility on the app's clock
-Re-applies: portal/vulnerability_routes.py as H2-1 wrote it (review T2-C6)
+Re-applies: portal/vulnerability_routes.py as H2-1 wrote it (review T2-C6); the click is filed in member_staff_writes since Phase P slice 3f
 
 Expect red: packages/aivs-server/tests/unit/test_vulnerability_page.py::test_a_fast_app_clock_does_not_let_a_portal_click_find_an_embargo
 Expect red: packages/aivs-server/tests/unit/test_one_clock.py::test_no_call_hands_the_app_clock_to_a_visibility_decision
 
-diff --git a/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py b/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py
---- a/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py
-+++ b/packages/aivs-server/src/aivs_server/portal/vulnerability_routes.py
-@@ -504,7 +504,7 @@
+diff --git a/packages/aivs-server/src/aivs_server/services/member_staff_writes.py b/packages/aivs-server/src/aivs_server/services/member_staff_writes.py
+--- a/packages/aivs-server/src/aivs_server/services/member_staff_writes.py
++++ b/packages/aivs-server/src/aivs_server/services/member_staff_writes.py
+@@ -228,7 +228,7 @@
              target_id=target_id,
              kind=kind,
-             hourly_limit=settings.contribution_hourly_limit,
--            now=await database_now(session),
+             hourly_limit=hourly_limit,
+-            now=await database_now(writer),
 +            now=dt.datetime.now(dt.UTC),
              key=key,
          )
-         await session.commit()
+ 

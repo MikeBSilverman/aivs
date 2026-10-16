@@ -76,6 +76,7 @@ from aivs_server.services.contributions import submit_submission
 from aivs_server.services.distribution import DistributionError, distribute_submission
 from aivs_server.services.embargo import EmbargoError, extend_embargo, release_embargo_now
 from aivs_server.services.member_staff_reads import first_pass_of, submission_history
+from aivs_server.services.member_staff_writes import publish_own_post_moderated
 from aivs_server.services.revocation import revoke_contribution
 from aivs_server.services.submissions import (
     STORAGE_ERRORS,
@@ -362,18 +363,20 @@ async def submit(
         session, ctx, submission_id, for_update=True, key=key
     )
     try:
-        await submit_submission(
-            session,
-            ctx,
-            submission,
-            reason=payload.reason,
-            hourly_limit=settings.contribution_hourly_limit,
-            now=await database_now(session),
-            key=key,
-        )
+        await submit_submission(session, ctx, submission, reason=payload.reason, key=key)
         await session.commit()
     except _CLIENT_ERRORS as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    # A transaction of its own, after the submit's (``member_staff_writes``):
+    # the submit stands whatever this decides, and the response says where
+    # the submission now is -- published, waiting for review, or returned.
+    try:
+        await publish_own_post_moderated(
+            session, ctx, submission_id, hourly_limit=settings.contribution_hourly_limit, key=key
+        )
+        await session.commit()
+    except _CLIENT_ERRORS:
+        await session.rollback()
     await session.refresh(submission)
     return await present_submission(session, submission, ctx, key)
 

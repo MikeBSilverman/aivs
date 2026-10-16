@@ -1,0 +1,17 @@
+Mutation M1090: a one-click is published on the member login
+Re-applies: contributions.contribute on the request's session, before Phase P slice 3f
+
+Expect red: packages/aivs-server/tests/unit/test_one_click.py::test_a_person_seeing_a_public_vulnerability_is_published_at_once
+
+diff --git a/packages/aivs-server/src/aivs_server/services/member_staff_writes.py b/packages/aivs-server/src/aivs_server/services/member_staff_writes.py
+--- a/packages/aivs-server/src/aivs_server/services/member_staff_writes.py
++++ b/packages/aivs-server/src/aivs_server/services/member_staff_writes.py
+@@ -223,7 +223,7 @@
+     """
+     async with _writer(session, ctx) as writer:
+         return await contribute(
+-            writer,
++            session,
+             ctx,
+             target_id=target_id,
+             kind=kind,

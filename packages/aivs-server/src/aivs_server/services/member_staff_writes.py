@@ -11,8 +11,27 @@ compromised, cut us off") and sets its notification settings. And since slice
 their own reading depth here too; and since the member login holds nothing on
 ``org_postures`` and only writes ``acknowledgments``, a member's own posture
 and its asserted receipts ("we've acted") are written here, through the
-services that own them (R26). Each function
-here makes one such change on a staff session of its own.
+services that own them (R26). And since slice 3f, which holds the member login
+to reading ``distributions`` and to no UPDATE of ``stix_objects.raw``, a
+member's unreviewed publication -- a one-click, a post-moderated note -- is
+made here too (R33): with INSERT on ``distributions`` and UPDATE on ``raw``,
+SQL on the member path could publish any object into any circle, or rewrite
+the content of one already distributed. Each function here makes one such
+change on a staff session of its own.
+
+**Publication stays one transaction** (CLAUDE.md section 5): the hourly
+allowance's lock and count, the visibility rows, the state changes and the
+audit rows all commit together in the staff transaction, so two parallel
+publications cannot each count the limit minus one. A one-click holds no row
+lock beforehand, so its whole filing runs there. A post-moderated submit is
+two steps: the member's transition to submitted commits first, on the member
+login, and only then is the submission published here. That order is
+forced, not chosen: the submit routes hold the submission's row lock on the
+member session, and a staff transaction taking the same lock would wait on a
+member transaction that is waiting for it -- a deadlock across two
+connections that Postgres cannot see. The second step re-reads the
+submission under its own lock and publishes only what is still submitted and
+still the caller's, so a return by the triage job in between wins.
 
 Every function holds one invariant, and nothing else here makes it true:
 
@@ -36,7 +55,7 @@ from contextlib import asynccontextmanager
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from aivs_schemas.enums import AckType, AckVia, NotificationCadence, ReadingDepth
+from aivs_schemas.enums import AckType, AckVia, NotificationCadence, ReadingDepth, SubmissionState
 from aivs_server.audit.log import AuditAction, record
 from aivs_server.auth.attribution_key import AttributionKey
 from aivs_server.auth.context import AuthContext
@@ -45,6 +64,8 @@ from aivs_server.db.clock import database_now
 from aivs_server.db.engine import get_sessionmaker
 from aivs_server.db.models import Acknowledgment, Organization, OrgPosture, Submission
 from aivs_server.services.acknowledgments import assert_receipt
+from aivs_server.services.attribution import is_submitted_by
+from aivs_server.services.contributions import OneClick, contribute, publish_if_post_moderated
 from aivs_server.services.member_settings import (
     change_notification_settings,
     store_default_depth,
@@ -52,9 +73,12 @@ from aivs_server.services.member_settings import (
 from aivs_server.services.org_status import load_org_for_update
 from aivs_server.services.posture import VexStatement, record_posture
 from aivs_server.services.quarantine import quarantine_org
+from aivs_server.services.submissions import load_submission
 
 __all__ = [
     "assert_own_receipt",
+    "contribute_own",
+    "publish_own_post_moderated",
     "quarantine_organisation",
     "record_own_posture",
     "set_notification_settings",
@@ -181,3 +205,61 @@ async def record_own_posture(
         )
         await writer.refresh(row)
         return row
+
+
+async def contribute_own(
+    session: AsyncSession,
+    ctx: AuthContext,
+    *,
+    target_id: str,
+    kind: OneClick,
+    hourly_limit: int,
+    key: AttributionKey,
+) -> Submission:
+    """File a one-click contribution in the caller's name (``contributions.contribute``).
+
+    The whole filing -- allowance, the submission, its publication or its
+    filing for review -- is one transaction; a refusal leaves nothing.
+    """
+    async with _writer(session, ctx) as writer:
+        return await contribute(
+            writer,
+            ctx,
+            target_id=target_id,
+            kind=kind,
+            hourly_limit=hourly_limit,
+            now=await database_now(writer),
+            key=key,
+        )
+
+
+async def publish_own_post_moderated(
+    session: AsyncSession,
+    ctx: AuthContext,
+    submission_id: uuid.UUID,
+    *,
+    hourly_limit: int,
+    key: AttributionKey,
+) -> bool:
+    """Publish the caller's just-submitted contribution if a post-moderated circle takes it.
+
+    Run after the submit has committed. Re-reads the submission under its own
+    lock: one no longer submitted (the triage job returned it meanwhile), or
+    not the caller's, is not published. Whether it was published.
+    """
+    async with _writer(session, ctx) as writer:
+        submission = await load_submission(writer, submission_id, for_update=True)
+        if (
+            submission is None
+            or submission.state is not SubmissionState.SUBMITTED
+            or not is_submitted_by(key, submission, ctx.org_id)
+        ):
+            return False
+        return await publish_if_post_moderated(
+            writer,
+            ctx,
+            submission,
+            hourly_limit=hourly_limit,
+            now=await database_now(writer),
+            key=key,
+        )

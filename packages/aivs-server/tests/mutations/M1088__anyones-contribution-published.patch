@@ -1,0 +1,16 @@
+Mutation M1088: a submitted contribution is published for whoever asks
+Re-applies: a staff write that lost its owner check (slice 3f)
+
+Expect red: packages/aivs-server/tests/unit/test_post_moderation.py::test_only_its_filer_has_a_submitted_contribution_published
+
+diff --git a/packages/aivs-server/src/aivs_server/services/member_staff_writes.py b/packages/aivs-server/src/aivs_server/services/member_staff_writes.py
+--- a/packages/aivs-server/src/aivs_server/services/member_staff_writes.py
++++ b/packages/aivs-server/src/aivs_server/services/member_staff_writes.py
+@@ -252,7 +252,6 @@
+         if (
+             submission is None
+             or submission.state is not SubmissionState.SUBMITTED
+-            or not is_submitted_by(key, submission, ctx.org_id)
+         ):
+             return False
+         return await publish_if_post_moderated(

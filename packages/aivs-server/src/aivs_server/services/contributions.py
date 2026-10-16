@@ -97,6 +97,7 @@ __all__ = [
     "contribute",
     "fast_lane_problem",
     "filer_problem",
+    "publish_if_post_moderated",
     "publishable_circles",
     "resolve_target",
     "submit_submission",
@@ -593,20 +594,38 @@ async def submit_submission(
     submission: Submission,
     *,
     reason: str | None,
-    hourly_limit: int,
-    now: dt.datetime,
     key: AttributionKey,
 ) -> Submission:
-    """Hand a draft to the ISAC, publishing it at once if a post-moderated circle takes it.
+    """Hand a draft to the ISAC. Does not commit.
 
-    Both surfaces that submit come through here, so the post-moderation rule
-    has one home.
+    Publication by post-moderation is a second step in a transaction of its
+    own (``member_staff_writes.publish_own_post_moderated``), once this one
+    has committed: see that module for why.
     """
     await apply_transition(
         session, ctx, submission, SubmissionState.SUBMITTED, reason=reason, key=key
     )
+    return submission
+
+
+async def publish_if_post_moderated(
+    session: AsyncSession,
+    ctx: AuthContext,
+    submission: Submission,
+    *,
+    hourly_limit: int,
+    now: dt.datetime,
+    key: AttributionKey,
+) -> bool:
+    """Publish a submitted contribution at once if a post-moderated circle takes it.
+
+    Both surfaces that submit come through here, so the post-moderation rule
+    has one home. Whether it was published; otherwise it waits for review.
+    The caller holds the submission under a row lock and has checked that it
+    is still submitted.
+    """
     if submission.source is not SubmissionSource.MEMBER or ctx.operator_id is None:
-        return submission
+        return False
     raws = list(
         (
             await session.execute(
@@ -620,14 +639,13 @@ async def submit_submission(
         # RED is named people on named devices: it is never published unread,
         # whatever the referents' TLP. Checking only the targets let a RED note
         # on a GREEN record reach a whole circle with no editor.
-        return submission
+        return False
     circles = await _post_moderated_circles(session, ctx, raws, now=now)
     if not circles:
-        return submission
+        return False
     if not await within_hourly_allowance(session, ctx.org_id, limit=hourly_limit, now=now):
         await record_rate_limited(ctx, lane=SubmissionLane.POST_MODERATED.value, limit=hourly_limit)
-        return submission
-    await publish_without_review(
+        return False
+    return await publish_without_review(
         session, ctx, submission, lane=SubmissionLane.POST_MODERATED, circle_ids=circles, key=key
     )
-    return submission

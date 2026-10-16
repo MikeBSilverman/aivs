@@ -1,0 +1,18 @@
+Mutation M1087: the member login keeps UPDATE on every object's content
+Re-applies: MEMBER_GRANTS before Phase P slice 3f
+
+Expect red: packages/aivs-server/tests/migrations/test_member_login_grants.py::test_only_the_classified_columns_are_updatable
+Expect red: packages/aivs-server/tests/migrations/test_member_login_grants.py::test_the_member_login_is_refused_what_its_grants_withhold[object-content]
+
+diff --git a/packages/aivs-server/src/aivs_server/db/grants.py b/packages/aivs-server/src/aivs_server/db/grants.py
+--- a/packages/aivs-server/src/aivs_server/db/grants.py
++++ b/packages/aivs-server/src/aivs_server/db/grants.py
+@@ -140,7 +140,7 @@
+         # only distribution and validation rewrite it, both staff side since
+         # slice 3f, and with it SQL on the member path could rewrite any
+         # distributed object's content.
+-        "public.stix_objects": TableGrant(("SELECT", "INSERT", "DELETE")),
++        "public.stix_objects": TableGrant(("SELECT", "INSERT", "DELETE"), update_columns=("raw",)),
+         # Retrievals are recorded on the member path; a member's own receipts
+         # are read, and its assertions made, staff side (slice 3e: R26).
+         "public.acknowledgments": _WRITE_ONLY,

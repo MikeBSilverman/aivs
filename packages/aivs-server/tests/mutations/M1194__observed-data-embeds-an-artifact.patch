@@ -1,0 +1,14 @@
+Mutation M1194: observed-data may embed an artifact
+Re-applies: type policy with no rule for observed-data, so a member's file content reached every circle member one level down
+
+Expect red: packages/aivs-schemas/tests/test_extension_2_0.py::test_observed_data_may_not_embed_an_artifact
+
+diff --git a/packages/aivs-schemas/src/aivs_schemas/extension/policy.py b/packages/aivs-schemas/src/aivs_schemas/extension/policy.py
+--- a/packages/aivs-schemas/src/aivs_schemas/extension/policy.py
++++ b/packages/aivs-schemas/src/aivs_schemas/extension/policy.py
+@@ -240,5 +240,4 @@
+     "vulnerability": _vulnerability,
+     "attack-pattern": _attack_pattern,
+     "indicator": _indicator,
+-    "observed-data": _observed_data,
+ }

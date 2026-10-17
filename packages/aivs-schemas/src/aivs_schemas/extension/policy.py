@@ -22,6 +22,7 @@ __all__ = [
     "INDICATOR_PATTERN_TYPES",
     "MAX_INDICATOR_LIFETIME",
     "NETWORK_INDICATOR_LIFETIME",
+    "STIX_CYBER_OBSERVABLE_TYPES",
     "apply_type_policy",
 ]
 
@@ -49,6 +50,34 @@ _NETWORK_OBSERVABLE: Final[re.Pattern[str]] = re.compile(
     r"\[\s*(ipv4-addr|ipv6-addr|domain-name|url)\s*:"
 )
 
+#: STIX 2.1's cyber-observable types (section 6). Refused as top-level objects:
+#: they carry no ``created`` or ``modified``, and a stored object is versioned by
+#: ``modified`` (TAXII ``match[version]``, owner-only versioning). Until SCOs
+#: are given a version key of their own, an observable is stated where STIX
+#: puts it in a sharing context: an indicator's pattern, or observed-data.
+STIX_CYBER_OBSERVABLE_TYPES: Final[frozenset[str]] = frozenset(
+    {
+        "artifact",
+        "autonomous-system",
+        "directory",
+        "domain-name",
+        "email-addr",
+        "email-message",
+        "file",
+        "ipv4-addr",
+        "ipv6-addr",
+        "mac-addr",
+        "mutex",
+        "network-traffic",
+        "process",
+        "software",
+        "url",
+        "user-account",
+        "windows-registry-key",
+        "x509-certificate",
+    }
+)
+
 _STIX_TIMESTAMP: Final[re.Pattern[str]] = re.compile(
     r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?Z$"
 )
@@ -70,6 +99,12 @@ _REFERENCE_FORMATS: Final[Mapping[str, Mapping[str, re.Pattern[str]]]] = {
 def apply_type_policy(obj: Mapping[str, Any]) -> None:
     """Raise :class:`ObjectPolicyError` if ``obj`` breaks a rule for its type."""
     obj_type = obj.get("type")
+    if obj_type in STIX_CYBER_OBSERVABLE_TYPES:
+        msg = (
+            f"{_described(obj)}: STIX cyber observables are not accepted as objects of "
+            "their own; state the observable in an indicator's pattern or in observed-data"
+        )
+        raise ObjectPolicyError(msg)
     if isinstance(obj_type, str):
         check = _POLICIES.get(obj_type)
         if check is not None:
@@ -181,6 +216,22 @@ def _check_kill_chain_phases(obj: Mapping[str, Any]) -> None:
         raise ObjectPolicyError(msg)
 
 
+def _observed_data(obj: Mapping[str, Any]) -> None:
+    """No file content, embedded or not: AIVS carries no member's bytes to the sector.
+
+    An ``artifact`` holds bytes (``payload_bin``) or points at them (``url``),
+    and either way every circle member's tooling would fetch or unpack them. A
+    finished document is linked from its report, on this instance's own route.
+    """
+    embedded = obj.get("objects")
+    if not isinstance(embedded, Mapping):
+        return
+    for key, value in embedded.items():
+        if isinstance(value, Mapping) and value.get("type") == "artifact":
+            msg = f"{_described(obj)} embeds an artifact (object {key!r}); file content is refused"
+            raise ObjectPolicyError(msg)
+
+
 def _described(obj: Mapping[str, Any]) -> str:
     return f"{obj.get('type', 'object')} {obj.get('id', '<no id>')}"
 
@@ -189,4 +240,5 @@ _POLICIES: Final[Mapping[str, Callable[[Mapping[str, Any]], None]]] = {
     "vulnerability": _vulnerability,
     "attack-pattern": _attack_pattern,
     "indicator": _indicator,
+    "observed-data": _observed_data,
 }

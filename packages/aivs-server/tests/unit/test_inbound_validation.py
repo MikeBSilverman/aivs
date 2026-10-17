@@ -116,6 +116,25 @@ async def test_a_foreign_spec_version_is_refused(client, member):
     assert "2.1" in response.text
 
 
+async def test_a_cyber_observable_is_refused_for_what_it_is(client, member, session):
+    """Refused by type, not for the ``created`` an observable never has."""
+    _org, pem = member
+    artifact = {
+        "type": "artifact",
+        "spec_version": "2.1",
+        "id": f"artifact--{uuid.uuid4()}",
+        "mime_type": "text/plain",
+        "payload_bin": "aGVsbG8=",
+    }
+
+    response = await post(client, pem, object_bundle(vulnerability(), artifact))
+
+    assert response.status_code == 400
+    assert "cyber observables are not accepted" in response.text
+    assert artifact["id"] in response.text
+    assert (await session.scalars(select(StixObject))).all() == []
+
+
 # ---------------------------------------------------------------------------
 # Timestamps
 # ---------------------------------------------------------------------------

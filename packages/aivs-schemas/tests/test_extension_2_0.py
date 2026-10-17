@@ -35,6 +35,7 @@ from aivs_schemas.extension.policy import (
     INDICATOR_PATTERN_TYPES,
     MAX_INDICATOR_LIFETIME,
     NETWORK_INDICATOR_LIFETIME,
+    STIX_CYBER_OBSERVABLE_TYPES,
 )
 
 VALID_FROM = dt.datetime(2026, 8, 1, tzinfo=dt.UTC)
@@ -316,6 +317,50 @@ def test_attack_pattern_references_follow_mitres_formats():
         ObjectPolicyError,
     )
     refused({**obj, "kill_chain_phases": [{"phase_name": "initial-access"}]}, ObjectPolicyError)
+
+
+# ---------------------------------------------------------------------------
+# cyber observables, and file content
+# ---------------------------------------------------------------------------
+def observable(stix_type: str, **extra: Any) -> dict[str, Any]:
+    return {
+        "type": stix_type,
+        "spec_version": "2.1",
+        "id": f"{stix_type}--0f9c0000-0000-4000-8000-000000000009",
+        **extra,
+    }
+
+
+@pytest.mark.parametrize("stix_type", sorted(STIX_CYBER_OBSERVABLE_TYPES))
+def test_a_cyber_observable_is_refused_naming_the_cause(stix_type):
+    """Ingest refused every one for lacking ``created``, which names the wrong cause."""
+    with pytest.raises(ObjectPolicyError, match="cyber observables are not accepted"):
+        validate_stix_object(observable(stix_type))
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        {"payload_bin": "aGVsbG8="},
+        {"url": "https://example.org/a.bin", "hashes": {"MD5": "0" * 32}},
+    ],
+)
+def test_an_artifact_is_refused_whether_it_carries_its_bytes_or_points_at_them(content):
+    refused(observable("artifact", mime_type="text/plain", **content), ObjectPolicyError)
+
+
+def test_observed_data_may_not_embed_an_artifact():
+    """The other way an artifact's bytes reach every member's tooling."""
+    observed = {
+        "type": "observed-data",
+        "id": "observed-data--0f9c0000-0000-4000-8000-00000000000a",
+        "objects": {"0": {"type": "file", "name": "a.bin"}},
+    }
+    validate_stix_object(observed)
+    refused(
+        {**observed, "objects": {"1": {"type": "artifact", "payload_bin": "aGVsbG8="}}},
+        ObjectPolicyError,
+    )
 
 
 def test_the_2_0_extension_is_refused_on_a_type_it_does_not_define():

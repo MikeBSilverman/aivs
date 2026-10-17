@@ -1,0 +1,23 @@
+Mutation M1193: a cyber observable is taken for an object of its own
+Re-applies: type policy as it was, with no rule for observables, so ingest refused them for a missing 'created' and never named the cause
+
+Expect red: packages/aivs-schemas/tests/test_extension_2_0.py::test_a_cyber_observable_is_refused_naming_the_cause
+Expect red: packages/aivs-schemas/tests/test_extension_2_0.py::test_an_artifact_is_refused_whether_it_carries_its_bytes_or_points_at_them
+Expect red: packages/aivs-server/tests/unit/test_inbound_validation.py::test_a_cyber_observable_is_refused_for_what_it_is
+
+diff --git a/packages/aivs-schemas/src/aivs_schemas/extension/policy.py b/packages/aivs-schemas/src/aivs_schemas/extension/policy.py
+--- a/packages/aivs-schemas/src/aivs_schemas/extension/policy.py
++++ b/packages/aivs-schemas/src/aivs_schemas/extension/policy.py
+@@ -99,12 +99,6 @@
+ def apply_type_policy(obj: Mapping[str, Any]) -> None:
+     """Raise :class:`ObjectPolicyError` if ``obj`` breaks a rule for its type."""
+     obj_type = obj.get("type")
+-    if obj_type in STIX_CYBER_OBSERVABLE_TYPES:
+-        msg = (
+-            f"{_described(obj)}: STIX cyber observables are not accepted as objects of "
+-            "their own; state the observable in an indicator's pattern or in observed-data"
+-        )
+-        raise ObjectPolicyError(msg)
+     if isinstance(obj_type, str):
+         check = _POLICIES.get(obj_type)
+         if check is not None:

@@ -1,0 +1,18 @@
+Mutation M1198: a finish cites ids its finisher cannot read
+Re-applies: the finish with no citation check, so a report could tell a circle that ids it never received exist and belong together
+
+Expect red: packages/aivs-server/tests/unit/test_document_reports.py::test_a_report_cites_something_and_only_what_its_owner_can_read
+diff --git a/packages/aivs-server/src/aivs_server/services/documents.py b/packages/aivs-server/src/aivs_server/services/documents.py
+--- a/packages/aivs-server/src/aivs_server/services/documents.py
++++ b/packages/aivs-server/src/aivs_server/services/documents.py
+@@ -856,10 +856,6 @@ async def _require_citable(
+     if len(cited) > MAX_CITED:
+         msg = f"a report cites at most {MAX_CITED} objects"
+         raise DocumentRefusedError(msg)
+-    unseen = await unseen_by_caller(db, ctx, set(cited), now=now)
+-    if unseen:
+-        msg = f"these are not objects you can read: {', '.join(unseen)}"
+-        raise DocumentRefusedError(msg)
+ 
+ 
+ def _document_reference(url: str, version: DocumentVersion) -> dict[str, object]:

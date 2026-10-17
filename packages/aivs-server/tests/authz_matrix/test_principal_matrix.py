@@ -211,6 +211,13 @@ EXPECTED: Mapping[RouteClass, Mapping[Principal, Outcome]] = {
         **_allow(P.MEMBER_ANALYST, P.MEMBER_ORG_ADMIN, otherwise=N),
         **dict.fromkeys(CERTIFICATE_ONLY, F),
     },
+    RouteClass.DOCUMENT_FINISH: {
+        **_allow(P.MEMBER_ANALYST, P.MEMBER_ORG_ADMIN, otherwise=N),
+        **dict.fromkeys(CERTIFICATE_ONLY, F),
+    },
+    # The report is submitted and not yet distributed: the reviewers who
+    # validate it read the body, and so does the firm that still holds it.
+    RouteClass.DOCUMENT_ARTIFACT: _allow(*_MEMBER, P.ISAC_ANALYST, P.ISAC_EDITOR, otherwise=N),
     # A member firm's own org admin; at the ISAC the role grants nothing.
     RouteClass.SHARING_CODE: _allow(P.MEMBER_ORG_ADMIN, otherwise=F),
     RouteClass.WEBHOOK_REGISTER: _allow(

@@ -1,0 +1,16 @@
+Mutation M1186: validate during a pause calls every citation unreadable
+Re-applies: the owner's view read through a pause, which empties it, so the refusal names the wrong cause
+
+Expect red: packages/aivs-server/tests/unit/test_document_reports.py::test_validate_during_a_pause_names_the_pause
+diff --git a/packages/aivs-server/src/aivs_server/services/document_reports.py b/packages/aivs-server/src/aivs_server/services/document_reports.py
+--- a/packages/aivs-server/src/aivs_server/services/document_reports.py
++++ b/packages/aivs-server/src/aivs_server/services/document_reports.py
+@@ -84,8 +84,6 @@ async def report_citation_problem(
+     cited = cited_ids(objects)
+     if not cited:
+         return None
+-    if await distribution_is_paused(session):
+-        return PAUSED
+     grants = await load_circle_grants(session, owner.id) if owner.status is OrgStatus.ACTIVE else {}
+     seen = (
+         select(StixObject.stix_id)

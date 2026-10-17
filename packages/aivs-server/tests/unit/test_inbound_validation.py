@@ -116,6 +116,7 @@ async def test_a_foreign_spec_version_is_refused(client, member):
     assert "2.1" in response.text
 
 
+@pytest.mark.requirement("SF-101")
 async def test_a_cyber_observable_is_refused_for_what_it_is(client, member, session):
     """Refused by type, not for the ``created`` an observable never has."""
     _org, pem = member

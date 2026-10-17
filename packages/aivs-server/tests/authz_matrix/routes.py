@@ -164,6 +164,13 @@ class RouteClass(enum.StrEnum):
     #: Seeing and changing who it is shared with: the owner firm's editors; a
     #: certificate alone 403; everyone else 404.
     DOCUMENT_SHARE = "document share"
+    #: Finishing one, which files its report: the owner firm's editors; a
+    #: certificate alone 403; everyone else 404.
+    DOCUMENT_FINISH = "document finish"
+    #: A finished document's body: whoever may read its report (here the ISAC's
+    #: reviewers, before validate) and whoever still holds the document (the
+    #: member firm); the peer, whose grant the finish closed, 404 like everyone else.
+    DOCUMENT_ARTIFACT = "document artifact"
     #: A firm's document sharing code: its own org admins; everyone else 403.
     SHARING_CODE = "sharing code"
     #: Signing in through the ISAC's IdP: absent (404) unless member SSO is on.
@@ -1190,6 +1197,32 @@ ROUTES: tuple[RouteCase, ...] = (
         _fixed("/portal/documents/sharing-code", {}),
         is_portal=True,
     ),
+    # Finishing a document of its own, in review: the moves above leave theirs a draft.
+    RouteCase(
+        "GET",
+        "/api/v1/documents/artifact",
+        RouteClass.DOCUMENT_ARTIFACT,
+        lambda world: (f"{API}/documents/artifact?id={world.finished_document_id}", None),
+    ),
+    RouteCase(
+        "POST",
+        "/api/v1/documents/{document_id}/finish",
+        RouteClass.DOCUMENT_FINISH,
+        lambda world: (
+            f"{API}/documents/{world.review_document_id}/finish",
+            {"discovery_scope": "ai_system", "cited": [world.object_stix_id], "credit": False},
+        ),
+    ),
+    RouteCase(
+        "POST",
+        "/portal/documents/{document_id}/finish",
+        RouteClass.DOCUMENT_FINISH,
+        lambda world: (
+            f"/portal/documents/{world.review_document_id}/finish",
+            {"discovery_scope": "ai_system", "cited": world.object_stix_id},
+        ),
+        is_portal=True,
+    ),
     # ----- health ---------------------------------------------------------
     RouteCase("GET", "/healthz", RouteClass.HEALTH, _fixed("/healthz")),
     RouteCase("GET", "/readyz", RouteClass.HEALTH, _fixed("/readyz")),
@@ -1200,10 +1233,10 @@ ROUTES: tuple[RouteCase, ...] = (
 #: not a total, so one surface vanishing from the walk cannot hide behind another
 #: growing. Raise a floor when a surface grows; lowering one is a decision.
 SURFACE_FLOORS: dict[str, int] = {
-    "/api/v1": 83,
+    "/api/v1": 89,
     "/taxii2": 10,
-    "/portal/admin": 10,
-    "/portal": 41,
+    "/portal/admin": 14,
+    "/portal": 45,
     "/healthz": 1,
     "/readyz": 1,
     "/metrics": 1,

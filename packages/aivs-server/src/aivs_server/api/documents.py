@@ -15,11 +15,23 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query, Response, status
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from aivs_schemas.enums import TLP, DocumentPermission, DocumentState, GrantPrincipal
+from aivs_schemas.enums import (
+    TLP,
+    DiscoveryScope,
+    DocumentPermission,
+    DocumentState,
+    GrantPrincipal,
+)
 from aivs_server.auth.context import AuthContext
-from aivs_server.auth.deps import AuthenticatedContext, SessionDep, SettingsDep
+from aivs_server.auth.deps import (
+    AttributionKeyDep,
+    AuthenticatedContext,
+    SessionDep,
+    SettingsDep,
+)
 from aivs_server.auth.policy import can_write_documents, require
 from aivs_server.auth.secretbox import SecretBox
 from aivs_server.db.clock import database_now
@@ -75,6 +87,23 @@ class GrantIn(_In):
 
 class TransitionIn(_In):
     to: DocumentState
+
+
+#: A STIX id as a report cites one: ``<type>--<uuid>``, bounded like a stored id.
+StixId = Annotated[str, Field(pattern=r"^[a-z0-9-]{1,250}--[0-9a-f-]{36}$", max_length=290)]
+
+
+class FinishIn(_In):
+    """What the report a finish files says (SF-101)."""
+
+    discovery_scope: DiscoveryScope
+    cited: Annotated[list[StixId], Field(max_length=documents.MAX_CITED)]
+    #: Name the owner on the report; left false, it is anonymous (SF-85).
+    credit: bool
+
+
+class ReportOut(BaseModel):
+    report_submission_id: uuid.UUID
 
 
 class CreatedOut(BaseModel):
@@ -198,6 +227,36 @@ async def create_document(
     except DocumentRefusedError as exc:
         raise _refused(exc) from exc
     return CreatedOut(id=document_id)
+
+
+@router.get("/artifact", response_class=PlainTextResponse)
+async def read_finished_body(
+    id: Annotated[uuid.UUID, Query()],  # noqa: A002 - the query's name, which the report's link carries
+    ctx: AuthenticatedContext,
+    session: SessionDep,
+    settings: SettingsDep,
+) -> PlainTextResponse:
+    """A finished document's body, for whoever may read its report; a receipt is written.
+
+    The id is in the query, never the path (SF-47). Absent, unfinished and
+    not readable are one 404.
+    """
+    try:
+        finished = await documents.read_finished_body(
+            session,
+            ctx,
+            id,
+            box=SecretBox.from_settings(settings),
+            now=await database_now(session),
+        )
+        await session.commit()
+    except DocumentNotFoundError:
+        raise _NOT_FOUND from None
+    return PlainTextResponse(
+        finished.body,
+        media_type="text/plain; charset=utf-8",
+        headers={"Content-Disposition": "inline", "X-Content-SHA256": finished.content_sha256},
+    )
 
 
 @router.get("/{document_id}", response_model=DocumentOut)
@@ -362,3 +421,37 @@ async def transition_document(
     except DocumentRefusedError as exc:
         raise _refused(exc) from exc
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/{document_id}/finish", status_code=status.HTTP_201_CREATED, response_model=ReportOut)
+async def finish_document(
+    document_id: uuid.UUID,
+    payload: FinishIn,
+    ctx: AuthenticatedContext,
+    session: SessionDep,
+    settings: SettingsDep,
+    key: AttributionKeyDep,
+) -> ReportOut:
+    """Finish the document: its report is filed for the ISAC's review, linking
+    the finished body, and every grant outside your firm closes."""
+    _person(ctx)
+    try:
+        report_submission_id = await documents.finish_document(
+            session,
+            ctx,
+            document_id,
+            report=documents.ReportRequest(
+                discovery_scope=payload.discovery_scope,
+                cited=frozenset(payload.cited),
+                credit=payload.credit,
+            ),
+            key=key,
+            public_base_url=settings.public_base_url,
+            now=await database_now(session),
+        )
+        await session.commit()
+    except DocumentNotFoundError:
+        raise _NOT_FOUND from None
+    except (DocumentRefusedError, DocumentStaleError) as exc:
+        raise _refused(exc) from exc
+    return ReportOut(report_submission_id=report_submission_id)

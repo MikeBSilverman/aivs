@@ -42,6 +42,11 @@ bound to its row (``<document>:<version>``, ``<document>:<comment>``), so a
 ciphertext cannot be moved between rows. A DEK lives as long as its document;
 one that no longer opens means the whole history is lost, and is reported, not
 treated as absent. Bodies are plain text: no stored markup.
+
+**Finishing** (:func:`finish_document`, SF-101) files the document's report
+through the ordinary pipeline and closes every grant outside the owner firm;
+the report links the finished body, which :func:`read_finished_body` serves to
+whoever may read that report, by the server's own link from the document.
 """
 
 from __future__ import annotations
@@ -55,9 +60,10 @@ import uuid
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import Final
+from typing import Any, Final
 
 from sqlalchemy import ColumnElement, Select, and_, exists, func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -65,15 +71,21 @@ from aivs_schemas.enums import (
     DOCUMENT_TRANSITIONS,
     OPEN_DOCUMENT_STATES,
     TLP,
+    DiscoveryScope,
     DocumentPermission,
     DocumentState,
     GrantPrincipal,
     OrgStatus,
     OrgType,
+    SubmissionState,
 )
+from aivs_schemas.extension.builders import format_stix_timestamp
+from aivs_schemas.extension.policy import DOCUMENT_REFERENCE_SOURCE
 from aivs_server.audit.log import AuditAction, record
+from aivs_server.auth.attribution_key import AttributionKey
 from aivs_server.auth.context import AuthContext
 from aivs_server.auth.policy import (
+    can_review_submissions,
     can_write_documents,
     is_active,
     is_org_admin,
@@ -95,7 +107,11 @@ from aivs_server.db.models import (
     Operator,
     Organization,
     OrgSharingCode,
+    StixObject,
 )
+from aivs_server.services.document_reports import unseen_by_caller
+from aivs_server.services.submissions import SubmissionError, apply_transition, create_submission
+from aivs_server.services.visible import visible_objects
 
 __all__ = [
     "DOCUMENT_GRANTEE_ORG_TYPES",
@@ -104,14 +120,19 @@ __all__ = [
     "DocumentStaleError",
     "DocumentUnreadableError",
     "DocumentView",
+    "FinishedBody",
+    "ReportRequest",
     "add_comment",
+    "artifact_url",
     "close_for_offboarded",
     "create_document",
+    "finish_document",
     "grant_access",
     "list_documents",
     "list_grants",
     "nameable_principals",
     "read_document",
+    "read_finished_body",
     "revoke_grant",
     "rotate_sharing_code",
     "save_version",
@@ -126,6 +147,11 @@ MAX_COMMENT_CHARS: Final[int] = 4_000
 COMMENTS_PER_HOUR: Final[int] = 60
 _HOUR: Final[dt.timedelta] = dt.timedelta(hours=1)
 _DEK_BYTES: Final[int] = 32
+#: The most objects one report may cite; a report about more is a collection.
+MAX_CITED: Final[int] = 200
+#: The finished body's route, under ``public_base_url``. The document id is in
+#: the query, never the path (SF-47), as every id-addressed read here takes it.
+ARTIFACT_PATH: Final[str] = "/api/v1/documents/artifact"
 
 #: Organisation types a document may be shared with, besides the owner's own.
 #: An allow-list: a type added later (a service provider, when K adds one) is
@@ -192,6 +218,25 @@ class DocumentView:
     body: str
     permission: DocumentPermission
     comments: tuple[CommentView, ...]
+
+
+@dataclass(frozen=True)
+class ReportRequest:
+    """What the finisher states about the report a finish files (SF-101)."""
+
+    #: The finisher's relationship to what the document is about, as on any filing.
+    discovery_scope: DiscoveryScope
+    #: The ids the report is about. At least one: a STIX report must cite one.
+    cited: frozenset[str]
+    #: Whether the owner asks to be named. Without it the report is anonymous
+    #: (SF-85), and the ISAC's own reports are the ISAC's either way.
+    credit: bool
+
+
+@dataclass(frozen=True)
+class FinishedBody:
+    body: str
+    content_sha256: str
 
 
 # ---------------------------------------------------------------------------
@@ -724,7 +769,7 @@ async def transition_document(
             msg = f"a {document.state.value} document cannot become {to.value}"
             raise DocumentRefusedError(msg)
         if to is DocumentState.FINISHED:
-            msg = "finishing a document publishes it, which is not built yet"
+            msg = "a document is finished with its report: use finish, which files it for review"
             raise DocumentRefusedError(msg)
         if to is DocumentState.ARCHIVED and ctx.org_id != document.owner_org_id:
             msg = "only the owner archives a document"
@@ -734,6 +779,266 @@ async def transition_document(
         document.version += 1
         document.updated_at = now
         await _audit(db, ctx, AuditAction.DOCUMENT_TRANSITIONED, document_id, details)
+
+
+# ---------------------------------------------------------------------------
+# Finishing: the report (SF-101)
+# ---------------------------------------------------------------------------
+def artifact_url(public_base_url: str, document_id: uuid.UUID) -> str:
+    """Where a finished document's body is fetched, on this instance."""
+    return f"{public_base_url.rstrip('/')}{ARTIFACT_PATH}?id={document_id}"
+
+
+async def finish_document(
+    session: AsyncSession,
+    ctx: AuthContext,
+    document_id: uuid.UUID,
+    *,
+    report: ReportRequest,
+    key: AttributionKey,
+    public_base_url: str,
+    now: dt.datetime,
+) -> uuid.UUID:
+    """Finish a document: file its report for the ISAC's review, and close every
+    grant outside the owner. Returns the report's submission id.
+
+    One transaction, under the document's row lock, so a second finish waits
+    and is then refused as finished; the link's unique constraint backs that
+    up as a stale write. The report is an ordinary filing in the owner's name
+    (``create_submission``), submitted, and accepted only by an editor's
+    validate, which checks its citations again from the owner's view then.
+    """
+    _person(ctx)
+    async with _staff(session, ctx) as db:
+        document, _held = await _visible(
+            db, ctx, document_id, at_least=DocumentPermission.EDIT, now=now, for_update=True
+        )
+        _require_finishable(ctx, document)
+        await _require_citable(db, ctx, report.cited, now=now)
+        version = await _version(db, document_id, None)
+        link = _document_reference(artifact_url(public_base_url, document_id), version)
+        submission_id = await _file_report(db, ctx, document, report, link, key=key, now=now)
+        closed = await _close_grants_outside_owner(db, document, now=now)
+        details = {"from": document.state.value, "to": DocumentState.FINISHED.value}
+        document.state = DocumentState.FINISHED
+        document.report_submission_id = submission_id
+        document.finished_version_number = version.number
+        document.version += 1
+        document.updated_at = now
+        await _flush_link(db)
+        await _audit(
+            db,
+            ctx,
+            AuditAction.DOCUMENT_TRANSITIONED,
+            document_id,
+            {**details, "version": version.number, "grants_closed": closed},
+        )
+    return submission_id
+
+
+def _require_finishable(ctx: AuthContext, document: Document) -> None:
+    if DocumentState.FINISHED not in DOCUMENT_TRANSITIONS[document.state]:
+        msg = f"a {document.state.value} document cannot become finished"
+        raise DocumentRefusedError(msg)
+    if ctx.org_id != document.owner_org_id:
+        msg = "only the owner finishes a document"
+        raise DocumentRefusedError(msg)
+
+
+async def _require_citable(
+    db: AsyncSession, ctx: AuthContext, cited: frozenset[str], *, now: dt.datetime
+) -> None:
+    """At least one id, each one the finisher can read or filed: unseen ids are
+    named back as given, with no word on why (absent and invisible alike)."""
+    if not cited:
+        msg = "a report cites at least one object: name what the document is about"
+        raise DocumentRefusedError(msg)
+    if len(cited) > MAX_CITED:
+        msg = f"a report cites at most {MAX_CITED} objects"
+        raise DocumentRefusedError(msg)
+    unseen = await unseen_by_caller(db, ctx, set(cited), now=now)
+    if unseen:
+        msg = f"these are not objects you can read: {', '.join(unseen)}"
+        raise DocumentRefusedError(msg)
+
+
+def _document_reference(url: str, version: DocumentVersion) -> dict[str, object]:
+    return {
+        "source_name": DOCUMENT_REFERENCE_SOURCE,
+        "description": f"the finished document, version {version.number}",
+        "url": url,
+        "hashes": {"SHA-256": version.content_sha256},
+    }
+
+
+def _report_bundle(document: Document, cited: frozenset[str], now: dt.datetime) -> dict[str, Any]:
+    stamp = format_stix_timestamp(now)
+    report: dict[str, Any] = {
+        "type": "report",
+        "spec_version": "2.1",
+        "id": f"report--{uuid.uuid4()}",
+        "created": stamp,
+        "modified": stamp,
+        "published": stamp,
+        "name": document.title,
+        "object_refs": sorted(cited),
+    }
+    if document.abstract:
+        report["description"] = document.abstract
+    return {"type": "bundle", "id": f"bundle--{uuid.uuid4()}", "objects": [report]}
+
+
+async def _file_report(
+    db: AsyncSession,
+    ctx: AuthContext,
+    document: Document,
+    report: ReportRequest,
+    link: dict[str, object],
+    *,
+    key: AttributionKey,
+    now: dt.datetime,
+) -> uuid.UUID:
+    """File the report and submit it, every ingest rule applying as to any filing.
+
+    The link is written onto the stored report after ingest: type policy
+    refuses it in any bundle, this one included, so only this path writes one.
+    """
+    try:
+        submission = await create_submission(
+            db,
+            ctx,
+            key=key,
+            title=document.title,
+            summary=document.abstract,
+            tlp=document.tlp,
+            discovery_scope=report.discovery_scope,
+            # Nothing asked is anonymous; credit asks to be named (``resolve_anonymity``).
+            distribute_anonymously=False if report.credit else None,
+            bundle=_report_bundle(document, report.cited, now),
+            filed_for=None,
+            via="document",
+        )
+        await _link_report(db, submission.id, link)
+        await apply_transition(
+            db, ctx, submission, SubmissionState.SUBMITTED, key=key, reason="document finished"
+        )
+    except (SubmissionError, ValueError) as exc:
+        raise DocumentRefusedError(str(exc)) from exc
+    return submission.id
+
+
+async def _link_report(db: AsyncSession, submission_id: uuid.UUID, link: dict[str, object]) -> None:
+    await db.flush()
+    stored = await db.scalar(
+        select(StixObject).where(
+            StixObject.submission_id == submission_id, StixObject.type == "report"
+        )
+    )
+    if stored is None:
+        msg = f"submission {submission_id} filed no report to link"
+        raise RuntimeError(msg)
+    stored.raw = {**stored.raw, "external_references": [link]}
+
+
+async def _close_grants_outside_owner(
+    db: AsyncSession, document: Document, *, now: dt.datetime
+) -> int:
+    """End every grant naming anyone but the owner firm and its people. The
+    report is how the document reaches anyone else from now on."""
+    own_people = select(Operator.id).where(Operator.org_id == document.owner_org_id)
+    outside = or_(
+        and_(
+            DocumentGrant.principal_type == GrantPrincipal.ORGANIZATION,
+            DocumentGrant.principal_org_id != document.owner_org_id,
+        ),
+        and_(
+            DocumentGrant.principal_type == GrantPrincipal.OPERATOR,
+            DocumentGrant.principal_operator_id.not_in(own_people),
+        ),
+    )
+    grants = (
+        await db.scalars(
+            select(DocumentGrant)
+            .where(
+                DocumentGrant.document_id == document.id,
+                DocumentGrant.revoked_at.is_(None),
+                outside,
+            )
+            .with_for_update()
+        )
+    ).all()
+    for grant in grants:
+        grant.revoked_at = now
+        grant.revoked_by = "finished"
+    return len(grants)
+
+
+async def _flush_link(db: AsyncSession) -> None:
+    """Write the link; one already written is a finish that got there first."""
+    try:
+        await db.flush()
+    except IntegrityError as exc:
+        raise DocumentStaleError from exc
+
+
+async def read_finished_body(
+    session: AsyncSession,
+    ctx: AuthContext,
+    document_id: uuid.UUID,
+    *,
+    box: SecretBox,
+    now: dt.datetime,
+) -> FinishedBody:
+    """The finished version's body, for whoever may read its report; a receipt is written.
+
+    Authorised by the server's own link from the document to its report, never
+    by anything a bundle says. Absent, unfinished and not readable are one
+    :class:`DocumentNotFoundError`.
+    """
+    async with _staff(session, ctx) as db:
+        document = await _load(db, document_id, for_update=False)
+        if document is None or document.report_submission_id is None:
+            raise DocumentNotFoundError
+        if not await _may_fetch_finished(db, ctx, document, now=now):
+            raise DocumentNotFoundError
+        number = document.finished_version_number
+        version = await _version(db, document_id, number)
+        body = _content_box(box, document).unseal(
+            version.body_sealed,
+            purpose=SecretPurpose.DOCUMENT_VERSION,
+            subject=f"{document_id}:{version.number}",
+        )
+        if body is None:
+            msg = f"{document_id}:{version.number}"
+            raise DocumentUnreadableError(msg)
+        db.add(
+            DocumentRead(
+                document_id=document_id,
+                version_number=version.number,
+                org_id=ctx.org_id,
+                operator_id=ctx.operator_id,
+                read_at=now,
+            )
+        )
+        return FinishedBody(body=body, content_sha256=version.content_sha256)
+
+
+async def _may_fetch_finished(
+    db: AsyncSession, ctx: AuthContext, document: Document, *, now: dt.datetime
+) -> bool:
+    """Who may fetch a finished body: whoever may read the report it is linked
+    from (the ISAC's reviewers, who validate it, among them), and whoever
+    still holds the document itself."""
+    if not is_active(ctx):
+        return False
+    if can_review_submissions(ctx):
+        return True
+    if await _permission(db, ctx, document, now=now) is not None:
+        return True
+    report_readable = visible_objects(ctx, now).where(
+        StixObject.submission_id == document.report_submission_id
+    )
+    return bool(await db.scalar(select(report_readable.exists())))
 
 
 # ---------------------------------------------------------------------------

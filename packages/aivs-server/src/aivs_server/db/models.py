@@ -1630,6 +1630,25 @@ class Document(Base):
     """
 
     __tablename__ = "documents"
+    __table_args__ = (
+        # The link to the report a finish filed is written once, by the finish,
+        # and is what the artifact route authorises through: nothing a bundle
+        # says can point a reader at a document. Both halves or neither, every
+        # finished document has one, and only a finished document (or one
+        # archived after finishing) does.
+        CheckConstraint(
+            "(report_submission_id IS NULL) = (finished_version_number IS NULL)",
+            name="report_link_complete",
+        ),
+        CheckConstraint(
+            "state <> 'finished' OR report_submission_id IS NOT NULL",
+            name="finished_has_report",
+        ),
+        CheckConstraint(
+            "report_submission_id IS NULL OR state IN ('finished', 'archived')",
+            name="report_only_once_finished",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
     owner_org_id: Mapped[uuid.UUID] = mapped_column(
@@ -1648,6 +1667,13 @@ class Document(Base):
     dek_sealed: Mapped[bytes] = mapped_column(nullable=False)
     #: Bumped by every change, and compared on save: a stale save is a 409.
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    #: The submission its finish filed (I3), whose distribution decides who
+    #: may fetch the finished body. Unique: one report per document.
+    report_submission_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("submissions.id", ondelete="RESTRICT"), nullable=True, unique=True
+    )
+    #: The version the report's reference hashes and the artifact route serves.
+    finished_version_number: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

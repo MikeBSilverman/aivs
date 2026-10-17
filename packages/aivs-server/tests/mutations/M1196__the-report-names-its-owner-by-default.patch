@@ -1,0 +1,16 @@
+Mutation M1196: the report is attributed by default
+Re-applies: the plan's first draft, where a finished document's report was the owner's by name (SF-85: anonymous unless it asks)
+
+Expect red: packages/aivs-server/tests/unit/test_document_reports.py::test_finishing_files_an_anonymous_report_that_links_the_finished_body_by_its_hash
+diff --git a/packages/aivs-server/src/aivs_server/services/documents.py b/packages/aivs-server/src/aivs_server/services/documents.py
+--- a/packages/aivs-server/src/aivs_server/services/documents.py
++++ b/packages/aivs-server/src/aivs_server/services/documents.py
+@@ -913,7 +913,7 @@ async def _file_report(
+             tlp=document.tlp,
+             discovery_scope=report.discovery_scope,
+             # Nothing asked is anonymous; credit asks to be named (``resolve_anonymity``).
+-            distribute_anonymously=False if report.credit else None,
++            distribute_anonymously=False,
+             bundle=_report_bundle(document, report.cited, now),
+             filed_for=None,
+             via="document",

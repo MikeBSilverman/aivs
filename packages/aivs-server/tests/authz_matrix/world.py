@@ -22,7 +22,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from aivs_schemas.enums import (
     TLP,
     CircleRole,
+    DiscoveryScope,
     DocumentPermission,
+    DocumentState,
     GrantPrincipal,
     OperatorRole,
     OrgStatus,
@@ -30,6 +32,7 @@ from aivs_schemas.enums import (
     ReadingDepth,
 )
 from aivs_schemas.extension.builders import AIVS_INTEL_EXTENSION_ID
+from aivs_server.auth.attribution_key import AttributionKey
 from aivs_server.auth.context import AuthContext, AuthMethod
 from aivs_server.auth.secretbox import SecretBox, SecretPurpose
 from aivs_server.auth.sessions import establish_session, establish_sso_session
@@ -80,6 +83,12 @@ class World:
     #: there to be revoked, one per surface.
     document_id: uuid.UUID | None = None
     document_grant_ids: list[uuid.UUID] = field(default_factory=list)
+    #: A second document, finished: its report is submitted, not yet
+    #: validated, and its grant to the peer closed by the finish.
+    finished_document_id: uuid.UUID | None = None
+    #: A third, in review and shared with the member firm: what the finish
+    #: cases finish. The first cannot be left in review by the moves above.
+    review_document_id: uuid.UUID | None = None
     peer_sharing_code: str = ""
 
 
@@ -518,6 +527,58 @@ async def _seed_document(f: Factories, world: World, orgs: dict[str, Organizatio
         )
         world.document_grant_ids.append(grant_id)
     world.document_grant_ids = world.document_grant_ids[1:]
+    world.finished_document_id = await _in_review(f, world, owner, orgs, "Matrix finished")
+    await documents.finish_document(
+        f.session,
+        owner,
+        world.finished_document_id,
+        report=documents.ReportRequest(
+            discovery_scope=DiscoveryScope.AI_SYSTEM,
+            cited=frozenset({world.object_stix_id}),
+            credit=False,
+        ),
+        key=AttributionKey.from_settings(f.settings),
+        public_base_url=f.settings.public_base_url,
+        now=dt.datetime.now(dt.UTC),
+    )
+    world.review_document_id = await _in_review(f, world, owner, orgs, "Matrix in review")
+
+
+async def _in_review(
+    f: Factories, world: World, owner: AuthContext, orgs: dict[str, Organization], title: str
+) -> uuid.UUID:
+    """A document shared with the member firm (edit) and the peer (view), sent to review."""
+    now = dt.datetime.now(dt.UTC)
+    document_id = await documents.create_document(
+        f.session,
+        owner,
+        box=f.secret_box,
+        title=title,
+        abstract=None,
+        tlp=TLP.AMBER,
+        body="The finished text.",
+        now=now,
+    )
+    for principal_id, code, permission in (
+        (orgs["member"].id, None, DocumentPermission.EDIT),
+        (None, world.peer_sharing_code, DocumentPermission.VIEW),
+    ):
+        await documents.grant_access(
+            f.session,
+            owner,
+            document_id,
+            principal=GrantPrincipal.ORGANIZATION,
+            principal_id=principal_id,
+            sharing_code=code,
+            lookup=RecipientLookup.CODE,
+            permission=permission,
+            expires_at=None,
+            now=now,
+        )
+    await documents.transition_document(
+        f.session, owner, document_id, to=DocumentState.IN_REVIEW, now=now
+    )
+    return document_id
 
 
 async def _seed_submissions(world: World, seed: _Seeder) -> None:

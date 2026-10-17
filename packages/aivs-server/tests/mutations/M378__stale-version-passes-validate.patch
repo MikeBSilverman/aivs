@@ -4,15 +4,14 @@ Re-applies: T14 (finding R2-P2, widened)
 Expect red: packages/aivs-server/tests/unit/test_stale_versions.py::test_a_version_no_later_than_a_distributed_one_is_refused_at_validate
 Expect red: packages/aivs-server/tests/unit/test_stale_versions.py::test_an_embargoed_newer_version_counts
 Expect red: packages/aivs-server/tests/unit/test_stale_versions.py::test_an_isac_draft_correction_overtaken_by_a_kev_version_is_refused
-
 diff --git a/packages/aivs-server/src/aivs_server/services/submissions.py b/packages/aivs-server/src/aivs_server/services/submissions.py
 --- a/packages/aivs-server/src/aivs_server/services/submissions.py
 +++ b/packages/aivs-server/src/aivs_server/services/submissions.py
-@@ -916,7 +916,6 @@
+@@ -934,7 +934,6 @@ async def _prepare_validation(
      now = await database_now(session)
      for problem in (
          await foreign_owned_versions_problem(session, submission),
 -        await stale_version_problem(session, submission),
          await anonymity_change_problem(session, submission),
          await contribution_problem(session, submission, raws, visible_to=None, now=now, key=key),
-         unacknowledged_changes_problem(
+         await report_citation_problem(session, submission, raws, now=now),

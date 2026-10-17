@@ -32,6 +32,7 @@ from aivs_schemas.extension.builders import (
     validate_stix_object,
 )
 from aivs_schemas.extension.policy import (
+    DOCUMENT_REFERENCE_SOURCE,
     INDICATOR_PATTERN_TYPES,
     MAX_INDICATOR_LIFETIME,
     NETWORK_INDICATOR_LIFETIME,
@@ -349,6 +350,7 @@ def test_an_artifact_is_refused_whether_it_carries_its_bytes_or_points_at_them(c
     refused(observable("artifact", mime_type="text/plain", **content), ObjectPolicyError)
 
 
+@pytest.mark.requirement("SF-101")
 def test_observed_data_may_not_embed_an_artifact():
     """The other way an artifact's bytes reach every member's tooling."""
     observed = {
@@ -361,6 +363,21 @@ def test_observed_data_may_not_embed_an_artifact():
         {**observed, "objects": {"1": {"type": "artifact", "payload_bin": "aGVsbG8="}}},
         ObjectPolicyError,
     )
+
+
+@pytest.mark.requirement("SF-101")
+def test_a_document_link_is_refused_in_any_bundle_on_any_type():
+    """Only the server writes it, on the report a finished document files (SF-101)."""
+    link = {"source_name": DOCUMENT_REFERENCE_SOURCE, "url": "https://elsewhere.example/x"}
+    report = {
+        "type": "report",
+        "id": "report--0f9c0000-0000-4000-8000-00000000000b",
+        "external_references": [{"source_name": "vendor", "url": "https://vendor.example/a"}],
+    }
+    validate_stix_object(report)
+    for obj in (report, vulnerability(), indicator()):
+        with pytest.raises(ObjectPolicyError, match="only the server writes"):
+            validate_stix_object({**obj, "external_references": [link]})
 
 
 def test_the_2_0_extension_is_refused_on_a_type_it_does_not_define():

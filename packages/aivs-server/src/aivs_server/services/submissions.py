@@ -63,6 +63,7 @@ from aivs_server.services.attribution import (
     record_filing,
 )
 from aivs_server.services.disclosure import DisclosureScope, disclosure_problem
+from aivs_server.services.document_reports import report_citation_problem
 from aivs_server.services.indexing import intel_index_fields
 from aivs_server.services.markings import granular_tlp_problem, looser_than_referents_problem
 from aivs_server.services.ownership import foreign_owned_versions_problem, stale_version_problem
@@ -919,9 +920,10 @@ async def _prepare_validation(
 
     In order: owner-only versioning (SF-48), newest-version-only (SF-82),
     an object's anonymity fixed by its first distribution (SF-85), the disclosure split and TLP
-    inheritance from the ISAC's view of everything (SF-7, SF-49), the AI gate
-    (SF-6). Only then is the reviewer stamped, so a refused validation writes
-    nothing.
+    inheritance from the ISAC's view of everything (SF-7, SF-49), a finished
+    document's report citing only what its owner can read (SF-101), the AI
+    gate (SF-6). Only then is the reviewer stamped, so a refused validation
+    writes nothing.
     """
     rows = list(
         (await session.execute(select(StixObject).where(StixObject.submission_id == submission.id)))
@@ -935,6 +937,7 @@ async def _prepare_validation(
         await stale_version_problem(session, submission),
         await anonymity_change_problem(session, submission),
         await contribution_problem(session, submission, raws, visible_to=None, now=now, key=key),
+        await report_citation_problem(session, submission, raws, now=now),
         unacknowledged_changes_problem(
             await consequential_changes(session, submission, raws), acknowledged_changes
         ),

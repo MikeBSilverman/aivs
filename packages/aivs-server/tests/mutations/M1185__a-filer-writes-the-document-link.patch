@@ -1,0 +1,16 @@
+Mutation M1185: a bundle may carry the 'aivs-document' reference
+Re-applies: type policy with no rule for the reference, so any filer could label any address as a document of this ISAC's
+
+Expect red: packages/aivs-schemas/tests/test_extension_2_0.py::test_a_document_link_is_refused_in_any_bundle_on_any_type
+Expect red: packages/aivs-server/tests/unit/test_document_reports.py::test_a_filer_cannot_write_the_document_link_into_a_bundle
+diff --git a/packages/aivs-schemas/src/aivs_schemas/extension/policy.py b/packages/aivs-schemas/src/aivs_schemas/extension/policy.py
+--- a/packages/aivs-schemas/src/aivs_schemas/extension/policy.py
++++ b/packages/aivs-schemas/src/aivs_schemas/extension/policy.py
+@@ -112,7 +112,6 @@ def apply_type_policy(obj: Mapping[str,
+             "their own; state the observable in an indicator's pattern or in observed-data"
+         )
+         raise ObjectPolicyError(msg)
+-    _refuse_document_reference(obj)
+     if isinstance(obj_type, str):
+         check = _POLICIES.get(obj_type)
+         if check is not None:

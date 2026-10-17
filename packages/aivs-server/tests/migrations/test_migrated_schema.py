@@ -520,3 +520,47 @@ def test_the_migrated_schema_refuses_an_auditor_without_its_terms(
             connection.rollback()
     finally:
         engine.dispose()
+
+
+@pytest.mark.requirement("SF-101")
+@pytest.mark.parametrize(
+    ("assignments", "check"),
+    [
+        ("state = 'finished'", "finished_has_report"),
+        ("report_submission_id = :submission", "report_link_complete"),
+        (
+            "report_submission_id = :submission, finished_version_number = 1",
+            "report_only_once_finished",
+        ),
+    ],
+    ids=["finished-without-report", "half-a-link", "report-on-a-draft"],
+)
+def test_the_migrated_schema_holds_a_documents_report_link_to_its_shape(
+    seeded_url: str, assignments: str, check: str
+):
+    """The artifact route authorises through this link, and ``alembic check``
+    compares no check constraint: each is attempted against the migration."""
+    params = {"document": _SEED_SUBMISSION, "submission": _SEED_SUBMISSION}
+    engine = create_engine(seeded_url)
+    try:
+        with engine.connect() as connection:
+            connection.execute(
+                text(
+                    "UPDATE documents SET state = 'finished', "
+                    "report_submission_id = :submission, finished_version_number = 1 "
+                    "WHERE id = :document"
+                ),
+                params,
+            )
+            connection.execute(
+                text("UPDATE documents SET state = 'archived' WHERE id = :document"), params
+            )
+            connection.rollback()
+            with pytest.raises(DBAPIError, match=check):
+                connection.execute(
+                    text(f"UPDATE documents SET {assignments} WHERE id = :document"),  # noqa: S608 - assignments from the parametrize list
+                    params,
+                )
+            connection.rollback()
+    finally:
+        engine.dispose()

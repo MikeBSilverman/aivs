@@ -388,14 +388,22 @@ Planned: intake from CVE 5.x and OSV records through the KEV/NVD script.
 
 ### 3.6 Phase I: documents
 
-Designed; not built.
+Built: documents, grants, keys and finishing (slices I1-I3; SF-98 to
+SF-101). Designed, not built: proposals (I4) and templates (I5).
 
-- **`documents`, `document_versions`, `document_comments`, `access_grants`**:
+- **`documents`, `document_versions`, `document_comments`, `document_grants`**:
   the second exception to the principle, because STIX has no object for a
   draft being written by several organisations. A finished document becomes
-  a `report` SDO with the body as an `artifact`, submitted and validated
-  through the ordinary pipeline, so acceptance is still the ISAC's
-  `validate`.
+  a `report` SDO, filed in the owner's name (anonymous unless it asks for
+  credit) and submitted through the ordinary pipeline, so acceptance is still
+  the ISAC's `validate`. The report cites what the document is about in
+  `object_refs`, and links the finished body by an `aivs-document` external
+  reference with its SHA-256, on this instance's own route; the server writes
+  that reference and refuses it in any bundle. The body is not an `artifact`:
+  an SCO has no `modified` to version it by, and an artifact would carry file
+  content to every member's tooling. Who may fetch the body is decided by the
+  server's own link from the document to its report: whoever may read the
+  report.
 - **Grants are on documents only**: an organisation or an operator, `view`
   or `edit`, with `expires_at`, bounded to principals the granter can already
   see. STIX objects keep circles. No resource has two visibility mechanisms.

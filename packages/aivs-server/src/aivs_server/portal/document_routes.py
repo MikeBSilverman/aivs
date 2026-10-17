@@ -18,6 +18,7 @@ import uuid
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Form, HTTPException, Request, Response, status
+from pydantic import ValidationError
 
 from aivs_schemas.enums import (
     DOCUMENT_TRANSITIONS,
@@ -26,8 +27,9 @@ from aivs_schemas.enums import (
     DocumentState,
     GrantPrincipal,
 )
+from aivs_server.api.documents import FinishIn
 from aivs_server.auth.context import AuthContext
-from aivs_server.auth.deps import SessionDep, SettingsDep
+from aivs_server.auth.deps import AttributionKeyDep, SessionDep, SettingsDep
 from aivs_server.auth.policy import can_write_documents, is_org_admin, require
 from aivs_server.auth.secretbox import SecretBox
 from aivs_server.config import RecipientLookup
@@ -189,6 +191,9 @@ async def document_page(
             ),
             "picker": settings.document_recipient_lookup is RecipientLookup.PICKER,
             "next_states": _next_states(view.state),
+            "can_finish": owner_editor
+            and can_write_documents(ctx)
+            and DocumentState.FINISHED in DOCUMENT_TRANSITIONS[view.state],
             "stamp": stamp,
         }
     )
@@ -196,7 +201,7 @@ async def document_page(
 
 
 def _next_states(state: DocumentState) -> list[str]:
-    """The moves a person can make here; finishing publishes, built in I3."""
+    """The plain moves; finishing has a form of its own, since it files the report."""
     offered = DOCUMENT_TRANSITIONS[state] - {DocumentState.FINISHED}
     return sorted(target.value for target in offered)
 
@@ -376,4 +381,62 @@ async def transition_document(
         set_notice(response, settings, "error", f"Not changed: {exc}")
         return response
     set_notice(response, settings, "success", f"The document is now {to.value.replace('_', ' ')}.")
+    return response
+
+
+@router.post("/documents/{document_id}/finish")
+async def finish_document(
+    document_id: uuid.UUID,
+    request: Request,
+    settings: SettingsDep,
+    session: SessionDep,
+    key: AttributionKeyDep,
+    csrf_token: Annotated[str, Form()],
+    discovery_scope: Annotated[str, Form()],
+    cited: Annotated[str, Form()] = "",
+    credit_my_firm: Annotated[bool, Form()] = False,
+) -> Response:
+    """Finish the document, filing its report for review (SF-101)."""
+    ctx = await _write(request, settings, csrf_token)
+    response = redirect_within_portal(_page(document_id))
+    # The API's own request model, so the two doors agree on a legal finish;
+    # the scope goes in as the string the form sent (CLAUDE.md section 5).
+    try:
+        payload = FinishIn.model_validate(
+            {"discovery_scope": discovery_scope, "cited": cited.split(), "credit": credit_my_firm}
+        )
+    except ValidationError as exc:
+        error = exc.errors(include_input=False)[0]
+        field = ".".join(str(part) for part in error.get("loc", ()))
+        set_notice(response, settings, "error", f"Not finished: {field}: {error.get('msg')}")
+        return response
+    try:
+        report_submission_id = await documents.finish_document(
+            session,
+            ctx,
+            document_id,
+            report=documents.ReportRequest(
+                discovery_scope=payload.discovery_scope,
+                cited=frozenset(payload.cited),
+                credit=payload.credit,
+            ),
+            key=key,
+            public_base_url=settings.public_base_url,
+            now=await database_now(session),
+        )
+        await session.commit()
+    except DocumentNotFoundError:
+        raise _NOT_FOUND from None
+    except DocumentStaleError:
+        set_notice(response, settings, "error", "Not finished: it was finished meanwhile.")
+        return response
+    except DocumentRefusedError as exc:
+        set_notice(response, settings, "error", f"Not finished: {exc}")
+        return response
+    set_notice(
+        response,
+        settings,
+        "success",
+        f"Finished. Its report, submission {report_submission_id}, waits for the ISAC's review.",
+    )
     return response

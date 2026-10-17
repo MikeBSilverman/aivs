@@ -1,0 +1,17 @@
+Mutation M1197: a finished body is served to any caller
+Re-applies: the route authorised by the document being finished alone, not by who may read its report
+
+Expect red: packages/aivs-server/tests/unit/test_document_reports.py::test_the_body_is_read_by_the_reviewers_before_validate_and_the_circle_after
+Expect red: packages/aivs-server/tests/unit/test_document_reports.py::test_an_absent_an_unfinished_and_an_unreadable_body_are_one_404
+diff --git a/packages/aivs-server/src/aivs_server/services/documents.py b/packages/aivs-server/src/aivs_server/services/documents.py
+--- a/packages/aivs-server/src/aivs_server/services/documents.py
++++ b/packages/aivs-server/src/aivs_server/services/documents.py
+@@ -999,8 +999,6 @@ async def read_finished_body(
+         document = await _load(db, document_id, for_update=False)
+         if document is None or document.report_submission_id is None:
+             raise DocumentNotFoundError
+-        if not await _may_fetch_finished(db, ctx, document, now=now):
+-            raise DocumentNotFoundError
+         number = document.finished_version_number
+         version = await _version(db, document_id, number)
+         body = _content_box(box, document).unseal(

@@ -19,6 +19,7 @@ from typing import Any, Final
 from aivs_schemas.extension.errors import ObjectPolicyError
 
 __all__ = [
+    "DOCUMENT_REFERENCE_SOURCE",
     "INDICATOR_PATTERN_TYPES",
     "MAX_INDICATOR_LIFETIME",
     "NETWORK_INDICATOR_LIFETIME",
@@ -78,6 +79,12 @@ STIX_CYBER_OBSERVABLE_TYPES: Final[frozenset[str]] = frozenset(
     }
 )
 
+#: The external reference by which a finished document's report links its body
+#: on the instance (SF-101). Written by the server, onto the report its finish
+#: files, and refused in every bundle a filer sends: a link a filer could write
+#: would label any address as a document of this ISAC's.
+DOCUMENT_REFERENCE_SOURCE: Final[str] = "aivs-document"
+
 _STIX_TIMESTAMP: Final[re.Pattern[str]] = re.compile(
     r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?Z$"
 )
@@ -105,10 +112,23 @@ def apply_type_policy(obj: Mapping[str, Any]) -> None:
             "their own; state the observable in an indicator's pattern or in observed-data"
         )
         raise ObjectPolicyError(msg)
+    _refuse_document_reference(obj)
     if isinstance(obj_type, str):
         check = _POLICIES.get(obj_type)
         if check is not None:
             check(obj)
+
+
+def _refuse_document_reference(obj: Mapping[str, Any]) -> None:
+    if any(
+        reference.get("source_name") == DOCUMENT_REFERENCE_SOURCE
+        for reference in _external_references(obj)
+    ):
+        msg = (
+            f"{_described(obj)} carries an '{DOCUMENT_REFERENCE_SOURCE}' reference, which "
+            "only the server writes, on the report a finished document files"
+        )
+        raise ObjectPolicyError(msg)
 
 
 def _vulnerability(obj: Mapping[str, Any]) -> None:

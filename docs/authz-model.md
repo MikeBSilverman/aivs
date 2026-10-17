@@ -448,7 +448,12 @@ with "member" (edit) and with "peer" (view, by the sharing code peer's org
 admin handed over); writing anything to a document needs a signed-in person,
 so a certificate alone is 403 before the document is looked up. A "sharing
 code" is a firm's own code for being named by another firm's documents, which
-only its org admins see or rotate.
+only its org admins see or rotate. A "document finish" files the document's
+report and closes every grant outside the owner firm; the "document artifact"
+is a finished document's body, read here before its report is validated, so
+by the reviewers who will validate it and by the firm that still holds the
+document, while the peer's grant has closed. After distribution, whoever may
+read the report may read the body too.
 
 | Class | member cert | member analyst | member org_admin | peer cert | admin-org cert | automation cert | ISAC analyst | ISAC editor | ISAC membership | system_admin |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -501,6 +506,8 @@ only its org admins see or rotate.
 | document comment | 403 | ✓ | ✓ | 403 | 403 | 403 | 404 | 404 | 404 | 404 |
 | document edit | 403 | ✓ | ✓ | 403 | 403 | 403 | 404 | 404 | 404 | 404 |
 | document share | 403 | ✓ | ✓ | 403 | 403 | 403 | 404 | 404 | 404 | 404 |
+| document finish | 403 | ✓ | ✓ | 403 | 403 | 403 | 404 | 404 | 404 | 404 |
+| document artifact | ✓ | ✓ | ✓ | 404 | 404 | 404 | ✓ | ✓ | 404 | 404 |
 | sharing code | 403 | 403 | ✓ | 403 | 403 | 403 | 403 | 403 | 403 | 403 |
 
 How to read the deny cells:

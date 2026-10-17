@@ -1,0 +1,16 @@
+Mutation M1195: grants outside the owner survive the finish
+Re-applies: finishing as first planned, with the report filed and every grantee elsewhere still reading the draft
+
+Expect red: packages/aivs-server/tests/unit/test_document_reports.py::test_finishing_closes_every_grant_outside_the_owner_firm
+diff --git a/packages/aivs-server/src/aivs_server/services/documents.py b/packages/aivs-server/src/aivs_server/services/documents.py
+--- a/packages/aivs-server/src/aivs_server/services/documents.py
++++ b/packages/aivs-server/src/aivs_server/services/documents.py
+@@ -818,7 +818,7 @@ async def finish_document(
+         version = await _version(db, document_id, None)
+         link = _document_reference(artifact_url(public_base_url, document_id), version)
+         submission_id = await _file_report(db, ctx, document, report, link, key=key, now=now)
+-        closed = await _close_grants_outside_owner(db, document, now=now)
++        closed = 0
+         details = {"from": document.state.value, "to": DocumentState.FINISHED.value}
+         document.state = DocumentState.FINISHED
+         document.report_submission_id = submission_id

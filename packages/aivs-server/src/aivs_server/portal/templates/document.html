@@ -32,6 +32,23 @@
       <button type="submit">Change state</button>
     </form>
   {% endif %}
+  {% if can_finish %}
+    <form method="post" action="/portal/documents/{{ document.id }}/finish">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <h3>Finish</h3>
+      <p class="muted">Files a report for the ISAC's review that links this version, and ends every grant outside your firm.</p>
+      <label for="discovery_scope">What it is about</label>
+      <select id="discovery_scope" name="discovery_scope" required>
+        <option value="own_product">Our own product</option>
+        <option value="own_estate">Our own estate</option>
+        <option value="ai_system">An AI system</option>
+      </select>
+      <label for="cited">Objects it cites, one STIX id per line</label>
+      <textarea id="cited" name="cited" rows="3" required></textarea>
+      <label><input type="checkbox" name="credit_my_firm" value="true"> Credit my firm on the report</label>
+      <button type="submit">Finish and file the report</button>
+    </form>
+  {% endif %}
 </div>
 {% endif %}
 

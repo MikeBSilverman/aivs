@@ -2,16 +2,15 @@ Mutation M205: validate checks referent TLPs only against what the editor's circ
 Re-applies: Phase E slice 2 (T6) -- the guard's absence
 
 Expect red: packages/aivs-server/tests/unit/test_markings.py::test_a_stricter_referent_the_member_cannot_see_passes_ingest_and_is_refused_at_validate
-
 diff --git a/packages/aivs-server/src/aivs_server/services/submissions.py b/packages/aivs-server/src/aivs_server/services/submissions.py
 --- a/packages/aivs-server/src/aivs_server/services/submissions.py
 +++ b/packages/aivs-server/src/aivs_server/services/submissions.py
-@@ -918,7 +918,7 @@
+@@ -936,7 +936,7 @@ async def _prepare_validation(
          await foreign_owned_versions_problem(session, submission),
          await stale_version_problem(session, submission),
          await anonymity_change_problem(session, submission),
 -        await contribution_problem(session, submission, raws, visible_to=None, now=now, key=key),
 +        await contribution_problem(session, submission, raws, visible_to=ctx, now=now, key=key),
+         await report_citation_problem(session, submission, raws, now=now),
          unacknowledged_changes_problem(
              await consequential_changes(session, submission, raws), acknowledged_changes
-         ),

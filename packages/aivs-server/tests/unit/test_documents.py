@@ -614,14 +614,17 @@ async def test_an_archived_document_reads_but_changes_no_more(session, secret_bo
         await share(session, world, document_id, GrantPrincipal.ORGANIZATION, world["peer"].id)
 
 
-async def test_finishing_is_not_offered_until_it_publishes(session, secret_box, world):
+@pytest.mark.requirement("SF-101")
+async def test_a_plain_transition_never_finishes_a_document(session, secret_box, world):
+    """Finishing files the report (``finish_document``, SF-101); a bare move
+    to finished would publish nothing and close nothing."""
     document_id = await create(session, secret_box, world)
     ctx = ctx_of(world, "author")
     await documents.transition_document(
         session, ctx, document_id, to=DocumentState.IN_REVIEW, now=NOW
     )
 
-    with pytest.raises(DocumentRefusedError, match="not built yet"):
+    with pytest.raises(DocumentRefusedError, match="use finish"):
         await documents.transition_document(
             session, ctx, document_id, to=DocumentState.FINISHED, now=NOW
         )

@@ -300,6 +300,26 @@ async def test_with_provisioning_off_an_unknown_person_is_refused(
     assert await refused_reason(session) == "not_provisioned"
 
 
+async def test_with_provisioning_off_a_registered_person_is_still_linked(
+    app, settings, idp, member, make_operator, session
+):
+    """Off means AIVS creates nobody, not that SSO stops working: a roster the
+    member manages explicitly still signs in, each person linked once."""
+    person, _seed = await make_operator(member, email="analyst@meridian.test")
+    closed = create_app(
+        sso_settings(settings).model_copy(update={"oidc_member_jit_provisioning": False})
+    )
+    closed.state.oidc_http = idp.client()
+
+    _client, finished, subject = await sign_in(closed, idp, email="Analyst@Meridian.test")
+
+    assert finished.status_code == 200
+    await session.refresh(person)
+    assert person.federated_subject == subject
+    in_firm = select(func.count(Operator.id)).where(Operator.org_id == member.id)
+    assert await session.scalar(in_firm) == 1
+
+
 async def test_a_person_moved_to_another_firm_does_not_carry_the_old_operator(
     sso_app, idp, member, make_org, session
 ):

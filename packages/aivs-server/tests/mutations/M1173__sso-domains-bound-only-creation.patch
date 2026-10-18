@@ -5,10 +5,10 @@ Expect red: packages/aivs-server/tests/unit/test_member_sso.py::test_a_pre_provi
 Expect red: packages/aivs-server/tests/unit/test_member_sso.py::test_a_member_idp_cannot_link_another_firms_registered_person
 
 diff --git a/packages/aivs-server/src/aivs_server/services/sso.py b/packages/aivs-server/src/aivs_server/services/sso.py
-index e5d9800..19f82d7 100644
+index 25865fe..7faf4b1 100644
 --- a/packages/aivs-server/src/aivs_server/services/sso.py
 +++ b/packages/aivs-server/src/aivs_server/services/sso.py
-@@ -120,9 +120,6 @@ async def _link_or_create(
+@@ -126,9 +126,6 @@ async def _link_or_create(
      # The IdP asserts the address; the ISAC decides which domains are this
      # firm's. Without this a member tenant could link another firm's person,
      # and with the email intake on, file that person's mail as its own (R30).
@@ -18,10 +18,10 @@ index e5d9800..19f82d7 100644
      existing = (
          await session.execute(select(Operator).where(Operator.email == email))
      ).scalar_one_or_none()
-@@ -131,6 +128,9 @@ async def _link_or_create(
-         existing.federated_issuer = identity.issuer
-         existing.federated_subject = identity.subject
-         return existing, False
+@@ -140,6 +137,9 @@ async def _link_or_create(
+     if not may_create:
+         reason = "not_provisioned"
+         raise SsoRejectedError(reason)
 +    if not await address_in_organisation_domains(session, address=email, org_id=organization.id):
 +        reason = "email_outside_organisation_domains"
 +        raise SsoRejectedError(reason)

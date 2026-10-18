@@ -1,0 +1,19 @@
+Mutation M1200: with provisioning off, a person the member registered is refused rather than linked
+Re-applies: the instance-wide refusal ahead of the link, as Phase M wrote it
+
+Expect red: packages/aivs-server/tests/unit/test_member_sso.py::test_with_provisioning_off_a_registered_person_is_still_linked
+
+diff --git a/packages/aivs-server/src/aivs_server/services/sso.py b/packages/aivs-server/src/aivs_server/services/sso.py
+index 25865fe..758ee5b 100644
+--- a/packages/aivs-server/src/aivs_server/services/sso.py
++++ b/packages/aivs-server/src/aivs_server/services/sso.py
+@@ -55,6 +55,9 @@ async def resolve_member_sign_in(
+     if operator is not None:
+         _require_same_organisation(operator, organization)
+         return SignIn(operator, organization, provisioned=False)
++    if not jit_provisioning:
++        reason = "not_provisioned"
++        raise SsoRejectedError(reason)
+     operator, provisioned = await _link_or_create(
+         session, identity, organization, may_create=jit_provisioning
+     )

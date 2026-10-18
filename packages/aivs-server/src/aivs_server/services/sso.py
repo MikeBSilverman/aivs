@@ -18,7 +18,10 @@ never downgraded:
   another firm's person.
 - A first sign-in with no operator creates one when JIT provisioning is on.
   It gets ``ANALYST`` and nothing more: the directory says who is a member,
-  not who may edit other firms' content (§5).
+  not who may edit other firms' content (§5). With provisioning off, a person
+  the member registered is still linked on first sign-in; only creating one
+  is off. Refusing the link too would leave an explicitly managed roster no
+  way to sign in at all.
 """
 
 from __future__ import annotations
@@ -52,10 +55,9 @@ async def resolve_member_sign_in(
     if operator is not None:
         _require_same_organisation(operator, organization)
         return SignIn(operator, organization, provisioned=False)
-    if not jit_provisioning:
-        reason = "not_provisioned"
-        raise SsoRejectedError(reason)
-    operator, provisioned = await _link_or_create(session, identity, organization)
+    operator, provisioned = await _link_or_create(
+        session, identity, organization, may_create=jit_provisioning
+    )
     return SignIn(operator, organization, provisioned=provisioned)
 
 
@@ -111,7 +113,11 @@ def _require_same_organisation(operator: Operator, organization: Organization) -
 
 
 async def _link_or_create(
-    session: AsyncSession, identity: VerifiedIdentity, organization: Organization
+    session: AsyncSession,
+    identity: VerifiedIdentity,
+    organization: Organization,
+    *,
+    may_create: bool,
 ) -> tuple[Operator, bool]:
     if identity.email is None:
         reason = "no_email_claim"
@@ -131,6 +137,9 @@ async def _link_or_create(
         existing.federated_issuer = identity.issuer
         existing.federated_subject = identity.subject
         return existing, False
+    if not may_create:
+        reason = "not_provisioned"
+        raise SsoRejectedError(reason)
     created = Operator(
         org_id=organization.id,
         email=email,

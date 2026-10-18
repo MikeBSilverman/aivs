@@ -1,0 +1,19 @@
+Mutation M1201: with provisioning off, a first sign-in still creates an operator
+Re-applies: the link-or-create path without its may_create guard
+
+Expect red: packages/aivs-server/tests/unit/test_member_sso.py::test_with_provisioning_off_an_unknown_person_is_refused
+
+diff --git a/packages/aivs-server/src/aivs_server/services/sso.py b/packages/aivs-server/src/aivs_server/services/sso.py
+index 25865fe..fa32bc3 100644
+--- a/packages/aivs-server/src/aivs_server/services/sso.py
++++ b/packages/aivs-server/src/aivs_server/services/sso.py
+@@ -137,9 +137,6 @@ async def _link_or_create(
+         existing.federated_issuer = identity.issuer
+         existing.federated_subject = identity.subject
+         return existing, False
+-    if not may_create:
+-        reason = "not_provisioned"
+-        raise SsoRejectedError(reason)
+     created = Operator(
+         org_id=organization.id,
+         email=email,

@@ -334,7 +334,7 @@ typo refuses to start:
 | `oidc_member_issuer`, `oidc_member_client_id`, `oidc_member_client_secret` | **Built.** Empty issuer disables member sign-in; the SSO routes then answer 404 |
 | `oidc_member_redirect_uri` | **Built.** The public listener's `https://…/portal/sso/callback`, registered with the IdP. Explicit, because the public listener is a different origin from `public_base_url` |
 | `oidc_member_group_claim` | **Built.** Claim listing directory groups; default `groups`. Matched against `organizations.directory_object_id` (§5) |
-| `oidc_member_jit_provisioning` | **Built. Default on.** Creates `ANALYST` operators in `ACTIVE` organisations only; §5 argues why on is right here |
+| `oidc_member_jit_provisioning` | **Built. Default on.** Creates `ANALYST` operators in `ACTIVE` organisations only; §5 argues why on is right here. Off, a person the member registered is still linked on first sign-in; nobody new is created |
 | `sso_session_max_age_minutes` | **Built.** Upper bound on an SSO session's life, whatever the idle timeout allows; default 480, range 15–1440 |
 | `sso_device_cookie_name` | **Built.** The per-browser cookie an SSO session is bound to; default `aivs_device` |
 | `oidc_staff_issuer`, `oidc_staff_client_id`, `oidc_staff_client_secret` | Unbuilt. Empty issuer disables staff federation |

@@ -1,0 +1,33 @@
+Mutation M1202: search matches any visible version, then shows the latest of those that matched
+Re-applies: the text match inside the visibility CTE, before each object's latest version is chosen
+
+Expect red: packages/aivs-server/tests/unit/test_search.py::test_words_only_in_an_older_version_do_not_find_the_current_one
+
+diff --git a/packages/aivs-server/src/aivs_server/services/search.py b/packages/aivs-server/src/aivs_server/services/search.py
+index 8e62678..6c8cbcf 100644
+--- a/packages/aivs-server/src/aivs_server/services/search.py
++++ b/packages/aivs-server/src/aivs_server/services/search.py
+@@ -135,7 +135,12 @@ def build_search_statement(visible: Select[Any], terms: SearchTerms, limit: int)
+     ``MATERIALIZED`` so the planner cannot push the match into it.
+     """
+     readable = (
+-        visible.with_only_columns(
++        visible.where(
++            _searchable_text(StixObject.raw).op("@@")(
++                func.websearch_to_tsquery(_regconfig(), terms.text)
++            )
++        )
++        .with_only_columns(
+             StixObject.id.label("object_id"),
+             StixObject.stix_id.label("stix_id"),
+             StixObject.owner_token.label("owner_token"),
+@@ -174,9 +179,6 @@ def build_search_statement(visible: Select[Any], terms: SearchTerms, limit: int)
+         .where(
+             and_(
+                 func.coalesce(StixObject.raw["revoked"].as_boolean(), false()).is_(False),
+-                _searchable_text(StixObject.raw).op("@@")(
+-                    func.websearch_to_tsquery(_regconfig(), terms.text)
+-                ),
+             )
+         )
+         .order_by(latest.c.date_added.desc(), latest.c.seq.desc())

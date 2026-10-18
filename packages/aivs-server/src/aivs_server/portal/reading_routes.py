@@ -1,8 +1,9 @@
-"""Portal routes for reading: the depth preference and the IoC pack download.
+"""Portal routes for reading: search, the depth preference and the IoC pack download.
 
-Neither decides what a person may see. The preference picks a rendering; the
-pack is built by the same service the API calls, from the objects the
-visibility gatherer hands it, and is recorded as a portal retrieval (SF-51).
+None decides what a person may see. Search and the pack are built by the
+services the API calls, from the objects the visibility gatherer hands them;
+the pack is recorded as a portal retrieval (SF-51). The preference picks a
+rendering.
 """
 
 from __future__ import annotations
@@ -12,9 +13,11 @@ from typing import Annotated
 from fastapi import APIRouter, Form, HTTPException, Query, Request, Response, status
 from fastapi.responses import HTMLResponse
 
-from aivs_schemas.enums import AckVia, ReadingDepth
+from aivs_schemas.enums import TLP, AckVia, ReadingDepth
 from aivs_server.api.exports import csv_attachment
+from aivs_server.auth.context import AuthContext
 from aivs_server.auth.deps import SessionDep, SettingsDep
+from aivs_server.auth.policy import tlp_ceiling
 from aivs_server.db.clock import database_now
 from aivs_server.portal.shared import (
     base_context,
@@ -25,10 +28,18 @@ from aivs_server.portal.shared import (
     require_csrf,
     set_notice,
     stamp,
+    tlp_label,
 )
 from aivs_server.services.connection_health import member_health, readable_collections
 from aivs_server.services.ioc_pack import export_ioc_pack
 from aivs_server.services.member_staff_writes import set_own_default_depth
+from aivs_server.services.search import (
+    MAX_TERMS_LENGTH,
+    SearchHit,
+    SearchTermsError,
+    parse_search_terms,
+    search_visible,
+)
 from aivs_server.services.tip_config import CollectionRef, Tip, tip_config
 from aivs_server.services.vulnerability_objects import VulnerabilityHiddenError
 
@@ -38,6 +49,65 @@ router = APIRouter(prefix="/portal", include_in_schema=False)
 
 #: The form's value for "no preference": pages open at ``standard``.
 _NO_PREFERENCE = ""
+
+#: How many hits one page of the portal's search shows.
+_SEARCH_PAGE = 50
+
+
+@router.get("/search", response_class=HTMLResponse)
+async def search_page(
+    request: Request,
+    settings: SettingsDep,
+    session: SessionDep,
+    q: Annotated[str, Query(max_length=MAX_TERMS_LENGTH * 2)] = "",
+) -> Response:
+    """The objects the person can read that match ``q``, newest first.
+
+    The terms are a query parameter for the reason the vulnerability page's id
+    is: neither log records the query string (SF-66). A hit names the object
+    and links a vulnerability to its page, which is where it is read and where
+    the receipt is written; the list shows no description.
+    """
+    ctx, _csrf_hash = await current_session(request, settings)
+    context = base_context(request, settings, ctx, await operator_name(session, ctx), "search")
+    context.update(
+        {"q": q, "scope": _search_scope(ctx), "hits": None, "more": False, "problem": None}
+    )
+    if not q.strip():
+        return render(request, "search.html", context)
+    try:
+        terms = parse_search_terms(q)
+    except SearchTermsError as exc:
+        context["problem"] = f"Not searched: {exc}."
+        return render(request, "search.html", context)
+    page = await search_visible(
+        session, ctx, terms, now=await database_now(session), limit=_SEARCH_PAGE
+    )
+    context.update({"hits": [_hit_row(hit) for hit in page.hits], "more": page.more})
+    return render(request, "search.html", context)
+
+
+def _search_scope(ctx: AuthContext) -> str:
+    """Say what search covers, decided by the session and never by the results."""
+    if tlp_ceiling(ctx) is TLP.RED:
+        return "Everything distributed to your firm."
+    return (
+        f"What has been distributed to your firm up to {tlp_label(tlp_ceiling(ctx))}, and "
+        "not under embargo. Sign in with your firm's certificate to search the rest."
+    )
+
+
+def _hit_row(hit: SearchHit) -> dict[str, str | None]:
+    return {
+        "shared_at": stamp(hit.shared_at),
+        "name": hit.name or "(unnamed object)",
+        "type": hit.type,
+        "stix_id": hit.stix_id,
+        # A vulnerability opens its page; other objects are read there.
+        "page": hit.stix_id if hit.type == "vulnerability" else None,
+        "tlp": str(hit.tlp),
+        "tlp_label": tlp_label(hit.tlp),
+    }
 
 
 @router.post("/preferences/depth")

@@ -1,0 +1,35 @@
+Mutation M1203: search scopes by the caller's circles without an SSO session's TLP ceiling
+Re-applies: the circle clause alone, as TAXII takes it, in place of the one that carries the ceiling
+
+Expect red: packages/aivs-server/tests/unit/test_search.py::test_an_sso_session_finds_amber_but_never_red
+Expect red: packages/aivs-server/tests/unit/test_search.py::test_an_sso_session_never_finds_what_was_shared_under_an_embargo
+
+diff --git a/packages/aivs-server/src/aivs_server/services/search.py b/packages/aivs-server/src/aivs_server/services/search.py
+index 8e62678..30186ac 100644
+--- a/packages/aivs-server/src/aivs_server/services/search.py
++++ b/packages/aivs-server/src/aivs_server/services/search.py
+@@ -45,6 +45,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
+ 
+ from aivs_schemas.enums import TLP
+ from aivs_server.auth.context import AuthContext
++from aivs_server.auth.policy import readable_circle_grants, visible_content_clause
+ from aivs_server.db.models import Distribution, StixObject, Submission
+ from aivs_server.services.visible import visible_objects
+ 
+@@ -111,9 +112,13 @@ async def search_visible(
+     limit: int,
+ ) -> SearchPage:
+     """The newest objects ``ctx`` can read whose latest visible version matches ``terms``."""
+-    rows = (
+-        await session.execute(build_search_statement(visible_objects(ctx, now), terms, limit))
+-    ).all()
++    readable_anywhere = (
++        select(StixObject)
++        .join(Submission, Submission.id == StixObject.submission_id)
++        .join(Distribution, Distribution.stix_object_id == StixObject.id)
++        .where(visible_content_clause(readable_circle_grants(ctx), now))
++    )
++    rows = (await session.execute(build_search_statement(readable_anywhere, terms, limit))).all()
+     hits = tuple(
+         SearchHit(
+             stix_id=row.stix_id,

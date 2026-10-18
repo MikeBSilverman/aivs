@@ -225,6 +225,9 @@ def _bundle(name: str) -> dict[str, Any]:
     }
 
 
+_SEARCH_TERMS = "q=matrix+or+quiet"
+
+
 def _new_submission(_world: World) -> tuple[str, dict[str, Any]]:
     return f"{API}/submissions", {
         "title": "Matrix finding",
@@ -312,6 +315,9 @@ ROUTES: tuple[RouteCase, ...] = (
         _taxii("/collections/{collection}/objects/{object}/versions/"),
     ),
     RouteCase("GET", "/api/v1/submissions", RouteClass.LISTING, _fixed(f"{API}/submissions")),
+    # Words in the world's filings and in the anonymity sweep's ("Quiet ..."),
+    # so the search answers with the content each caller can read.
+    RouteCase("GET", "/api/v1/search", RouteClass.LISTING, _fixed(f"{API}/search?{_SEARCH_TERMS}")),
     RouteCase(
         "GET", "/api/v1/submissions/{submission_id}", RouteClass.SUBMISSION_RECORD, _sub("read")
     ),
@@ -472,6 +478,13 @@ ROUTES: tuple[RouteCase, ...] = (
         _sub("read", "/receipts"),
     ),
     RouteCase("GET", "/portal/", RouteClass.LISTING, _fixed("/portal/"), is_portal=True),
+    RouteCase(
+        "GET",
+        "/portal/search",
+        RouteClass.LISTING,
+        _fixed(f"/portal/search?{_SEARCH_TERMS}"),
+        is_portal=True,
+    ),
     RouteCase(
         "GET",
         "/portal/submissions",
@@ -1233,10 +1246,10 @@ ROUTES: tuple[RouteCase, ...] = (
 #: not a total, so one surface vanishing from the walk cannot hide behind another
 #: growing. Raise a floor when a surface grows; lowering one is a decision.
 SURFACE_FLOORS: dict[str, int] = {
-    "/api/v1": 89,
+    "/api/v1": 90,
     "/taxii2": 10,
     "/portal/admin": 14,
-    "/portal": 45,
+    "/portal": 46,
     "/healthz": 1,
     "/readyz": 1,
     "/metrics": 1,

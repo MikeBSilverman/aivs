@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Search &middot; {{ instance_name }}{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <h1>Search</h1>
+  <p class="muted">{{ scope }}</p>
+</div>
+
+<div class="card">
+  <form method="get" action="/portal/search" class="inline">
+    <label for="search-terms">Words to find</label>
+    <input id="search-terms" name="q" maxlength="200" value="{{ q }}" placeholder="product, CVE id or phrase" required>
+    <button type="submit">Search</button>
+  </form>
+  <p class="muted">Whole words, in names, descriptions, notes and reference ids. Put a phrase in quotes; put <span class="mono">-</span> before a word to leave it out.</p>
+</div>
+
+{% if problem %}
+  <div class="card"><p>{{ problem }}</p></div>
+{% elif hits is not none %}
+  <div class="card">
+    {% if hits %}
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Shared</th><th>Marking</th><th>Type</th><th>Finding</th></tr>
+          </thead>
+          <tbody>
+            {% for hit in hits %}
+              <tr>
+                <td class="nowrap muted mono">{{ hit.shared_at }}</td>
+                <td><span class="badge tlp tlp-{{ hit.tlp }}">{{ hit.tlp_label }}</span></td>
+                <td class="muted">{{ hit.type }}</td>
+                <td>
+                  {% if hit.page %}<a href="/portal/vulnerabilities?id={{ hit.page|urlencode }}">{{ hit.name }}</a>{% else %}{{ hit.name }}{% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% if more %}
+        <p class="muted">More match than are shown. Add words to narrow the search.</p>
+      {% endif %}
+    {% else %}
+      <div class="empty">Nothing you can read matches.</div>
+    {% endif %}
+  </div>
+{% endif %}
+{% endblock %}

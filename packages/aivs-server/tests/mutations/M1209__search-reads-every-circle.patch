@@ -1,0 +1,38 @@
+Mutation M1209: search matches every distributed object, whoever may read it
+Re-applies: the reviewers' scope given to every caller
+
+Expect red: packages/aivs-server/tests/unit/test_search.py::test_words_found_only_in_another_circle_answer_exactly_as_no_match
+Expect red: packages/aivs-server/tests/unit/test_search.py::test_hidden_matches_never_take_a_visible_matchs_place
+Expect red: packages/aivs-server/tests/unit/test_search.py::test_the_page_answers_hidden_matches_exactly_as_no_match
+Expect red: packages/aivs-server/tests/unit/test_search.py::test_embargoed_content_is_not_found_until_its_release
+
+diff --git a/packages/aivs-server/src/aivs_server/services/search.py b/packages/aivs-server/src/aivs_server/services/search.py
+index 3826161..a968fb3 100644
+--- a/packages/aivs-server/src/aivs_server/services/search.py
++++ b/packages/aivs-server/src/aivs_server/services/search.py
+@@ -43,7 +43,7 @@ from sqlalchemy import Select, String, and_, cast, false, func, literal, select
+ from sqlalchemy.dialects.postgresql import JSONPATH, REGCONFIG
+ from sqlalchemy.ext.asyncio import AsyncSession
+ 
+-from aivs_schemas.enums import TLP
++from aivs_schemas.enums import TLP, VISIBLE_SUBMISSION_STATES
+ from aivs_server.auth.context import AuthContext
+ from aivs_server.db.models import Distribution, StixObject, Submission
+ from aivs_server.services.visible import visible_objects
+@@ -116,9 +116,13 @@ async def search_visible(
+     limit: int,
+ ) -> SearchPage:
+     """The newest objects ``ctx`` can read whose latest visible version matches ``terms``."""
+-    rows = (
+-        await session.execute(build_search_statement(visible_objects(ctx, now), terms, limit))
+-    ).all()
++    distributed = (
++        select(StixObject)
++        .join(Submission, Submission.id == StixObject.submission_id)
++        .join(Distribution, Distribution.stix_object_id == StixObject.id)
++        .where(Submission.state.in_(tuple(VISIBLE_SUBMISSION_STATES)))
++    )
++    rows = (await session.execute(build_search_statement(distributed, terms, limit))).all()
+     hits = tuple(
+         SearchHit(
+             stix_id=row.stix_id,

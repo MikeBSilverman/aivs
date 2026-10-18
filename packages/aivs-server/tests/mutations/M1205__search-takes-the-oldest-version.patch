@@ -1,0 +1,18 @@
+Mutation M1205: search matches each object's oldest visible version, not its latest
+Re-applies: the latest-version ordering without its descending sort
+
+Expect red: packages/aivs-server/tests/unit/test_search.py::test_words_only_in_an_older_version_do_not_find_the_current_one
+
+diff --git a/packages/aivs-server/src/aivs_server/services/search.py b/packages/aivs-server/src/aivs_server/services/search.py
+index 8e62678..fc43daa 100644
+--- a/packages/aivs-server/src/aivs_server/services/search.py
++++ b/packages/aivs-server/src/aivs_server/services/search.py
+@@ -155,7 +155,7 @@ def build_search_statement(visible: Select[Any], terms: SearchTerms, limit: int)
+         .order_by(
+             readable.c.stix_id,
+             readable.c.owner_token,
+-            readable.c.modified.desc(),
++            readable.c.modified,
+             readable.c.date_added,
+             readable.c.seq,
+         )

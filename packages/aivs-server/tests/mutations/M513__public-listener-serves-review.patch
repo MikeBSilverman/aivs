@@ -4,14 +4,15 @@ Re-applies: (T8) "Member sign-in through the ISAC's identity provider"
 Expect red: packages/aivs-server/tests/unit/test_proxy_config.py::test_the_public_listener_proxies_nothing_else
 
 diff --git a/deploy/nginx/nginx.conf b/deploy/nginx/nginx.conf
+index 7dd4bc7..5c32a35 100644
 --- a/deploy/nginx/nginx.conf
 +++ b/deploy/nginx/nginx.conf
-@@ -493,7 +493,7 @@
+@@ -531,7 +531,7 @@ http {
          # from it (ids in the query or body, never the path), signing out, and
          # the portal's own static files.
          # Quoted: unquoted, nginx reads the "{" of "{36}" as the start of a block.
--        location ~ "^/portal/((submissions(/[0-9a-f-]{36}(/(submit|withdraw))?)?|vulnerabilities(/(contributions|posture|actioned|evidence-pack))?|submit|logout)|static/[A-Za-z0-9._/-]+)?$" {
-+        location ~ "^/portal/((submissions(/[0-9a-f-]{36}(/(submit|withdraw))?)?|vulnerabilities(/(contributions|posture|actioned|evidence-pack))?|submit|logout|review)|static/[A-Za-z0-9._/-]+)?$" {
+-        location ~ "^/portal/((submissions(/[0-9a-f-]{36}(/(submit|withdraw))?)?|vulnerabilities(/(contributions|posture|actioned|evidence-pack))?|submit|search|logout)|static/[A-Za-z0-9._/-]+)?$" {
++        location ~ "^/portal/((submissions(/[0-9a-f-]{36}(/(submit|withdraw))?)?|vulnerabilities(/(contributions|posture|actioned|evidence-pack))?|submit|search|logout|review)|static/[A-Za-z0-9._/-]+)?$" {
              include     /etc/nginx/snippets/aivs-identity-headers.conf;
              proxy_pass  http://aivs_app;
          }

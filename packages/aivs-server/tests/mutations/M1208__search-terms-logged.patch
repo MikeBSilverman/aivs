@@ -1,0 +1,25 @@
+Mutation M1208: the API logs what a firm searched for
+Re-applies: a decision log carrying the terms in a structured field
+
+Expect red: packages/aivs-server/tests/unit/test_search.py::test_the_terms_reach_no_log_record
+
+diff --git a/packages/aivs-server/src/aivs_server/api/search.py b/packages/aivs-server/src/aivs_server/api/search.py
+index 07fc28c..05eb67a 100644
+--- a/packages/aivs-server/src/aivs_server/api/search.py
++++ b/packages/aivs-server/src/aivs_server/api/search.py
+@@ -9,6 +9,7 @@ for says what it is worried about.
+ from __future__ import annotations
+ 
+ import datetime as dt
++import logging
+ from typing import Annotated
+ 
+ from fastapi import APIRouter, HTTPException, Query, status
+@@ -65,6 +66,7 @@ async def search(
+         terms = parse_search_terms(q)
+     except SearchTermsError as exc:
+         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
++    logging.getLogger(__name__).info("search", extra={"terms": terms.text})
+     page = await search_visible(session, ctx, terms, now=await database_now(session), limit=limit)
+     return SearchPageOut(
+         hits=[

@@ -1,0 +1,17 @@
+Mutation M1206: search indexes the whole stored object, AI tooling and custom properties included
+Re-applies: the object's text taken whole rather than its own words
+
+Expect red: packages/aivs-server/tests/unit/test_search.py::test_the_objects_own_words_are_searched_and_its_tooling_is_not
+
+diff --git a/packages/aivs-server/src/aivs_server/services/search.py b/packages/aivs-server/src/aivs_server/services/search.py
+index 3826161..ce29ee8 100644
+--- a/packages/aivs-server/src/aivs_server/services/search.py
++++ b/packages/aivs-server/src/aivs_server/services/search.py
+@@ -200,6 +200,7 @@ def _searchable_text(raw: Any) -> Any:
+         raw["content"].astext,
+         raw["explanation"].astext,
+         cast(func.jsonb_path_query_array(raw, _REFERENCE_IDS), String),
++        cast(raw, String),
+     )
+     return func.to_tsvector(_regconfig(), func.left(words, _MAX_INDEXED_CHARACTERS))
+ 

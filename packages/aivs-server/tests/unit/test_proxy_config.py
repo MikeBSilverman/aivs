@@ -97,6 +97,7 @@ _PUBLIC_PATHS = [
     "/portal/vulnerabilities/posture",
     "/portal/vulnerabilities/actioned",
     "/portal/vulnerabilities/evidence-pack",
+    "/portal/search",
     "/portal/logout",
     "/portal/static/theme.css",
     "/portal/sso/login",
@@ -119,6 +120,8 @@ _NOT_PUBLIC_PATHS = [
     "/portal/vulnerabilities/CVE-2026-1234",
     "/portal/vulnerabilities/CVE-2026-1234/contributions",
     "/portal/static/",
+    "/portal/search/anything",
+    "/portal/searches",
 ]
 
 

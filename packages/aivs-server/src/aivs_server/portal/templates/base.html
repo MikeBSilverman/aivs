@@ -25,6 +25,7 @@
       <span class="instance">{{ instance_name }}</span>
       <nav>
         <a href="/portal/" {% if active == 'dashboard' %}aria-current="page"{% endif %}>Dashboard</a>
+        <a href="/portal/search" {% if active == 'search' %}aria-current="page"{% endif %}>Search</a>
         <a href="/portal/submissions" {% if active == 'submissions' %}aria-current="page"{% endif %}>Submissions</a>
         <a href="/portal/submit" {% if active == 'submit' %}aria-current="page"{% endif %}>New finding</a>
         <a href="/portal/connection" {% if active == 'connection' %}aria-current="page"{% endif %}>Connection</a>

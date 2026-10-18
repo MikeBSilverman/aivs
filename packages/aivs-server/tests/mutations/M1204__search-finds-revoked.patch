@@ -1,0 +1,17 @@
+Mutation M1204: search finds an object whose latest visible version its owner revoked
+Re-applies: the match over the latest version without the revoked condition
+
+Expect red: packages/aivs-server/tests/unit/test_search.py::test_an_object_its_owner_revoked_is_not_found
+
+diff --git a/packages/aivs-server/src/aivs_server/services/search.py b/packages/aivs-server/src/aivs_server/services/search.py
+index 8e62678..2e9f742 100644
+--- a/packages/aivs-server/src/aivs_server/services/search.py
++++ b/packages/aivs-server/src/aivs_server/services/search.py
+@@ -173,7 +173,6 @@ def build_search_statement(visible: Select[Any], terms: SearchTerms, limit: int)
+         .join(latest, latest.c.object_id == StixObject.id)
+         .where(
+             and_(
+-                func.coalesce(StixObject.raw["revoked"].as_boolean(), false()).is_(False),
+                 _searchable_text(StixObject.raw).op("@@")(
+                     func.websearch_to_tsquery(_regconfig(), terms.text)
+                 ),

@@ -375,7 +375,7 @@ What exists, in the order a sign-in meets it. Requirement SF-65 pins it;
 **The public listener.** nginx's third server block (8444, published only by
 `docker-compose.public.yml`) asks for no client certificate and proxies an
 allow-list of paths: the two SSO endpoints, and the member portal's dashboard,
-own submissions and their member verbs (`submit`, `withdraw`), filing, the
+own submissions and their member verbs (`submit`, `withdraw`), filing, search, the
 vulnerability page and the two responses made from it (a one-click and the
 firm's posture), signing out and static files. Everything else — the API, TAXII, the admin screens, the
 staff review queue, the password sign-in form, the probes — is a 404 written

@@ -38,7 +38,7 @@
 # source at build time -- more build tooling, slower builds, and a set of
 # binaries nobody else is running or fuzzing.
 # -----------------------------------------------------------------------------
-FROM ghcr.io/astral-sh/uv:0.11.16@sha256:440fd6477af86a2f1b38080c539f1672cd22acb1b1a47e321dba5158ab08864d AS uv
+FROM ghcr.io/astral-sh/uv:0.13.6@sha256:af22a52f5eafef3d78e551599d405c02df61919d18028f0cea8eda93bc9986d0 AS uv
 
 
 # =============================================================================
